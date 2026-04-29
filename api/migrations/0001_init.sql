@@ -79,7 +79,7 @@ CREATE TABLE time_blocks (
     user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     start_at    TIMESTAMPTZ NOT NULL,
     end_at      TIMESTAMPTZ NOT NULL,
-    state       TEXT NOT NULL CHECK (state IN ('planned','completed','skipped')),
+    state       TEXT NOT NULL CHECK (state IN ('planned','completed')),
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX idx_blocks_user_start ON time_blocks(user_id, start_at);

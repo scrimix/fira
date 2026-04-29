@@ -66,14 +66,179 @@
   font-family: var(--font-mono);
   font-size: var(--fs-sm);
 }
-.cal-toolbar .week-label { font-weight: 500; }
+.cal-toolbar { white-space: nowrap; }
+.cal-toolbar > * { flex-shrink: 0; }
+.cal-toolbar .week-label { font-weight: 500; white-space: nowrap; }
+.cal-toolbar .week-nav {
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid var(--rule-2);
+  background: var(--paper);
+  margin-right: 8px;
+}
+.cal-toolbar .week-nav-btn {
+  padding: 0 8px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--ink-3);
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-right: 1px solid var(--rule-2);
+  height: 22px;
+  display: inline-grid;
+  place-items: center;
+}
+.cal-toolbar .week-nav-btn:last-child { border-right: 0; }
+.cal-toolbar .week-nav-btn:hover { color: var(--ink); background: var(--paper-3); }
+.cal-toolbar .week-nav-btn.week-nav-today { letter-spacing: 0.06em; text-transform: uppercase; font-size: 10px; }
+.cal-toolbar .week-nav-btn.week-nav-today[data-active="true"] {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.cal-toolbar .user-picker {
+  position: relative;
+  margin-left: 16px;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--rule-2);
+  background: var(--paper);
+  height: 24px;
+}
+.cal-toolbar .user-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 0 6px 0 4px;
+  height: 100%;
+  line-height: 1;
+  font-family: var(--font-sans);
+  font-size: var(--fs-xs);
+  color: var(--ink-3);
+  cursor: pointer;
+  user-select: none;
+  letter-spacing: 0;
+  border-right: 1px solid var(--rule-2);
+}
+.cal-toolbar .user-pill .avatar { width: 16px; height: 16px; font-size: 8px; }
+.cal-toolbar .user-pill:last-child { border-right: 0; }
+.cal-toolbar .user-pill:hover { color: var(--ink); background: var(--paper-3); }
+.cal-toolbar .user-pill[data-active="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.cal-toolbar .user-pill[data-active="true"] .avatar {
+  border-color: var(--accent-line);
+}
+.cal-toolbar .user-pill .user-name { font-weight: 500; }
+.cal-toolbar .user-pill.add-pill {
+  padding: 0 8px;
+  color: var(--ink-3);
+  cursor: pointer;
+}
+.cal-toolbar .user-pill.add-pill:hover { color: var(--ink); background: var(--paper-3); }
+.cal-toolbar .user-pill.tab-pill {
+  cursor: pointer;
+  padding: 0 4px;
+}
+.cal-toolbar .user-pill.tab-pill:hover { background: var(--paper-3); }
+.cal-toolbar .user-pill.tab-pill[data-active="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.cal-toolbar .user-pill.tab-pill[data-active="true"] .avatar {
+  border-color: var(--accent-line);
+}
+.user-pill-x {
+  display: inline-grid; place-items: center;
+  width: 14px; height: 14px;
+  margin-left: 2px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1;
+  color: inherit;
+  cursor: pointer;
+  background: transparent;
+  opacity: 0.6;
+  border: 0;
+  padding: 0;
+}
+.user-pill-x:hover { opacity: 1; color: var(--danger); }
+.user-row {
+  grid-template-columns: 22px 1fr auto;
+}
+
+.user-popover {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 280px;
+  max-width: 360px;
+  background: var(--paper);
+  border: 1px solid var(--rule-3);
+  box-shadow: 0 6px 20px rgba(0,0,0,0.12);
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+}
+.user-search {
+  font: inherit;
+  font-size: var(--fs-sm);
+  padding: 8px 10px;
+  border: 0;
+  border-bottom: 1px solid var(--rule);
+  outline: 0;
+  background: var(--paper);
+  color: var(--ink);
+}
+.user-search:focus { border-bottom-color: var(--accent-line); }
+.user-list {
+  max-height: 280px;
+  overflow: auto;
+  padding: 4px 0;
+}
+.user-empty {
+  padding: 12px;
+  color: var(--ink-4);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  text-align: center;
+}
+.user-row {
+  display: grid;
+  grid-template-columns: 22px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  background: var(--paper);
+  font-size: var(--fs-sm);
+  color: var(--ink);
+}
+.user-row[data-active="true"] { background: var(--paper-3); }
+.user-row[data-selected="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.user-row[data-selected="true"][data-active="true"] {
+  background: color-mix(in oklab, var(--accent-soft) 70%, var(--paper-3));
+}
+.user-row-name { font-weight: 500; }
+.user-row-you { color: var(--ink-4); font-weight: 400; }
+.user-row-email {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink-4);
+}
 .cal-toolbar .totals {
   margin-left: auto;
   display: flex;
   gap: 14px;
   color: var(--ink-3);
   font-size: var(--fs-xs);
+  white-space: nowrap;
 }
+.cal-toolbar .totals span { white-space: nowrap; }
 .cal-toolbar .totals strong {
   color: var(--ink);
   font-weight: 500;
@@ -204,24 +369,130 @@
   padding: 4px 6px 4px 7px;
   font-size: var(--fs-xs);
   color: var(--ink);
-  cursor: pointer;
+  cursor: grab;
   overflow: hidden;
   display: flex;
   flex-direction: column;
   gap: 2px;
   z-index: 2;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
 }
 .tblock:hover { box-shadow: 0 0 0 1px var(--proj-color, var(--ink)); z-index: 3; }
 .tblock[data-state="completed"] {
   background: color-mix(in oklab, var(--proj-color, var(--ink)) 22%, var(--paper));
 }
 .tblock[data-state="completed"] .tb-title { text-decoration: line-through; opacity: 0.65; }
-.tblock[data-state="skipped"] {
-  background: var(--paper-2);
-  border-style: dotted;
+/* Task is done AND this specific block already happened (completed) — fully
+   muted with hatched overlay, struck-through title. Closed work, archived. */
+.tblock[data-task-done="true"][data-state="completed"] {
+  background:
+    repeating-linear-gradient(
+      -45deg,
+      transparent, transparent 4px,
+      color-mix(in oklab, var(--proj-color, var(--ink)) 18%, transparent) 4px,
+      color-mix(in oklab, var(--proj-color, var(--ink)) 18%, transparent) 5px
+    ),
+    color-mix(in oklab, var(--proj-color, var(--ink)) 8%, var(--paper));
+  border-color: color-mix(in oklab, var(--proj-color, var(--ink)) 50%, var(--paper-2));
+  border-left-color: color-mix(in oklab, var(--proj-color, var(--ink)) 60%, var(--paper-2));
+  opacity: 0.85;
+}
+.tblock[data-task-done="true"][data-state="completed"] .tb-title {
+  text-decoration: line-through;
   color: var(--ink-3);
 }
-.tblock[data-state="skipped"] .tb-title { text-decoration: line-through; }
+.tblock[data-task-done="true"][data-state="completed"] .tb-meta { color: var(--ink-4); }
+
+/* Task is done but this block is still PLANNED — it hasn't happened, so don't
+   strike it through; keep the project color but use a dashed border + a small
+   warning glyph so the user notices and either reopens the task or deletes
+   the block. */
+.tblock[data-task-done="true"][data-state="planned"] {
+  border-style: dashed;
+}
+.tblock[data-task-done="true"][data-state="planned"]::before {
+  content: '⚠';
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--warn);
+  pointer-events: none;
+  z-index: 1;
+}
+.tblock[data-task-done="true"][data-state="planned"]:hover::before {
+  /* Don't fight with tb-actions on hover. */
+  display: none;
+}
+.tblock[data-dragging="true"] {
+  cursor: grabbing;
+  opacity: 0.85;
+  z-index: 10;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18), 0 0 0 1px var(--proj-color, var(--ink));
+}
+.tblock[data-active="true"] {
+  box-shadow: 0 0 0 2px var(--accent);
+  z-index: 3;
+}
+.tblock[data-short="true"] {
+  padding: 1px 6px 1px 7px;
+  gap: 0;
+  flex-direction: row;
+  align-items: center;
+}
+.tblock[data-short="true"] .tb-meta { display: none; }
+.tblock[data-short="true"] .tb-title {
+  font-size: 10px;
+  line-height: 1.1;
+}
+
+.tb-actions {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.08s;
+  z-index: 2;
+}
+.tblock:hover .tb-actions { opacity: 1; }
+.tb-action {
+  width: 16px; height: 16px;
+  display: grid; place-items: center;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1;
+  background: var(--paper);
+  border: 1px solid var(--rule-2);
+  color: var(--ink-3);
+  cursor: pointer;
+}
+.tb-action:hover { color: var(--ink); border-color: var(--ink-3); background: var(--paper); }
+.tb-tick[data-checked="true"] {
+  background: var(--done);
+  border-color: var(--done);
+  color: var(--paper);
+}
+.tb-tick[data-checked="true"]:hover { background: var(--done); color: var(--paper); opacity: 0.9; }
+.tb-dup:hover { color: var(--accent); border-color: var(--accent); }
+.tb-close:hover { color: var(--danger); border-color: var(--danger); }
+
+.tb-resize {
+  position: absolute;
+  left: 0; right: 0;
+  height: 6px;
+  cursor: ns-resize;
+  z-index: 1;
+}
+.tb-resize-top { top: 0; }
+.tb-resize-bottom { bottom: 0; }
+
+.cal-grid-wrap[data-dragging="true"] { user-select: none; -webkit-user-select: none; }
+.cal-grid-wrap[data-dragging="true"] .tblock { cursor: grabbing; }
 .tb-title {
   font-weight: 500;
   font-size: var(--fs-xs);
@@ -239,6 +510,24 @@
   gap: 4px;
 }
 .tb-meta .dot { width: 3px; height: 3px; background: currentColor; border-radius: 50%; }
+
+.tblock-preview {
+  position: absolute;
+  left: 1px; right: 1px;
+  border: 1px dashed var(--accent);
+  background: var(--accent-soft);
+  pointer-events: none;
+  z-index: 4;
+}
+.cal-daycol[data-drop-target="true"] {
+  background: color-mix(in oklab, var(--accent) 6%, var(--paper));
+}
+.cal-daycol[data-drop-target="true"][data-weekend="true"] {
+  background: color-mix(in oklab, var(--accent) 8%, var(--paper-2));
+}
+
+.rail-task[draggable="true"] { cursor: grab; }
+.rail-task[draggable="true"]:active { cursor: grabbing; }
 
 .gcal-evt {
   position: absolute;
@@ -269,16 +558,28 @@
   height: 36px;
   border-bottom: 1px solid var(--rule);
   display: flex; align-items: center;
-  padding: 0 12px;
+  padding: 0 8px;
 }
-.rail-head h3 {
-  margin: 0;
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
+.rail-new-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 24px;
+  padding: 0 10px;
+  font-size: var(--fs-sm);
   font-weight: 500;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--ink-3);
+  color: var(--accent-fg);
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  cursor: pointer;
+  letter-spacing: 0;
+}
+.rail-new-btn:hover {
+  background: color-mix(in oklab, var(--accent) 88%, black);
+  border-color: color-mix(in oklab, var(--accent) 88%, black);
+}
+.rail-new-btn .rail-new-plus {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 1;
 }
 .rail-body {
   flex: 1;
@@ -314,6 +615,20 @@
   position: relative;
 }
 .rail-task:hover { background: var(--paper-3); }
+.rail-task[data-status="done"] { background: var(--paper-2); }
+.rail-task[data-status="done"] .rail-task-title {
+  text-decoration: line-through;
+  color: var(--ink-4);
+}
+.rail-task[data-status="done"] .rail-task-meta { color: var(--ink-4); }
+.rail-task[data-status="done"]::after {
+  content: '✓';
+  position: absolute;
+  right: 12px; top: 9px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--done);
+}
 .rail-task[data-blocker="true"]::before {
   content: '';
   position: absolute; left: 5px; top: 12px;
@@ -340,4 +655,33 @@
 .rail-task-meta .left {
   margin-left: auto;
   font-variant-numeric: tabular-nums;
+}
+.rail-task-meta .left[data-over="true"] {
+  color: var(--warn);
+}
+
+.rail-fill {
+  position: relative;
+  height: 4px;
+  background: var(--paper-3);
+  display: flex;
+  overflow: hidden;
+}
+.rail-fill-spent { height: 100%; }
+.rail-fill-planned { height: 100%; }
+.rail-fill-over {
+  height: 100%;
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--warn), var(--warn) 2px,
+    color-mix(in oklab, var(--warn) 50%, var(--paper)) 2px,
+    color-mix(in oklab, var(--warn) 50%, var(--paper)) 4px
+  );
+}
+.rail-fill-est-line {
+  position: absolute;
+  top: -1px; bottom: -1px;
+  width: 1px;
+  background: var(--ink-2);
+  pointer-events: none;
 }

@@ -502,7 +502,7 @@ async fn seed_blocks(tx: &mut Transaction<'_, Postgres>) -> sqlx::Result<()> {
         (1, 9 * 60, 120, "t_atlas_oauth", "completed"),
         (1, 11 * 60 + 30, 90, "t_helix_emb", "completed"),
         (1, 14 * 60, 90, "t_relay_jira", "completed"),
-        (1, 16 * 60, 60, "t_atlas_review", "skipped"),
+        (1, 16 * 60, 60, "t_atlas_review", "planned"),
         // WED (today)
         (2, 9 * 60, 90, "t_atlas_oauth", "completed"),
         (2, 11 * 60, 60, "t_atlas_billing", "planned"),

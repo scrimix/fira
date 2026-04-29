@@ -122,14 +122,6 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   color: var(--ink);
 }
 .topbar .grow { flex: 1; }
-.topbar .outbox-pill {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--ink-3);
-  border: 1px solid var(--rule-2);
-  padding: 2px 6px;
-  letter-spacing: 0.04em;
-}
 
 .kbd {
   display: inline-grid; place-items: center;

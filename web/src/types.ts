@@ -7,7 +7,7 @@ export type Section = 'now' | 'later' | 'done';
 export type Status = 'backlog' | 'todo' | 'in_progress' | 'done';
 export type Priority = 'p0' | 'p1' | 'p2' | 'p3';
 export type Source = 'local' | 'jira' | 'notion';
-export type BlockState = 'planned' | 'completed' | 'skipped';
+export type BlockState = 'planned' | 'completed';
 
 export interface User {
   id: UUID;

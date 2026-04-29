@@ -10,7 +10,9 @@ for path in \
   /workspace/web/node_modules \
   /workspace/api/target \
   /home/vscode/.cargo/registry \
-  /home/vscode/.cargo
+  /home/vscode/.cargo \
+  /home/vscode/.claude \
+  /home/vscode/.vscode-server
 do
   if [ -d "$path" ]; then
     chown -R vscode:vscode "$path" || echo "warn: chown $path failed (continuing)"

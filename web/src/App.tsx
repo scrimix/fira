@@ -5,12 +5,14 @@ import { TopBar } from './components/TopBar';
 import { CalendarView } from './components/CalendarView';
 import { InboxView } from './components/InboxView';
 import { TaskModal } from './components/TaskModal';
+import { TaskModalDraft } from './components/TaskModalDraft';
 
 export default function App() {
   const loaded = useFira((s) => s.loaded);
   const error = useFira((s) => s.error);
   const view = useFira((s) => s.view);
   const openTaskId = useFira((s) => s.openTaskId);
+  const creatingDraft = useFira((s) => s.creatingDraft);
   const hydrate = useFira((s) => s.hydrate);
 
   useEffect(() => {
@@ -21,7 +23,10 @@ export default function App() {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
       if (t?.matches('input, textarea, [contenteditable="true"]')) return;
-      if (e.key === 'Escape') useFira.getState().openTask(null);
+      if (e.key === 'Escape') {
+        useFira.getState().openTask(null);
+        useFira.getState().closeCreate();
+      }
       if (e.key === 'g') useFira.getState().setView('calendar');
       if (e.key === 'i') useFira.getState().setView('inbox');
     };
@@ -57,6 +62,7 @@ export default function App() {
         {view === 'calendar' ? <CalendarView /> : <InboxView />}
       </div>
       {openTaskId && <TaskModal taskId={openTaskId} />}
+      {creatingDraft && !openTaskId && <TaskModalDraft draft={creatingDraft} />}
     </div>
   );
 }

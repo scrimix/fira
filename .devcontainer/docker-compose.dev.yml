@@ -23,6 +23,8 @@ services:
       - dev-cargo-cache:/home/vscode/.cargo/registry
       - dev-cargo-target:/workspace/api/target
       - dev-node-modules:/workspace/web/node_modules
+      - dev-claude:/home/vscode/.claude
+      - dev-vscode-server:/home/vscode/.vscode-server
     environment:
       DATABASE_URL: postgres://fira:fira@postgres:5432/fira
       RUST_LOG: info,sqlx=warn,tower_http=info
@@ -45,3 +47,5 @@ volumes:
   dev-cargo-cache:
   dev-cargo-target:
   dev-node-modules:
+  dev-claude:
+  dev-vscode-server:

@@ -1,12 +1,32 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useFira } from '../store';
 import {
   HOURS, DAY_LABELS, TODAY_DAY_INDEX, NOW_TIME_MIN,
-  blockToGrid, fmtClockShort, fmtMin, taskCompletedMin, taskPlannedMin, taskTimeLeft,
+  blockToGrid, gridToBlock, fmtClockShort, fmtMin, taskCompletedMin, taskPlannedMin, taskTimeLeft,
+  weekStartFor, dayOfMonthFor,
 } from '../time';
 import type { Project, Task, TimeBlock, GcalEvent, UUID } from '../types';
 
 const HOUR_H = 56;
+const SNAP_MIN = 15;
+const RESIZE_EDGE_PX = 6;
+const CLICK_THRESHOLD_PX = 4;
+
+interface DragState {
+  blockId: UUID;
+  taskId: UUID;
+  mode: 'move' | 'resize-top' | 'resize-bottom';
+  startX: number;
+  startY: number;
+  origStartMin: number;
+  origDurMin: number;
+  origDay: number;
+  curStartMin: number;
+  curDurMin: number;
+  curDay: number;
+  moved: boolean;
+  pointerId: number;
+}
 
 interface PlacedBlock {
   block: TimeBlock;
@@ -19,7 +39,7 @@ interface PlacedBlock {
   lanes: number;
 }
 
-function placeBlocks(blocks: TimeBlock[], tasks: Task[], projects: Project[]): PlacedBlock[] {
+function placeBlocks(blocks: TimeBlock[], tasks: Task[], projects: Project[], weekStartMs: number): PlacedBlock[] {
   const taskById = new Map(tasks.map((t) => [t.id, t]));
   const projById = new Map(projects.map((p) => [p.id, p]));
 
@@ -34,7 +54,7 @@ function placeBlocks(blocks: TimeBlock[], tasks: Task[], projects: Project[]): P
     if (!t) continue;
     const p = projById.get(t.project_id);
     if (!p) continue;
-    const { day, start_min, dur_min } = blockToGrid(b.start_at, b.end_at);
+    const { day, start_min, dur_min } = blockToGrid(b.start_at, b.end_at, weekStartMs);
     if (day < 0 || day > 6) continue;
     const arr = byDay.get(day) ?? [];
     arr.push({ block: b, task: t, project: p, day, start_min, dur_min });
@@ -44,22 +64,42 @@ function placeBlocks(blocks: TimeBlock[], tasks: Task[], projects: Project[]): P
   const placed: PlacedBlock[] = [];
   for (const [, items] of byDay) {
     items.sort((a, b) => a.start_min - b.start_min || b.dur_min - a.dur_min);
-    const lanes: Array<{ end: number }> = [];
-    const assigned: Array<{ idx: number; lane: number }> = [];
-    items.forEach((it, idx) => {
-      let lane = lanes.findIndex((l) => l.end <= it.start_min);
-      if (lane === -1) {
-        lanes.push({ end: it.start_min + it.dur_min });
-        lane = lanes.length - 1;
-      } else {
-        lanes[lane].end = it.start_min + it.dur_min;
+    // Cluster items into connected overlap groups so non-overlapping items
+    // each get full width and only actually-overlapping ones split.
+    let cluster: typeof items = [];
+    let clusterEnd = -Infinity;
+    const flush = () => {
+      if (!cluster.length) return;
+      const lanes: number[] = [];
+      const assigned: Array<{ it: typeof items[number]; lane: number }> = [];
+      for (const it of cluster) {
+        let lane = lanes.findIndex((end) => end <= it.start_min);
+        if (lane === -1) {
+          lanes.push(it.start_min + it.dur_min);
+          lane = lanes.length - 1;
+        } else {
+          lanes[lane] = it.start_min + it.dur_min;
+        }
+        assigned.push({ it, lane });
       }
-      assigned.push({ idx, lane });
-    });
-    const totalLanes = lanes.length;
-    assigned.forEach(({ idx, lane }) => {
-      placed.push({ ...items[idx], lane, lanes: totalLanes });
-    });
+      const total = lanes.length;
+      for (const { it, lane } of assigned) {
+        placed.push({ ...it, lane, lanes: total });
+      }
+      cluster = [];
+      clusterEnd = -Infinity;
+    };
+    for (const it of items) {
+      if (cluster.length === 0 || it.start_min < clusterEnd) {
+        cluster.push(it);
+        clusterEnd = Math.max(clusterEnd, it.start_min + it.dur_min);
+      } else {
+        flush();
+        cluster.push(it);
+        clusterEnd = it.start_min + it.dur_min;
+      }
+    }
+    flush();
   }
   return placed;
 }
@@ -70,19 +110,145 @@ export function CalendarView() {
   const gcal = useFira((s) => s.gcal);
   const projects = useFira((s) => s.projects);
   const projectFilter = useFira((s) => s.projectFilter);
-  const selectedPersonId = useFira((s) => s.selectedPersonId);
+  const selectedPersonIds = useFira((s) => s.selectedPersonIds);
+  const activePersonId = useFira((s) => s.activePersonId);
   const toggleProjectFilter = useFira((s) => s.toggleProjectFilter);
   const openTask = useFira((s) => s.openTask);
   const updateBlock = useFira((s) => s.updateBlock);
+  const deleteBlock = useFira((s) => s.deleteBlock);
+  const upsertBlock = useFira((s) => s.upsertBlock);
+  const duplicateBlock = useFira((s) => s.duplicateBlock);
+  const users = useFira((s) => s.users);
+  const meId = useFira((s) => s.meId);
+  const addPerson = useFira((s) => s.addPerson);
+  const removePerson = useFira((s) => s.removePerson);
+  const setActivePerson = useFira((s) => s.setActivePerson);
+  const weekOffset = useFira((s) => s.weekOffset);
+  const setWeekOffset = useFira((s) => s.setWeekOffset);
+  const weekStartMs = weekStartFor(weekOffset);
+  const isCurrentWeek = weekOffset === 0;
   const gridRef = useRef<HTMLDivElement>(null);
+  const innerGridRef = useRef<HTMLDivElement>(null);
+  const [drag, setDrag] = useState<DragState | null>(null);
+  const dragRef = useRef<DragState | null>(null);
+  dragRef.current = drag;
+  const [dropPreview, setDropPreview] = useState<{
+    day: number; start_min: number; dur_min: number;
+  } | null>(null);
+  const [draggedTaskId, setDraggedTaskId] = useState<UUID | null>(null);
+  const [lastBlockId, setLastBlockId] = useState<UUID | null>(null);
 
   useEffect(() => {
     if (gridRef.current) gridRef.current.scrollTop = 7 * HOUR_H - 12;
   }, []);
 
+  const colGeometry = () => {
+    const g = innerGridRef.current;
+    if (!g) return null;
+    const rect = g.getBoundingClientRect();
+    const gutter = 56;
+    return { left: rect.left + gutter, top: rect.top + 44, width: (rect.width - gutter) / 7 };
+  };
+
+  const onBlockPointerDown = (e: React.PointerEvent, b: TimeBlock, taskId: UUID) => {
+    if (e.button !== 0) return;
+    if ((e.target as HTMLElement).closest('.tb-action')) return;
+    // Capture grid coordinates against the *visible* week so the drop's
+    // gridToBlock(weekStartMs) round-trips to the same absolute time.
+    const { day, start_min, dur_min } = blockToGrid(b.start_at, b.end_at, weekStartMs);
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const offsetY = e.clientY - rect.top;
+    const offsetFromBottom = rect.bottom - e.clientY;
+    let mode: DragState['mode'] = 'move';
+    if (offsetFromBottom <= RESIZE_EDGE_PX) mode = 'resize-bottom';
+    else if (offsetY <= RESIZE_EDGE_PX) mode = 'resize-top';
+    e.preventDefault();
+    setDrag({
+      blockId: b.id, mode,
+      startX: e.clientX, startY: e.clientY,
+      origStartMin: start_min, origDurMin: dur_min, origDay: day,
+      curStartMin: start_min, curDurMin: dur_min, curDay: day,
+      moved: false,
+      pointerId: e.pointerId,
+      taskId,
+    });
+  };
+
+  // Document-level pointer listeners while a drag is active. Using window
+  // events avoids losing the drag if the block element re-renders into a
+  // different day column (which unmounts the source and would lose pointer
+  // capture).
+  useEffect(() => {
+    if (!drag) return;
+    const snap = (m: number) => Math.round(m / SNAP_MIN) * SNAP_MIN;
+
+    const onMove = (e: PointerEvent) => {
+      const d = dragRef.current;
+      if (!d || e.pointerId !== d.pointerId) return;
+      const dy = e.clientY - d.startY;
+      const dx = e.clientX - d.startX;
+      const moved = d.moved || Math.hypot(dx, dy) >= CLICK_THRESHOLD_PX;
+      const dMin = Math.round((dy / HOUR_H) * 60);
+
+      let curStartMin = d.origStartMin;
+      let curDurMin = d.origDurMin;
+      let curDay = d.origDay;
+
+      if (d.mode === 'move') {
+        curStartMin = Math.max(0, Math.min(24 * 60 - d.origDurMin, snap(d.origStartMin + dMin)));
+        const geom = colGeometry();
+        if (geom && geom.width > 0) {
+          const dayShift = Math.round((e.clientX - d.startX) / geom.width);
+          curDay = Math.max(0, Math.min(6, d.origDay + dayShift));
+        }
+      } else if (d.mode === 'resize-bottom') {
+        curDurMin = Math.max(SNAP_MIN, Math.min(24 * 60 - d.origStartMin, snap(d.origDurMin + dMin)));
+      } else {
+        const end = d.origStartMin + d.origDurMin;
+        const clamped = Math.max(0, Math.min(end - SNAP_MIN, snap(d.origStartMin + dMin)));
+        curStartMin = clamped;
+        curDurMin = end - clamped;
+      }
+
+      if (
+        curStartMin !== d.curStartMin || curDurMin !== d.curDurMin ||
+        curDay !== d.curDay || moved !== d.moved
+      ) {
+        setDrag({ ...d, curStartMin, curDurMin, curDay, moved });
+      }
+    };
+
+    const onUp = (e: PointerEvent) => {
+      const d = dragRef.current;
+      if (!d || e.pointerId !== d.pointerId) return;
+      if (d.moved) {
+        if (
+          d.curStartMin !== d.origStartMin ||
+          d.curDurMin !== d.origDurMin ||
+          d.curDay !== d.origDay
+        ) {
+          const { start_at, end_at } = gridToBlock(d.curDay, d.curStartMin, d.curDurMin, weekStartMs);
+          updateBlock(d.blockId, { start_at, end_at });
+        }
+      } else {
+        openTask(d.taskId);
+      }
+      setDrag(null);
+    };
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+    };
+  }, [drag?.blockId, drag?.pointerId, openTask, updateBlock]);
+
   const myBlocks = useMemo(
-    () => blocks.filter((b) => b.user_id === selectedPersonId),
-    [blocks, selectedPersonId],
+    () => blocks.filter((b) => b.user_id === activePersonId),
+    [blocks, activePersonId],
   );
   const visibleBlocks = useMemo(() => {
     return myBlocks.filter((b) => {
@@ -92,8 +258,8 @@ export function CalendarView() {
     });
   }, [myBlocks, tasks, projectFilter]);
   const placed = useMemo(
-    () => placeBlocks(visibleBlocks, tasks, projects),
-    [visibleBlocks, tasks, projects],
+    () => placeBlocks(visibleBlocks, tasks, projects, weekStartMs),
+    [visibleBlocks, tasks, projects, weekStartMs],
   );
 
   const totalMin = myBlocks.reduce((s, b) => s + dur(b), 0);
@@ -107,10 +273,59 @@ export function CalendarView() {
     return { project: p, mins, pct: totalMin ? (mins / totalMin) * 100 : 0 };
   });
 
-  const myGcal = gcal.filter((g) => g.user_id === selectedPersonId);
+  const myGcal = gcal.filter((g) => g.user_id === activePersonId);
 
   const tickBlock = (b: TimeBlock) => {
     updateBlock(b.id, { state: b.state === 'completed' ? 'planned' : 'completed' });
+  };
+
+  const snap = (m: number) => Math.round(m / SNAP_MIN) * SNAP_MIN;
+  const dayDropStartMin = (e: React.DragEvent) => {
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const y = e.clientY - rect.top;
+    return Math.max(0, Math.min(24 * 60 - SNAP_MIN, snap((y / HOUR_H) * 60)));
+  };
+  const taskDurFor = (taskId: UUID | null): number => {
+    const fallback = 60;
+    if (!taskId) return fallback;
+    const t = tasks.find((x) => x.id === taskId);
+    if (!t) return fallback;
+    const left = taskTimeLeft(t, blocks);
+    return snap(Math.min(120, Math.max(SNAP_MIN, left || fallback)));
+  };
+  const onDayDragOver = (e: React.DragEvent, day: number) => {
+    if (!e.dataTransfer.types.includes('application/x-fira-task')) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    const dur = taskDurFor(draggedTaskId);
+    const start_min = dayDropStartMin(e);
+    setDropPreview({ day, start_min, dur_min: Math.min(dur, 24 * 60 - start_min) });
+  };
+  const onDayDrop = (e: React.DragEvent, day: number) => {
+    if (!e.dataTransfer.types.includes('application/x-fira-task')) return;
+    e.preventDefault();
+    const taskId = e.dataTransfer.getData('application/x-fira-task') || draggedTaskId;
+    setDropPreview(null);
+    setDraggedTaskId(null);
+    if (!taskId) return;
+    const t = tasks.find((x) => x.id === taskId);
+    if (!t) return;
+    // Block belongs to the task's assignee — falls back to the active person,
+    // then me, so dropping always produces a visible block.
+    const userId = t.assignee_id ?? activePersonId ?? meId;
+    if (!userId) return;
+    const dur = taskDurFor(taskId);
+    const start_min = dayDropStartMin(e);
+    const dur_min = Math.min(dur, 24 * 60 - start_min);
+    const { start_at, end_at } = gridToBlock(day, start_min, dur_min, weekStartMs);
+    upsertBlock({
+      id: crypto.randomUUID(),
+      task_id: t.id,
+      user_id: userId,
+      start_at,
+      end_at,
+      state: 'planned',
+    });
   };
 
   return (
@@ -152,22 +367,41 @@ export function CalendarView() {
 
       <div className="cal-main">
         <div className="cal-toolbar">
-          <span className="week-label">Apr 27 – May 3, 2026</span>
+          <div className="week-nav">
+            <button className="week-nav-btn" onClick={() => setWeekOffset(weekOffset - 1)}
+                    title="Previous week">‹</button>
+            <button className="week-nav-btn week-nav-today"
+                    onClick={() => setWeekOffset(0)}
+                    data-active={isCurrentWeek}
+                    title="Jump to current week">Today</button>
+            <button className="week-nav-btn" onClick={() => setWeekOffset(weekOffset + 1)}
+                    title="Next week">›</button>
+          </div>
+          <UserPicker
+            users={users}
+            meId={meId}
+            selectedPersonIds={selectedPersonIds}
+            activePersonId={activePersonId}
+            onAdd={addPerson}
+            onRemove={removePerson}
+            onSetActive={setActivePerson}
+          />
           <div className="totals">
             <span><strong>{fmtMin(completedMin)}</strong> done</span>
             <span><strong>{fmtMin(plannedMin)}</strong> planned</span>
             <span><strong>{fmtMin(totalMin)}</strong> total</span>
           </div>
         </div>
-        <div className="cal-grid-wrap" ref={gridRef} style={{ ['--hour-h' as string]: `${HOUR_H}px` }}>
-          <div className="cal-grid" style={{ height: 24 * HOUR_H + 44 }}>
+        <div className="cal-grid-wrap" ref={gridRef} style={{ ['--hour-h' as string]: `${HOUR_H}px` }}
+             data-dragging={drag?.moved ? 'true' : undefined}>
+          <div className="cal-grid" ref={innerGridRef} style={{ height: 24 * HOUR_H + 44 }}>
             <div className="cal-headcorner" />
             {DAY_LABELS.map((lbl, i) => (
               <div key={i} className="cal-dayhead"
-                   data-today={i === TODAY_DAY_INDEX}
+                   data-today={isCurrentWeek && i === TODAY_DAY_INDEX}
                    data-weekend={i >= 5}>
                 <span className="dow">{lbl}</span>
-                <span className="dnum">{27 + i > 30 ? 27 + i - 30 : 27 + i}</span>
+                <span className="dnum">{dayOfMonthFor(weekStartMs, i)}</span>
               </div>
             ))}
 
@@ -179,20 +413,37 @@ export function CalendarView() {
             </div>
 
             {DAY_LABELS.map((_, dayIdx) => {
-              const dayPlaced = placed.filter((p) => p.day === dayIdx);
-              const dayGcal = myGcal.filter((g) => blockToGrid(g.start_at, g.end_at).day === dayIdx);
-              const isToday = dayIdx === TODAY_DAY_INDEX;
+              const dayPlaced = placed.filter((p) => {
+                if (drag?.blockId === p.block.id) return drag.curDay === dayIdx;
+                return p.day === dayIdx;
+              });
+              const dayGcal = myGcal.filter((g) => blockToGrid(g.start_at, g.end_at, weekStartMs).day === dayIdx);
+              const isToday = isCurrentWeek && dayIdx === TODAY_DAY_INDEX;
               const isWeekend = dayIdx >= 5;
+              const showPreview = dropPreview?.day === dayIdx;
               return (
                 <div key={dayIdx} className="cal-daycol"
                      data-today={isToday} data-weekend={isWeekend}
-                     style={{ gridColumn: dayIdx + 2, gridRow: 2, height: 24 * HOUR_H, position: 'relative' }}>
+                     data-drop-target={showPreview ? 'true' : undefined}
+                     style={{ gridColumn: dayIdx + 2, gridRow: 2, height: 24 * HOUR_H, position: 'relative' }}
+                     onDragOver={(e) => onDayDragOver(e, dayIdx)}
+                     onDragLeave={(e) => {
+                       const next = e.relatedTarget as Node | null;
+                       if (!next || !(e.currentTarget as Node).contains(next)) setDropPreview(null);
+                     }}
+                     onDrop={(e) => onDayDrop(e, dayIdx)}>
                   {HOURS.flatMap((h) => [
                     <div key={`hl-${h}`} className="cal-hourline" style={{ top: h * HOUR_H }} />,
                     <div key={`hh-${h}`} className="cal-halfhourline" style={{ top: h * HOUR_H + HOUR_H / 2 }} />,
                   ])}
+                  {showPreview && dropPreview && (
+                    <div className="tblock-preview" style={{
+                      top: (dropPreview.start_min / 60) * HOUR_H,
+                      height: (dropPreview.dur_min / 60) * HOUR_H - 2,
+                    }} />
+                  )}
                   {dayGcal.map((g) => {
-                    const { start_min, dur_min } = blockToGrid(g.start_at, g.end_at);
+                    const { start_min, dur_min } = blockToGrid(g.start_at, g.end_at, weekStartMs);
                     return (
                       <div key={g.id} className="gcal-evt" style={{
                         top: (start_min / 60) * HOUR_H,
@@ -205,35 +456,74 @@ export function CalendarView() {
                   {isToday && (
                     <div className="cal-nowline" style={{ top: (NOW_TIME_MIN / 60) * HOUR_H }} />
                   )}
-                  {dayPlaced.map(({ block: b, task: t, project: p, start_min, dur_min, lane, lanes }) => (
-                    <div key={b.id} className="tblock"
-                         data-state={b.state}
-                         style={{
-                           top: (start_min / 60) * HOUR_H,
-                           height: (dur_min / 60) * HOUR_H - 2,
-                           ['--proj-color' as string]: p.color,
-                           left: `calc(${(lane / lanes) * 100}% + 1px)`,
-                           width: `calc(${100 / lanes}% - 2px)`,
-                         }}
-                         onClick={() => openTask(t.id)}
-                         onDoubleClick={(e) => { e.stopPropagation(); tickBlock(b); }}
-                         title={`${t.title} · ${fmtMin(dur_min)} · double-click to ${b.state === 'completed' ? 'unmark' : 'mark complete'}`}>
-                      <div className="tb-title">{t.title}</div>
-                      <div className="tb-meta">
-                        <span>{fmtClockShort(start_min)}</span>
-                        <span className="dot" />
-                        <span>{fmtMin(dur_min)}</span>
-                        {t.external_id && (<><span className="dot" /><span style={{ opacity: 0.7 }}>{t.external_id}</span></>)}
+                  {dayPlaced.map(({ block: b, task: t, project: p, start_min, dur_min, lane, lanes }) => {
+                    const isDragging = drag?.blockId === b.id;
+                    const sMin = isDragging ? drag.curStartMin : start_min;
+                    const dMin = isDragging ? drag.curDurMin : dur_min;
+                    const fullWidth = isDragging && drag.moved;
+                    return (
+                      <div key={b.id} className="tblock"
+                           data-state={b.state}
+                           data-task-done={t.status === 'done' ? 'true' : undefined}
+                           data-dragging={isDragging && drag.moved ? 'true' : undefined}
+                           data-short={dMin < 60 ? 'true' : undefined}
+                           data-active={lastBlockId === b.id ? 'true' : undefined}
+                           style={{
+                             top: (sMin / 60) * HOUR_H,
+                             height: (dMin / 60) * HOUR_H - 2,
+                             ['--proj-color' as string]: p.color,
+                             left: fullWidth ? '1px' : `calc(${(lane / lanes) * 100}% + 1px)`,
+                             width: fullWidth ? 'calc(100% - 2px)' : `calc(${100 / lanes}% - 2px)`,
+                           }}
+                           onPointerEnter={() => setLastBlockId(b.id)}
+                           onPointerDown={(e) => { setLastBlockId(b.id); onBlockPointerDown(e, b, t.id); }}
+                           title={t.status === 'done' && b.state === 'planned'
+                             ? `${t.title} · ${fmtMin(dMin)}\n\n⚠ Task is marked done, but this block is still planned. Delete the block or reopen the task.`
+                             : `${t.title} · ${fmtMin(dMin)}`}>
+                        <div className="tb-title">{t.title}</div>
+                        <div className="tb-meta">
+                          <span>{fmtClockShort(sMin)}</span>
+                          <span className="dot" />
+                          <span>{fmtMin(dMin)}</span>
+                          {t.external_id && (<><span className="dot" /><span style={{ opacity: 0.7 }}>{t.external_id}</span></>)}
+                        </div>
+                        <div className="tb-actions">
+                          <button className="tb-action tb-tick"
+                                  data-checked={b.state === 'completed'}
+                                  onPointerDown={(e) => e.stopPropagation()}
+                                  onClick={(e) => { e.stopPropagation(); tickBlock(b); }}
+                                  title={b.state === 'completed' ? 'Mark planned' : 'Mark complete'}>
+                            ✓
+                          </button>
+                          <button className="tb-action tb-dup"
+                                  onPointerDown={(e) => e.stopPropagation()}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const newId = duplicateBlock(b.id);
+                                    if (newId) setLastBlockId(newId);
+                                  }}
+                                  title="Duplicate (Ctrl+D)">
+                            ⎘
+                          </button>
+                          <button className="tb-action tb-close"
+                                  onPointerDown={(e) => e.stopPropagation()}
+                                  onClick={(e) => { e.stopPropagation(); deleteBlock(b.id); }}
+                                  title="Delete block">
+                            ×
+                          </button>
+                        </div>
+                        <div className="tb-resize tb-resize-top" />
+                        <div className="tb-resize tb-resize-bottom" />
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               );
             })}
           </div>
         </div>
       </div>
-      <CalRail />
+      <CalRail onDragTask={setDraggedTaskId} />
     </div>
   );
 }
@@ -242,26 +532,165 @@ function dur(b: TimeBlock): number {
   return Math.round((Date.parse(b.end_at) - Date.parse(b.start_at)) / 60000);
 }
 
-function CalRail() {
+function UserPicker({ users, meId, selectedPersonIds, activePersonId, onAdd, onRemove, onSetActive }: {
+  users: { id: UUID; name: string; initials: string; email: string }[];
+  meId: UUID | null;
+  selectedPersonIds: UUID[];
+  activePersonId: UUID | null;
+  onAdd: (id: UUID) => void;
+  onRemove: (id: UUID) => void;
+  onSetActive: (id: UUID) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [activeIdx, setActiveIdx] = useState(0);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const selectedSet = new Set(selectedPersonIds);
+  const orderedSelected = selectedPersonIds
+    .map((id) => users.find((u) => u.id === id))
+    .filter((u): u is typeof users[number] => !!u);
+
+  const q = query.trim().toLowerCase();
+  // Skip people already in the stack — adding them again is a no-op, and
+  // hiding them keeps the list short for orgs with many people.
+  const filtered = users.filter((u) => {
+    if (selectedSet.has(u.id)) return false;
+    if (q && !(u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q))) return false;
+    return true;
+  });
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { setOpen(false); }
+    };
+    document.addEventListener('mousedown', onDoc);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDoc);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (open) {
+      setQuery('');
+      setActiveIdx(0);
+      requestAnimationFrame(() => inputRef.current?.focus());
+    }
+  }, [open]);
+
+  useEffect(() => { setActiveIdx(0); }, [query]);
+
+  const pickFromSearch = (id: UUID) => {
+    onAdd(id); // adds to stack and sets active
+    setOpen(false);
+  };
+
+  return (
+    <div className="user-picker" ref={wrapRef}>
+      {orderedSelected.map((u) => {
+        const isActive = u.id === activePersonId;
+        const isMe = u.id === meId;
+        const isOnlyAndMe = orderedSelected.length === 1 && isMe;
+        return (
+          <span key={u.id} className="user-pill tab-pill"
+                data-active={isActive}
+                data-me={isMe}
+                onClick={() => onSetActive(u.id)}
+                title={isActive ? u.name : `Switch to ${u.name}`}>
+            <span className="avatar" data-me={isMe}>{u.initials}</span>
+            <span className="user-name">{isMe ? 'Me' : u.name.split(' ')[0]}</span>
+            {!isOnlyAndMe && (
+              <button className="user-pill-x"
+                      onClick={(e) => { e.stopPropagation(); onRemove(u.id); }}
+                      title={`Remove ${u.name}`}>×</button>
+            )}
+          </span>
+        );
+      })}
+      <button className="user-pill add-pill"
+              onClick={() => setOpen((v) => !v)}
+              title="Add person to switchable tabs">
+        <span className="user-name">+ Add</span>
+      </button>
+      {open && (
+        <div className="user-popover">
+          <input
+            ref={inputRef}
+            className="user-search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search people…"
+            onKeyDown={(e) => {
+              if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                setActiveIdx((i) => Math.min(filtered.length - 1, i + 1));
+              } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                setActiveIdx((i) => Math.max(0, i - 1));
+              } else if (e.key === 'Enter') {
+                e.preventDefault();
+                const u = filtered[activeIdx];
+                if (u) pickFromSearch(u.id);
+              }
+            }}
+          />
+          <div className="user-list">
+            {filtered.length === 0 ? (
+              <div className="user-empty">No matches.</div>
+            ) : filtered.map((u, i) => (
+              <button key={u.id} className="user-row"
+                      data-active={i === activeIdx}
+                      onMouseEnter={() => setActiveIdx(i)}
+                      onClick={() => pickFromSearch(u.id)}>
+                <span className="avatar" data-me={u.id === meId}>{u.initials}</span>
+                <span className="user-row-name">
+                  {u.name}{u.id === meId && <span className="user-row-you"> (you)</span>}
+                </span>
+                <span className="user-row-email">{u.email}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CalRail({ onDragTask }: { onDragTask: (id: UUID | null) => void }) {
   const tasks = useFira((s) => s.tasks);
   const blocks = useFira((s) => s.blocks);
   const projects = useFira((s) => s.projects);
-  const selectedPersonId = useFira((s) => s.selectedPersonId);
+  const projectFilter = useFira((s) => s.projectFilter);
+  const activePersonId = useFira((s) => s.activePersonId);
   const openTask = useFira((s) => s.openTask);
+  const openCreate = useFira((s) => s.openCreate);
 
-  const groups: Array<{ project: Project; tasks: Task[] }> = projects.map((p) => ({
-    project: p,
-    tasks: tasks.filter((t) =>
-      t.project_id === p.id &&
-      t.assignee_id === selectedPersonId &&
-      t.section !== 'done',
-    ),
-  })).filter((g) => g.tasks.length > 0);
+  const groups: Array<{ project: Project; tasks: Task[] }> = projects
+    .filter((p) => projectFilter[p.id] !== false)
+    .map((p) => ({
+      project: p,
+      tasks: tasks.filter((t) =>
+        t.project_id === p.id &&
+        t.assignee_id === activePersonId &&
+        t.section !== 'done',
+      ),
+    }))
+    .filter((g) => g.tasks.length > 0);
 
   return (
     <div className="cal-rail">
       <div className="rail-head">
-        <h3>Schedulable</h3>
+        <button className="rail-new-btn" onClick={() => openCreate()} title="New task">
+          <span className="rail-new-plus">+</span>
+          <span>New task</span>
+        </button>
       </div>
       <div className="rail-body">
         {groups.map((g) => (
@@ -274,26 +703,56 @@ function CalRail() {
             {g.tasks.map((t) => {
               const left = taskTimeLeft(t, blocks);
               const completed = taskCompletedMin(t, blocks);
+              const planned = taskPlannedMin(t, blocks);
               const blocker = isBlocker(t, blocks);
+              const est = t.estimate_min;
+              const total = est != null ? Math.max(est, completed + planned) : 0;
+              const compPct = total ? (completed / total) * 100 : 0;
+              const planPct = total ? (planned / total) * 100 : 0;
+              const estPct = est != null && total ? (est / total) * 100 : 100;
+              const overPct = Math.max(0, compPct + planPct - estPct);
+              const overSpent = est != null && completed > est;
+              const leftLabel = left == null ? 'no est'
+                : left < 0 ? `${fmtMin(-left)} over`
+                : left === 0 ? (overSpent ? `+${fmtMin(completed - (est ?? 0))} spent` : 'done')
+                : `${fmtMin(left)} left`;
               return (
                 <div key={t.id} className="rail-task"
                      data-status={t.status}
                      data-blocker={blocker}
+                     draggable
+                     onDragStart={(e) => {
+                       e.dataTransfer.effectAllowed = 'copy';
+                       e.dataTransfer.setData('application/x-fira-task', t.id);
+                       e.dataTransfer.setData('text/plain', t.title);
+                       onDragTask(t.id);
+                     }}
+                     onDragEnd={() => onDragTask(null)}
                      onClick={() => openTask(t.id)}
-                     title={blocker ? 'Silent blocker — no upcoming planned blocks' : ''}>
+                     title={blocker ? 'Silent blocker — no upcoming planned blocks' : 'Drag onto the calendar to schedule'}>
                   <div className="rail-task-body">
                     <div className="rail-task-title">{t.title}</div>
                     <div className="rail-task-meta">
                       {t.external_id && <span style={{ color: 'var(--ink-4)' }}>{t.external_id}</span>}
-                      <span className="left">{left != null ? `${fmtMin(left)} left` : 'no est'}</span>
+                      <span className="left" data-over={left != null && left < 0 ? 'true' : undefined}>
+                        {leftLabel}
+                      </span>
                     </div>
-                    {t.estimate_min && (
-                      <div style={{ height: 2, background: 'var(--paper-3)', marginTop: 4 }}>
-                        <div style={{
-                          height: '100%',
-                          width: `${Math.min(100, (completed / t.estimate_min) * 100)}%`,
-                          background: g.project.color,
-                        }} />
+                    {est != null && (
+                      <div className="rail-fill" style={{ marginTop: 4 }}>
+                        <div className="rail-fill-spent"
+                             style={{ width: `${compPct}%`, background: g.project.color }} />
+                        <div className="rail-fill-planned"
+                             style={{
+                               width: `${planPct}%`,
+                               background: `color-mix(in oklab, ${g.project.color} 35%, var(--paper-3))`,
+                             }} />
+                        {overPct > 0 && (
+                          <div className="rail-fill-over" style={{ width: `${overPct}%` }} />
+                        )}
+                        {est != null && total > est && (
+                          <div className="rail-fill-est-line" style={{ left: `${estPct}%` }} />
+                        )}
                       </div>
                     )}
                   </div>
