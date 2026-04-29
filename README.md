@@ -48,7 +48,15 @@ fira/
 └── docs/                   # design docs
 ```
 
-## Quick start
+## Quick start — VS Code devcontainer
+
+Open the repo in VS Code and "Reopen in Container" — `.devcontainer/`
+provisions a Rust + Node + psql shell that shares the docker network with
+the api/web/postgres services, so `psql -h postgres`, `curl http://api:3000`
+all work from inside the shell. The post-start hook seeds the DB on first
+boot.
+
+## Quick start — plain compose
 
 Requires Docker (with the compose plugin).
 

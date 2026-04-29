@@ -1,0 +1,47 @@
+# Devcontainer-only overlay. Adds a `dev` service that VS Code attaches to.
+# It mounts the repo at /workspace and shares the docker network with the
+# real api/web/postgres services from the parent docker-compose.yml — so
+# from inside the dev shell `psql -h postgres`, `curl http://api:3000`,
+# and `curl http://web:5173` all work.
+
+services:
+  dev:
+    # Paths in this file are resolved relative to the *first* compose file's
+    # directory (the workspace root), not this file's directory — that's how
+    # docker compose -f file1 -f file2 merging works.
+    build:
+      context: ./.devcontainer
+      dockerfile: Dockerfile
+    init: true
+    # Start as root so we can chown the named volume mountpoints
+    # (docker creates them root-owned, but the workbench user is vscode).
+    # VS Code attaches as `vscode` via remoteUser in devcontainer.json,
+    # so the editor session and shells run as the unprivileged user.
+    entrypoint: /workspace/.devcontainer/entrypoint.sh
+    volumes:
+      - ./:/workspace:cached
+      - dev-cargo-cache:/home/vscode/.cargo/registry
+      - dev-cargo-target:/workspace/api/target
+      - dev-node-modules:/workspace/web/node_modules
+    environment:
+      DATABASE_URL: postgres://fira:fira@postgres:5432/fira
+      RUST_LOG: info,sqlx=warn,tower_http=info
+      VITE_API_PROXY_TARGET: http://api:3000
+      # libpq picks these up automatically — every `psql` call in this
+      # container connects to the compose postgres without prompts.
+      PGHOST: postgres
+      PGUSER: fira
+      PGPASSWORD: fira
+      PGDATABASE: fira
+      # Corepack prompts before downloading a different pnpm version; that
+      # blocks the post-create script. Suppressing it is safe here because
+      # web/package.json pins packageManager to pnpm@9.15.0.
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  dev-cargo-cache:
+  dev-cargo-target:
+  dev-node-modules:
