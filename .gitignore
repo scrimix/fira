@@ -1,0 +1,11 @@
+target/
+node_modules/
+.env
+.env.local
+*.log
+.DS_Store
+dist/
+build/
+.idea/
+.vscode/
+api/.sqlx/
