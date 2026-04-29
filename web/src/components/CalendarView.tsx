@@ -485,8 +485,10 @@ export function CalendarView() {
                           <span>{fmtClockShort(sMin)}</span>
                           <span className="dot" />
                           <span>{fmtMin(dMin)}</span>
-                          {t.external_id && (<><span className="dot" /><span style={{ opacity: 0.7 }}>{t.external_id}</span></>)}
                         </div>
+                        {t.external_id && (
+                          <div className="tb-extid">{t.external_id}</div>
+                        )}
                         <div className="tb-actions">
                           <button className="tb-action tb-tick"
                                   data-checked={b.state === 'completed'}

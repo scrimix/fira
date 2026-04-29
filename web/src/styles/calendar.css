@@ -384,20 +384,14 @@
   background: color-mix(in oklab, var(--proj-color, var(--ink)) 22%, var(--paper));
 }
 .tblock[data-state="completed"] .tb-title { text-decoration: line-through; opacity: 0.65; }
-/* Task is done AND this specific block already happened (completed) — fully
-   muted with hatched overlay, struck-through title. Closed work, archived. */
+/* Task is done AND this specific block already happened (completed) — muted
+   to read as archived. No diagonal hatch (gcal events already use that
+   pattern, don't want a visual collision). */
 .tblock[data-task-done="true"][data-state="completed"] {
-  background:
-    repeating-linear-gradient(
-      -45deg,
-      transparent, transparent 4px,
-      color-mix(in oklab, var(--proj-color, var(--ink)) 18%, transparent) 4px,
-      color-mix(in oklab, var(--proj-color, var(--ink)) 18%, transparent) 5px
-    ),
-    color-mix(in oklab, var(--proj-color, var(--ink)) 8%, var(--paper));
+  background: color-mix(in oklab, var(--proj-color, var(--ink)) 8%, var(--paper));
   border-color: color-mix(in oklab, var(--proj-color, var(--ink)) 50%, var(--paper-2));
   border-left-color: color-mix(in oklab, var(--proj-color, var(--ink)) 60%, var(--paper-2));
-  opacity: 0.85;
+  opacity: 0.75;
 }
 .tblock[data-task-done="true"][data-state="completed"] .tb-title {
   text-decoration: line-through;
@@ -510,6 +504,17 @@
   gap: 4px;
 }
 .tb-meta .dot { width: 3px; height: 3px; background: currentColor; border-radius: 50%; }
+.tb-extid {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--ink-3);
+  opacity: 0.75;
+  margin-top: auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tblock[data-short="true"] .tb-extid { display: none; }
 
 .tblock-preview {
   position: absolute;
