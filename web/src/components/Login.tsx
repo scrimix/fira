@@ -1,6 +1,43 @@
-import { loginUrl } from '../api';
+import { useEffect, useState } from 'react';
+import { api, loginUrl } from '../api';
 
 export function Login() {
+  // dev_auth gates the "Seed dev data" button; we only render it when the
+  // server has DEV_AUTH=1, so production builds never show it.
+  const [devAuth, setDevAuth] = useState(false);
+  const [seeding, setSeeding] = useState(false);
+  const [seedError, setSeedError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .authConfig()
+      .then((c) => {
+        if (!cancelled) setDevAuth(c.dev_auth);
+      })
+      .catch(() => {
+        // If config fails, treat as prod and hide the button. Login still works.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const onSeed = async () => {
+    if (seeding) return;
+    setSeeding(true);
+    setSeedError(null);
+    try {
+      await api.devSeed();
+      // Hard reload so /me runs against the new session cookie and the
+      // store hydrates from a clean state.
+      window.location.assign('/');
+    } catch (e) {
+      setSeedError(e instanceof Error ? e.message : String(e));
+      setSeeding(false);
+    }
+  };
+
   return (
     <div className="login-shell">
       <div className="login-card">
@@ -12,6 +49,22 @@ export function Login() {
         <a className="login-google" href={loginUrl}>
           <GoogleMark /> Continue with Google
         </a>
+        {devAuth && (
+          <>
+            <button
+              type="button"
+              className="login-dev"
+              onClick={onSeed}
+              disabled={seeding}
+            >
+              {seeding ? 'Seeding…' : 'Seed dev data & sign in'}
+            </button>
+            <p className="login-dev-hint">
+              Dev mode · wipes the database and signs you in as Maya.
+            </p>
+            {seedError && <p className="login-dev-error">{seedError}</p>}
+          </>
+        )}
       </div>
     </div>
   );

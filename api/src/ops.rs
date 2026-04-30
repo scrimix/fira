@@ -455,10 +455,12 @@ pub async fn get_changes(
 /// than what the user can currently see is harmless (they'll catch up if
 /// scope expands later).
 pub async fn current_cursor(pool: &PgPool) -> sqlx::Result<i64> {
-    let row: Option<(i64,)> = sqlx::query_as("SELECT MAX(seq) FROM processed_ops")
-        .fetch_optional(pool)
+    // MAX() over an empty table yields one row with a NULL value — decode
+    // as Option, not i64.
+    let row: (Option<i64>,) = sqlx::query_as("SELECT MAX(seq) FROM processed_ops")
+        .fetch_one(pool)
         .await?;
-    Ok(row.and_then(|(v,)| Some(v)).unwrap_or(0))
+    Ok(row.0.unwrap_or(0))
 }
 
 // --- log helper for non-/ops mutations (project create/update) ---

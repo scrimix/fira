@@ -16,6 +16,7 @@ mod db;
 mod error;
 mod models;
 mod ops;
+mod seed;
 
 use auth::{AuthConfig, AuthUser};
 use error::ApiResult;
@@ -209,10 +210,12 @@ async fn main() -> anyhow::Result<()> {
     let app = Router::new()
         .route("/health", get(health))
         .route("/me", get(auth::me))
+        .route("/auth/config", get(auth::config))
         .route("/auth/google/login", get(auth::google_login))
         .route("/auth/google/callback", get(auth::google_callback))
         .route("/auth/logout", post(auth::logout))
         .route("/auth/dev-login", get(auth::dev_login))
+        .route("/auth/dev-seed", post(auth::dev_seed))
         .route("/bootstrap", get(bootstrap))
         .route("/projects", get(projects).post(create_project))
         .route("/projects/:id", patch(update_project))

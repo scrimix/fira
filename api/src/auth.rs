@@ -127,6 +127,21 @@ async fn load_session_user(pool: &PgPool, sid: &str) -> sqlx::Result<Option<Auth
     Ok(Some(AuthUser { id, email, name, initials, avatar_url }))
 }
 
+// ---- /auth/config ----
+//
+// Public, unauthenticated config endpoint. Lets the login screen know
+// whether to render the "Seed dev data" affordance — we don't want that
+// button visible (or its endpoint reachable) in production.
+
+#[derive(Serialize)]
+pub struct AuthConfigResponse {
+    pub dev_auth: bool,
+}
+
+pub async fn config(State(s): State<AppState>) -> Json<AuthConfigResponse> {
+    Json(AuthConfigResponse { dev_auth: s.auth.dev_auth })
+}
+
 // ---- /me ----
 
 #[derive(Serialize)]
@@ -403,6 +418,52 @@ pub async fn dev_login(
     };
     let cookie = build_cookie(SESSION_COOKIE, sid, SESSION_DAYS * 86400, &s.auth);
     (jar.add(cookie), Redirect::to(&s.auth.app_base_url)).into_response()
+}
+
+// ---- /auth/dev-seed ----
+//
+// Dev-only convenience: wipe + reseed the fixture project, then drop a
+// session for the primary fixture user (Maya). Equivalent to running the
+// `seed` CLI binary and then `dev-login?email=maya@fira.dev`, but in one
+// click from the login page.
+//
+// Refuses to run unless DEV_AUTH=1, both as a guard against shipping it to
+// production and so the login UI can hide the button by reading /auth/config.
+
+pub async fn dev_seed(State(s): State<AppState>, jar: CookieJar) -> Response {
+    if !s.auth.dev_auth {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    let mut tx = match s.pool.begin().await {
+        Ok(t) => t,
+        Err(e) => {
+            tracing::error!("dev_seed begin failed: {e:?}");
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+    if let Err(e) = crate::seed::wipe(&mut tx).await {
+        tracing::error!("dev_seed wipe failed: {e:?}");
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
+    if let Err(e) = crate::seed::seed_all(&mut tx).await {
+        tracing::error!("dev_seed seed_all failed: {e:?}");
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
+    if let Err(e) = tx.commit().await {
+        tracing::error!("dev_seed commit failed: {e:?}");
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
+
+    let user_id = crate::seed::primary_user_id();
+    let sid = match create_session(&s.pool, user_id).await {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::error!("dev_seed session failed: {e:?}");
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+    let cookie = build_cookie(SESSION_COOKIE, sid, SESSION_DAYS * 86400, &s.auth);
+    (jar.add(cookie), StatusCode::NO_CONTENT).into_response()
 }
 
 // ---- helpers ----

@@ -38,6 +38,8 @@ export interface ChangesResponse {
 export const api = {
   me: () => req<User>('GET', '/me'),
   bootstrap: () => req<Bootstrap>('GET', '/bootstrap'),
+  authConfig: () => req<{ dev_auth: boolean }>('GET', '/auth/config'),
+  devSeed: () => req<void>('POST', '/auth/dev-seed'),
   logout: () => req<void>('POST', '/auth/logout'),
   createProject: (input: { title: string; icon: string; color: string }) =>
     req<import('./types').Project>('POST', '/projects', input),
