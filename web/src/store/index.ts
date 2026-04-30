@@ -133,6 +133,7 @@ interface FiraState {
   setTaskDescription: (taskId: UUID, description_md: string) => void;
   setTaskEstimate: (taskId: UUID, estimate_min: number | null) => void;
   setTaskExternalId: (taskId: UUID, external_id: string | null) => void;
+  setTaskExternalUrl: (taskId: UUID, external_url: string | null) => void;
   addSubtask: (taskId: UUID, title: string) => UUID | null;
   tickSubtask: (taskId: UUID, subId: UUID) => void;
   setSubtaskTitle: (taskId: UUID, subId: UUID, title: string) => void;
@@ -189,6 +190,8 @@ function applyOpToState(s: FiraState, op: AnyOpKind): Partial<FiraState> {
       return { tasks: s.tasks.map((t) => t.id === op.task_id ? { ...t, description_md: op.description_md } : t) };
     case 'task.set_external_id':
       return { tasks: s.tasks.map((t) => t.id === op.task_id ? { ...t, external_id: op.external_id } : t) };
+    case 'task.set_external_url':
+      return { tasks: s.tasks.map((t) => t.id === op.task_id ? { ...t, external_url: op.external_url } : t) };
     case 'task.reorder': {
       const newKeyById = new Map<string, string>();
       op.ordered.forEach((id, i) => {
@@ -591,6 +594,7 @@ export const useFira = create<FiraState>((set, get) => ({
       priority: null,
       source: project.source,
       external_id: null,
+      external_url: null,
       estimate_min: null,
       spent_min: 0,
       tags: [],
@@ -668,6 +672,15 @@ export const useFira = create<FiraState>((set, get) => ({
     set((s) => ({
       tasks: s.tasks.map((x) => x.id === taskId ? { ...x, external_id: next } : x),
       ...pushOp(s, { kind: 'task.set_external_id', task_id: taskId, external_id: next }),
+    }));
+  },
+
+  setTaskExternalUrl: (taskId, external_url) => {
+    const trimmed = external_url?.trim() ?? '';
+    const next = trimmed === '' ? null : trimmed;
+    set((s) => ({
+      tasks: s.tasks.map((x) => x.id === taskId ? { ...x, external_url: next } : x),
+      ...pushOp(s, { kind: 'task.set_external_url', task_id: taskId, external_url: next }),
     }));
   },
 

@@ -18,6 +18,7 @@ export function TaskModalDraft({ draft }: Props) {
   const setTaskDescription = useFira((s) => s.setTaskDescription);
   const setTaskEstimate = useFira((s) => s.setTaskEstimate);
   const setTaskExternalId = useFira((s) => s.setTaskExternalId);
+  const setTaskExternalUrl = useFira((s) => s.setTaskExternalUrl);
   const addSubtask = useFira((s) => s.addSubtask);
 
   const [projectId, setProjectId] = useState<UUID | ''>(
@@ -33,6 +34,7 @@ export function TaskModalDraft({ draft }: Props) {
   const [description, setDescription] = useState('');
   const [estimateText, setEstimateText] = useState('');
   const [externalId, setExternalId] = useState('');
+  const [externalUrl, setExternalUrl] = useState('');
   const [subtasks, setSubtasks] = useState<DraftSubtask[]>([]);
 
   const sourceLabel = project
@@ -62,6 +64,7 @@ export function TaskModalDraft({ draft }: Props) {
     if (description.trim()) setTaskDescription(id, description);
     if (estimateMin != null && estimateMin > 0) setTaskEstimate(id, estimateMin);
     if (externalId.trim()) setTaskExternalId(id, externalId.trim());
+    if (externalUrl.trim()) setTaskExternalUrl(id, externalUrl.trim());
     for (const s of subtasks) {
       const t = s.title.trim();
       if (t) addSubtask(id, t);
@@ -163,9 +166,11 @@ export function TaskModalDraft({ draft }: Props) {
             </div>
             <div className="field">
               <h5>Issue link</h5>
-              <DraftExternalIdEditor
-                value={externalId}
-                onChange={setExternalId}
+              <DraftExternalLinkEditor
+                label={externalId}
+                url={externalUrl}
+                onChangeLabel={setExternalId}
+                onChangeUrl={setExternalUrl}
                 hasTemplate={!!project?.external_url_template}
                 template={project?.external_url_template ?? null}
               />
@@ -305,18 +310,24 @@ function DraftEstimateEditor({ text, onChange, invalid }: {
   );
 }
 
-function DraftExternalIdEditor({ value, onChange, hasTemplate, template }: {
-  value: string;
-  onChange: (v: string) => void;
+function DraftExternalLinkEditor({ label, url, onChangeLabel, onChangeUrl, hasTemplate, template }: {
+  label: string;
+  url: string;
+  onChangeLabel: (v: string) => void;
+  onChangeUrl: (v: string) => void;
   hasTemplate: boolean;
   template: string | null;
 }) {
   const [editing, setEditing] = useState(false);
-  const ref = useRef<HTMLInputElement>(null);
+  const labelRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => { if (editing) ref.current?.focus(); }, [editing]);
+  useEffect(() => { if (editing) labelRef.current?.focus(); }, [editing]);
 
-  const display = value.trim();
+  const trimmedLabel = label.trim();
+  const trimmedUrl = url.trim();
+  // Display: label takes precedence; URL alone is shown bare. Either alone
+  // is enough to consider the field "set".
+  const display = trimmedLabel ? `[${trimmedLabel}]` : trimmedUrl || '';
 
   if (!editing) {
     return (
@@ -326,26 +337,39 @@ function DraftExternalIdEditor({ value, onChange, hasTemplate, template }: {
              fontFamily: 'var(--font-mono)',
              fontSize: 12,
              color: display ? 'var(--ink)' : 'var(--ink-4)',
-           }}>
-        {display ? `[${display}]` : 'Click to set'}
+             wordBreak: 'break-all',
+           }}
+           title={template ? `Project template: ${template}` : undefined}>
+        {display || 'Click to set'}
       </div>
     );
   }
 
   return (
-    <input
-      ref={ref}
-      className="side-input"
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      onBlur={() => setEditing(false)}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') { e.preventDefault(); setEditing(false); }
-        else if (e.key === 'Escape') { onChange(''); setEditing(false); }
-      }}
-      placeholder={hasTemplate ? 'e.g. BDS-345' : 'Optional id'}
-      title={template ? `Resolved via ${template}` : 'No URL template on this project — saved as plain text.'}
-    />
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <input
+        ref={labelRef}
+        className="side-input"
+        value={label}
+        onChange={(e) => onChangeLabel(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') { e.preventDefault(); setEditing(false); }
+          else if (e.key === 'Escape') { onChangeLabel(''); onChangeUrl(''); setEditing(false); }
+        }}
+        placeholder={hasTemplate ? 'Label (e.g. BDS-345)' : 'Label (e.g. Design doc)'}
+      />
+      <input
+        className="side-input"
+        value={url}
+        onChange={(e) => onChangeUrl(e.target.value)}
+        onBlur={() => setEditing(false)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') { e.preventDefault(); setEditing(false); }
+          else if (e.key === 'Escape') { onChangeLabel(''); onChangeUrl(''); setEditing(false); }
+        }}
+        placeholder={hasTemplate ? 'URL (overrides template)' : 'URL (https://…)'}
+      />
+    </div>
   );
 }
 

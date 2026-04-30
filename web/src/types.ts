@@ -65,6 +65,9 @@ export interface Task {
   priority: Priority | null;
   source: Source;
   external_id: string | null;
+  /// Optional full URL — overrides the project's URL template at render
+  /// time. Set this for trackers without a `{key}` pattern (Notion, etc.).
+  external_url: string | null;
   estimate_min: number | null;
   spent_min: number;
   tags: string[];
