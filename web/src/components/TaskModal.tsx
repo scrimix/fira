@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pencil } from 'lucide-react';
 import { useFira } from '../store';
 import {
@@ -6,7 +6,7 @@ import {
   taskCompletedMin, taskPlannedMin, taskTimeLeft,
   blockToGrid,
 } from '../time';
-import type { Status } from '../types';
+import type { Status, User, UUID } from '../types';
 
 interface Props { taskId: string }
 
@@ -14,9 +14,6 @@ export function TaskModal({ taskId }: Props) {
   const task = useFira((s) => s.tasks.find((t) => t.id === taskId) ?? null);
   const project = useFira((s) =>
     task ? s.projects.find((p) => p.id === task.project_id) ?? null : null
-  );
-  const assignee = useFira((s) =>
-    task ? s.users.find((u) => u.id === task.assignee_id) ?? null : null
   );
   const blocks = useFira((s) => s.blocks);
   const users = useFira((s) => s.users);
@@ -32,6 +29,7 @@ export function TaskModal({ taskId }: Props) {
   const setTaskStatus = useFira((s) => s.setTaskStatus);
   const setTaskExternalId = useFira((s) => s.setTaskExternalId);
   const setTaskExternalUrl = useFira((s) => s.setTaskExternalUrl);
+  const setTaskAssignee = useFira((s) => s.setTaskAssignee);
 
   if (!task || !project) return null;
 
@@ -47,9 +45,6 @@ export function TaskModal({ taskId }: Props) {
     .map((b) => ({ b, ...blockToGrid(b.start_at, b.end_at) }))
     .sort((a, c) => Date.parse(a.b.start_at) - Date.parse(c.b.start_at));
 
-  const sourceLabel = task.source === 'jira' ? `Jira · ${task.external_id ?? 'unsynced'}`
-    : task.source === 'notion' ? `Notion · ${task.external_id ?? 'unsynced'}`
-    : 'Local task';
   // Per-task external_url wins over the project's template — it's the
   // escape hatch for trackers (Notion, GitHub, design docs) where there's
   // no stable {key} pattern. Falls back to template-fill of external_id.
@@ -68,8 +63,6 @@ export function TaskModal({ taskId }: Props) {
         <div className="modal-head">
           <span style={{ width: 10, height: 10, background: project.color, display: 'inline-block' }} />
           <span className="ext">{project.title}</span>
-          <span style={{ color: 'var(--ink-4)' }}>/</span>
-          <span className="ext">{sourceLabel}</span>
           <span className="grow" />
           <button className="icon-btn" onClick={() => close(null)} title="Close (Esc)">×</button>
         </div>
@@ -168,12 +161,16 @@ export function TaskModal({ taskId }: Props) {
                 {project.title}
               </span>
             } />
-            <Field label="Assignee" value={
-              <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                {assignee && <div className="avatar">{assignee.initials}</div>}
-                {assignee?.name ?? 'Unassigned'}
-              </span>
-            } />
+            <div className="field">
+              <h5>Assignee</h5>
+              <AssigneeEditor
+                key={task.id}
+                value={task.assignee_id}
+                users={users}
+                meId={meId}
+                onChange={(uid) => setTaskAssignee(task.id, uid)}
+              />
+            </div>
             <div className="field">
               <h5>Status</h5>
               <StatusEditor
@@ -182,7 +179,6 @@ export function TaskModal({ taskId }: Props) {
                 onChange={(v) => setTaskStatus(task.id, v)}
               />
             </div>
-            <Field label="Priority" mono value={task.priority ?? '—'} />
             <div className="field">
               <h5>Estimate</h5>
               <EstimateEditor
@@ -210,7 +206,6 @@ export function TaskModal({ taskId }: Props) {
                 onSaveUrl={(v) => setTaskExternalUrl(task.id, v)}
               />
             </div>
-            <Field label="Source" mono value={sourceLabel} />
             <Field label="Section" mono value={task.section} />
           </div>
         </div>
@@ -618,6 +613,134 @@ function ExternalLinkEditor({ label, url, resolvedUrl, hasTemplate, onSaveLabel,
         </span>
       )}
       <button className="icon-btn" onClick={() => setEditing(true)} title="Edit">
+        <Pencil size={12} strokeWidth={1.75} />
+      </button>
+    </div>
+  );
+}
+
+// Click-to-edit assignee picker — same affordance pattern as
+// ExternalLinkEditor: read-only display with a pencil affordance,
+// click pencil to open a searchable popover. Pressing Esc or clicking
+// outside cancels; picking a row commits.
+function AssigneeEditor({ value, users, meId, onChange }: {
+  value: UUID | null;
+  users: User[];
+  meId: UUID | null;
+  onChange: (id: UUID | null) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [query, setQuery] = useState('');
+  const [activeIdx, setActiveIdx] = useState(0);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const selected = users.find((u) => u.id === value) ?? null;
+
+  // Float me to the top — assigning to yourself is the common case.
+  const sorted = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return users
+      .filter((u) => !q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q))
+      .sort((a, b) => {
+        if (a.id === meId) return -1;
+        if (b.id === meId) return 1;
+        return a.name.localeCompare(b.name);
+      });
+  }, [users, query, meId]);
+
+  useEffect(() => {
+    if (!editing) return;
+    setQuery('');
+    setActiveIdx(0);
+    requestAnimationFrame(() => inputRef.current?.focus());
+  }, [editing]);
+
+  useEffect(() => { setActiveIdx(0); }, [query]);
+
+  useEffect(() => {
+    if (!editing) return;
+    const onDoc = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
+        setEditing(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setEditing(false); };
+    document.addEventListener('mousedown', onDoc);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDoc);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [editing]);
+
+  const pick = (id: UUID | null) => {
+    if (id !== value) onChange(id);
+    setEditing(false);
+  };
+
+  if (editing) {
+    return (
+      <div className="assignee-picker" ref={wrapRef}>
+        <div className="user-popover assignee-popover">
+          <input
+            ref={inputRef}
+            className="user-search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search people…"
+            onKeyDown={(e) => {
+              if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                setActiveIdx((i) => Math.min(sorted.length - 1, i + 1));
+              } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                setActiveIdx((i) => Math.max(0, i - 1));
+              } else if (e.key === 'Enter') {
+                e.preventDefault();
+                const u = sorted[activeIdx];
+                if (u) pick(u.id);
+              }
+            }}
+          />
+          <div className="user-list">
+            <button
+              className="user-row"
+              data-active={activeIdx === -1}
+              onClick={() => pick(null)}
+            >
+              <div className="avatar" data-empty="true">·</div>
+              <span className="user-row-name">Unassigned</span>
+            </button>
+            {sorted.map((u, i) => (
+              <button
+                key={u.id}
+                className="user-row"
+                data-active={i === activeIdx}
+                onClick={() => pick(u.id)}
+              >
+                <div className="avatar" data-me={u.id === meId}>{u.initials}</div>
+                <span className="user-row-name">{u.name}{u.id === meId ? ' (you)' : ''}</span>
+                <span className="user-row-email">{u.email}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        {selected
+          ? <>
+              <div className="avatar" data-me={selected.id === meId}>{selected.initials}</div>
+              <span>{selected.name}{selected.id === meId ? ' (you)' : ''}</span>
+            </>
+          : <span style={{ color: 'var(--ink-4)' }}>Unassigned</span>}
+      </span>
+      <button className="icon-btn" onClick={() => setEditing(true)} title="Change assignee">
         <Pencil size={12} strokeWidth={1.75} />
       </button>
     </div>

@@ -25,10 +25,46 @@ export function InboxView() {
   const addTask = useFira((s) => s.addTask);
   const openTask = useFira((s) => s.openTask);
   const openEditProject = useFira((s) => s.openEditProject);
+  const openCreateProject = useFira((s) => s.openCreateProject);
+  const myWorkspaceRole = useFira((s) => s.myWorkspaceRole);
+  const canCreateProject = myWorkspaceRole === 'owner';
 
   const project = projects.find((p) => p.id === inboxFilter.project_id);
+  // Workspace owner can edit any project; project leads can edit theirs.
+  // Members and outsiders see no pencil.
+  const myProjectMembership = project?.members.find((m) => m.user_id === meId) ?? null;
+  const canEditThisProject = myWorkspaceRole === 'owner'
+    || myProjectMembership?.role === 'lead';
   if (!project) {
-    return <div className="inbox"><div className="inbox-doc">No project selected.</div></div>;
+    // Three empty states:
+    //   - workspace has projects but none is selected → prompt to pick one
+    //   - workspace has no projects + caller can create → editorial CTA
+    //   - workspace has no projects + caller is a plain member → tell them
+    //     to ping an admin (membership in a workspace doesn't imply
+    //     project access; that has to be granted explicitly)
+    return (
+      <div className="inbox">
+        <div className="inbox-doc inbox-empty">
+          {projects.length > 0 ? (
+            <p className="inbox-empty-msg">Pick a project from the sidebar.</p>
+          ) : canCreateProject ? (
+            <div className="inbox-empty-cta">
+              <p className="inbox-empty-msg">This workspace has no projects yet.</p>
+              <button className="inbox-empty-link" onClick={openCreateProject}>
+                Create your first project
+              </button>
+            </div>
+          ) : (
+            <div className="inbox-empty-cta">
+              <p className="inbox-empty-msg">You're not a member of any project.</p>
+              <p className="inbox-empty-sub">
+                Ask a workspace admin to add you to one.
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+    );
   }
 
   const projectTasks = tasks.filter((t) => t.project_id === project.id);
@@ -37,9 +73,10 @@ export function InboxView() {
   const doneTasks = projectTasks.filter((t) => t.section === 'done').sort(byKey);
   // Caller floats to the top of the assignee groups; the rest stay in
   // membership order.
-  const assigneeIds = meId && project.members.includes(meId)
-    ? [meId, ...project.members.filter((u) => u !== meId)]
-    : project.members;
+  const memberIds = project.members.map((m) => m.user_id);
+  const assigneeIds = meId && memberIds.includes(meId)
+    ? [meId, ...memberIds.filter((u) => u !== meId)]
+    : memberIds;
 
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({ done: true });
   const [collapsedAssignee, setCollapsedAssignee] = useState<Record<UUID, boolean>>({});
@@ -135,13 +172,15 @@ export function InboxView() {
           <h1>{project.title}</h1>
           <div className="proj-actions">
             <span className="meta">
-              {project.source.toUpperCase()} · {projectTasks.length} tasks · {project.members.length} {project.members.length === 1 ? 'member' : 'members'}
+              {projectTasks.length} tasks · {project.members.length} {project.members.length === 1 ? 'member' : 'members'}
             </span>
-            <button className="icon-btn proj-edit-btn"
-                    onClick={() => openEditProject(project.id)}
-                    title="Edit project">
-              <Pencil size={14} strokeWidth={1.75} />
-            </button>
+            {canEditThisProject && (
+              <button className="icon-btn proj-edit-btn"
+                      onClick={() => openEditProject(project.id)}
+                      title="Edit project">
+                <Pencil size={14} strokeWidth={1.75} />
+              </button>
+            )}
             <button className="btn archive-btn"
                     onClick={archiveDone}
                     disabled={archivable.length === 0}
@@ -478,9 +517,6 @@ function TaskRow({
         ) : (
           <span style={{ color: 'var(--ink-4)' }}>no est</span>
         )}
-        <span className="src" title={task.source}>
-          {task.source === 'jira' ? 'J' : task.source === 'notion' ? 'N' : '·'}
-        </span>
       </div>
     </div>
   );

@@ -7,6 +7,7 @@ import { InboxView } from './components/InboxView';
 import { TaskModal } from './components/TaskModal';
 import { TaskModalDraft } from './components/TaskModalDraft';
 import { ProjectModal } from './components/ProjectModal';
+import { WorkspaceModal } from './components/WorkspaceModal';
 import { Login } from './components/Login';
 
 export default function App() {
@@ -18,11 +19,16 @@ export default function App() {
   const openTaskId = useFira((s) => s.openTaskId);
   const creatingDraft = useFira((s) => s.creatingDraft);
   const projectModal = useFira((s) => s.projectModal);
+  const workspaceModal = useFira((s) => s.workspaceModal);
   const syncOutbox = useFira((s) => s.syncOutbox);
   const pollChanges = useFira((s) => s.pollChanges);
   const editingProject = useFira((s) => {
     const m = s.projectModal;
     return m?.kind === 'edit' ? s.projects.find((p) => p.id === m.id) ?? null : null;
+  });
+  const editingWorkspace = useFira((s) => {
+    const m = s.workspaceModal;
+    return m?.kind === 'edit' ? s.workspaces.find((w) => w.id === m.id) ?? null : null;
   });
   const hydrate = useFira((s) => s.hydrate);
 
@@ -56,6 +62,7 @@ export default function App() {
         useFira.getState().openTask(null);
         useFira.getState().closeCreate();
         useFira.getState().closeProjectModal();
+        useFira.getState().closeWorkspaceModal();
       }
       if (e.key === 'g') useFira.getState().setView('calendar');
       if (e.key === 'i') useFira.getState().setView('inbox');
@@ -108,6 +115,10 @@ export default function App() {
       {projectModal?.kind === 'new' && <ProjectModal />}
       {projectModal?.kind === 'edit' && editingProject && (
         <ProjectModal key={editingProject.id} project={editingProject} />
+      )}
+      {workspaceModal?.kind === 'new' && <WorkspaceModal />}
+      {workspaceModal?.kind === 'edit' && editingWorkspace && (
+        <WorkspaceModal key={editingWorkspace.id} workspace={editingWorkspace} />
       )}
     </div>
   );

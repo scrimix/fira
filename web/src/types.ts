@@ -16,8 +16,29 @@ export interface User {
   initials: string;
 }
 
+export type WorkspaceRole = 'owner' | 'member';
+export type ProjectRole = 'lead' | 'member';
+
+export interface WorkspaceMember {
+  user_id: UUID;
+  role: WorkspaceRole;
+}
+
+export interface Workspace {
+  id: UUID;
+  title: string;
+  is_personal: boolean;
+  members: WorkspaceMember[];
+}
+
+export interface ProjectMember {
+  user_id: UUID;
+  role: ProjectRole;
+}
+
 export interface Project {
   id: UUID;
+  workspace_id: UUID;
   title: string;
   icon: string;
   color: string;
@@ -27,7 +48,7 @@ export interface Project {
   /// task's `external_id`. Null means no tracker — bare external_ids show
   /// as plain text instead of links.
   external_url_template: string | null;
-  members: UUID[];
+  members: ProjectMember[];
 }
 
 export interface Epic {

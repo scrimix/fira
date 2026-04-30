@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useFira } from '../store';
 import { fmtMin, parseEstimate } from '../time';
+import { Select } from './Select';
 import type { UUID } from '../types';
 
 interface DraftSubtask { localId: string; title: string; done: boolean }
@@ -36,12 +37,6 @@ export function TaskModalDraft({ draft }: Props) {
   const [externalId, setExternalId] = useState('');
   const [externalUrl, setExternalUrl] = useState('');
   const [subtasks, setSubtasks] = useState<DraftSubtask[]>([]);
-
-  const sourceLabel = project
-    ? (project.source === 'jira' ? 'Jira · new'
-       : project.source === 'notion' ? 'Notion · new'
-       : 'Local task')
-    : 'Local task';
 
   const estimateMin = parseEstimate(estimateText);
   const estimateInvalid = estimateText.trim() !== '' && estimateMin == null;
@@ -83,8 +78,6 @@ export function TaskModalDraft({ draft }: Props) {
             display: 'inline-block',
           }} />
           <span className="ext">{project?.title ?? 'No project'}</span>
-          <span style={{ color: 'var(--ink-4)' }}>/</span>
-          <span className="ext">{sourceLabel}</span>
           <span className="grow" />
           <span className="chip" data-tone="now">draft</span>
           <button className="icon-btn" onClick={closeCreate} title="Close (Esc)">×</button>
@@ -139,12 +132,11 @@ export function TaskModalDraft({ draft }: Props) {
           </div>
           <div className="modal-side">
             <Field label="Project" value={
-              <select className="side-select" value={projectId}
-                      onChange={(e) => setProjectId(e.target.value)}>
-                {projects.map((p) => (
-                  <option key={p.id} value={p.id}>{p.title}</option>
-                ))}
-              </select>
+              <Select<string>
+                value={projectId}
+                onChange={(v) => setProjectId(v)}
+                options={projects.map((p) => ({ value: p.id, label: p.title }))}
+              />
             } />
             <Field label="Assignee" value={
               <AssigneePicker
@@ -175,7 +167,6 @@ export function TaskModalDraft({ draft }: Props) {
                 template={project?.external_url_template ?? null}
               />
             </div>
-            <Field label="Source" mono value={sourceLabel} />
             <Field label="Section" value={
               <div className="create-seg">
                 <button data-active={section === 'now'} onClick={() => setSection('now')}>Now</button>

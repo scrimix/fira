@@ -87,6 +87,21 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   content: ''; position: absolute; left: 0; top: 4px; bottom: 4px;
   width: 2px; background: var(--accent);
 }
+/* Active project: a faint underline in the project's own color, just
+   under the icon. No background fill, no frame — quiet enough to read
+   as "selected" without competing with the accent stripe used by
+   Calendar/Inbox. Tone matches that project's blocks on the calendar. */
+.sidebar .nav-proj { position: relative; }
+.sidebar .nav-proj[data-proj-active="true"]::after {
+  content: '';
+  position: absolute;
+  left: 8px; right: 8px;
+  bottom: 4px;
+  height: 1.5px;
+  background: var(--proj-color);
+  border-radius: 1px;
+  opacity: 0.85;
+}
 .topbar .title-icon {
   margin-right: -2px;
   flex: none;
@@ -129,6 +144,19 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   color: var(--ink);
 }
 .topbar .grow { flex: 1; }
+/* TopBar right cluster: sync pill, user avatar, log-out button. All
+   three share `height: 22px` and a 1px outline so they read as one
+   row of paired chips instead of mismatched controls. */
+.topbar-me {
+  width: 22px; height: 22px;
+  background: var(--ink); color: var(--paper);
+  font-family: var(--font-mono);
+  font-size: 10px; font-weight: 600;
+  letter-spacing: 0.04em;
+  display: grid; place-items: center;
+  border: 1px solid var(--ink);
+  margin-left: 4px;
+}
 
 .kbd {
   display: inline-grid; place-items: center;
@@ -295,16 +323,19 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
 .np-label:first-child { margin-top: 0; }
 .np-title {
   width: 100%;
-  height: 36px;
-  padding: 0 12px;
+  /* Drop the fixed height so vertical padding is what sets the size —
+     keeps the cap-height comfortably away from the border on every font. */
+  padding: 9px 12px;
   border: 1px solid var(--rule-2);
   background: var(--paper);
   color: var(--ink);
   font-size: var(--fs-md);
   font-family: inherit;
+  line-height: 1.4;
   outline: none;
 }
 .np-title:focus { border-color: var(--accent-line); }
+.np-title::placeholder { color: var(--ink-4); }
 .np-icons {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -393,8 +424,7 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   background: var(--paper);
 }
 .np-member {
-  display: grid;
-  grid-template-columns: 22px 1fr auto;
+  display: flex;
   align-items: center;
   gap: 10px;
   padding: 6px 10px;
@@ -402,6 +432,18 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   font-size: var(--fs-sm);
   color: var(--ink);
 }
+.np-member .np-member-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.np-member .avatar { flex: none; }
+.np-member .np-member-tag,
+.np-member .np-member-x,
+.np-member .np-member-confirm,
+.np-member .select { flex: none; }
 .np-member:last-of-type { border-bottom: 0; }
 .np-member-owner { background: var(--paper-2); }
 .np-member-name { font-weight: 500; }
@@ -489,17 +531,20 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
 }
 
 .topbar .logout-btn {
+  display: inline-flex; align-items: center;
+  height: 22px;
+  padding: 0 8px;
   font-family: var(--font-mono);
-  font-size: var(--fs-xs);
+  font-size: 10px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--ink-3);
-  padding: 4px 10px;
-  border: 1px solid transparent;
+  border: 1px solid var(--rule-2);
+  background: var(--paper);
 }
 .topbar .logout-btn:hover {
   color: var(--ink);
-  border-color: var(--rule-2);
+  border-color: var(--rule-3);
 }
 
 /* Outbox sync status. Tone-based colors mirror the rest of the app:
@@ -547,7 +592,257 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   to { transform: rotate(360deg); }
 }
 
+.sync-pill-wrap { position: relative; display: inline-flex; }
+
+/* Popover that lists failed ops with per-op Retry / Discard. Sits to the
+   right of the pill and aligns to its top so it stays readable when the
+   pill is at the very edge of the topbar. */
+.sync-popover {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 1100;
+  min-width: 280px;
+  max-width: 360px;
+  background: var(--paper);
+  border: 1px solid var(--rule-2);
+  box-shadow: 0 6px 16px rgba(0,0,0,0.08);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-2);
+}
+.sync-popover-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--rule);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.sync-popover-head .grow { flex: 1; }
+.sync-popover-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  border: 1px solid var(--rule-2);
+  background: var(--paper);
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.sync-popover-action:hover { color: var(--ink); background: var(--paper-3); }
+.sync-popover-danger { color: var(--danger); border-color: #E8B6B6; }
+.sync-popover-danger:hover { color: var(--paper); background: var(--danger); }
+.sync-popover-list {
+  max-height: 240px;
+  overflow-y: auto;
+}
+.sync-popover-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--rule);
+}
+.sync-popover-row:last-child { border-bottom: 0; }
+.sync-popover-kind {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--ink);
+}
+.sync-popover-err { color: var(--danger); font-size: 10px; }
+.sync-popover-mini {
+  width: 22px; height: 22px;
+  display: grid; place-items: center;
+  border: 1px solid var(--rule-2);
+  background: var(--paper);
+  color: var(--ink-3);
+  cursor: pointer;
+  flex: none;
+}
+.sync-popover-mini:hover { color: var(--ink); background: var(--paper-3); }
+.sync-popover-foot {
+  padding: 6px 8px;
+  border-top: 1px solid var(--rule);
+  color: var(--ink-3);
+  font-size: 10px;
+}
+.sync-popover-foot span { color: var(--danger); }
+
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--rule-2); }
 ::-webkit-scrollbar-thumb:hover { background: var(--rule-3); }
+
+/* Workspace switcher — sits in the breadcrumb area of the TopBar, between
+   "Fira" and the page title. Reads as another breadcrumb segment so the
+   visual chain stays calm. */
+.ws-switcher {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+.ws-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.04em;
+  color: var(--ink-2);
+  padding: 2px 4px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+.ws-trigger:hover { color: var(--ink); background: var(--paper-3); }
+.ws-trigger .ws-title {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 220px;
+}
+.ws-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 220px;
+  z-index: 200;
+  background: var(--paper);
+  border: 1px solid var(--rule-2);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+  display: flex;
+  flex-direction: column;
+  padding: 4px 0;
+}
+.ws-menu-section {
+  padding: 4px 10px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+}
+.ws-menu-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  font-size: var(--fs-sm);
+  text-align: left;
+  background: transparent;
+  border: none;
+  width: 100%;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.ws-menu-row:hover { background: var(--paper-3); color: var(--ink); }
+.ws-menu-row[data-active="true"] { color: var(--ink); font-weight: 500; }
+.ws-menu-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ws-menu-tag {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+  border: 1px solid var(--rule-2);
+  padding: 0 4px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+}
+.ws-menu-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  font-size: var(--fs-sm);
+  color: var(--ink-3);
+  background: transparent;
+  border: none;
+  border-top: 1px solid var(--rule-2);
+  margin-top: 4px;
+  cursor: pointer;
+  text-align: left;
+}
+.ws-menu-add:hover { color: var(--ink); background: var(--paper-3); }
+
+/* Custom <Select>. Replaces the native dropdown so the option list
+   renders in the editorial palette instead of OS chrome. Two sizes:
+   `sm` for inline pickers (member-row roles), `md` for full-width form
+   fields (project switcher in task draft). */
+.select {
+  position: relative;
+  display: inline-block;
+  font-family: var(--font-mono);
+}
+.select-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--rule-2);
+  background: var(--paper);
+  color: var(--ink-2);
+  padding: 0 6px 0 8px;
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+}
+.select-trigger:hover { color: var(--ink); background: var(--paper-3); }
+.select-trigger:disabled { color: var(--ink-4); cursor: not-allowed; background: var(--paper-2); }
+.select-trigger .select-value {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.select-sm .select-trigger { height: 22px; font-size: 10px; letter-spacing: 0.04em; }
+.select-md .select-trigger { height: 28px; font-size: 12px; }
+.select-md { display: block; }
+.select-md .select-trigger { width: 100%; }
+.select-open .select-trigger { color: var(--ink); background: var(--paper-3); }
+.select-menu {
+  /* Positioning is set inline by the component (position: fixed +
+     measured top/left) so the popover can escape any ancestor with
+     overflow: auto. The default here is just z-index + chrome. */
+  z-index: 1200;
+  background: var(--paper);
+  border: 1px solid var(--rule-2);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+  display: flex;
+  flex-direction: column;
+  padding: 2px 0;
+  max-height: 260px;
+  overflow-y: auto;
+}
+.select-option {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  align-items: flex-start;
+  padding: 4px 10px;
+  background: transparent;
+  border: 0;
+  color: var(--ink-2);
+  font-family: var(--font-mono);
+  text-align: left;
+  cursor: pointer;
+}
+.select-option:hover { background: var(--paper-3); color: var(--ink); }
+.select-option[data-active="true"] { color: var(--ink); font-weight: 500; }
+.select-option:disabled { color: var(--ink-4); cursor: not-allowed; }
+.select-option-label { font-size: 12px; }
+.select-option-hint { font-size: 10px; color: var(--ink-4); }
