@@ -15,6 +15,7 @@ mod auth;
 mod db;
 mod error;
 mod models;
+mod ops;
 
 use auth::{AuthConfig, AuthUser};
 use error::ApiResult;
@@ -35,6 +36,9 @@ struct Bootstrap {
     tasks: Vec<Task>,
     blocks: Vec<TimeBlock>,
     gcal: Vec<GcalEvent>,
+    /// Initial cursor for the change feed. Clients should poll
+    /// `/changes?since=cursor` from this watermark forward.
+    cursor: i64,
 }
 
 async fn bootstrap(
@@ -42,7 +46,7 @@ async fn bootstrap(
     user: AuthUser,
 ) -> ApiResult<Json<Bootstrap>> {
     let scope = db::project_scope(&s.pool, user.id).await?;
-    let (users, projects, epics, sprints, tasks, blocks, gcal) = tokio::try_join!(
+    let (users, projects, epics, sprints, tasks, blocks, gcal, cursor) = tokio::try_join!(
         db::list_users_in_scope(&s.pool, &scope, user.id),
         db::list_projects_in_scope(&s.pool, &scope),
         db::list_epics_in_scope(&s.pool, &scope),
@@ -50,8 +54,9 @@ async fn bootstrap(
         db::list_tasks_in_scope(&s.pool, &scope),
         db::list_blocks_for_user(&s.pool, user.id),
         db::list_gcal_for_user(&s.pool, user.id),
+        ops::current_cursor(&s.pool),
     )?;
-    Ok(Json(Bootstrap { users, projects, epics, sprints, tasks, blocks, gcal }))
+    Ok(Json(Bootstrap { users, projects, epics, sprints, tasks, blocks, gcal, cursor }))
 }
 
 async fn projects(
@@ -80,7 +85,14 @@ async fn create_project(
         return Err(error::ApiError::BadRequest("color must be a hex string".into()));
     }
     validate_icon(&body.icon)?;
-    let project = db::create_project(&s.pool, user.id, title, &body.icon, &body.color).await?;
+    let mut tx = s.pool.begin().await?;
+    let project = db::create_project_tx(&mut tx, user.id, title, &body.icon, &body.color).await?;
+    // Log so peers viewing the same project see the new project show up in
+    // their next /changes poll. The synthesized op kind matches what the
+    // client knows how to apply.
+    let payload = serde_json::json!({ "kind": "project.create", "project": &project });
+    ops::record_synthesized_op(&mut tx, user.id, "project.create", payload, Some(project.id)).await?;
+    tx.commit().await?;
     Ok((StatusCode::CREATED, Json(project)))
 }
 
@@ -112,8 +124,9 @@ async fn update_project(
     if let Some(i) = body.icon.as_deref() {
         validate_icon(i)?;
     }
-    let project = db::update_project(
-        &s.pool,
+    let mut tx = s.pool.begin().await?;
+    let project = db::update_project_tx(
+        &mut tx,
         user.id,
         id,
         title,
@@ -122,6 +135,9 @@ async fn update_project(
     )
     .await?
     .ok_or(error::ApiError::NotFound)?;
+    let payload = serde_json::json!({ "kind": "project.update", "project": &project });
+    ops::record_synthesized_op(&mut tx, user.id, "project.update", payload, Some(project.id)).await?;
+    tx.commit().await?;
     Ok(Json(project))
 }
 
@@ -200,6 +216,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/bootstrap", get(bootstrap))
         .route("/projects", get(projects).post(create_project))
         .route("/projects/:id", patch(update_project))
+        .route("/ops", post(ops::post_ops))
+        .route("/changes", get(ops::get_changes))
         .with_state(state)
         .layer(cors)
         .layer(TraceLayer::new_for_http());

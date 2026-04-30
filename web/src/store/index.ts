@@ -9,7 +9,22 @@ import type {
   Bootstrap, Project, User, Epic, Sprint, Task, TimeBlock, GcalEvent, UUID, Section, Subtask, Status,
 } from '../types';
 import { api, HttpError } from '../api';
-import { newOp, type Op, type OpKind } from './outbox';
+import { newOp, type Op, type OpKind, type AnyOpKind, type ChangeEntry } from './outbox';
+
+// Sync state machine. The TopBar pill reads this directly.
+//   idle  — nothing queued, last attempt either succeeded or never ran
+//   syncing — a request is in flight
+//   error — last attempt failed; backoff is active until next retry
+//   offline — request failed with a network error (distinguished so we can
+//     show a different label and not pile up 'error' counts on transient
+//     loss-of-connection)
+export type SyncStatus =
+  | { kind: 'idle' }
+  | { kind: 'syncing' }
+  | { kind: 'error'; message: string; failedOpIds: UUID[] }
+  | { kind: 'offline'; message: string };
+
+const SYNC_BATCH_SIZE = 50;
 
 interface InboxFilter {
   project_id: UUID | null;
@@ -35,6 +50,18 @@ interface FiraState {
   gcal: GcalEvent[];
 
   outbox: Op[];
+  syncStatus: SyncStatus;
+  // Last successful sync wallclock time (ms since epoch), null if none yet.
+  lastSyncedAt: number | null;
+
+  // Change-feed state.
+  // `cursor` is the highest server-side `seq` we've ingested. Polls send
+  // it as `?since=cursor` and the server returns rows strictly after it.
+  cursor: number;
+  // `appliedOpIds` records op_ids this client already applied locally so
+  // when the server echoes them back via /changes we skip re-applying.
+  // Value is the wallclock timestamp at insertion — used for GC.
+  appliedOpIds: Map<string, number>;
 
   // session
   meId: UUID | null;
@@ -54,6 +81,15 @@ interface FiraState {
 
   hydrate: () => Promise<void>;
   logout: () => Promise<void>;
+  // Drain the outbox once. Safe to call concurrently — re-entrant calls
+  // bail out while a sync is in flight.
+  syncOutbox: () => Promise<void>;
+  // Pull change-feed rows since `cursor`, apply each through applyRemoteOp,
+  // advance cursor.
+  pollChanges: () => Promise<void>;
+  // Apply a remote op — upsert-tolerant for create kinds so an echo of an
+  // op the local client already created does nothing.
+  applyRemoteOp: (entry: ChangeEntry) => void;
   setView: (v: 'calendar' | 'inbox', projectId?: UUID) => void;
   addPerson: (id: UUID) => void;
   removePerson: (id: UUID) => void;
@@ -90,7 +126,118 @@ interface FiraState {
   deleteBlock: (blockId: UUID) => void;
 }
 
-const enqueue = (s: FiraState, payload: OpKind): Op[] => [...s.outbox, newOp(payload)];
+// Append a new op to the outbox AND record its op_id so when the server
+// echoes it back via /changes we know to skip re-applying it.
+function pushOp(s: FiraState, payload: OpKind): {
+  outbox: Op[];
+  appliedOpIds: Map<string, number>;
+} {
+  const op = newOp(payload);
+  const next = new Map(s.appliedOpIds);
+  next.set(op.op_id, Date.now());
+  return { outbox: [...s.outbox, op], appliedOpIds: next };
+}
+
+// Older than this and we drop the entry — the change feed will have
+// already passed by, so an echo can't reasonably arrive anymore.
+const APPLIED_TTL_MS = 5 * 60 * 1000;
+
+// Pure: produce a state delta from a remote op. Tolerant by design —
+// applying the same op twice (echo + local) must be a no-op, and applying
+// to deleted resources must not throw. Used by applyRemoteOp.
+function applyOpToState(s: FiraState, op: AnyOpKind): Partial<FiraState> {
+  switch (op.kind) {
+    case 'task.create': {
+      if (s.tasks.some((t) => t.id === op.task.id)) return {};
+      return { tasks: [...s.tasks, op.task] };
+    }
+    case 'task.tick': {
+      return {
+        tasks: s.tasks.map((t) => t.id === op.task_id
+          ? { ...t, status: op.done ? 'done' : 'in_progress' }
+          : t),
+      };
+    }
+    case 'task.set_status':
+      return { tasks: s.tasks.map((t) => t.id === op.task_id ? { ...t, status: op.status } : t) };
+    case 'task.set_section':
+      return { tasks: s.tasks.map((t) => t.id === op.task_id ? { ...t, section: op.section } : t) };
+    case 'task.set_assignee':
+      return { tasks: s.tasks.map((t) => t.id === op.task_id ? { ...t, assignee_id: op.assignee_id } : t) };
+    case 'task.set_estimate':
+      return { tasks: s.tasks.map((t) => t.id === op.task_id ? { ...t, estimate_min: op.estimate_min } : t) };
+    case 'task.set_title':
+      return { tasks: s.tasks.map((t) => t.id === op.task_id ? { ...t, title: op.title } : t) };
+    case 'task.set_description':
+      return { tasks: s.tasks.map((t) => t.id === op.task_id ? { ...t, description_md: op.description_md } : t) };
+    case 'task.reorder': {
+      const newKeyById = new Map<string, string>();
+      op.ordered.forEach((id, i) => {
+        newKeyById.set(id, String((i + 1) * 1000).padStart(8, '0'));
+      });
+      return {
+        tasks: s.tasks.map((t) => {
+          const k = newKeyById.get(t.id);
+          return k != null ? { ...t, sort_key: k } : t;
+        }),
+      };
+    }
+    case 'subtask.create': {
+      const t = s.tasks.find((x) => x.id === op.subtask.task_id);
+      if (!t) return {};
+      if (t.subtasks.some((st) => st.id === op.subtask.id)) return {};
+      return {
+        tasks: s.tasks.map((x) => x.id === op.subtask.task_id
+          ? { ...x, subtasks: [...x.subtasks, op.subtask] }
+          : x),
+      };
+    }
+    case 'subtask.tick':
+      return {
+        tasks: s.tasks.map((t) => ({
+          ...t,
+          subtasks: t.subtasks.map((st) => st.id === op.subtask_id ? { ...st, done: op.done } : st),
+        })),
+      };
+    case 'subtask.set_title':
+      return {
+        tasks: s.tasks.map((t) => ({
+          ...t,
+          subtasks: t.subtasks.map((st) => st.id === op.subtask_id ? { ...st, title: op.title } : st),
+        })),
+      };
+    case 'subtask.delete':
+      return {
+        tasks: s.tasks.map((t) => ({
+          ...t,
+          subtasks: t.subtasks.filter((st) => st.id !== op.subtask_id),
+        })),
+      };
+    case 'block.create': {
+      if (s.blocks.some((b) => b.id === op.block.id)) return {};
+      return { blocks: [...s.blocks, op.block] };
+    }
+    case 'block.update':
+      return { blocks: s.blocks.map((b) => b.id === op.block_id ? { ...b, ...op.patch } : b) };
+    case 'block.delete':
+      return { blocks: s.blocks.filter((b) => b.id !== op.block_id) };
+    case 'project.create': {
+      if (s.projects.some((p) => p.id === op.project.id)) return {};
+      return {
+        projects: [...s.projects, op.project].sort((a, b) => a.title.localeCompare(b.title)),
+        projectFilter: { ...s.projectFilter, [op.project.id]: true },
+      };
+    }
+    case 'project.update':
+      return {
+        projects: s.projects
+          .map((p) => p.id === op.project.id ? op.project : p)
+          .sort((a, b) => a.title.localeCompare(b.title)),
+      };
+    default:
+      return {};
+  }
+}
 
 export const useFira = create<FiraState>((set, get) => ({
   authChecked: false,
@@ -106,6 +253,10 @@ export const useFira = create<FiraState>((set, get) => ({
   gcal: [],
 
   outbox: [],
+  syncStatus: { kind: 'idle' },
+  lastSyncedAt: null,
+  cursor: 0,
+  appliedOpIds: new Map(),
 
   meId: null,
   view: 'calendar',
@@ -142,6 +293,7 @@ export const useFira = create<FiraState>((set, get) => ({
         tasks: data.tasks,
         blocks: data.blocks,
         gcal: data.gcal,
+        cursor: data.cursor ?? 0,
         meId: me.id,
         selectedPersonIds: [me.id],
         activePersonId: me.id,
@@ -168,6 +320,100 @@ export const useFira = create<FiraState>((set, get) => ({
     // Hard reload so any in-memory state (outbox, modals) is dropped and the
     // next /me check decides what to render.
     window.location.assign('/');
+  },
+
+  syncOutbox: async () => {
+    const { outbox, syncStatus } = get();
+    if (syncStatus.kind === 'syncing') return;
+    // Take the first batch of queued ops. Errored ops also re-enter this
+    // pool — the user (or the next interval tick) gets to retry them.
+    const batch = outbox.filter((o) => o.status !== 'syncing').slice(0, SYNC_BATCH_SIZE);
+    if (batch.length === 0) return;
+
+    const batchIds = new Set(batch.map((o) => o.op_id));
+    set((s) => ({
+      syncStatus: { kind: 'syncing' },
+      outbox: s.outbox.map((o) => batchIds.has(o.op_id) ? { ...o, status: 'syncing' as const } : o),
+    }));
+
+    try {
+      const { results } = await api.postOps(batch);
+      const byId = new Map(results.map((r) => [r.op_id, r]));
+      const errored: UUID[] = [];
+      let firstError: string | null = null;
+      set((s) => ({
+        outbox: s.outbox
+          // Drop ops the server accepted; keep + flag the ones it rejected.
+          // Ops that weren't part of this batch pass through untouched.
+          .map((o) => {
+            const r = byId.get(o.op_id);
+            if (!r) return o;
+            if (r.status === 'ok') return null;
+            errored.push(o.op_id);
+            if (!firstError) firstError = r.error ?? 'unknown error';
+            return { ...o, status: 'error' as const };
+          })
+          .filter((o): o is Op => o !== null),
+      }));
+      if (errored.length > 0) {
+        set({
+          syncStatus: { kind: 'error', message: firstError ?? 'sync error', failedOpIds: errored },
+        });
+      } else {
+        set({ syncStatus: { kind: 'idle' }, lastSyncedAt: Date.now() });
+      }
+    } catch (e) {
+      // Network / 5xx — put the batch back to 'queued' for the next tick.
+      const msg = e instanceof Error ? e.message : String(e);
+      set((s) => ({
+        syncStatus: { kind: 'offline', message: msg },
+        outbox: s.outbox.map((o) =>
+          batchIds.has(o.op_id) ? { ...o, status: 'queued' as const } : o,
+        ),
+      }));
+    }
+  },
+
+  pollChanges: async () => {
+    const { cursor, appliedOpIds, applyRemoteOp } = get();
+    let resp;
+    try {
+      resp = await api.getChanges(cursor);
+    } catch {
+      // Pull failures are silent — the existing syncStatus already reflects
+      // server reachability through the push side.
+      return;
+    }
+    for (const entry of resp.ops) {
+      if (appliedOpIds.has(entry.op_id)) continue;
+      applyRemoteOp(entry);
+    }
+    // GC: drop appliedOpIds entries older than the TTL. After this much
+    // wallclock time, any echo that was going to come back already did.
+    const now = Date.now();
+    const trimmed = new Map(appliedOpIds);
+    let didTrim = false;
+    for (const [id, ts] of trimmed) {
+      if (now - ts > APPLIED_TTL_MS) { trimmed.delete(id); didTrim = true; }
+    }
+    set({
+      cursor: resp.cursor,
+      appliedOpIds: didTrim ? trimmed : appliedOpIds,
+    });
+  },
+
+  applyRemoteOp: (entry) => {
+    // Dispatch on payload kind. Create kinds upsert (no-op if id exists),
+    // update kinds patch in place, delete kinds tolerate the row being gone.
+    const op = entry.payload as AnyOpKind;
+    set((s) => applyOpToState(s, op));
+    // Track that we now know about this op so a duplicate poll doesn't
+    // re-apply it. (The outbox path already adds; this covers remote-origin.)
+    set((s) => {
+      const next = new Map(s.appliedOpIds);
+      next.set(entry.op_id, Date.now());
+      return { appliedOpIds: next };
+    });
   },
 
   setView: (v, projectId) => set((s) => ({
@@ -273,7 +519,7 @@ export const useFira = create<FiraState>((set, get) => ({
     };
     set((s) => ({
       tasks: [...s.tasks, newTask],
-      outbox: enqueue(s, { kind: 'task.create', task: newTask }),
+      ...pushOp(s, { kind: 'task.create', task: newTask }),
     }));
     return newTask.id;
   },
@@ -285,23 +531,23 @@ export const useFira = create<FiraState>((set, get) => ({
     const done = nextStatus === 'done';
     return {
       tasks: s.tasks.map((x) => x.id === taskId ? { ...x, status: nextStatus } : x),
-      outbox: enqueue(s, { kind: 'task.tick', task_id: taskId, done }),
+      ...pushOp(s, { kind: 'task.tick', task_id: taskId, done }),
     };
   }),
 
   setTaskStatus: (taskId, status) => set((s) => ({
     tasks: s.tasks.map((x) => x.id === taskId ? { ...x, status } : x),
-    outbox: enqueue(s, { kind: 'task.set_status', task_id: taskId, status }),
+    ...pushOp(s, { kind: 'task.set_status', task_id: taskId, status }),
   })),
 
   setTaskSection: (taskId, section) => set((s) => ({
     tasks: s.tasks.map((x) => x.id === taskId ? { ...x, section } : x),
-    outbox: enqueue(s, { kind: 'task.set_section', task_id: taskId, section }),
+    ...pushOp(s, { kind: 'task.set_section', task_id: taskId, section }),
   })),
 
   setTaskAssignee: (taskId, assigneeId) => set((s) => ({
     tasks: s.tasks.map((x) => x.id === taskId ? { ...x, assignee_id: assigneeId } : x),
-    outbox: enqueue(s, { kind: 'task.set_assignee', task_id: taskId, assignee_id: assigneeId }),
+    ...pushOp(s, { kind: 'task.set_assignee', task_id: taskId, assignee_id: assigneeId }),
   })),
 
   reorderTasks: (projectId, section, orderedIds) => set((s) => {
@@ -316,23 +562,23 @@ export const useFira = create<FiraState>((set, get) => ({
         const k = newKeyById.get(t.id);
         return k != null ? { ...t, sort_key: k } : t;
       }),
-      outbox: enqueue(s, { kind: 'task.reorder', project_id: projectId, section, ordered: orderedIds }),
+      ...pushOp(s, { kind: 'task.reorder', project_id: projectId, section, ordered: orderedIds }),
     };
   }),
 
   setTaskTitle: (taskId, title) => set((s) => ({
     tasks: s.tasks.map((x) => x.id === taskId ? { ...x, title } : x),
-    outbox: enqueue(s, { kind: 'task.set_title', task_id: taskId, title }),
+    ...pushOp(s, { kind: 'task.set_title', task_id: taskId, title }),
   })),
 
   setTaskDescription: (taskId, description_md) => set((s) => ({
     tasks: s.tasks.map((x) => x.id === taskId ? { ...x, description_md } : x),
-    outbox: enqueue(s, { kind: 'task.set_description', task_id: taskId, description_md }),
+    ...pushOp(s, { kind: 'task.set_description', task_id: taskId, description_md }),
   })),
 
   setTaskEstimate: (taskId, estimate_min) => set((s) => ({
     tasks: s.tasks.map((x) => x.id === taskId ? { ...x, estimate_min } : x),
-    outbox: enqueue(s, { kind: 'task.set_estimate', task_id: taskId, estimate_min }),
+    ...pushOp(s, { kind: 'task.set_estimate', task_id: taskId, estimate_min }),
   })),
 
   addSubtask: (taskId, title) => {
@@ -351,7 +597,7 @@ export const useFira = create<FiraState>((set, get) => ({
     };
     set((s) => ({
       tasks: s.tasks.map((t) => t.id === taskId ? { ...t, subtasks: [...t.subtasks, sub] } : t),
-      outbox: enqueue(s, { kind: 'subtask.create', subtask: sub }),
+      ...pushOp(s, { kind: 'subtask.create', subtask: sub }),
     }));
     return sub.id;
   },
@@ -361,7 +607,7 @@ export const useFira = create<FiraState>((set, get) => ({
       ...t,
       subtasks: t.subtasks.map((st) => st.id === subId ? { ...st, title } : st),
     }),
-    outbox: enqueue(s, { kind: 'subtask.set_title', subtask_id: subId, title }),
+    ...pushOp(s, { kind: 'subtask.set_title', subtask_id: subId, title }),
   })),
 
   deleteSubtask: (taskId, subId) => set((s) => ({
@@ -369,7 +615,7 @@ export const useFira = create<FiraState>((set, get) => ({
       ...t,
       subtasks: t.subtasks.filter((st) => st.id !== subId),
     }),
-    outbox: enqueue(s, { kind: 'subtask.delete', subtask_id: subId }),
+    ...pushOp(s, { kind: 'subtask.delete', subtask_id: subId }),
   })),
 
   tickSubtask: (taskId, subId) => set((s) => {
@@ -385,20 +631,20 @@ export const useFira = create<FiraState>((set, get) => ({
         }),
       };
     });
-    return { tasks, outbox: enqueue(s, { kind: 'subtask.tick', subtask_id: subId, done: nextDone }) };
+    return { tasks, ...pushOp(s, { kind: 'subtask.tick', subtask_id: subId, done: nextDone }) };
   }),
 
   upsertBlock: (block) => set((s) => {
     const exists = s.blocks.some((b) => b.id === block.id);
     return {
       blocks: exists ? s.blocks.map((b) => b.id === block.id ? block : b) : [...s.blocks, block],
-      outbox: enqueue(s, { kind: 'block.create', block }),
+      ...pushOp(s, { kind: 'block.create', block }),
     };
   }),
 
   updateBlock: (blockId, patch) => set((s) => ({
     blocks: s.blocks.map((b) => b.id === blockId ? { ...b, ...patch } : b),
-    outbox: enqueue(s, { kind: 'block.update', block_id: blockId, patch }),
+    ...pushOp(s, { kind: 'block.update', block_id: blockId, patch }),
   })),
 
   duplicateBlock: (blockId) => {
@@ -421,14 +667,14 @@ export const useFira = create<FiraState>((set, get) => ({
     };
     set((s) => ({
       blocks: [...s.blocks, newBlock],
-      outbox: enqueue(s, { kind: 'block.create', block: newBlock }),
+      ...pushOp(s, { kind: 'block.create', block: newBlock }),
     }));
     return newBlock.id;
   },
 
   deleteBlock: (blockId) => set((s) => ({
     blocks: s.blocks.filter((b) => b.id !== blockId),
-    outbox: enqueue(s, { kind: 'block.delete', block_id: blockId }),
+    ...pushOp(s, { kind: 'block.delete', block_id: blockId }),
   })),
 }));
 

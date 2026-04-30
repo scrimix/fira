@@ -30,6 +30,23 @@ export type OpKind =
   | { kind: 'block.update'; block_id: string; patch: Partial<import('../types').TimeBlock> }
   | { kind: 'block.delete'; block_id: string };
 
+/// Server-only op kinds — synthesized in REST handlers and delivered via
+/// /changes. Clients never enqueue these; they only apply them.
+export type RemoteOnlyOpKind =
+  | { kind: 'project.create'; project: import('../types').Project }
+  | { kind: 'project.update'; project: import('../types').Project };
+
+export type AnyOpKind = OpKind | RemoteOnlyOpKind;
+
+/// One row of the server's change log.
+export interface ChangeEntry {
+  seq: number;
+  op_id: string;
+  kind: string;
+  payload: AnyOpKind;
+  applied_at: string;
+}
+
 export interface Op {
   op_id: string;
   created_at: string;

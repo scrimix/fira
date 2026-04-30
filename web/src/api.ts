@@ -24,6 +24,17 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
   return res.json() as Promise<T>;
 }
 
+export interface OpResult {
+  op_id: string;
+  status: 'ok' | 'error';
+  error?: string;
+}
+
+export interface ChangesResponse {
+  ops: import('./store/outbox').ChangeEntry[];
+  cursor: number;
+}
+
 export const api = {
   me: () => req<User>('GET', '/me'),
   bootstrap: () => req<Bootstrap>('GET', '/bootstrap'),
@@ -32,6 +43,10 @@ export const api = {
     req<import('./types').Project>('POST', '/projects', input),
   updateProject: (id: string, patch: Partial<{ title: string; icon: string; color: string }>) =>
     req<import('./types').Project>('PATCH', `/projects/${id}`, patch),
+  postOps: (ops: import('./store/outbox').Op[]) =>
+    req<{ results: OpResult[] }>('POST', '/ops', { ops }),
+  getChanges: (since: number) =>
+    req<ChangesResponse>('GET', `/changes?since=${since}`),
 };
 
 // Server-driven; the browser navigates here so cookies and the OAuth redirect

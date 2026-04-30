@@ -1,6 +1,7 @@
 import { useFira } from '../store';
 import { weekStartFor, fmtWeekRange } from '../time';
 import { ProjectIcon } from './ProjectIcon';
+import { SyncPill } from './SyncPill';
 
 export function TopBar() {
   const view = useFira((s) => s.view);
@@ -28,6 +29,7 @@ export function TopBar() {
       )}
       <span className="title">{title}</span>
       <div className="grow" />
+      <SyncPill />
       <button className="logout-btn" onClick={() => logout()} title="Sign out">
         Log out
       </button>

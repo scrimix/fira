@@ -93,4 +93,6 @@ export interface Bootstrap {
   tasks: Task[];
   blocks: TimeBlock[];
   gcal: GcalEvent[];
+  /// Initial change-feed cursor — start polling /changes from here.
+  cursor: number;
 }

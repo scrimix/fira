@@ -1,5 +1,5 @@
 use crate::models::*;
-use sqlx::PgPool;
+use sqlx::{PgPool, Postgres, Transaction};
 use std::collections::HashMap;
 use uuid::Uuid;
 
@@ -140,14 +140,13 @@ pub async fn list_tasks_in_scope(pool: &PgPool, scope: &[Uuid]) -> sqlx::Result<
     Ok(tasks)
 }
 
-pub async fn create_project(
-    pool: &PgPool,
+pub async fn create_project_tx(
+    tx: &mut Transaction<'_, Postgres>,
     owner_id: Uuid,
     title: &str,
     icon: &str,
     color: &str,
 ) -> sqlx::Result<Project> {
-    let mut tx = pool.begin().await?;
     let id = Uuid::new_v4();
     // source = 'local' for personal-mode projects; integrations will set it
     // to 'jira'/'notion' through their own write paths later.
@@ -160,22 +159,20 @@ pub async fn create_project(
     .bind(icon)
     .bind(color)
     .bind(owner_id)
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
 
-    // The owner is implicitly a member, even though personal-mode projects
-    // never gain other members. Keeps the membership query in `list_users_in_scope`
-    // honest and means switching this project to "shared" later is a no-op.
+    // The owner is implicitly a member. Keeps the membership query in
+    // `list_users_in_scope` honest and means switching this project to
+    // "shared" later is a no-op.
     sqlx::query(
         "INSERT INTO project_members (project_id, user_id) VALUES ($1, $2)
          ON CONFLICT DO NOTHING",
     )
     .bind(id)
     .bind(owner_id)
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
-
-    tx.commit().await?;
 
     Ok(Project {
         id,
@@ -191,8 +188,8 @@ pub async fn create_project(
 // Patch fields. None = leave alone. Returns None if no row was updated
 // (project doesn't exist OR caller isn't the owner — the API layer treats
 // both as 404 to avoid leaking project existence).
-pub async fn update_project(
-    pool: &PgPool,
+pub async fn update_project_tx(
+    tx: &mut Transaction<'_, Postgres>,
     owner_id: Uuid,
     project_id: Uuid,
     title: Option<&str>,
@@ -212,7 +209,7 @@ pub async fn update_project(
     .bind(title)
     .bind(icon)
     .bind(color)
-    .fetch_optional(pool)
+    .fetch_optional(&mut **tx)
     .await?;
 
     let Some((id, title, icon, color, source, description)) = row else {
@@ -222,7 +219,7 @@ pub async fn update_project(
     let members: Vec<(Uuid,)> =
         sqlx::query_as("SELECT user_id FROM project_members WHERE project_id = $1")
             .bind(id)
-            .fetch_all(pool)
+            .fetch_all(&mut **tx)
             .await?;
 
     Ok(Some(Project {

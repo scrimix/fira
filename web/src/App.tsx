@@ -18,6 +18,8 @@ export default function App() {
   const openTaskId = useFira((s) => s.openTaskId);
   const creatingDraft = useFira((s) => s.creatingDraft);
   const projectModal = useFira((s) => s.projectModal);
+  const syncOutbox = useFira((s) => s.syncOutbox);
+  const pollChanges = useFira((s) => s.pollChanges);
   const editingProject = useFira((s) => {
     const m = s.projectModal;
     return m?.kind === 'edit' ? s.projects.find((p) => p.id === m.id) ?? null : null;
@@ -27,6 +29,24 @@ export default function App() {
   useEffect(() => {
     hydrate();
   }, [hydrate]);
+
+  // Sync workers: every 2s push outbox edits, then pull change-feed rows
+  // for anything written by other clients. Push-then-pull keeps the local
+  // appliedOpIds-set in front of the echo so we don't double-apply our own
+  // ops. Both bail out cleanly if there's nothing to do.
+  useEffect(() => {
+    const tick = () => {
+      void syncOutbox().then(() => pollChanges());
+    };
+    const id = window.setInterval(tick, 2000);
+    window.addEventListener('focus', tick);
+    window.addEventListener('online', tick);
+    return () => {
+      window.clearInterval(id);
+      window.removeEventListener('focus', tick);
+      window.removeEventListener('online', tick);
+    };
+  }, [syncOutbox, pollChanges]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
