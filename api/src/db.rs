@@ -66,7 +66,7 @@ pub async fn list_projects_in_scope(
         return Ok(vec![]);
     }
     let mut projects: Vec<Project> = sqlx::query_as(
-        "SELECT id, title, icon, color, source, description
+        "SELECT id, title, icon, color, source, description, external_url_template
          FROM projects WHERE id = ANY($1) ORDER BY title",
     )
     .bind(scope)
@@ -196,6 +196,7 @@ pub async fn create_project_tx(
         color: color.to_string(),
         source: "local".to_string(),
         description: None,
+        external_url_template: None,
         members: vec![owner_id],
     })
 }
@@ -211,24 +212,36 @@ pub async fn update_project_tx(
     title: Option<&str>,
     icon: Option<&str>,
     color: Option<&str>,
+    // None = leave unchanged. Some(Some(s)) = set to s. Some(None) = clear.
+    external_url_template: Option<Option<&str>>,
 ) -> sqlx::Result<Option<Project>> {
-    let row: Option<(Uuid, String, String, String, String, Option<String>)> = sqlx::query_as(
+    // Three-state for nullable field: build the SET clause dynamically so
+    // a JSON `null` clears the column while an absent field leaves it.
+    let (eut_set, eut_value): (&str, Option<&str>) = match external_url_template {
+        None => ("external_url_template", None),
+        Some(v) => ("$6", v),
+    };
+    let sql = format!(
         "UPDATE projects SET
             title = COALESCE($3, title),
             icon  = COALESCE($4, icon),
-            color = COALESCE($5, color)
+            color = COALESCE($5, color),
+            external_url_template = {eut_set}
          WHERE id = $1 AND owner_id = $2
-         RETURNING id, title, icon, color, source, description",
-    )
-    .bind(project_id)
-    .bind(owner_id)
-    .bind(title)
-    .bind(icon)
-    .bind(color)
-    .fetch_optional(&mut **tx)
-    .await?;
+         RETURNING id, title, icon, color, source, description, external_url_template",
+    );
+    let mut q = sqlx::query_as::<_, (Uuid, String, String, String, String, Option<String>, Option<String>)>(&sql)
+        .bind(project_id)
+        .bind(owner_id)
+        .bind(title)
+        .bind(icon)
+        .bind(color);
+    if external_url_template.is_some() {
+        q = q.bind(eut_value);
+    }
+    let row = q.fetch_optional(&mut **tx).await?;
 
-    let Some((id, title, icon, color, source, description)) = row else {
+    let Some((id, title, icon, color, source, description, external_url_template)) = row else {
         return Ok(None);
     };
 
@@ -247,6 +260,7 @@ pub async fn update_project_tx(
         color,
         source,
         description,
+        external_url_template,
         members: members_rows.into_iter().map(|(u,)| u).collect(),
     }))
 }
@@ -266,8 +280,8 @@ pub async fn set_project_members_tx(
     project_id: Uuid,
     desired: &[Uuid],
 ) -> sqlx::Result<Option<Project>> {
-    let row: Option<(Uuid, String, String, String, String, Option<String>)> = sqlx::query_as(
-        "SELECT id, title, icon, color, source, description
+    let row: Option<(Uuid, String, String, String, String, Option<String>, Option<String>)> = sqlx::query_as(
+        "SELECT id, title, icon, color, source, description, external_url_template
          FROM projects WHERE id = $1 AND owner_id = $2",
     )
     .bind(project_id)
@@ -275,7 +289,7 @@ pub async fn set_project_members_tx(
     .fetch_optional(&mut **tx)
     .await?;
 
-    let Some((id, title, icon, color, source, description)) = row else {
+    let Some((id, title, icon, color, source, description, external_url_template)) = row else {
         return Ok(None);
     };
 
@@ -322,6 +336,7 @@ pub async fn set_project_members_tx(
         color,
         source,
         description,
+        external_url_template,
         members: members_rows.into_iter().map(|(u,)| u).collect(),
     }))
 }

@@ -57,6 +57,8 @@ pub enum Op {
     TaskSetTitle { task_id: Uuid, title: String },
     #[serde(rename = "task.set_description")]
     TaskSetDescription { task_id: Uuid, description_md: String },
+    #[serde(rename = "task.set_external_id")]
+    TaskSetExternalId { task_id: Uuid, external_id: Option<String> },
     #[serde(rename = "task.reorder")]
     TaskReorder { project_id: Uuid, section: String, ordered: Vec<Uuid> },
     #[serde(rename = "subtask.create")]
@@ -86,6 +88,7 @@ impl Op {
             Op::TaskSetEstimate { .. } => "task.set_estimate",
             Op::TaskSetTitle { .. } => "task.set_title",
             Op::TaskSetDescription { .. } => "task.set_description",
+            Op::TaskSetExternalId { .. } => "task.set_external_id",
             Op::TaskReorder { .. } => "task.reorder",
             Op::SubtaskCreate { .. } => "subtask.create",
             Op::SubtaskTick { .. } => "subtask.tick",
@@ -309,6 +312,13 @@ async fn apply_payload(
             *out_project_id = Some(ensure_task_in_scope(tx, user_id, task_id).await?);
             sqlx::query("UPDATE tasks SET description_md = $2, updated_at = now() WHERE id = $1")
                 .bind(task_id).bind(&description_md).execute(&mut **tx).await?;
+        }
+        Op::TaskSetExternalId { task_id, external_id } => {
+            *out_project_id = Some(ensure_task_in_scope(tx, user_id, task_id).await?);
+            // Empty string from the UI = clear (consistent with PATCH semantics).
+            let value = external_id.as_deref().map(str::trim).filter(|s| !s.is_empty());
+            sqlx::query("UPDATE tasks SET external_id = $2, updated_at = now() WHERE id = $1")
+                .bind(task_id).bind(value).execute(&mut **tx).await?;
         }
         Op::TaskReorder { project_id, section: _, ordered } => {
             require_project_access(tx, user_id, project_id).await?;

@@ -17,6 +17,7 @@ export function TaskModalDraft({ draft }: Props) {
   const addTask = useFira((s) => s.addTask);
   const setTaskDescription = useFira((s) => s.setTaskDescription);
   const setTaskEstimate = useFira((s) => s.setTaskEstimate);
+  const setTaskExternalId = useFira((s) => s.setTaskExternalId);
   const addSubtask = useFira((s) => s.addSubtask);
 
   const [projectId, setProjectId] = useState<UUID | ''>(
@@ -31,6 +32,7 @@ export function TaskModalDraft({ draft }: Props) {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [estimateText, setEstimateText] = useState('');
+  const [externalId, setExternalId] = useState('');
   const [subtasks, setSubtasks] = useState<DraftSubtask[]>([]);
 
   const sourceLabel = project
@@ -59,6 +61,7 @@ export function TaskModalDraft({ draft }: Props) {
     if (!id) return;
     if (description.trim()) setTaskDescription(id, description);
     if (estimateMin != null && estimateMin > 0) setTaskEstimate(id, estimateMin);
+    if (externalId.trim()) setTaskExternalId(id, externalId.trim());
     for (const s of subtasks) {
       const t = s.title.trim();
       if (t) addSubtask(id, t);
@@ -130,18 +133,6 @@ export function TaskModalDraft({ draft }: Props) {
                 { localId: crypto.randomUUID(), title: v, done: false },
               ])} />
             </div>
-
-            <div className="create-actions">
-              <button className="btn create-primary"
-                      onClick={submit}
-                      disabled={!isValid}
-                      title={!isValid && section === 'now' && !assigneeId
-                        ? 'Now tasks must have an assignee'
-                        : estimateInvalid ? 'Bad estimate'
-                        : undefined}>
-                Create
-              </button>
-            </div>
           </div>
           <div className="modal-side">
             <Field label="Project" value={
@@ -170,6 +161,15 @@ export function TaskModalDraft({ draft }: Props) {
                 invalid={estimateInvalid}
               />
             </div>
+            <div className="field">
+              <h5>Issue link</h5>
+              <DraftExternalIdEditor
+                value={externalId}
+                onChange={setExternalId}
+                hasTemplate={!!project?.external_url_template}
+                template={project?.external_url_template ?? null}
+              />
+            </div>
             <Field label="Source" mono value={sourceLabel} />
             <Field label="Section" value={
               <div className="create-seg">
@@ -178,6 +178,18 @@ export function TaskModalDraft({ draft }: Props) {
               </div>
             } />
           </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn" onClick={closeCreate}>Cancel</button>
+          <button className="btn create-primary"
+                  onClick={submit}
+                  disabled={!isValid}
+                  title={!isValid && section === 'now' && !assigneeId
+                    ? 'Now tasks must have an assignee'
+                    : estimateInvalid ? 'Bad estimate'
+                    : undefined}>
+            Create
+          </button>
         </div>
       </div>
     </div>
@@ -289,6 +301,50 @@ function DraftEstimateEditor({ text, onChange, invalid }: {
       }}
       placeholder="e.g. 1h30 or 90m"
       data-bad={invalid || undefined}
+    />
+  );
+}
+
+function DraftExternalIdEditor({ value, onChange, hasTemplate, template }: {
+  value: string;
+  onChange: (v: string) => void;
+  hasTemplate: boolean;
+  template: string | null;
+}) {
+  const [editing, setEditing] = useState(false);
+  const ref = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { if (editing) ref.current?.focus(); }, [editing]);
+
+  const display = value.trim();
+
+  if (!editing) {
+    return (
+      <div onClick={() => setEditing(true)}
+           style={{
+             cursor: 'text',
+             fontFamily: 'var(--font-mono)',
+             fontSize: 12,
+             color: display ? 'var(--ink)' : 'var(--ink-4)',
+           }}>
+        {display ? `[${display}]` : 'Click to set'}
+      </div>
+    );
+  }
+
+  return (
+    <input
+      ref={ref}
+      className="side-input"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      onBlur={() => setEditing(false)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') { e.preventDefault(); setEditing(false); }
+        else if (e.key === 'Escape') { onChange(''); setEditing(false); }
+      }}
+      placeholder={hasTemplate ? 'e.g. BDS-345' : 'Optional id'}
+      title={template ? `Resolved via ${template}` : 'No URL template on this project — saved as plain text.'}
     />
   );
 }

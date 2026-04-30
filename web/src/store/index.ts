@@ -106,7 +106,12 @@ interface FiraState {
   addProject: (input: { title: string; icon: string; color: string }) => Promise<Project>;
   updateProject: (
     id: UUID,
-    patch: Partial<{ title: string; icon: string; color: string }>,
+    patch: Partial<{
+      title: string;
+      icon: string;
+      color: string;
+      external_url_template: string | null;
+    }>,
   ) => Promise<Project>;
   // Member changes are their own op (`project.set_members`) — separate from
   // visual edits — so the apply path can treat removal-from-project as a
@@ -127,6 +132,7 @@ interface FiraState {
   setTaskTitle: (taskId: UUID, title: string) => void;
   setTaskDescription: (taskId: UUID, description_md: string) => void;
   setTaskEstimate: (taskId: UUID, estimate_min: number | null) => void;
+  setTaskExternalId: (taskId: UUID, external_id: string | null) => void;
   addSubtask: (taskId: UUID, title: string) => UUID | null;
   tickSubtask: (taskId: UUID, subId: UUID) => void;
   setSubtaskTitle: (taskId: UUID, subId: UUID, title: string) => void;
@@ -181,6 +187,8 @@ function applyOpToState(s: FiraState, op: AnyOpKind): Partial<FiraState> {
       return { tasks: s.tasks.map((t) => t.id === op.task_id ? { ...t, title: op.title } : t) };
     case 'task.set_description':
       return { tasks: s.tasks.map((t) => t.id === op.task_id ? { ...t, description_md: op.description_md } : t) };
+    case 'task.set_external_id':
+      return { tasks: s.tasks.map((t) => t.id === op.task_id ? { ...t, external_id: op.external_id } : t) };
     case 'task.reorder': {
       const newKeyById = new Map<string, string>();
       op.ordered.forEach((id, i) => {
@@ -652,6 +660,16 @@ export const useFira = create<FiraState>((set, get) => ({
     tasks: s.tasks.map((x) => x.id === taskId ? { ...x, estimate_min } : x),
     ...pushOp(s, { kind: 'task.set_estimate', task_id: taskId, estimate_min }),
   })),
+
+  setTaskExternalId: (taskId, external_id) => {
+    // Empty string and null both mean "clear" — collapse to null on the wire.
+    const trimmed = external_id?.trim() ?? '';
+    const next = trimmed === '' ? null : trimmed;
+    set((s) => ({
+      tasks: s.tasks.map((x) => x.id === taskId ? { ...x, external_id: next } : x),
+      ...pushOp(s, { kind: 'task.set_external_id', task_id: taskId, external_id: next }),
+    }));
+  },
 
   addSubtask: (taskId, title) => {
     const trimmed = title.trim();

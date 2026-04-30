@@ -23,6 +23,10 @@ export interface Project {
   color: string;
   source: Source;
   description: string | null;
+  /// URL template for manual issue links. `{key}` is replaced with the
+  /// task's `external_id`. Null means no tracker — bare external_ids show
+  /// as plain text instead of links.
+  external_url_template: string | null;
   members: UUID[];
 }
 

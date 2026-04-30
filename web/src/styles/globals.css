@@ -354,6 +354,22 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   border-color: var(--ink);
   background: var(--paper-2);
 }
+.np-hint {
+  margin-top: 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink-4);
+}
+
+.ext-link {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.ext-link:hover { color: var(--ink); }
+
 .np-error {
   margin-top: 14px;
   padding: 8px 10px;

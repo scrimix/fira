@@ -18,6 +18,9 @@ pub struct Project {
     pub color: String,
     pub source: String,
     pub description: Option<String>,
+    /// URL template for the manual issue-link feature. `{key}` is replaced
+    /// with the task's `external_id`. NULL = no tracker configured.
+    pub external_url_template: Option<String>,
     #[sqlx(skip)]
     pub members: Vec<Uuid>,
 }

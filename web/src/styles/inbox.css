@@ -664,19 +664,22 @@
   background: var(--accent-soft);
   color: var(--accent);
 }
-.create-actions {
+.modal-footer {
   display: flex;
   gap: 8px;
   justify-content: flex-end;
-  margin-top: 18px;
+  padding: 12px 22px;
+  border-top: 1px solid var(--rule);
+  background: var(--paper);
+  flex: none;
 }
-.create-actions .btn[disabled] { opacity: 0.5; cursor: not-allowed; }
-.create-actions .create-primary {
+.modal-footer .btn[disabled] { opacity: 0.5; cursor: not-allowed; }
+.modal-footer .create-primary {
   background: var(--accent);
   color: var(--accent-fg);
   border-color: var(--accent);
 }
-.create-actions .create-primary:hover {
+.modal-footer .create-primary:hover {
   background: color-mix(in oklab, var(--accent) 88%, black);
   border-color: color-mix(in oklab, var(--accent) 88%, black);
 }

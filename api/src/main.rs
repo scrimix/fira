@@ -116,6 +116,21 @@ struct UpdateProject {
     icon: Option<String>,
     #[serde(default)]
     color: Option<String>,
+    /// Three-state: absent = leave alone, null = clear, string = set.
+    /// `serde_with::rust::double_option` would be cleaner but we don't pull
+    /// that crate in; the manual deserializer below does the same job.
+    #[serde(default, deserialize_with = "deserialize_explicit_option")]
+    external_url_template: Option<Option<String>>,
+}
+
+// Disambiguates "field missing" (None) from "field is JSON null"
+// (Some(None)) so PATCH can leave a nullable column alone vs. clear it.
+fn deserialize_explicit_option<'de, D>(d: D) -> Result<Option<Option<String>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let v: Option<String> = Option::deserialize(d)?;
+    Ok(Some(v))
 }
 
 async fn update_project(
@@ -136,6 +151,14 @@ async fn update_project(
     if let Some(i) = body.icon.as_deref() {
         validate_icon(i)?;
     }
+    // Trim + collapse empty-string-to-null so the UI can clear the field
+    // by sending "" without the client knowing about JSON null.
+    let eut: Option<Option<&str>> = body.external_url_template.as_ref().map(|v| {
+        v.as_deref().map(str::trim).filter(|s| !s.is_empty())
+    });
+    if let Some(Some(t)) = eut {
+        validate_url_template(t)?;
+    }
     let mut tx = s.pool.begin().await?;
     let project = db::update_project_tx(
         &mut tx,
@@ -144,6 +167,7 @@ async fn update_project(
         title,
         body.icon.as_deref(),
         body.color.as_deref(),
+        eut,
     )
     .await?
     .ok_or(error::ApiError::NotFound)?;
@@ -151,6 +175,18 @@ async fn update_project(
     ops::record_synthesized_op(&mut tx, user.id, "project.update", payload, Some(project.id)).await?;
     tx.commit().await?;
     Ok(Json(project))
+}
+
+fn validate_url_template(t: &str) -> Result<(), error::ApiError> {
+    if t.len() > 512 {
+        return Err(error::ApiError::BadRequest("url template is too long".into()));
+    }
+    if !(t.starts_with("http://") || t.starts_with("https://")) {
+        return Err(error::ApiError::BadRequest(
+            "url template must start with http:// or https://".into(),
+        ));
+    }
+    Ok(())
 }
 
 #[derive(Deserialize)]

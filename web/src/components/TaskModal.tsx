@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Pencil } from 'lucide-react';
 import { useFira } from '../store';
 import {
   fmtMin, fmtClockShort, parseEstimate,
@@ -18,6 +19,8 @@ export function TaskModal({ taskId }: Props) {
     task ? s.users.find((u) => u.id === task.assignee_id) ?? null : null
   );
   const blocks = useFira((s) => s.blocks);
+  const users = useFira((s) => s.users);
+  const meId = useFira((s) => s.meId);
   const close = useFira((s) => s.openTask);
   const tickSubtask = useFira((s) => s.tickSubtask);
   const addSubtask = useFira((s) => s.addSubtask);
@@ -27,6 +30,7 @@ export function TaskModal({ taskId }: Props) {
   const setTaskTitle = useFira((s) => s.setTaskTitle);
   const setTaskEstimate = useFira((s) => s.setTaskEstimate);
   const setTaskStatus = useFira((s) => s.setTaskStatus);
+  const setTaskExternalId = useFira((s) => s.setTaskExternalId);
 
   if (!task || !project) return null;
 
@@ -45,6 +49,11 @@ export function TaskModal({ taskId }: Props) {
   const sourceLabel = task.source === 'jira' ? `Jira · ${task.external_id ?? 'unsynced'}`
     : task.source === 'notion' ? `Notion · ${task.external_id ?? 'unsynced'}`
     : 'Local task';
+  const externalUrl = task.external_id && project.external_url_template
+    ? project.external_url_template.includes('{key}')
+      ? project.external_url_template.replace('{key}', encodeURIComponent(task.external_id))
+      : project.external_url_template + encodeURIComponent(task.external_id)
+    : null;
 
   return (
     <div className="modal-backdrop" onClick={() => close(null)}>
@@ -114,8 +123,12 @@ export function TaskModal({ taskId }: Props) {
                 const stale = task.status === 'done' && b.state === 'planned';
                 const startDate = new Date(b.start_at);
                 const dateLabel = `${MONTH_ABBR[startDate.getUTCMonth()]} ${startDate.getUTCDate()}`;
+                const u = users.find((x) => x.id === b.user_id);
                 return (
                   <div key={b.id} style={blockRow}>
+                    <span className="avatar" data-me={b.user_id === meId} title={u?.name ?? '?'}>
+                      {u?.initials ?? '?'}
+                    </span>
                     <span style={{ color: 'var(--ink-2)', fontFamily: 'var(--font-mono)', fontSize: 11 }}>
                       {dateLabel}
                     </span>
@@ -179,6 +192,16 @@ export function TaskModal({ taskId }: Props) {
                 {task.tags.map((tg) => <span key={tg} className="chip">{tg}</span>)}
               </span>
             } />
+            <div className="field">
+              <h5>Issue link</h5>
+              <ExternalIdEditor
+                key={task.id}
+                value={task.external_id}
+                url={externalUrl}
+                hasTemplate={!!project.external_url_template}
+                onSave={(v) => setTaskExternalId(task.id, v)}
+              />
+            </div>
             <Field label="Source" mono value={sourceLabel} />
             <Field label="Section" mono value={task.section} />
           </div>
@@ -201,7 +224,7 @@ const modalH5: React.CSSProperties = {
 };
 const blockRow: React.CSSProperties = {
   display: 'grid',
-  gridTemplateColumns: '60px 1fr 70px 80px',
+  gridTemplateColumns: '20px 50px 1fr 60px 80px',
   gap: 10,
   padding: '4px 0',
   borderBottom: '1px solid var(--rule)',
@@ -494,6 +517,76 @@ function StatusEditor({ value, onChange }: {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function ExternalIdEditor({ value, url, hasTemplate, onSave }: {
+  value: string | null;
+  url: string | null;
+  hasTemplate: boolean;
+  onSave: (v: string | null) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value ?? '');
+  const ref = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { setDraft(value ?? ''); }, [value]);
+  useEffect(() => { if (editing) ref.current?.focus(); }, [editing]);
+
+  const commit = () => {
+    const trimmed = draft.trim();
+    const next = trimmed === '' ? null : trimmed;
+    if (next !== value) onSave(next);
+    setEditing(false);
+  };
+
+  if (editing) {
+    return (
+      <input
+        ref={ref}
+        className="side-input"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') { e.preventDefault(); commit(); }
+          else if (e.key === 'Escape') { setDraft(value ?? ''); setEditing(false); }
+        }}
+        placeholder={hasTemplate ? 'e.g. BDS-345' : 'Set a URL template on the project first'}
+      />
+    );
+  }
+
+  if (!value) {
+    return (
+      <div onClick={() => setEditing(true)}
+           style={{ cursor: 'text', color: 'var(--ink-4)', fontFamily: 'var(--font-mono)', fontSize: 12 }}>
+        Click to add an issue id
+      </div>
+    );
+  }
+
+  // Stop propagation on link clicks so opening doesn't drop into edit mode.
+  const label = `[${value}]`;
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      {url ? (
+        <a href={url} target="_blank" rel="noopener noreferrer"
+           onClick={(e) => e.stopPropagation()}
+           className="ext-link"
+           title={url}>
+          {label}
+        </a>
+      ) : (
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--ink-2)' }}
+              title="No URL template on this project — add one to make this a link.">
+          {label}
+        </span>
+      )}
+      <button className="icon-btn" onClick={() => setEditing(true)} title="Edit">
+        <Pencil size={12} strokeWidth={1.75} />
+      </button>
     </div>
   );
 }

@@ -540,6 +540,7 @@
   height: 36px;
   border-bottom: 1px solid var(--rule);
   display: flex; align-items: center;
+  gap: 6px;
   padding: 0 8px;
 }
 .rail-new-btn {
@@ -562,6 +563,50 @@
   font-family: var(--font-mono);
   font-size: 14px;
   line-height: 1;
+}
+.rail-scope-btn {
+  height: 24px;
+  padding: 0 10px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  background: var(--paper);
+  border: 1px solid var(--rule-2);
+  cursor: pointer;
+}
+.rail-scope-btn:hover { color: var(--ink); border-color: var(--rule-3); }
+.rail-scope-btn[data-active="true"] {
+  color: var(--ink);
+  background: var(--paper-2);
+  border-color: var(--ink-3);
+}
+.rail-search {
+  flex: 1;
+  min-width: 0;
+  height: 24px;
+  padding: 0 8px;
+  font: inherit;
+  font-size: var(--fs-sm);
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--rule-2);
+  outline: 0;
+}
+.rail-search:focus { border-color: var(--accent-line); }
+.rail-search::placeholder { color: var(--ink-4); }
+
+/* Tasks not owned by the active person are dimmed so the assignee's own
+ * tasks still read first, but they remain draggable so you can log time on
+ * any task — block.user_id tracks the calendar owner, not the task assignee. */
+.rail-task[data-others] { opacity: 0.55; }
+.rail-task[data-others]:hover { opacity: 1; }
+.rail-task[data-others] .rail-task-title::before {
+  content: '↗ ';
+  color: var(--ink-4);
+  font-family: var(--font-mono);
+  font-size: 10px;
 }
 /* Project filter — moved out of the deprecated left rail. Sits as a
  * secondary panel at the top of the rail (paper-2 background) so it reads

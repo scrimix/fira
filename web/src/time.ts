@@ -91,11 +91,16 @@ export function parseEstimate(input: string): number | null {
 
 export const fmtMin = (m: number | null | undefined): string => {
   if (m == null) return '—';
-  const h = Math.floor(m / 60);
-  const r = m % 60;
-  if (h === 0) return `${r}m`;
-  if (r === 0) return `${h}h`;
-  return `${h}h${String(r).padStart(2, '0')}`;
+  // Sign-aware: split off the sign and format the magnitude. JS `%` and
+  // `Math.floor` on negatives produced "-4h-15" (both halves carrying the
+  // sign) instead of "-4h15".
+  const sign = m < 0 ? '-' : '';
+  const abs = Math.abs(m);
+  const h = Math.floor(abs / 60);
+  const r = abs % 60;
+  if (h === 0) return `${sign}${r}m`;
+  if (r === 0) return `${sign}${h}h`;
+  return `${sign}${h}h${String(r).padStart(2, '0')}`;
 };
 
 export const fmtClockShort = (m: number): string => {

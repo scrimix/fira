@@ -36,6 +36,7 @@ export function ProjectModal({ project }: Props) {
   const [title, setTitle] = useState(project?.title ?? '');
   const [icon, setIcon] = useState(project?.icon || DEFAULT_ICON);
   const [color, setColor] = useState(project?.color || COLORS[0].hex);
+  const [urlTemplate, setUrlTemplate] = useState(project?.external_url_template ?? '');
   // Members are owner-locked: meId (owner) is implicit and not in this set.
   // We only track the *additional* members the user can edit.
   const [members, setMembers] = useState<UUID[]>(
@@ -65,13 +66,17 @@ export function ProjectModal({ project }: Props) {
   }, [armedRemove]);
 
   const trimmed = title.trim();
+  const trimmedUrl = urlTemplate.trim();
   const valid = trimmed.length > 0 && trimmed.length <= 80;
   const initialMembers = (project?.members ?? []).filter((u) => u !== meId);
   const membersDirty = isEdit && !setEqual(members, initialMembers);
+  const initialUrl = project?.external_url_template ?? '';
+  const urlDirty = isEdit && trimmedUrl !== initialUrl;
   const dirty = !isEdit || (
     trimmed !== project!.title
     || icon !== project!.icon
     || color !== project!.color
+    || urlDirty
     || membersDirty
   );
 
@@ -83,9 +88,16 @@ export function ProjectModal({ project }: Props) {
       if (isEdit) {
         const visualDirty = trimmed !== project!.title
           || icon !== project!.icon
-          || color !== project!.color;
+          || color !== project!.color
+          || urlDirty;
         if (visualDirty) {
-          await updateProject(project!.id, { title: trimmed, icon, color });
+          await updateProject(project!.id, {
+            title: trimmed,
+            icon,
+            color,
+            // Only thread the field if the user touched it; null clears.
+            ...(urlDirty ? { external_url_template: trimmedUrl || null } : {}),
+          });
         }
         if (membersDirty) {
           await setProjectMembers(project!.id, members);
@@ -166,6 +178,20 @@ export function ProjectModal({ project }: Props) {
 
           {isEdit && (
             <>
+              <label className="np-label">Issue URL template</label>
+              <input
+                className="np-title"
+                value={urlTemplate}
+                onChange={(e) => setUrlTemplate(e.target.value)}
+                placeholder="https://acme.atlassian.net/browse/{key}"
+                spellCheck={false}
+              />
+              <div className="np-hint">
+                {trimmedUrl && !trimmedUrl.includes('{key}')
+                  ? 'Tip: include {key} where the issue id should go.'
+                  : 'Tasks with an issue id render as a link via this template.'}
+              </div>
+
               <label className="np-label">Members</label>
               <MembersEditor
                 allUsers={allUsers}

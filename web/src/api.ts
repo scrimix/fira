@@ -45,7 +45,14 @@ export const api = {
     req<import('./types').Project>('POST', '/projects', input),
   updateProject: (
     id: string,
-    patch: Partial<{ title: string; icon: string; color: string }>,
+    // external_url_template is intentionally `string | null` (not optional):
+    // null clears the field, string sets, omitting the key leaves it alone.
+    patch: Partial<{
+      title: string;
+      icon: string;
+      color: string;
+      external_url_template: string | null;
+    }>,
   ) => req<import('./types').Project>('PATCH', `/projects/${id}`, patch),
   setProjectMembers: (id: string, members: string[]) =>
     req<import('./types').Project>('PUT', `/projects/${id}/members`, { members }),

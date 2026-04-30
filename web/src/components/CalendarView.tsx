@@ -312,9 +312,11 @@ export function CalendarView() {
     if (!taskId) return;
     const t = tasks.find((x) => x.id === taskId);
     if (!t) return;
-    // Block belongs to the task's assignee — falls back to the active person,
-    // then me, so dropping always produces a visible block.
-    const userId = t.assignee_id ?? activePersonId ?? meId;
+    // Block belongs to whoever's calendar it lands on, not the task assignee.
+    // Multiple people can plan time on the same task; the assignee field
+    // indicates ownership of the work item, not whose calendar holds the
+    // scheduled time. Falls back to me only if no person is active.
+    const userId = activePersonId ?? meId;
     if (!userId) return;
     const dur = taskDurFor(taskId);
     const start_min = dayDropStartMin(e);
@@ -669,14 +671,24 @@ function CalRail({ onDragTask, allocByProject }: {
   const openTask = useFira((s) => s.openTask);
   const openCreate = useFira((s) => s.openCreate);
 
+  // "Mine only" (default) vs "All in project". Showing all is what makes
+  // logging time on a task someone else owns possible — drag any task onto
+  // your calendar and the block becomes yours regardless of the assignee.
+  const [showAll, setShowAll] = useState(false);
+  const [titleQuery, setTitleQuery] = useState('');
+  const q = titleQuery.trim().toLowerCase();
+
   const groups: Array<{ project: Project; tasks: Task[] }> = projects
     .filter((p) => projectFilter[p.id] !== false)
     .map((p) => ({
       project: p,
       tasks: tasks.filter((t) =>
         t.project_id === p.id &&
-        t.assignee_id === activePersonId &&
-        t.section !== 'done',
+        (showAll || t.assignee_id === activePersonId) &&
+        t.section !== 'done' &&
+        (!q
+          || t.title.toLowerCase().includes(q)
+          || (t.external_id?.toLowerCase().includes(q) ?? false)),
       ),
     }))
     .filter((g) => g.tasks.length > 0);
@@ -687,6 +699,22 @@ function CalRail({ onDragTask, allocByProject }: {
         <button className="rail-new-btn" onClick={() => openCreate()} title="New task">
           <span className="rail-new-plus">+</span>
           <span>New task</span>
+        </button>
+        <input
+          className="rail-search"
+          value={titleQuery}
+          onChange={(e) => setTitleQuery(e.target.value)}
+          placeholder="Filter…"
+          spellCheck={false}
+          onKeyDown={(e) => { if (e.key === 'Escape') setTitleQuery(''); }}
+        />
+        <button className="rail-scope-btn"
+                onClick={() => setShowAll((v) => !v)}
+                data-active={showAll}
+                title={showAll
+                  ? 'Showing every task in the project — drag any onto your calendar'
+                  : 'Show every task in the project (so you can log time on tasks you don’t own)'}>
+          {showAll ? 'All' : 'Mine'}
         </button>
       </div>
       <div className="rail-projects">
@@ -735,10 +763,12 @@ function CalRail({ onDragTask, allocByProject }: {
                 : left < 0 ? `${fmtMin(-left)} over`
                 : left === 0 && overSpent ? `+${fmtMin(completed - (est ?? 0))} spent`
                 : `${fmtMin(left)} left`;
+              const others = t.assignee_id !== activePersonId;
               return (
                 <div key={t.id} className="rail-task"
                      data-status={t.status}
                      data-blocker={blocker}
+                     data-others={others || undefined}
                      draggable
                      onDragStart={(e) => {
                        e.dataTransfer.effectAllowed = 'copy';
