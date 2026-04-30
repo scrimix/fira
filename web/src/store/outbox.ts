@@ -34,7 +34,8 @@ export type OpKind =
 /// /changes. Clients never enqueue these; they only apply them.
 export type RemoteOnlyOpKind =
   | { kind: 'project.create'; project: import('../types').Project }
-  | { kind: 'project.update'; project: import('../types').Project };
+  | { kind: 'project.update'; project: import('../types').Project }
+  | { kind: 'project.set_members'; project_id: string; members: string[] };
 
 export type AnyOpKind = OpKind | RemoteOnlyOpKind;
 

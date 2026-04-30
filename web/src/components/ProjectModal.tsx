@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Plus } from 'lucide-react';
 import { useFira } from '../store';
 import { PROJECT_ICONS, DEFAULT_ICON, ProjectIcon } from './ProjectIcon';
-import type { Project } from '../types';
+import type { Project, UUID } from '../types';
 
 // Editorial-utilitarian palette. All Tailwind ~700 shades so each chip sits
 // at the same perceived weight on paper — distinguishable by hue, not by
@@ -27,17 +28,51 @@ export function ProjectModal({ project }: Props) {
   const close = useFira((s) => s.closeProjectModal);
   const addProject = useFira((s) => s.addProject);
   const updateProject = useFira((s) => s.updateProject);
+  const setProjectMembers = useFira((s) => s.setProjectMembers);
+  const loadAllUsers = useFira((s) => s.loadAllUsers);
+  const allUsers = useFira((s) => s.users);
+  const meId = useFira((s) => s.meId);
 
   const [title, setTitle] = useState(project?.title ?? '');
   const [icon, setIcon] = useState(project?.icon || DEFAULT_ICON);
   const [color, setColor] = useState(project?.color || COLORS[0].hex);
+  // Members are owner-locked: meId (owner) is implicit and not in this set.
+  // We only track the *additional* members the user can edit.
+  const [members, setMembers] = useState<UUID[]>(
+    () => (project?.members ?? []).filter((u) => u !== meId),
+  );
+  // Two-step remove: clicking × on a chip arms it, clicking again confirms.
+  const [armedRemove, setArmedRemove] = useState<UUID | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Pull the full directory once when an edit modal opens — bootstrap only
+  // returns co-members of in-scope projects, so without this an owner can't
+  // add a teammate they haven't worked with yet.
+  useEffect(() => {
+    if (isEdit) loadAllUsers().catch(() => { /* non-fatal; picker shows what we have */ });
+  }, [isEdit, loadAllUsers]);
+
+  // Disarm any pending remove if the user clicks elsewhere in the modal.
+  useEffect(() => {
+    if (armedRemove == null) return;
+    const onDoc = (e: MouseEvent) => {
+      const t = e.target as HTMLElement;
+      if (!t.closest(`[data-armed="${armedRemove}"]`)) setArmedRemove(null);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [armedRemove]);
+
   const trimmed = title.trim();
   const valid = trimmed.length > 0 && trimmed.length <= 80;
+  const initialMembers = (project?.members ?? []).filter((u) => u !== meId);
+  const membersDirty = isEdit && !setEqual(members, initialMembers);
   const dirty = !isEdit || (
-    trimmed !== project!.title || icon !== project!.icon || color !== project!.color
+    trimmed !== project!.title
+    || icon !== project!.icon
+    || color !== project!.color
+    || membersDirty
   );
 
   const submit = async () => {
@@ -46,7 +81,16 @@ export function ProjectModal({ project }: Props) {
     setError(null);
     try {
       if (isEdit) {
-        await updateProject(project!.id, { title: trimmed, icon, color });
+        const visualDirty = trimmed !== project!.title
+          || icon !== project!.icon
+          || color !== project!.color;
+        if (visualDirty) {
+          await updateProject(project!.id, { title: trimmed, icon, color });
+        }
+        if (membersDirty) {
+          await setProjectMembers(project!.id, members);
+        }
+        close();
       } else {
         await addProject({ title: trimmed, icon, color });
       }
@@ -120,6 +164,24 @@ export function ProjectModal({ project }: Props) {
             ))}
           </div>
 
+          {isEdit && (
+            <>
+              <label className="np-label">Members</label>
+              <MembersEditor
+                allUsers={allUsers}
+                ownerId={meId}
+                members={members}
+                armedRemove={armedRemove}
+                setArmedRemove={setArmedRemove}
+                onAdd={(uid) => setMembers((m) => (m.includes(uid) ? m : [...m, uid]))}
+                onRemove={(uid) => {
+                  setMembers((m) => m.filter((x) => x !== uid));
+                  setArmedRemove(null);
+                }}
+              />
+            </>
+          )}
+
           {error && <div className="np-error">{error}</div>}
 
           <div className="np-actions">
@@ -138,4 +200,144 @@ export function ProjectModal({ project }: Props) {
       </div>
     </div>
   );
+}
+
+interface MembersEditorProps {
+  allUsers: { id: UUID; name: string; initials: string; email: string }[];
+  ownerId: UUID | null;
+  members: UUID[];
+  armedRemove: UUID | null;
+  setArmedRemove: (id: UUID | null) => void;
+  onAdd: (id: UUID) => void;
+  onRemove: (id: UUID) => void;
+}
+
+function MembersEditor({
+  allUsers, ownerId, members, armedRemove, setArmedRemove, onAdd, onRemove,
+}: MembersEditorProps) {
+  const [picking, setPicking] = useState(false);
+  const [query, setQuery] = useState('');
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const memberSet = useMemo(() => new Set(members), [members]);
+  const owner = ownerId ? allUsers.find((u) => u.id === ownerId) : null;
+  const memberRows = useMemo(
+    () => members
+      .map((id) => allUsers.find((u) => u.id === id))
+      .filter((u): u is MembersEditorProps['allUsers'][number] => !!u),
+    [members, allUsers],
+  );
+
+  const candidates = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return allUsers.filter((u) => {
+      if (u.id === ownerId) return false;
+      if (memberSet.has(u.id)) return false;
+      if (!q) return true;
+      return u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q);
+    });
+  }, [allUsers, ownerId, memberSet, query]);
+
+  useEffect(() => {
+    if (!picking) return;
+    const onDoc = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setPicking(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [picking]);
+
+  useEffect(() => {
+    if (picking) {
+      setQuery('');
+      requestAnimationFrame(() => inputRef.current?.focus());
+    }
+  }, [picking]);
+
+  return (
+    <div className="np-members" ref={wrapRef}>
+      <div className="np-members-list">
+        {owner && (
+          <div className="np-member np-member-owner" title="Project owner — can't be removed">
+            <span className="avatar" data-me="true">{owner.initials}</span>
+            <span className="np-member-name">{owner.name}</span>
+            <span className="np-member-tag">owner</span>
+          </div>
+        )}
+        {memberRows.map((u) => {
+          const armed = armedRemove === u.id;
+          return (
+            <div key={u.id} className="np-member" data-armed={u.id}>
+              <span className="avatar">{u.initials}</span>
+              <span className="np-member-name">{u.name}</span>
+              {armed ? (
+                <button
+                  type="button"
+                  className="np-member-confirm"
+                  onClick={() => onRemove(u.id)}
+                  title="Confirm remove"
+                >
+                  Remove
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="np-member-x"
+                  onClick={() => setArmedRemove(u.id)}
+                  title="Remove from project"
+                  aria-label={`Remove ${u.name}`}
+                >
+                  ×
+                </button>
+              )}
+            </div>
+          );
+        })}
+        <button
+          type="button"
+          className="np-member-add"
+          onClick={() => setPicking((v) => !v)}
+          data-open={picking}
+        >
+          <Plus size={14} strokeWidth={1.75} />
+          <span>Add member</span>
+        </button>
+        {picking && (
+          <div className="np-members-picker">
+            <input
+              ref={inputRef}
+              className="user-search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search people…"
+              onKeyDown={(e) => { if (e.key === 'Escape') setPicking(false); }}
+            />
+            <div className="np-members-candidates">
+              {candidates.length === 0 ? (
+                <div className="user-empty">No matches.</div>
+              ) : candidates.map((u) => (
+                <button
+                  key={u.id}
+                  type="button"
+                  className="user-row"
+                  onClick={() => { onAdd(u.id); setPicking(false); }}
+                >
+                  <span className="avatar">{u.initials}</span>
+                  <span className="user-row-name">{u.name}</span>
+                  <span className="user-row-email">{u.email}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function setEqual(a: UUID[], b: UUID[]): boolean {
+  if (a.length !== b.length) return false;
+  const s = new Set(a);
+  return b.every((x) => s.has(x));
 }

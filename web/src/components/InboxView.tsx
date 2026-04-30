@@ -12,6 +12,7 @@ export function InboxView() {
   const blocks = useFira((s) => s.blocks);
   const projects = useFira((s) => s.projects);
   const users = useFira((s) => s.users);
+  const meId = useFira((s) => s.meId);
   const inboxFilter = useFira((s) => s.inboxFilter);
   const tickTask = useFira((s) => s.tickTask);
   const tickSubtask = useFira((s) => s.tickSubtask);
@@ -34,7 +35,11 @@ export function InboxView() {
   const nowTasks = projectTasks.filter((t) => t.section === 'now').sort(byKey);
   const laterTasks = projectTasks.filter((t) => t.section === 'later').sort(byKey);
   const doneTasks = projectTasks.filter((t) => t.section === 'done').sort(byKey);
-  const assigneeIds = project.members;
+  // Caller floats to the top of the assignee groups; the rest stay in
+  // membership order.
+  const assigneeIds = meId && project.members.includes(meId)
+    ? [meId, ...project.members.filter((u) => u !== meId)]
+    : project.members;
 
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({ done: true });
   const [collapsedAssignee, setCollapsedAssignee] = useState<Record<UUID, boolean>>({});
@@ -199,8 +204,8 @@ export function InboxView() {
                     <div className="assignee-head"
                          onClick={() => setCollapsedAssignee({ ...collapsedAssignee, [aid]: !folded })}>
                       <span className="ah-caret">{folded ? '▸' : '▾'}</span>
-                      <div className="avatar" data-me={u?.email === 'maya@fira.dev'}>{u?.initials ?? '?'}</div>
-                      <span>{u?.name}{u?.email === 'maya@fira.dev' ? ' (you)' : ''}</span>
+                      <div className="avatar" data-me={u?.id === meId}>{u?.initials ?? '?'}</div>
+                      <span>{u?.name}{u?.id === meId ? ' (you)' : ''}</span>
                       <span className="ah-rule" />
                       <span className="ah-count">{subTasks.length}</span>
                     </div>

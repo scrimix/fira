@@ -104,7 +104,18 @@ interface FiraState {
   openEditProject: (id: UUID) => void;
   closeProjectModal: () => void;
   addProject: (input: { title: string; icon: string; color: string }) => Promise<Project>;
-  updateProject: (id: UUID, patch: Partial<{ title: string; icon: string; color: string }>) => Promise<Project>;
+  updateProject: (
+    id: UUID,
+    patch: Partial<{ title: string; icon: string; color: string }>,
+  ) => Promise<Project>;
+  // Member changes are their own op (`project.set_members`) — separate from
+  // visual edits — so the apply path can treat removal-from-project as a
+  // dedicated event and drop project state cleanly.
+  setProjectMembers: (id: UUID, members: UUID[]) => Promise<Project>;
+  // Pulls the full user directory and merges into `users` so the project
+  // editor's Members picker can offer teammates the caller hasn't worked
+  // with yet (bootstrap only includes co-members of in-scope projects).
+  loadAllUsers: () => Promise<void>;
 
   // mutations — update local state synchronously + emit op
   addTask: (projectId: UUID, section: Section, title: string, assigneeId?: UUID | null) => UUID | null;
@@ -228,12 +239,57 @@ function applyOpToState(s: FiraState, op: AnyOpKind): Partial<FiraState> {
         projectFilter: { ...s.projectFilter, [op.project.id]: true },
       };
     }
-    case 'project.update':
+    case 'project.update': {
+      // Visual fields only — membership is handled by project.set_members.
+      // Upsert: if the project isn't in our local list yet (e.g., we were
+      // just added as a member), insert it. We rely on a follow-up
+      // project.set_members op (or the initial bootstrap on next reload)
+      // for the authoritative member list.
+      const exists = s.projects.some((p) => p.id === op.project.id);
+      const next = exists
+        ? s.projects.map((p) => p.id === op.project.id ? op.project : p)
+        : [...s.projects, op.project];
       return {
-        projects: s.projects
-          .map((p) => p.id === op.project.id ? op.project : p)
-          .sort((a, b) => a.title.localeCompare(b.title)),
+        projects: next.sort((a, b) => a.title.localeCompare(b.title)),
+        projectFilter: exists
+          ? s.projectFilter
+          : { ...s.projectFilter, [op.project.id]: true },
       };
+    }
+    case 'project.set_members': {
+      // If we're no longer in the member set, the owner removed us. The
+      // change feed will deliver this op once and then fall silent for the
+      // project — drop everything we have for it locally so the UI doesn't
+      // linger on stale state.
+      if (s.meId != null && !op.members.includes(s.meId)) {
+        const droppedTaskIds = new Set(
+          s.tasks.filter((t) => t.project_id === op.project_id).map((t) => t.id),
+        );
+        const { [op.project_id]: _drop, ...remainingFilter } = s.projectFilter;
+        const nextProjects = s.projects.filter((p) => p.id !== op.project_id);
+        const inboxFilter = s.inboxFilter.project_id === op.project_id
+          ? { ...s.inboxFilter, project_id: nextProjects[0]?.id ?? null }
+          : s.inboxFilter;
+        return {
+          projects: nextProjects,
+          tasks: s.tasks.filter((t) => t.project_id !== op.project_id),
+          epics: s.epics.filter((e) => e.project_id !== op.project_id),
+          sprints: s.sprints.filter((sp) => sp.project_id !== op.project_id),
+          blocks: s.blocks.filter((b) => !droppedTaskIds.has(b.task_id)),
+          projectFilter: remainingFilter,
+          inboxFilter,
+          openTaskId: s.openTaskId && droppedTaskIds.has(s.openTaskId)
+            ? null
+            : s.openTaskId,
+        };
+      }
+      // Still a member — just sync the member list.
+      return {
+        projects: s.projects.map((p) =>
+          p.id === op.project_id ? { ...p, members: op.members } : p,
+        ),
+      };
+    }
     default:
       return {};
   }
@@ -485,9 +541,25 @@ export const useFira = create<FiraState>((set, get) => ({
       projects: s.projects
         .map((p) => p.id === id ? updated : p)
         .sort((a, b) => a.title.localeCompare(b.title)),
-      projectModal: null,
     }));
     return updated;
+  },
+
+  setProjectMembers: async (id, members) => {
+    const updated = await api.setProjectMembers(id, members);
+    set((s) => ({
+      projects: s.projects.map((p) => p.id === id ? updated : p),
+    }));
+    return updated;
+  },
+
+  loadAllUsers: async () => {
+    const all = await api.listAllUsers();
+    set((s) => {
+      const byId = new Map(s.users.map((u) => [u.id, u]));
+      for (const u of all) byId.set(u.id, u);
+      return { users: Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name)) };
+    });
   },
 
   addTask: (projectId, section, title, assigneeId) => {

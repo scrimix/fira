@@ -322,9 +322,15 @@ function AssigneePicker({ users, meId, value, allowUnassigned, onChange }: {
 
   const selected = users.find((u) => u.id === value) ?? null;
   const q = query.trim().toLowerCase();
-  const filtered = users.filter((u) =>
-    !q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)
-  );
+  // Float the caller to the top of the picker — assigning to yourself is the
+  // common case and shouldn't require scrolling past teammates alphabetically.
+  const filtered = users
+    .filter((u) => !q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q))
+    .sort((a, b) => {
+      if (a.id === meId) return -1;
+      if (b.id === meId) return 1;
+      return a.name.localeCompare(b.name);
+    });
 
   useEffect(() => {
     if (!allowUnassigned && value == null && meId) onChange(meId);

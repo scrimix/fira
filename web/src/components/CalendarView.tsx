@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Check, Copy, Trash2 } from 'lucide-react';
 import { useFira } from '../store';
+import { ProjectIcon } from './ProjectIcon';
 import {
   HOURS, DAY_LABELS, TODAY_DAY_INDEX, NOW_TIME_MIN,
   blockToGrid, gridToBlock, fmtClockShort, fmtMin, taskCompletedMin, taskPlannedMin, taskTimeLeft,
@@ -697,8 +698,13 @@ function CalRail({ onDragTask, allocByProject }: {
             <div key={p.id} className="rail-proj-row" data-dimmed={dimmed}
                  onClick={() => toggleProjectFilter(p.id)}
                  title={dimmed ? `Show ${p.title} on calendar` : `Hide ${p.title} from calendar`}>
-              <div className="rail-proj-swatch"
-                   style={{ background: dimmed ? 'var(--paper-3)' : p.color, borderColor: p.color }} />
+              <ProjectIcon
+                name={p.icon}
+                color={dimmed ? 'var(--ink-4)' : p.color}
+                size={12}
+                strokeWidth={1.75}
+                className="rail-proj-icon"
+              />
               <span className="rail-proj-name">{p.title}</span>
               <span className="rail-proj-count">{fmtMin(alloc?.mins ?? 0)}</span>
             </div>

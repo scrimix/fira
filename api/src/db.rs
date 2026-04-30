@@ -4,18 +4,29 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 // Set of project IDs visible to a user: projects they own, plus projects
-// they're an explicit member of. In personal mode the second set is empty;
-// company mode will populate it via project_members.
+// they're an explicit (non-removed) member of. Soft-removed memberships are
+// excluded so the project disappears from the user's UI without losing
+// historical task assignments stored alongside the row.
 pub async fn project_scope(pool: &PgPool, user_id: Uuid) -> sqlx::Result<Vec<Uuid>> {
     let rows: Vec<(Uuid,)> = sqlx::query_as(
         "SELECT id FROM projects WHERE owner_id = $1
          UNION
-         SELECT project_id FROM project_members WHERE user_id = $1",
+         SELECT project_id FROM project_members
+         WHERE user_id = $1 AND removed_at IS NULL",
     )
     .bind(user_id)
     .fetch_all(pool)
     .await?;
     Ok(rows.into_iter().map(|(id,)| id).collect())
+}
+
+// Full directory — used by the project editor's Members picker so an owner
+// can add a teammate they haven't shared a project with yet. No scope filter
+// (we already require auth) but we exclude no one.
+pub async fn list_all_users(pool: &PgPool) -> sqlx::Result<Vec<User>> {
+    sqlx::query_as("SELECT id, email, name, initials FROM users ORDER BY name")
+        .fetch_all(pool)
+        .await
 }
 
 // Users surfaced to the client = the caller plus any co-members of their
@@ -36,7 +47,8 @@ pub async fn list_users_in_scope(
         "SELECT DISTINCT u.id, u.email, u.name, u.initials
          FROM users u
          WHERE u.id = $1
-            OR u.id IN (SELECT user_id FROM project_members WHERE project_id = ANY($2))
+            OR u.id IN (SELECT user_id FROM project_members
+                        WHERE project_id = ANY($2) AND removed_at IS NULL)
             OR u.id IN (SELECT owner_id FROM projects WHERE id = ANY($2) AND owner_id IS NOT NULL)
          ORDER BY u.name",
     )
@@ -61,11 +73,13 @@ pub async fn list_projects_in_scope(
     .fetch_all(pool)
     .await?;
 
-    let rows: Vec<(Uuid, Uuid)> =
-        sqlx::query_as("SELECT project_id, user_id FROM project_members WHERE project_id = ANY($1)")
-            .bind(scope)
-            .fetch_all(pool)
-            .await?;
+    let rows: Vec<(Uuid, Uuid)> = sqlx::query_as(
+        "SELECT project_id, user_id FROM project_members
+         WHERE project_id = ANY($1) AND removed_at IS NULL",
+    )
+    .bind(scope)
+    .fetch_all(pool)
+    .await?;
     let mut by_project: HashMap<Uuid, Vec<Uuid>> = HashMap::new();
     for (pid, uid) in rows {
         by_project.entry(pid).or_default().push(uid);
@@ -166,8 +180,9 @@ pub async fn create_project_tx(
     // `list_users_in_scope` honest and means switching this project to
     // "shared" later is a no-op.
     sqlx::query(
-        "INSERT INTO project_members (project_id, user_id) VALUES ($1, $2)
-         ON CONFLICT DO NOTHING",
+        "INSERT INTO project_members (project_id, user_id, removed_at)
+         VALUES ($1, $2, NULL)
+         ON CONFLICT (project_id, user_id) DO UPDATE SET removed_at = NULL",
     )
     .bind(id)
     .bind(owner_id)
@@ -185,9 +200,10 @@ pub async fn create_project_tx(
     })
 }
 
-// Patch fields. None = leave alone. Returns None if no row was updated
-// (project doesn't exist OR caller isn't the owner — the API layer treats
-// both as 404 to avoid leaking project existence).
+// Patch visual fields (title/icon/color). None = leave alone. Returns None if
+// no row was updated (project doesn't exist OR caller isn't the owner — the
+// API layer treats both as 404 to avoid leaking project existence).
+// Membership is handled separately by `set_project_members_tx`.
 pub async fn update_project_tx(
     tx: &mut Transaction<'_, Postgres>,
     owner_id: Uuid,
@@ -216,11 +232,13 @@ pub async fn update_project_tx(
         return Ok(None);
     };
 
-    let members: Vec<(Uuid,)> =
-        sqlx::query_as("SELECT user_id FROM project_members WHERE project_id = $1")
-            .bind(id)
-            .fetch_all(&mut **tx)
-            .await?;
+    let members_rows: Vec<(Uuid,)> = sqlx::query_as(
+        "SELECT user_id FROM project_members
+         WHERE project_id = $1 AND removed_at IS NULL",
+    )
+    .bind(id)
+    .fetch_all(&mut **tx)
+    .await?;
 
     Ok(Some(Project {
         id,
@@ -229,16 +247,101 @@ pub async fn update_project_tx(
         color,
         source,
         description,
-        members: members.into_iter().map(|(u,)| u).collect(),
+        members: members_rows.into_iter().map(|(u,)| u).collect(),
     }))
 }
 
-pub async fn list_blocks_for_user(pool: &PgPool, user_id: Uuid) -> sqlx::Result<Vec<TimeBlock>> {
-    sqlx::query_as(
-        "SELECT id, task_id, user_id, start_at, end_at, state
-         FROM time_blocks WHERE user_id = $1 ORDER BY start_at",
+// Reconcile project_members for `project_id` to exactly `desired` (plus the
+// owner, who is implicit and force-included so an owner can't lock themselves
+// out). New users get inserted (or have their `removed_at` cleared);
+// previously-active members not in the desired set get soft-removed by
+// stamping `removed_at = now()` — the row stays so historical assignee FKs
+// remain valid and we can surface "previously a member" later if needed.
+//
+// Returns the refreshed Project, or None if the project doesn't exist or the
+// caller isn't the owner. Mirrors update_project_tx's not-found behavior.
+pub async fn set_project_members_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    owner_id: Uuid,
+    project_id: Uuid,
+    desired: &[Uuid],
+) -> sqlx::Result<Option<Project>> {
+    let row: Option<(Uuid, String, String, String, String, Option<String>)> = sqlx::query_as(
+        "SELECT id, title, icon, color, source, description
+         FROM projects WHERE id = $1 AND owner_id = $2",
     )
-    .bind(user_id)
+    .bind(project_id)
+    .bind(owner_id)
+    .fetch_optional(&mut **tx)
+    .await?;
+
+    let Some((id, title, icon, color, source, description)) = row else {
+        return Ok(None);
+    };
+
+    let mut want: Vec<Uuid> = desired.to_vec();
+    if !want.contains(&owner_id) {
+        want.push(owner_id);
+    }
+
+    for u in &want {
+        sqlx::query(
+            "INSERT INTO project_members (project_id, user_id, removed_at)
+             VALUES ($1, $2, NULL)
+             ON CONFLICT (project_id, user_id) DO UPDATE SET removed_at = NULL",
+        )
+        .bind(id)
+        .bind(u)
+        .execute(&mut **tx)
+        .await?;
+    }
+
+    sqlx::query(
+        "UPDATE project_members SET removed_at = now()
+         WHERE project_id = $1
+           AND removed_at IS NULL
+           AND user_id <> ALL($2)",
+    )
+    .bind(id)
+    .bind(&want)
+    .execute(&mut **tx)
+    .await?;
+
+    let members_rows: Vec<(Uuid,)> = sqlx::query_as(
+        "SELECT user_id FROM project_members
+         WHERE project_id = $1 AND removed_at IS NULL",
+    )
+    .bind(id)
+    .fetch_all(&mut **tx)
+    .await?;
+
+    Ok(Some(Project {
+        id,
+        title,
+        icon,
+        color,
+        source,
+        description,
+        members: members_rows.into_iter().map(|(u,)| u).collect(),
+    }))
+}
+
+// Blocks for any user, scoped to tasks in projects the caller can see.
+// The calendar pins multiple teammates (UserPicker) and switches between
+// their weeks — so we need everyone's blocks, not just the caller's. The
+// task→project FK + scope filter keeps cross-tenant blocks out.
+pub async fn list_blocks_in_scope(pool: &PgPool, scope: &[Uuid]) -> sqlx::Result<Vec<TimeBlock>> {
+    if scope.is_empty() {
+        return Ok(vec![]);
+    }
+    sqlx::query_as(
+        "SELECT b.id, b.task_id, b.user_id, b.start_at, b.end_at, b.state
+         FROM time_blocks b
+         JOIN tasks t ON t.id = b.task_id
+         WHERE t.project_id = ANY($1)
+         ORDER BY b.start_at",
+    )
+    .bind(scope)
     .fetch_all(pool)
     .await
 }

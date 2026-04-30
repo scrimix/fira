@@ -2,7 +2,7 @@ use axum::{
     extract::{Path, State},
     http::StatusCode,
     response::Json,
-    routing::{get, patch, post},
+    routing::{get, patch, post, put},
     Router,
 };
 use serde::{Deserialize, Serialize};
@@ -53,7 +53,7 @@ async fn bootstrap(
         db::list_epics_in_scope(&s.pool, &scope),
         db::list_sprints_in_scope(&s.pool, &scope),
         db::list_tasks_in_scope(&s.pool, &scope),
-        db::list_blocks_for_user(&s.pool, user.id),
+        db::list_blocks_in_scope(&s.pool, &scope),
         db::list_gcal_for_user(&s.pool, user.id),
         ops::current_cursor(&s.pool),
     )?;
@@ -66,6 +66,17 @@ async fn projects(
 ) -> ApiResult<Json<Vec<Project>>> {
     let scope = db::project_scope(&s.pool, user.id).await?;
     Ok(Json(db::list_projects_in_scope(&s.pool, &scope).await?))
+}
+
+// All users in the system, used by the project editor's Members picker so
+// owners can add teammates they haven't worked with yet. Auth is required
+// (no anonymous user enumeration) but no scope filter — the picker needs
+// the full directory.
+async fn all_users(
+    State(s): State<AppState>,
+    _user: AuthUser,
+) -> ApiResult<Json<Vec<User>>> {
+    Ok(Json(db::list_all_users(&s.pool).await?))
 }
 
 #[derive(Deserialize)]
@@ -138,6 +149,37 @@ async fn update_project(
     .ok_or(error::ApiError::NotFound)?;
     let payload = serde_json::json!({ "kind": "project.update", "project": &project });
     ops::record_synthesized_op(&mut tx, user.id, "project.update", payload, Some(project.id)).await?;
+    tx.commit().await?;
+    Ok(Json(project))
+}
+
+#[derive(Deserialize)]
+struct SetMembers {
+    members: Vec<uuid::Uuid>,
+}
+
+// Replace project membership wholesale. Member changes are their own op
+// (`project.set_members`) — separate from visual edits — so clients can
+// apply the two concerns independently and ex-members can drop the project
+// from local state on receiving the removal op.
+async fn set_project_members(
+    State(s): State<AppState>,
+    user: AuthUser,
+    Path(id): Path<uuid::Uuid>,
+    Json(body): Json<SetMembers>,
+) -> ApiResult<Json<Project>> {
+    let mut tx = s.pool.begin().await?;
+    let project = db::set_project_members_tx(&mut tx, user.id, id, &body.members)
+        .await?
+        .ok_or(error::ApiError::NotFound)?;
+    let payload = serde_json::json!({
+        "kind": "project.set_members",
+        "project_id": project.id,
+        "members": &project.members,
+    });
+    ops::record_synthesized_op(
+        &mut tx, user.id, "project.set_members", payload, Some(project.id),
+    ).await?;
     tx.commit().await?;
     Ok(Json(project))
 }
@@ -219,6 +261,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/bootstrap", get(bootstrap))
         .route("/projects", get(projects).post(create_project))
         .route("/projects/:id", patch(update_project))
+        .route("/projects/:id/members", put(set_project_members))
+        .route("/users", get(all_users))
         .route("/ops", post(ops::post_ops))
         .route("/changes", get(ops::get_changes))
         .with_state(state)

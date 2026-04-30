@@ -583,7 +583,7 @@
 }
 .rail-proj-row {
   display: grid;
-  grid-template-columns: 10px 1fr auto;
+  grid-template-columns: 12px 1fr auto;
   align-items: center;
   gap: 8px;
   padding: 3px 0;
@@ -592,10 +592,11 @@
   user-select: none;
 }
 .rail-proj-row:hover { color: var(--ink-2); }
-.rail-proj-swatch {
-  width: 10px; height: 10px;
-  border: 1px solid;
+.rail-proj-icon {
   flex-shrink: 0;
+}
+.rail-proj-row[data-dimmed="true"] .rail-proj-icon {
+  opacity: 0.6;
 }
 .rail-proj-name { color: var(--ink); }
 .rail-proj-row[data-dimmed="true"] .rail-proj-name {

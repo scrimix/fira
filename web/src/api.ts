@@ -43,8 +43,13 @@ export const api = {
   logout: () => req<void>('POST', '/auth/logout'),
   createProject: (input: { title: string; icon: string; color: string }) =>
     req<import('./types').Project>('POST', '/projects', input),
-  updateProject: (id: string, patch: Partial<{ title: string; icon: string; color: string }>) =>
-    req<import('./types').Project>('PATCH', `/projects/${id}`, patch),
+  updateProject: (
+    id: string,
+    patch: Partial<{ title: string; icon: string; color: string }>,
+  ) => req<import('./types').Project>('PATCH', `/projects/${id}`, patch),
+  setProjectMembers: (id: string, members: string[]) =>
+    req<import('./types').Project>('PUT', `/projects/${id}/members`, { members }),
+  listAllUsers: () => req<User[]>('GET', '/users'),
   postOps: (ops: import('./store/outbox').Op[]) =>
     req<{ results: OpResult[] }>('POST', '/ops', { ops }),
   getChanges: (since: number) =>

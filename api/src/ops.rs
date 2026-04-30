@@ -420,24 +420,33 @@ pub async fn get_changes(
     Query(q): Query<ChangesQuery>,
 ) -> ApiResult<Json<ChangesResponse>> {
     let since = q.since.unwrap_or(0);
-    let scope = crate::db::project_scope(&s.pool, user.id).await?;
 
-    let rows: Vec<(i64, String, String, serde_json::Value, DateTime<Utc>)> =
-        if scope.is_empty() {
-            vec![]
-        } else {
-            sqlx::query_as(
-                "SELECT seq, op_id, kind, payload, applied_at
-                 FROM processed_ops
-                 WHERE seq > $1 AND project_id = ANY($2)
-                 ORDER BY seq ASC
-                 LIMIT 500",
-            )
-            .bind(since)
-            .bind(&scope)
-            .fetch_all(&s.pool)
-            .await?
-        };
+    // Change-feed scope is broader than the bootstrap scope: a user who was
+    // just soft-removed needs to receive the `project.update` op that did
+    // the removing so their client can drop the project from local state.
+    // We bound that with `applied_at <= removed_at` so the ex-member gets
+    // exactly one terminal op and nothing after — no read-leak of ongoing
+    // project activity once they're out.
+    let rows: Vec<(i64, String, String, serde_json::Value, DateTime<Utc>)> = sqlx::query_as(
+        "SELECT po.seq, po.op_id, po.kind, po.payload, po.applied_at
+         FROM processed_ops po
+         WHERE po.seq > $1
+           AND po.project_id IS NOT NULL
+           AND (
+             po.project_id IN (SELECT id FROM projects WHERE owner_id = $2)
+             OR po.project_id IN (
+               SELECT pm.project_id FROM project_members pm
+               WHERE pm.user_id = $2
+                 AND (pm.removed_at IS NULL OR po.applied_at <= pm.removed_at)
+             )
+           )
+         ORDER BY po.seq ASC
+         LIMIT 500",
+    )
+    .bind(since)
+    .bind(user.id)
+    .fetch_all(&s.pool)
+    .await?;
 
     let cursor = rows.last().map(|r| r.0).unwrap_or(since);
     let ops = rows
@@ -498,7 +507,7 @@ async fn require_project_access(
 ) -> anyhow::Result<()> {
     let row: Option<(Uuid,)> = sqlx::query_as(
         "SELECT id FROM projects WHERE id = $1
-         AND (owner_id = $2 OR id IN (SELECT project_id FROM project_members WHERE user_id = $2))",
+         AND (owner_id = $2 OR id IN (SELECT project_id FROM project_members WHERE user_id = $2 AND removed_at IS NULL))",
     )
     .bind(project_id)
     .bind(user_id)
@@ -519,7 +528,7 @@ async fn ensure_task_in_scope(
         "SELECT t.project_id FROM tasks t
          JOIN projects p ON p.id = t.project_id
          WHERE t.id = $1
-         AND (p.owner_id = $2 OR p.id IN (SELECT project_id FROM project_members WHERE user_id = $2))",
+         AND (p.owner_id = $2 OR p.id IN (SELECT project_id FROM project_members WHERE user_id = $2 AND removed_at IS NULL))",
     )
     .bind(task_id)
     .bind(user_id)
@@ -538,7 +547,7 @@ async fn ensure_subtask_in_scope(
          JOIN tasks t ON t.id = s.task_id
          JOIN projects p ON p.id = t.project_id
          WHERE s.id = $1
-         AND (p.owner_id = $2 OR p.id IN (SELECT project_id FROM project_members WHERE user_id = $2))",
+         AND (p.owner_id = $2 OR p.id IN (SELECT project_id FROM project_members WHERE user_id = $2 AND removed_at IS NULL))",
     )
     .bind(subtask_id)
     .bind(user_id)
@@ -557,7 +566,7 @@ async fn ensure_block_in_scope(
          JOIN tasks t ON t.id = b.task_id
          JOIN projects p ON p.id = t.project_id
          WHERE b.id = $1
-         AND (p.owner_id = $2 OR p.id IN (SELECT project_id FROM project_members WHERE user_id = $2))",
+         AND (p.owner_id = $2 OR p.id IN (SELECT project_id FROM project_members WHERE user_id = $2 AND removed_at IS NULL))",
     )
     .bind(block_id)
     .bind(user_id)

@@ -282,7 +282,7 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   font-size: 14px;
   flex: none;
 }
-.np-body { padding: 20px 28px 24px; display: flex; flex-direction: column; }
+.np-body { padding: 20px 28px 24px; display: flex; flex-direction: column; overflow: auto; }
 .np-label {
   font-family: var(--font-mono);
   font-size: 10px;
@@ -362,6 +362,99 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   color: var(--danger);
   font-size: var(--fs-sm);
   font-family: var(--font-mono);
+}
+
+/* Members editor: stacked rows with an inline "Add member" trigger that
+ * opens a popover beneath. Removal is intentionally two-step (× arms a
+ * "Remove" confirm button) — losing access to a project's tasks is a heavier
+ * action than tossing in a teammate, so the friction asymmetry is by design.
+ */
+.np-members { position: relative; }
+.np-members-list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--rule-2);
+  background: var(--paper);
+}
+.np-member {
+  display: grid;
+  grid-template-columns: 22px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--rule);
+  font-size: var(--fs-sm);
+  color: var(--ink);
+}
+.np-member:last-of-type { border-bottom: 0; }
+.np-member-owner { background: var(--paper-2); }
+.np-member-name { font-weight: 500; }
+.np-member-tag {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+}
+.np-member-x {
+  background: transparent;
+  border: 0;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--ink-4);
+  cursor: pointer;
+  padding: 0 4px;
+}
+.np-member-x:hover { color: var(--danger); }
+.np-member-confirm {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: var(--danger);
+  color: var(--paper);
+  border: 1px solid var(--danger);
+  padding: 3px 8px;
+  cursor: pointer;
+}
+.np-member-confirm:hover { filter: brightness(0.92); }
+.np-member-add {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--rule);
+  color: var(--ink-3);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  text-align: left;
+}
+.np-member-add:hover { color: var(--ink); background: var(--paper-3); }
+.np-member-add[data-open="true"] { color: var(--ink); background: var(--paper-3); }
+/* Inline picker — sits inside the same bordered container as the member
+ * list so it never overflows the modal. The candidate list scrolls if it
+ * outgrows the cap.
+ */
+.np-members-picker {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--rule);
+  background: var(--paper-2);
+}
+.np-members-picker .user-search {
+  border: 0;
+  border-bottom: 1px solid var(--rule);
+  background: var(--paper);
+}
+.np-members-candidates {
+  max-height: 180px;
+  overflow: auto;
+  padding: 4px 0;
+}
+.np-members-candidates .user-row {
+  grid-template-columns: 22px 1fr auto;
 }
 .np-actions {
   display: flex;
