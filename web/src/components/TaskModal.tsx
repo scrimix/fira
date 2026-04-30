@@ -31,6 +31,7 @@ export function TaskModal({ taskId }: Props) {
   const setTaskEstimate = useFira((s) => s.setTaskEstimate);
   const setTaskStatus = useFira((s) => s.setTaskStatus);
   const setTaskExternalId = useFira((s) => s.setTaskExternalId);
+  const setTaskExternalUrl = useFira((s) => s.setTaskExternalUrl);
 
   if (!task || !project) return null;
 
@@ -49,11 +50,16 @@ export function TaskModal({ taskId }: Props) {
   const sourceLabel = task.source === 'jira' ? `Jira · ${task.external_id ?? 'unsynced'}`
     : task.source === 'notion' ? `Notion · ${task.external_id ?? 'unsynced'}`
     : 'Local task';
-  const externalUrl = task.external_id && project.external_url_template
-    ? project.external_url_template.includes('{key}')
-      ? project.external_url_template.replace('{key}', encodeURIComponent(task.external_id))
-      : project.external_url_template + encodeURIComponent(task.external_id)
-    : null;
+  // Per-task external_url wins over the project's template — it's the
+  // escape hatch for trackers (Notion, GitHub, design docs) where there's
+  // no stable {key} pattern. Falls back to template-fill of external_id.
+  const resolvedUrl: string | null = task.external_url
+    ? task.external_url
+    : task.external_id && project.external_url_template
+      ? (project.external_url_template.includes('{key}')
+          ? project.external_url_template.replace('{key}', encodeURIComponent(task.external_id))
+          : project.external_url_template + encodeURIComponent(task.external_id))
+      : null;
 
   return (
     <div className="modal-backdrop" onClick={() => close(null)}>
@@ -194,12 +200,14 @@ export function TaskModal({ taskId }: Props) {
             } />
             <div className="field">
               <h5>Issue link</h5>
-              <ExternalIdEditor
+              <ExternalLinkEditor
                 key={task.id}
-                value={task.external_id}
-                url={externalUrl}
+                label={task.external_id}
+                url={task.external_url}
+                resolvedUrl={resolvedUrl}
                 hasTemplate={!!project.external_url_template}
-                onSave={(v) => setTaskExternalId(task.id, v)}
+                onSaveLabel={(v) => setTaskExternalId(task.id, v)}
+                onSaveUrl={(v) => setTaskExternalUrl(task.id, v)}
               />
             </div>
             <Field label="Source" mono value={sourceLabel} />
@@ -521,67 +529,92 @@ function StatusEditor({ value, onChange }: {
   );
 }
 
-function ExternalIdEditor({ value, url, hasTemplate, onSave }: {
-  value: string | null;
+function ExternalLinkEditor({ label, url, resolvedUrl, hasTemplate, onSaveLabel, onSaveUrl }: {
+  label: string | null;
   url: string | null;
+  resolvedUrl: string | null;
   hasTemplate: boolean;
-  onSave: (v: string | null) => void;
+  onSaveLabel: (v: string | null) => void;
+  onSaveUrl: (v: string | null) => void;
 }) {
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(value ?? '');
-  const ref = useRef<HTMLInputElement>(null);
+  const [labelDraft, setLabelDraft] = useState(label ?? '');
+  const [urlDraft, setUrlDraft] = useState(url ?? '');
+  const labelRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => { setDraft(value ?? ''); }, [value]);
-  useEffect(() => { if (editing) ref.current?.focus(); }, [editing]);
+  useEffect(() => { setLabelDraft(label ?? ''); }, [label]);
+  useEffect(() => { setUrlDraft(url ?? ''); }, [url]);
+  useEffect(() => { if (editing) labelRef.current?.focus(); }, [editing]);
 
   const commit = () => {
-    const trimmed = draft.trim();
-    const next = trimmed === '' ? null : trimmed;
-    if (next !== value) onSave(next);
+    const nextLabel = labelDraft.trim() === '' ? null : labelDraft.trim();
+    const nextUrl = urlDraft.trim() === '' ? null : urlDraft.trim();
+    if (nextLabel !== label) onSaveLabel(nextLabel);
+    if (nextUrl !== url) onSaveUrl(nextUrl);
+    setEditing(false);
+  };
+  const cancel = () => {
+    setLabelDraft(label ?? '');
+    setUrlDraft(url ?? '');
     setEditing(false);
   };
 
   if (editing) {
     return (
-      <input
-        ref={ref}
-        className="side-input"
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') { e.preventDefault(); commit(); }
-          else if (e.key === 'Escape') { setDraft(value ?? ''); setEditing(false); }
-        }}
-        placeholder={hasTemplate ? 'e.g. BDS-345' : 'Set a URL template on the project first'}
-      />
-    );
-  }
-
-  if (!value) {
-    return (
-      <div onClick={() => setEditing(true)}
-           style={{ cursor: 'text', color: 'var(--ink-4)', fontFamily: 'var(--font-mono)', fontSize: 12 }}>
-        Click to add an issue id
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <input
+          ref={labelRef}
+          className="side-input"
+          value={labelDraft}
+          onChange={(e) => setLabelDraft(e.target.value)}
+          placeholder={hasTemplate ? 'Label (e.g. BDS-345)' : 'Label (e.g. Design doc)'}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') { e.preventDefault(); commit(); }
+            else if (e.key === 'Escape') cancel();
+          }}
+        />
+        <input
+          className="side-input"
+          value={urlDraft}
+          onChange={(e) => setUrlDraft(e.target.value)}
+          placeholder={hasTemplate ? 'URL (overrides template)' : 'URL (https://…)'}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') { e.preventDefault(); commit(); }
+            else if (e.key === 'Escape') cancel();
+          }}
+        />
+        <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+          <button className="btn" style={{ padding: '2px 8px', fontSize: 11 }} onClick={cancel}>Cancel</button>
+          <button className="btn" style={{ padding: '2px 8px', fontSize: 11 }} onClick={commit}>Save</button>
+        </div>
       </div>
     );
   }
 
-  // Stop propagation on link clicks so opening doesn't drop into edit mode.
-  const label = `[${value}]`;
+  if (!label && !url) {
+    return (
+      <div onClick={() => setEditing(true)}
+           style={{ cursor: 'text', color: 'var(--ink-4)', fontFamily: 'var(--font-mono)', fontSize: 12 }}>
+        Click to add a link
+      </div>
+    );
+  }
+
+  // Display: prefer label if set, otherwise the URL itself.
+  const display = label ? `[${label}]` : url!;
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-      {url ? (
-        <a href={url} target="_blank" rel="noopener noreferrer"
+      {resolvedUrl ? (
+        <a href={resolvedUrl} target="_blank" rel="noopener noreferrer"
            onClick={(e) => e.stopPropagation()}
            className="ext-link"
-           title={url}>
-          {label}
+           title={resolvedUrl}>
+          {display}
         </a>
       ) : (
         <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--ink-2)' }}
-              title="No URL template on this project — add one to make this a link.">
-          {label}
+              title="No URL — add one here or set a template on the project.">
+          {display}
         </span>
       )}
       <button className="icon-btn" onClick={() => setEditing(true)} title="Edit">

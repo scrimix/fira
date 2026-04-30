@@ -59,6 +59,8 @@ pub enum Op {
     TaskSetDescription { task_id: Uuid, description_md: String },
     #[serde(rename = "task.set_external_id")]
     TaskSetExternalId { task_id: Uuid, external_id: Option<String> },
+    #[serde(rename = "task.set_external_url")]
+    TaskSetExternalUrl { task_id: Uuid, external_url: Option<String> },
     #[serde(rename = "task.reorder")]
     TaskReorder { project_id: Uuid, section: String, ordered: Vec<Uuid> },
     #[serde(rename = "subtask.create")]
@@ -89,6 +91,7 @@ impl Op {
             Op::TaskSetTitle { .. } => "task.set_title",
             Op::TaskSetDescription { .. } => "task.set_description",
             Op::TaskSetExternalId { .. } => "task.set_external_id",
+            Op::TaskSetExternalUrl { .. } => "task.set_external_url",
             Op::TaskReorder { .. } => "task.reorder",
             Op::SubtaskCreate { .. } => "subtask.create",
             Op::SubtaskTick { .. } => "subtask.tick",
@@ -115,6 +118,7 @@ pub struct TaskInput {
     #[serde(default)] pub priority: Option<String>,
     pub source: String,
     #[serde(default)] pub external_id: Option<String>,
+    #[serde(default)] pub external_url: Option<String>,
     #[serde(default)] pub estimate_min: Option<i32>,
     #[serde(default)] pub spent_min: i32,
     #[serde(default)] pub tags: Vec<String>,
@@ -254,8 +258,8 @@ async fn apply_payload(
             sqlx::query(
                 "INSERT INTO tasks (id, project_id, epic_id, sprint_id, assignee_id,
                     title, description_md, section, status, priority,
-                    source, external_id, estimate_min, spent_min, tags, sort_key)
-                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+                    source, external_id, external_url, estimate_min, spent_min, tags, sort_key)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
                  ON CONFLICT (id) DO NOTHING",
             )
             .bind(task.id)
@@ -270,6 +274,7 @@ async fn apply_payload(
             .bind(&task.priority)
             .bind(&task.source)
             .bind(&task.external_id)
+            .bind(&task.external_url)
             .bind(task.estimate_min)
             .bind(task.spent_min)
             .bind(&task.tags)
@@ -318,6 +323,20 @@ async fn apply_payload(
             // Empty string from the UI = clear (consistent with PATCH semantics).
             let value = external_id.as_deref().map(str::trim).filter(|s| !s.is_empty());
             sqlx::query("UPDATE tasks SET external_id = $2, updated_at = now() WHERE id = $1")
+                .bind(task_id).bind(value).execute(&mut **tx).await?;
+        }
+        Op::TaskSetExternalUrl { task_id, external_url } => {
+            *out_project_id = Some(ensure_task_in_scope(tx, user_id, task_id).await?);
+            let value = external_url.as_deref().map(str::trim).filter(|s| !s.is_empty());
+            // Soft validation — same shape as projects.external_url_template.
+            if let Some(u) = value {
+                if u.len() > 2048
+                    || !(u.starts_with("http://") || u.starts_with("https://"))
+                {
+                    anyhow::bail!("external_url must be an http(s) URL ≤ 2048 chars");
+                }
+            }
+            sqlx::query("UPDATE tasks SET external_url = $2, updated_at = now() WHERE id = $1")
                 .bind(task_id).bind(value).execute(&mut **tx).await?;
         }
         Op::TaskReorder { project_id, section: _, ordered } => {

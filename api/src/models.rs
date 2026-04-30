@@ -55,6 +55,9 @@ pub struct Task {
     pub priority: Option<String>,
     pub source: String,
     pub external_id: Option<String>,
+    /// Optional full URL — overrides the project's URL template.
+    /// For trackers without a stable `{key}` pattern (Notion, etc.).
+    pub external_url: Option<String>,
     pub estimate_min: Option<i32>,
     pub spent_min: i32,
     pub tags: Vec<String>,

@@ -23,6 +23,7 @@ export type OpKind =
   | { kind: 'task.set_title'; task_id: string; title: string }
   | { kind: 'task.set_description'; task_id: string; description_md: string }
   | { kind: 'task.set_external_id'; task_id: string; external_id: string | null }
+  | { kind: 'task.set_external_url'; task_id: string; external_url: string | null }
   | { kind: 'subtask.create'; subtask: import('../types').Subtask }
   | { kind: 'subtask.tick'; subtask_id: string; done: boolean }
   | { kind: 'subtask.set_title'; subtask_id: string; title: string }

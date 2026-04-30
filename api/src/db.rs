@@ -121,8 +121,8 @@ pub async fn list_tasks_in_scope(pool: &PgPool, scope: &[Uuid]) -> sqlx::Result<
     }
     let mut tasks: Vec<Task> = sqlx::query_as(
         "SELECT id, project_id, epic_id, sprint_id, assignee_id, title, description_md,
-                section, status, priority, source, external_id, estimate_min, spent_min,
-                tags, sort_key
+                section, status, priority, source, external_id, external_url,
+                estimate_min, spent_min, tags, sort_key
          FROM tasks WHERE project_id = ANY($1)
          ORDER BY sort_key, created_at",
     )
