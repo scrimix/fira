@@ -13,3 +13,4 @@ priorities change — open a new sprint.
 - [03-auth-and-projects.md](03-auth-and-projects.md) — Google OAuth, sessions, per-user data scoping, login screen, project create.
 - [04-polish.md](04-polish.md) — Lucide icons, palette, project edit, calendar layout reshape (kill left rail, project filter into right rail), inline subtask edit, alignment fixes.
 - [05-sync.md](05-sync.md) — push (`POST /ops` + outbox worker + status pill) and pull (`processed_ops` as change log + `GET /changes?since=N` + cursor + applyRemoteOp) — local-first round-trip closed.
+- [06-bootstrap-fix-and-dev-seeder.md](06-bootstrap-fix-and-dev-seeder.md) — fix `/bootstrap` 500 on empty `processed_ops` (`MAX(seq)` NULL decode), share seeder logic between CLI bin and a new `POST /auth/dev-seed` endpoint, add "Seed dev data & sign in" button to the login screen behind `DEV_AUTH=1`.
