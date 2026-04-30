@@ -1,20 +1,29 @@
-use axum::{extract::State, response::Json, routing::get, Router};
-use serde::Serialize;
+use axum::{
+    extract::{Path, State},
+    http::StatusCode,
+    response::Json,
+    routing::{get, patch, post},
+    Router,
+};
+use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use std::time::Duration;
-use tower_http::cors::CorsLayer;
+use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 
+mod auth;
 mod db;
 mod error;
 mod models;
 
+use auth::{AuthConfig, AuthUser};
 use error::ApiResult;
 use models::*;
 
 #[derive(Clone)]
-struct AppState {
-    pool: PgPool,
+pub struct AppState {
+    pub pool: PgPool,
+    pub auth: AuthConfig,
 }
 
 #[derive(Serialize)]
@@ -28,39 +37,121 @@ struct Bootstrap {
     gcal: Vec<GcalEvent>,
 }
 
-async fn bootstrap(State(s): State<AppState>) -> ApiResult<Json<Bootstrap>> {
+async fn bootstrap(
+    State(s): State<AppState>,
+    user: AuthUser,
+) -> ApiResult<Json<Bootstrap>> {
+    let scope = db::project_scope(&s.pool, user.id).await?;
     let (users, projects, epics, sprints, tasks, blocks, gcal) = tokio::try_join!(
-        db::list_users(&s.pool),
-        db::list_projects(&s.pool),
-        db::list_epics(&s.pool),
-        db::list_sprints(&s.pool),
-        db::list_tasks(&s.pool),
-        db::list_time_blocks(&s.pool),
-        db::list_gcal_events(&s.pool),
+        db::list_users_in_scope(&s.pool, &scope, user.id),
+        db::list_projects_in_scope(&s.pool, &scope),
+        db::list_epics_in_scope(&s.pool, &scope),
+        db::list_sprints_in_scope(&s.pool, &scope),
+        db::list_tasks_in_scope(&s.pool, &scope),
+        db::list_blocks_for_user(&s.pool, user.id),
+        db::list_gcal_for_user(&s.pool, user.id),
     )?;
     Ok(Json(Bootstrap { users, projects, epics, sprints, tasks, blocks, gcal }))
 }
 
-async fn users(State(s): State<AppState>) -> ApiResult<Json<Vec<User>>> {
-    Ok(Json(db::list_users(&s.pool).await?))
+async fn projects(
+    State(s): State<AppState>,
+    user: AuthUser,
+) -> ApiResult<Json<Vec<Project>>> {
+    let scope = db::project_scope(&s.pool, user.id).await?;
+    Ok(Json(db::list_projects_in_scope(&s.pool, &scope).await?))
 }
-async fn projects(State(s): State<AppState>) -> ApiResult<Json<Vec<Project>>> {
-    Ok(Json(db::list_projects(&s.pool).await?))
+
+#[derive(Deserialize)]
+struct CreateProject {
+    title: String,
+    icon: String,
+    color: String,
 }
-async fn epics(State(s): State<AppState>) -> ApiResult<Json<Vec<Epic>>> {
-    Ok(Json(db::list_epics(&s.pool).await?))
+
+async fn create_project(
+    State(s): State<AppState>,
+    user: AuthUser,
+    Json(body): Json<CreateProject>,
+) -> Result<(StatusCode, Json<Project>), error::ApiError> {
+    let title = body.title.trim();
+    validate_title(title)?;
+    if !is_hex_color(&body.color) {
+        return Err(error::ApiError::BadRequest("color must be a hex string".into()));
+    }
+    validate_icon(&body.icon)?;
+    let project = db::create_project(&s.pool, user.id, title, &body.icon, &body.color).await?;
+    Ok((StatusCode::CREATED, Json(project)))
 }
-async fn sprints(State(s): State<AppState>) -> ApiResult<Json<Vec<Sprint>>> {
-    Ok(Json(db::list_sprints(&s.pool).await?))
+
+#[derive(Deserialize)]
+struct UpdateProject {
+    #[serde(default)]
+    title: Option<String>,
+    #[serde(default)]
+    icon: Option<String>,
+    #[serde(default)]
+    color: Option<String>,
 }
-async fn tasks(State(s): State<AppState>) -> ApiResult<Json<Vec<Task>>> {
-    Ok(Json(db::list_tasks(&s.pool).await?))
+
+async fn update_project(
+    State(s): State<AppState>,
+    user: AuthUser,
+    Path(id): Path<uuid::Uuid>,
+    Json(body): Json<UpdateProject>,
+) -> ApiResult<Json<Project>> {
+    let title = match body.title.as_deref().map(str::trim) {
+        Some(t) => { validate_title(t)?; Some(t) }
+        None => None,
+    };
+    if let Some(c) = body.color.as_deref() {
+        if !is_hex_color(c) {
+            return Err(error::ApiError::BadRequest("color must be a hex string".into()));
+        }
+    }
+    if let Some(i) = body.icon.as_deref() {
+        validate_icon(i)?;
+    }
+    let project = db::update_project(
+        &s.pool,
+        user.id,
+        id,
+        title,
+        body.icon.as_deref(),
+        body.color.as_deref(),
+    )
+    .await?
+    .ok_or(error::ApiError::NotFound)?;
+    Ok(Json(project))
 }
-async fn blocks(State(s): State<AppState>) -> ApiResult<Json<Vec<TimeBlock>>> {
-    Ok(Json(db::list_time_blocks(&s.pool).await?))
+
+fn validate_title(t: &str) -> Result<(), error::ApiError> {
+    if t.is_empty() {
+        return Err(error::ApiError::BadRequest("title is required".into()));
+    }
+    if t.len() > 80 {
+        return Err(error::ApiError::BadRequest("title is too long".into()));
+    }
+    Ok(())
 }
-async fn gcal(State(s): State<AppState>) -> ApiResult<Json<Vec<GcalEvent>>> {
-    Ok(Json(db::list_gcal_events(&s.pool).await?))
+
+fn validate_icon(i: &str) -> Result<(), error::ApiError> {
+    // Either a Lucide name (alphanumeric, ≤32 chars) or a short legacy
+    // unicode glyph (≤4 chars). The picker writes Lucide names exclusively;
+    // this only protects against junk on the wire.
+    if i.chars().count() > 32 {
+        return Err(error::ApiError::BadRequest("icon is too long".into()));
+    }
+    Ok(())
+}
+
+fn is_hex_color(s: &str) -> bool {
+    let bytes = s.as_bytes();
+    if bytes.first() != Some(&b'#') {
+        return false;
+    }
+    let rest = &bytes[1..];
+    matches!(rest.len(), 3 | 6 | 8) && rest.iter().all(|b| b.is_ascii_hexdigit())
 }
 
 async fn health() -> &'static str {
@@ -85,20 +176,32 @@ async fn main() -> anyhow::Result<()> {
     let pool = wait_for_pool(&database_url).await?;
     sqlx::migrate!("./migrations").run(&pool).await?;
 
-    let state = AppState { pool };
+    let auth_cfg = AuthConfig::from_env();
+    if auth_cfg.dev_auth {
+        tracing::warn!("DEV_AUTH=1 — /auth/dev-login is enabled. Do not use in production.");
+    }
+    let state = AppState { pool, auth: auth_cfg };
+
+    // CORS: the web SPA hits the API same-origin in dev (via Vite's /api proxy)
+    // and in prod (served behind the same domain). Keep it permissive for read
+    // routes but allow credentials so cookies travel on auth routes.
+    let cors = CorsLayer::new()
+        .allow_origin(Any)
+        .allow_methods(Any)
+        .allow_headers(Any);
 
     let app = Router::new()
         .route("/health", get(health))
+        .route("/me", get(auth::me))
+        .route("/auth/google/login", get(auth::google_login))
+        .route("/auth/google/callback", get(auth::google_callback))
+        .route("/auth/logout", post(auth::logout))
+        .route("/auth/dev-login", get(auth::dev_login))
         .route("/bootstrap", get(bootstrap))
-        .route("/users", get(users))
-        .route("/projects", get(projects))
-        .route("/epics", get(epics))
-        .route("/sprints", get(sprints))
-        .route("/tasks", get(tasks))
-        .route("/blocks", get(blocks))
-        .route("/gcal", get(gcal))
+        .route("/projects", get(projects).post(create_project))
+        .route("/projects/:id", patch(update_project))
         .with_state(state)
-        .layer(CorsLayer::permissive())
+        .layer(cors)
         .layer(TraceLayer::new_for_http());
 
     let listener = tokio::net::TcpListener::bind(&bind).await?;

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useFira } from '../store';
-import { parseEstimate } from '../time';
+import { fmtMin, parseEstimate } from '../time';
 import type { UUID } from '../types';
 
 interface DraftSubtask { localId: string; title: string; done: boolean }
@@ -162,15 +162,14 @@ export function TaskModalDraft({ draft }: Props) {
               />
             } />
             <Field label="Status" mono value="todo" />
-            <Field label="Estimate" value={
-              <input
-                className="side-input"
-                value={estimateText}
-                onChange={(e) => setEstimateText(e.target.value)}
-                placeholder="1h"
-                data-bad={estimateInvalid || undefined}
+            <div className="field">
+              <h5>Estimate</h5>
+              <DraftEstimateEditor
+                text={estimateText}
+                onChange={setEstimateText}
+                invalid={estimateInvalid}
               />
-            } />
+            </div>
             <Field label="Source" mono value={sourceLabel} />
             <Field label="Section" value={
               <div className="create-seg">
@@ -245,6 +244,52 @@ function DraftAddSubtask({ onAdd }: { onAdd: (v: string) => void }) {
         }}
       />
     </div>
+  );
+}
+
+function DraftEstimateEditor({ text, onChange, invalid }: {
+  text: string;
+  onChange: (v: string) => void;
+  invalid: boolean;
+}) {
+  const [editing, setEditing] = useState(false);
+  const ref = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { if (editing) ref.current?.focus(); }, [editing]);
+
+  const parsed = parseEstimate(text);
+  // Show the canonical formatted form in read mode so what the user sees
+  // matches what gets saved (e.g. "90m" → "1h30").
+  const display = parsed != null ? fmtMin(parsed) : '';
+
+  if (!editing) {
+    return (
+      <div onClick={() => setEditing(true)}
+           style={{
+             cursor: 'text',
+             fontFamily: 'var(--font-mono)',
+             fontVariantNumeric: 'tabular-nums',
+             color: display ? 'var(--ink)' : 'var(--ink-4)',
+           }}>
+        {display || 'Click to set'}
+      </div>
+    );
+  }
+
+  return (
+    <input
+      ref={ref}
+      className="side-input"
+      value={text}
+      onChange={(e) => onChange(e.target.value)}
+      onBlur={() => setEditing(false)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') { e.preventDefault(); setEditing(false); }
+        else if (e.key === 'Escape') { onChange(''); setEditing(false); }
+      }}
+      placeholder="e.g. 1h30 or 90m"
+      data-bad={invalid || undefined}
+    />
   );
 }
 

@@ -1,6 +1,8 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { Pencil } from 'lucide-react';
 import { useFira } from '../store';
 import { fmtMin, taskTimeLeft } from '../time';
+import { ProjectIcon } from './ProjectIcon';
 import type { Task, TimeBlock, Section, UUID } from '../types';
 
 const byKey = (a: Task, b: Task) => a.sort_key.localeCompare(b.sort_key);
@@ -14,11 +16,14 @@ export function InboxView() {
   const tickTask = useFira((s) => s.tickTask);
   const tickSubtask = useFira((s) => s.tickSubtask);
   const addSubtask = useFira((s) => s.addSubtask);
+  const setSubtaskTitle = useFira((s) => s.setSubtaskTitle);
+  const deleteSubtask = useFira((s) => s.deleteSubtask);
   const setTaskSection = useFira((s) => s.setTaskSection);
   const setTaskAssignee = useFira((s) => s.setTaskAssignee);
   const reorderTasks = useFira((s) => s.reorderTasks);
   const addTask = useFira((s) => s.addTask);
   const openTask = useFira((s) => s.openTask);
+  const openEditProject = useFira((s) => s.openEditProject);
 
   const project = projects.find((p) => p.id === inboxFilter.project_id);
   if (!project) {
@@ -99,6 +104,8 @@ export function InboxView() {
              onTick={tickTask}
              onSubTick={tickSubtask}
              onAddSub={addSubtask}
+             onSubSave={setSubtaskTitle}
+             onSubDelete={deleteSubtask}
              onOpen={openTask}
              onDragStart={onRowDragStart}
              onRowDragOver={onRowDragOver}
@@ -117,18 +124,27 @@ export function InboxView() {
     <div className="inbox">
       <div className="inbox-doc" style={{ ['--proj-color' as string]: project.color }}>
         <div className="inbox-proj-head">
-          <span className="icon">{project.icon}</span>
-          <h1>{project.title}</h1>
-          <span className="meta">
-            {project.source.toUpperCase()} · {projectTasks.length} tasks · {project.members.length} {project.members.length === 1 ? 'member' : 'members'}
+          <span className="icon" style={{ color: project.color }}>
+            <ProjectIcon name={project.icon} color={project.color} size={20} strokeWidth={1.6} />
           </span>
-          <button className="btn archive-btn"
-                  onClick={archiveDone}
-                  disabled={archivable.length === 0}
-                  title="Move every ticked task into the Done section">
-            Archive ticked
-            {archivable.length > 0 && <span className="archive-count">{archivable.length}</span>}
-          </button>
+          <h1>{project.title}</h1>
+          <div className="proj-actions">
+            <span className="meta">
+              {project.source.toUpperCase()} · {projectTasks.length} tasks · {project.members.length} {project.members.length === 1 ? 'member' : 'members'}
+            </span>
+            <button className="icon-btn proj-edit-btn"
+                    onClick={() => openEditProject(project.id)}
+                    title="Edit project">
+              <Pencil size={14} strokeWidth={1.75} />
+            </button>
+            <button className="btn archive-btn"
+                    onClick={archiveDone}
+                    disabled={archivable.length === 0}
+                    title="Move every ticked task into the Done section">
+              Archive ticked
+              {archivable.length > 0 && <span className="archive-count">{archivable.length}</span>}
+            </button>
+          </div>
         </div>
 
         {/* NOW */}
@@ -285,6 +301,56 @@ function AddTaskRow({ onAdd, placeholder = 'Add task…' }: {
   );
 }
 
+function InboxSubtaskRow({ title, done, onToggle, onSave, onDelete }: {
+  title: string;
+  done: boolean;
+  onToggle: () => void;
+  onSave: (v: string) => void;
+  onDelete: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(title);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { setDraft(title); }, [title]);
+  useEffect(() => { if (editing) inputRef.current?.focus(); }, [editing]);
+
+  // Empty title on commit means the user deleted everything — treat as delete,
+  // matching the modal's behavior so the two views feel like one tool.
+  const commit = () => {
+    const v = draft.trim();
+    if (!v) { onDelete(); return; }
+    if (v !== title) onSave(v);
+    setEditing(false);
+  };
+
+  return (
+    <div className={editing ? 'subtask subtask-edit' : 'subtask'} data-done={done}
+         onClick={(e) => e.stopPropagation()}>
+      <span className="sc" onClick={onToggle}>{done ? '✓' : ''}</span>
+      {editing ? (
+        <input
+          ref={inputRef}
+          className="subtask-edit-input"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') { e.preventDefault(); commit(); }
+            else if (e.key === 'Escape') { setDraft(title); setEditing(false); }
+            else if (e.key === 'Backspace' && !draft) { e.preventDefault(); onDelete(); }
+          }}
+        />
+      ) : (
+        <span className="sname" onClick={() => setEditing(true)} style={{ cursor: 'text', flex: 1 }}>
+          {title}
+        </span>
+      )}
+    </div>
+  );
+}
+
 function AddSubtaskRowInline({ onAdd }: { onAdd: (title: string) => void }) {
   const [value, setValue] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
@@ -327,6 +393,8 @@ interface RowProps {
   onTick: (id: string) => void;
   onSubTick: (taskId: string, subId: string) => void;
   onAddSub: (taskId: UUID, title: string) => void;
+  onSubSave: (taskId: UUID, subId: UUID, title: string) => void;
+  onSubDelete: (taskId: UUID, subId: UUID) => void;
   onOpen: (id: string) => void;
   onDragStart: (e: React.DragEvent, id: string) => void;
   onRowDragOver: (e: React.DragEvent, target: Task) => void;
@@ -337,7 +405,7 @@ interface RowProps {
 }
 
 function TaskRow({
-  task, blocks, onTick, onSubTick, onAddSub, onOpen,
+  task, blocks, onTick, onSubTick, onAddSub, onSubSave, onSubDelete, onOpen,
   onDragStart, onRowDragOver, onRowDrop, onRowDragLeave, dropMark, showSubs,
 }: RowProps) {
   const left = taskTimeLeft(task, blocks);
@@ -379,13 +447,14 @@ function TaskRow({
         {showSubs && (
           <div className="subtasks">
             {task.subtasks.map((s) => (
-              <div key={s.id} className="subtask" data-done={s.done}
-                   onClick={(e) => e.stopPropagation()}>
-                <span className="sc" onClick={() => onSubTick(task.id, s.id)}>
-                  {s.done ? '✓' : ''}
-                </span>
-                <span className="sname">{s.title}</span>
-              </div>
+              <InboxSubtaskRow
+                key={s.id}
+                title={s.title}
+                done={s.done}
+                onToggle={() => onSubTick(task.id, s.id)}
+                onSave={(v) => onSubSave(task.id, s.id, v)}
+                onDelete={() => onSubDelete(task.id, s.id)}
+              />
             ))}
             <AddSubtaskRowInline onAdd={(title) => onAddSub(task.id, title)} />
           </div>

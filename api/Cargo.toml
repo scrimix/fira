@@ -14,6 +14,7 @@ path = "src/bin/seed.rs"
 
 [dependencies]
 axum = "0.7"
+axum-extra = { version = "0.9", features = ["cookie"] }
 tokio = { version = "1", features = ["full"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["cors", "trace"] }
@@ -27,3 +28,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 anyhow = "1"
 thiserror = "1"
 dotenvy = "0.15"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+url = "2"
+rand = "0.8"
+base64 = "0.22"
+time = "0.3"
+cookie = "0.18"

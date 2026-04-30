@@ -1,9 +1,11 @@
 import { useFira } from '../store';
+import { ProjectIcon } from './ProjectIcon';
 
 export function Sidebar() {
   const view = useFira((s) => s.view);
   const projects = useFira((s) => s.projects);
   const setView = useFira((s) => s.setView);
+  const openCreateProject = useFira((s) => s.openCreateProject);
   const me = useFira((s) => s.users.find((u) => u.id === s.meId) ?? null);
 
   return (
@@ -32,9 +34,12 @@ export function Sidebar() {
       {projects.map((p) => (
         <button key={p.id} className="nav-btn" title={p.title}
                 onClick={() => setView('inbox', p.id)}>
-          <span className="proj-dot" style={{ color: p.color }}></span>
+          <ProjectIcon name={p.icon} color={p.color} size={16} />
         </button>
       ))}
+      <button className="nav-btn nav-add" onClick={openCreateProject} title="New project">
+        +
+      </button>
       <div className="spacer" />
       <div className="me" title={me?.name ?? ''}>{me?.initials ?? '?'}</div>
     </div>

@@ -20,16 +20,42 @@
   letter-spacing: -0.02em;
 }
 .inbox-proj-head .icon {
+  display: inline-flex;
+  align-self: center;
+  color: var(--proj-color);
+  /* Legacy unicode-glyph fallback: fixture projects pre-Lucide render their
+   * stored char as text. New projects nest a Lucide SVG that ignores these. */
   font-family: var(--font-mono);
   font-size: 22px;
-  color: var(--proj-color);
+  line-height: 1;
+}
+/* Right-side cluster: meta text, edit, archive. Centered against each
+ * other so the icon-only edit button sits on the same line as the text in
+ * its neighbours, regardless of font baselines. align-self: baseline anchors
+ * the whole cluster to the h1's baseline so meta still reads correctly with
+ * the title. */
+.inbox-proj-head .proj-actions {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  align-self: baseline;
 }
 .inbox-proj-head .meta {
-  margin-left: auto;
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
   color: var(--ink-3);
   letter-spacing: 0.04em;
+}
+.inbox-proj-head .proj-edit-btn {
+  width: 24px; height: 24px;
+  color: var(--ink-3);
+  border: 1px solid transparent;
+}
+.inbox-proj-head .proj-edit-btn:hover {
+  color: var(--ink);
+  background: var(--paper-3);
+  border-color: var(--rule-2);
 }
 .inbox-proj-head .archive-btn {
   height: 24px;
@@ -226,10 +252,14 @@
   font-weight: 500;
 }
 
+/* Mirrors .task-row's grid so the "+" lines up with the check column and
+ * the input cursor lands at the same x as a task title. */
 .task-add {
-  display: flex; align-items: center; gap: 8px;
+  display: grid;
+  grid-template-columns: 14px 18px 1fr auto;
+  align-items: start;
+  gap: 8px;
   padding: 6px 8px 6px 0;
-  margin-left: 44px;
   font-size: var(--fs-md);
   color: var(--ink-4);
   cursor: text;
@@ -238,13 +268,16 @@
 .task-add:hover { color: var(--ink-2); }
 .task-add[data-editing="true"] { color: var(--ink); cursor: default; }
 .task-add-plus {
+  grid-column: 2;
+  margin-top: 2px;
+  width: 18px; height: 18px;
+  display: grid; place-items: center;
   font-family: var(--font-mono);
   font-size: 13px;
-  width: 12px;
-  text-align: center;
+  line-height: 1;
 }
 .task-add-input {
-  flex: 1;
+  grid-column: 3;
   font: inherit;
   font-size: var(--fs-md);
   border: 0;

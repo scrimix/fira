@@ -1,55 +1,9 @@
 .calendar {
   display: grid;
-  grid-template-columns: 200px 1fr 320px;
+  grid-template-columns: 1fr 320px;
   height: calc(100vh - 44px);
   overflow: hidden;
 }
-
-.cal-left {
-  border-right: 1px solid var(--rule);
-  display: flex;
-  flex-direction: column;
-  overflow: auto;
-  padding: 14px;
-}
-.cal-left h4 {
-  margin: 0 0 8px;
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-  font-weight: 500;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--ink-3);
-}
-.cal-left .group { margin-bottom: 18px; }
-
-.proj-filter { display: flex; flex-direction: column; gap: 2px; }
-.proj-filter-row {
-  display: flex; align-items: center; gap: 8px;
-  padding: 4px 0;
-  font-size: var(--fs-sm);
-  cursor: pointer;
-  user-select: none;
-}
-.proj-swatch {
-  width: 10px; height: 10px;
-  flex-shrink: 0;
-}
-.proj-filter-row .label { color: var(--ink); flex: 1; }
-.proj-filter-row[data-dimmed="true"] .label { color: var(--ink-4); text-decoration: line-through; }
-.proj-filter-row .count {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--ink-4);
-}
-
-.alloc-bar {
-  display: flex;
-  height: 4px;
-  background: var(--paper-3);
-  margin-top: 6px;
-}
-.alloc-seg { height: 100%; }
 
 .cal-main {
   display: flex;
@@ -169,15 +123,35 @@
 .user-popover {
   position: absolute;
   top: calc(100% + 4px);
-  right: 0;
-  min-width: 280px;
-  max-width: 360px;
+  width: 220px;
   background: var(--paper);
   border: 1px solid var(--rule-3);
   box-shadow: 0 6px 20px rgba(0,0,0,0.12);
   z-index: 30;
   display: flex;
   flex-direction: column;
+}
+.user-popover[data-align="right"] { right: 0; }
+.user-popover[data-align="left"]  { left: 0; }
+/* Compact row: stack name + email vertically. The narrower popover would
+ * clip the side-by-side layout. */
+.user-popover .user-row {
+  grid-template-columns: 22px 1fr;
+  grid-template-rows: auto auto;
+  row-gap: 0;
+}
+.user-popover .user-row .avatar { grid-row: 1 / span 2; }
+.user-popover .user-row .user-row-name {
+  grid-column: 2; grid-row: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.user-popover .user-row .user-row-email {
+  grid-column: 2; grid-row: 2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .user-search {
   font: inherit;
@@ -240,10 +214,13 @@
 }
 .cal-toolbar .totals span { white-space: nowrap; }
 .cal-toolbar .totals strong {
-  color: var(--ink);
   font-weight: 500;
   font-variant-numeric: tabular-nums;
+  margin-right: 2px;
 }
+.cal-toolbar .totals .totals-done strong   { color: var(--done); }
+.cal-toolbar .totals .totals-planned strong { color: var(--accent); }
+.cal-toolbar .totals .totals-total strong   { color: var(--ink); }
 
 .cal-grid-wrap {
   flex: 1;
@@ -586,6 +563,52 @@
   font-size: 14px;
   line-height: 1;
 }
+/* Project filter — moved out of the deprecated left rail. Sits as a
+ * secondary panel at the top of the rail (paper-2 background) so it reads
+ * visually distinct from the task list (paper) below. The 2px divider plus
+ * the background shift is what separates "filter chrome" from "tasks". */
+.rail-projects {
+  background: var(--paper-2);
+  border-bottom: 2px solid var(--rule-2);
+  padding: 10px 12px 12px;
+  flex: none;
+}
+.rail-projects-head {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin-bottom: 8px;
+}
+.rail-proj-row {
+  display: grid;
+  grid-template-columns: 10px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  user-select: none;
+}
+.rail-proj-row:hover { color: var(--ink-2); }
+.rail-proj-swatch {
+  width: 10px; height: 10px;
+  border: 1px solid;
+  flex-shrink: 0;
+}
+.rail-proj-name { color: var(--ink); }
+.rail-proj-row[data-dimmed="true"] .rail-proj-name {
+  color: var(--ink-4);
+  text-decoration: line-through;
+}
+.rail-proj-count {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink-4);
+  font-variant-numeric: tabular-nums;
+}
+
 .rail-body {
   flex: 1;
   overflow: auto;

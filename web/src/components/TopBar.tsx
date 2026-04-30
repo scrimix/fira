@@ -1,21 +1,15 @@
 import { useFira } from '../store';
 import { weekStartFor, fmtWeekRange } from '../time';
+import { ProjectIcon } from './ProjectIcon';
 
 export function TopBar() {
   const view = useFira((s) => s.view);
-  const meId = useFira((s) => s.meId);
-  const activePersonId = useFira((s) => s.activePersonId);
-  const activePerson = useFira((s) =>
-    s.users.find((u) => u.id === s.activePersonId) ?? null
-  );
   const project = useFira((s) =>
     s.projects.find((p) => p.id === s.inboxFilter.project_id) ?? null
   );
   const weekOffset = useFira((s) => s.weekOffset);
+  const logout = useFira((s) => s.logout);
 
-  const personLabel = activePerson
-    ? `${activePerson.name}${activePersonId === meId ? ' (you)' : ''}`
-    : '';
   const title = view === 'calendar'
     ? `Week of ${fmtWeekRange(weekStartFor(weekOffset))}`
     : project?.title ?? 'Inbox';
@@ -24,10 +18,19 @@ export function TopBar() {
     <div className="topbar">
       <span className="crumb">Fira</span>
       <span className="crumb-sep">/</span>
-      <span className="crumb">{personLabel}</span>
-      <span className="crumb-sep">/</span>
+      {view === 'inbox' && project && (
+        <ProjectIcon
+          name={project.icon}
+          color={project.color}
+          size={13}
+          className="title-icon"
+        />
+      )}
       <span className="title">{title}</span>
       <div className="grow" />
+      <button className="logout-btn" onClick={() => logout()} title="Sign out">
+        Log out
+      </button>
     </div>
   );
 }

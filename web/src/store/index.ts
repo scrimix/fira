@@ -8,7 +8,7 @@ import { create } from 'zustand';
 import type {
   Bootstrap, Project, User, Epic, Sprint, Task, TimeBlock, GcalEvent, UUID, Section, Subtask, Status,
 } from '../types';
-import { api } from '../api';
+import { api, HttpError } from '../api';
 import { newOp, type Op, type OpKind } from './outbox';
 
 interface InboxFilter {
@@ -20,6 +20,9 @@ interface InboxFilter {
 }
 
 interface FiraState {
+  // Tri-state: null = haven't checked yet, false = anonymous, true = authed.
+  // The login screen renders only when this is exactly false.
+  authChecked: boolean;
   loaded: boolean;
   error: string | null;
 
@@ -46,8 +49,11 @@ interface FiraState {
   inboxFilter: InboxFilter;
   openTaskId: UUID | null;
   creatingDraft: { project_id: UUID | null; section: 'now' | 'later'; assignee_id: UUID | null } | null;
+  // Discriminated union — one modal serves both create and edit. null = closed.
+  projectModal: { kind: 'new' } | { kind: 'edit'; id: UUID } | null;
 
   hydrate: () => Promise<void>;
+  logout: () => Promise<void>;
   setView: (v: 'calendar' | 'inbox', projectId?: UUID) => void;
   addPerson: (id: UUID) => void;
   removePerson: (id: UUID) => void;
@@ -58,6 +64,11 @@ interface FiraState {
   openTask: (id: UUID | null) => void;
   openCreate: (initial?: Partial<{ project_id: UUID | null; section: 'now' | 'later'; assignee_id: UUID | null }>) => void;
   closeCreate: () => void;
+  openCreateProject: () => void;
+  openEditProject: (id: UUID) => void;
+  closeProjectModal: () => void;
+  addProject: (input: { title: string; icon: string; color: string }) => Promise<Project>;
+  updateProject: (id: UUID, patch: Partial<{ title: string; icon: string; color: string }>) => Promise<Project>;
 
   // mutations — update local state synchronously + emit op
   addTask: (projectId: UUID, section: Section, title: string, assigneeId?: UUID | null) => UUID | null;
@@ -82,6 +93,7 @@ interface FiraState {
 const enqueue = (s: FiraState, payload: OpKind): Op[] => [...s.outbox, newOp(payload)];
 
 export const useFira = create<FiraState>((set, get) => ({
+  authChecked: false,
   loaded: false,
   error: null,
 
@@ -101,6 +113,7 @@ export const useFira = create<FiraState>((set, get) => ({
   activePersonId: null,
   weekOffset: 0,
   creatingDraft: null,
+  projectModal: null,
   projectFilter: {},
   inboxFilter: {
     project_id: null,
@@ -113,12 +126,13 @@ export const useFira = create<FiraState>((set, get) => ({
 
   hydrate: async () => {
     try {
+      const me: User = await api.me();
       const data: Bootstrap = await api.bootstrap();
-      const me = data.users.find((u) => u.email === 'maya@fira.dev') ?? data.users[0] ?? null;
       const projectFilter: Record<UUID, boolean> = {};
       data.projects.forEach((p) => { projectFilter[p.id] = true; });
       const firstProject = data.projects[0]?.id ?? null;
       set({
+        authChecked: true,
         loaded: true,
         error: null,
         users: data.users,
@@ -128,19 +142,32 @@ export const useFira = create<FiraState>((set, get) => ({
         tasks: data.tasks,
         blocks: data.blocks,
         gcal: data.gcal,
-        meId: me?.id ?? null,
-        selectedPersonIds: me ? [me.id] : [],
-        activePersonId: me?.id ?? null,
+        meId: me.id,
+        selectedPersonIds: [me.id],
+        activePersonId: me.id,
         projectFilter,
         inboxFilter: {
           ...get().inboxFilter,
           project_id: firstProject,
-          assignee_id: me?.id ?? null,
+          assignee_id: me.id,
         },
       });
     } catch (e) {
-      set({ error: e instanceof Error ? e.message : String(e) });
+      // 401 from /me means "not logged in" — that's a normal state, not an
+      // error. Anything else is a real failure.
+      if (e instanceof HttpError && e.status === 401) {
+        set({ authChecked: true, loaded: false, error: null, meId: null });
+        return;
+      }
+      set({ authChecked: true, error: e instanceof Error ? e.message : String(e) });
     }
+  },
+
+  logout: async () => {
+    try { await api.logout(); } catch { /* best-effort */ }
+    // Hard reload so any in-memory state (outbox, modals) is dropped and the
+    // next /me check decides what to render.
+    window.location.assign('/');
   },
 
   setView: (v, projectId) => set((s) => ({
@@ -185,6 +212,37 @@ export const useFira = create<FiraState>((set, get) => ({
     openTaskId: null,
   })),
   closeCreate: () => set({ creatingDraft: null }),
+  openCreateProject: () => set({ projectModal: { kind: 'new' } }),
+  openEditProject: (id) => set({ projectModal: { kind: 'edit', id } }),
+  closeProjectModal: () => set({ projectModal: null }),
+
+  addProject: async (input) => {
+    // Project create is rare and deliberate — a synchronous round-trip is
+    // fine and avoids the "appears in sidebar then vanishes on error" jank
+    // that an outbox-style optimistic insert would cause.
+    const project = await api.createProject(input);
+    set((s) => ({
+      projects: [...s.projects, project].sort((a, b) => a.title.localeCompare(b.title)),
+      projectFilter: { ...s.projectFilter, [project.id]: true },
+      // Switch into the new project's inbox so the user lands somewhere
+      // useful instead of an empty calendar.
+      view: 'inbox',
+      inboxFilter: { ...s.inboxFilter, project_id: project.id },
+      projectModal: null,
+    }));
+    return project;
+  },
+
+  updateProject: async (id, patch) => {
+    const updated = await api.updateProject(id, patch);
+    set((s) => ({
+      projects: s.projects
+        .map((p) => p.id === id ? updated : p)
+        .sort((a, b) => a.title.localeCompare(b.title)),
+      projectModal: null,
+    }));
+    return updated;
+  },
 
   addTask: (projectId, section, title, assigneeId) => {
     const trimmed = title.trim();

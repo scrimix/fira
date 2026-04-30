@@ -356,13 +356,8 @@ function SubtaskRow({ title, done, onToggle, onSave, onDelete }: {
 }
 
 function AddSubtaskRow({ onAdd }: { onAdd: (title: string) => void }) {
-  const [editing, setEditing] = useState(false);
   const [value, setValue] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (editing) inputRef.current?.focus();
-  }, [editing]);
 
   const commit = () => {
     const v = value.trim();
@@ -371,16 +366,10 @@ function AddSubtaskRow({ onAdd }: { onAdd: (title: string) => void }) {
     inputRef.current?.focus();
   };
 
-  if (!editing) {
-    return (
-      <div className="subtask-add" onClick={() => setEditing(true)}>
-        <span>+ add subtask</span>
-      </div>
-    );
-  }
   return (
-    <div className="subtask-add" data-editing="true">
-      <span style={{ width: 11, textAlign: 'center', color: 'var(--ink-4)' }}>+</span>
+    <div className="subtask-add" data-editing="true"
+         onClick={() => inputRef.current?.focus()}>
+      <span className="sc-spacer">+</span>
       <input
         ref={inputRef}
         className="subtask-add-input"
@@ -390,13 +379,12 @@ function AddSubtaskRow({ onAdd }: { onAdd: (title: string) => void }) {
           const v = value.trim();
           if (v) onAdd(v);
           setValue('');
-          setEditing(false);
         }}
         onKeyDown={(e) => {
           if (e.key === 'Enter') { e.preventDefault(); commit(); }
-          else if (e.key === 'Escape') { setValue(''); setEditing(false); }
+          else if (e.key === 'Escape') { setValue(''); inputRef.current?.blur(); }
         }}
-        placeholder="Subtask title"
+        placeholder="Add subtask…"
       />
     </div>
   );

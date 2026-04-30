@@ -83,6 +83,9 @@ async fn wipe(tx: &mut Transaction<'_, Postgres>) -> sqlx::Result<()> {
 
 async fn seed(tx: &mut Transaction<'_, Postgres>) -> sqlx::Result<()> {
     // ---- Users ----
+    // google_sub is filled with a stable `dev-*` placeholder so a real Google
+    // login doesn't collide with these fixture users (real subs are numeric
+    // strings; the index treats nulls as distinct).
     for (slug, name, initials, email) in [
         ("u_maya", "Maya Chen", "MC", "maya@fira.dev"),
         ("u_anna", "Anna Park", "AP", "anna@fira.dev"),
@@ -90,12 +93,13 @@ async fn seed(tx: &mut Transaction<'_, Postgres>) -> sqlx::Result<()> {
         ("u_jin", "Jin Okafor", "JO", "jin@fira.dev"),
     ] {
         sqlx::query(
-            "INSERT INTO users (id, email, name, initials) VALUES ($1,$2,$3,$4)",
+            "INSERT INTO users (id, email, name, initials, google_sub) VALUES ($1,$2,$3,$4,$5)",
         )
         .bind(id(slug))
         .bind(email)
         .bind(name)
         .bind(initials)
+        .bind(format!("dev-{slug}"))
         .execute(&mut **tx)
         .await?;
     }
@@ -108,8 +112,8 @@ async fn seed(tx: &mut Transaction<'_, Postgres>) -> sqlx::Result<()> {
     ];
     for (slug, title, icon, color, source, desc) in projects {
         sqlx::query(
-            "INSERT INTO projects (id, title, icon, color, source, description)
-             VALUES ($1,$2,$3,$4,$5,$6)",
+            "INSERT INTO projects (id, title, icon, color, source, description, owner_id)
+             VALUES ($1,$2,$3,$4,$5,$6,$7)",
         )
         .bind(id(slug))
         .bind(title)
@@ -117,6 +121,7 @@ async fn seed(tx: &mut Transaction<'_, Postgres>) -> sqlx::Result<()> {
         .bind(color)
         .bind(source)
         .bind(desc)
+        .bind(id("u_maya"))
         .execute(&mut **tx)
         .await?;
     }

@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Check, Copy, Trash2 } from 'lucide-react';
 import { useFira } from '../store';
 import {
   HOURS, DAY_LABELS, TODAY_DAY_INDEX, NOW_TIME_MIN,
@@ -330,41 +331,6 @@ export function CalendarView() {
 
   return (
     <div className="calendar">
-      <div className="cal-left">
-        <div className="group">
-          <h4>Projects</h4>
-          <div className="proj-filter">
-            {projects.map((p) => {
-              const dimmed = projectFilter[p.id] === false;
-              const alloc = allocByProject.find((a) => a.project.id === p.id);
-              return (
-                <div key={p.id} className="proj-filter-row" data-dimmed={dimmed}
-                     onClick={() => toggleProjectFilter(p.id)}>
-                  <div className="proj-swatch"
-                       style={{ background: dimmed ? 'var(--paper-3)' : p.color, border: `1px solid ${p.color}` }} />
-                  <span className="label">{p.title}</span>
-                  <span className="count">{fmtMin(alloc?.mins ?? 0)}</span>
-                </div>
-              );
-            })}
-          </div>
-          <div className="alloc-bar">
-            {allocByProject.map((a) => a.mins > 0 && (
-              <div key={a.project.id} className="alloc-seg"
-                   style={{ width: `${a.pct}%`, background: a.project.color }} />
-            ))}
-          </div>
-        </div>
-        <div className="group">
-          <h4>This week</h4>
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink-2)', lineHeight: 1.7 }}>
-            <div><span style={{ color: 'var(--ink-4)' }}>done    </span><span style={{ color: 'var(--done)' }}>{fmtMin(completedMin)}</span></div>
-            <div><span style={{ color: 'var(--ink-4)' }}>planned </span><span style={{ color: 'var(--accent)' }}>{fmtMin(plannedMin)}</span></div>
-            <div><span style={{ color: 'var(--ink-4)' }}>total   </span><span style={{ color: 'var(--ink)' }}>{fmtMin(totalMin)}</span></div>
-          </div>
-        </div>
-      </div>
-
       <div className="cal-main">
         <div className="cal-toolbar">
           <div className="week-nav">
@@ -387,9 +353,9 @@ export function CalendarView() {
             onSetActive={setActivePerson}
           />
           <div className="totals">
-            <span><strong>{fmtMin(completedMin)}</strong> done</span>
-            <span><strong>{fmtMin(plannedMin)}</strong> planned</span>
-            <span><strong>{fmtMin(totalMin)}</strong> total</span>
+            <span className="totals-done"><strong>{fmtMin(completedMin)}</strong> done</span>
+            <span className="totals-planned"><strong>{fmtMin(plannedMin)}</strong> planned</span>
+            <span className="totals-total"><strong>{fmtMin(totalMin)}</strong> total</span>
           </div>
         </div>
         <div className="cal-grid-wrap" ref={gridRef} style={{ ['--hour-h' as string]: `${HOUR_H}px` }}
@@ -495,7 +461,7 @@ export function CalendarView() {
                                   onPointerDown={(e) => e.stopPropagation()}
                                   onClick={(e) => { e.stopPropagation(); tickBlock(b); }}
                                   title={b.state === 'completed' ? 'Mark planned' : 'Mark complete'}>
-                            ✓
+                            <Check size={11} strokeWidth={2.25} />
                           </button>
                           <button className="tb-action tb-dup"
                                   onPointerDown={(e) => e.stopPropagation()}
@@ -505,13 +471,13 @@ export function CalendarView() {
                                     if (newId) setLastBlockId(newId);
                                   }}
                                   title="Duplicate (Ctrl+D)">
-                            ⎘
+                            <Copy size={11} strokeWidth={1.75} />
                           </button>
                           <button className="tb-action tb-close"
                                   onPointerDown={(e) => e.stopPropagation()}
                                   onClick={(e) => { e.stopPropagation(); deleteBlock(b.id); }}
                                   title="Delete block">
-                            ×
+                            <Trash2 size={11} strokeWidth={1.75} />
                           </button>
                         </div>
                         <div className="tb-resize tb-resize-top" />
@@ -525,7 +491,10 @@ export function CalendarView() {
           </div>
         </div>
       </div>
-      <CalRail onDragTask={setDraggedTaskId} />
+      <CalRail
+        onDragTask={setDraggedTaskId}
+        allocByProject={allocByProject}
+      />
     </div>
   );
 }
@@ -546,7 +515,12 @@ function UserPicker({ users, meId, selectedPersonIds, activePersonId, onAdd, onR
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [activeIdx, setActiveIdx] = useState(0);
+  // Anchor the popover against whichever viewport edge gives it more room.
+  // Without this, a small picker (only "Me" pinned) sits near the left edge
+  // and the right-anchored popover would extend past x = 0.
+  const [popAlign, setPopAlign] = useState<'left' | 'right'>('right');
   const wrapRef = useRef<HTMLDivElement>(null);
+  const popRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const selectedSet = new Set(selectedPersonIds);
@@ -587,6 +561,22 @@ function UserPicker({ users, meId, selectedPersonIds, activePersonId, onAdd, onR
     }
   }, [open]);
 
+  // Pick the side with more breathing room *after* the popover paints, so we
+  // can read its real width and avoid clipping. Falls back to right-anchor
+  // when both sides fit.
+  useLayoutEffect(() => {
+    if (!open) return;
+    const wrap = wrapRef.current;
+    const pop = popRef.current;
+    if (!wrap || !pop) return;
+    const wrapRect = wrap.getBoundingClientRect();
+    const popWidth = pop.getBoundingClientRect().width;
+    const margin = 8;
+    const fitsRightAnchor = wrapRect.right - popWidth >= margin;
+    const fitsLeftAnchor = wrapRect.left + popWidth <= window.innerWidth - margin;
+    setPopAlign(fitsRightAnchor ? 'right' : fitsLeftAnchor ? 'left' : 'right');
+  }, [open, selectedPersonIds.length]);
+
   useEffect(() => { setActiveIdx(0); }, [query]);
 
   const pickFromSearch = (id: UUID) => {
@@ -622,7 +612,7 @@ function UserPicker({ users, meId, selectedPersonIds, activePersonId, onAdd, onR
         <span className="user-name">+ Add</span>
       </button>
       {open && (
-        <div className="user-popover">
+        <div className="user-popover" ref={popRef} data-align={popAlign}>
           <input
             ref={inputRef}
             className="user-search"
@@ -665,11 +655,15 @@ function UserPicker({ users, meId, selectedPersonIds, activePersonId, onAdd, onR
   );
 }
 
-function CalRail({ onDragTask }: { onDragTask: (id: UUID | null) => void }) {
+function CalRail({ onDragTask, allocByProject }: {
+  onDragTask: (id: UUID | null) => void;
+  allocByProject: Array<{ project: Project; mins: number; pct: number }>;
+}) {
   const tasks = useFira((s) => s.tasks);
   const blocks = useFira((s) => s.blocks);
   const projects = useFira((s) => s.projects);
   const projectFilter = useFira((s) => s.projectFilter);
+  const toggleProjectFilter = useFira((s) => s.toggleProjectFilter);
   const activePersonId = useFira((s) => s.activePersonId);
   const openTask = useFira((s) => s.openTask);
   const openCreate = useFira((s) => s.openCreate);
@@ -694,6 +688,23 @@ function CalRail({ onDragTask }: { onDragTask: (id: UUID | null) => void }) {
           <span>New task</span>
         </button>
       </div>
+      <div className="rail-projects">
+        <div className="rail-projects-head">Projects</div>
+        {projects.map((p) => {
+          const dimmed = projectFilter[p.id] === false;
+          const alloc = allocByProject.find((a) => a.project.id === p.id);
+          return (
+            <div key={p.id} className="rail-proj-row" data-dimmed={dimmed}
+                 onClick={() => toggleProjectFilter(p.id)}
+                 title={dimmed ? `Show ${p.title} on calendar` : `Hide ${p.title} from calendar`}>
+              <div className="rail-proj-swatch"
+                   style={{ background: dimmed ? 'var(--paper-3)' : p.color, borderColor: p.color }} />
+              <span className="rail-proj-name">{p.title}</span>
+              <span className="rail-proj-count">{fmtMin(alloc?.mins ?? 0)}</span>
+            </div>
+          );
+        })}
+      </div>
       <div className="rail-body">
         {groups.map((g) => (
           <div key={g.project.id} className="rail-group">
@@ -716,7 +727,7 @@ function CalRail({ onDragTask }: { onDragTask: (id: UUID | null) => void }) {
               const overSpent = est != null && completed > est;
               const leftLabel = left == null ? 'no est'
                 : left < 0 ? `${fmtMin(-left)} over`
-                : left === 0 ? (overSpent ? `+${fmtMin(completed - (est ?? 0))} spent` : 'done')
+                : left === 0 && overSpent ? `+${fmtMin(completed - (est ?? 0))} spent`
                 : `${fmtMin(left)} left`;
               return (
                 <div key={t.id} className="rail-task"

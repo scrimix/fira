@@ -5,6 +5,8 @@ use serde_json::json;
 pub enum ApiError {
     #[error("not found")]
     NotFound,
+    #[error("bad request: {0}")]
+    BadRequest(String),
     #[error(transparent)]
     Sqlx(#[from] sqlx::Error),
     #[error(transparent)]
@@ -15,6 +17,7 @@ impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let (status, msg) = match &self {
             ApiError::NotFound => (StatusCode::NOT_FOUND, "not found".to_string()),
+            ApiError::BadRequest(m) => (StatusCode::BAD_REQUEST, m.clone()),
             ApiError::Sqlx(sqlx::Error::RowNotFound) => (StatusCode::NOT_FOUND, "not found".to_string()),
             ApiError::Sqlx(e) => {
                 tracing::error!("sqlx error: {e}");
