@@ -1,9 +1,3 @@
-# Devcontainer-only overlay. Adds a `dev` service that VS Code attaches to.
-# It mounts the repo at /workspace and shares the docker network with the
-# real api/web/postgres services from the parent docker-compose.yml — so
-# from inside the dev shell `psql -h postgres`, `curl http://api:3000`,
-# and `curl http://web:5173` all work.
-
 services:
   dev:
     # Paths in this file are resolved relative to the *first* compose file's
@@ -18,6 +12,8 @@ services:
     # VS Code attaches as `vscode` via remoteUser in devcontainer.json,
     # so the editor session and shells run as the unprivileged user.
     entrypoint: /workspace/.devcontainer/entrypoint.sh
+    ports:
+      - "5174:5173"
     volumes:
       - ./:/workspace:cached
       - dev-cargo-cache:/home/vscode/.cargo/registry
@@ -28,7 +24,6 @@ services:
     environment:
       DATABASE_URL: postgres://fira:fira@postgres:5432/fira
       RUST_LOG: info,sqlx=warn,tower_http=info
-      VITE_API_PROXY_TARGET: http://api:3000
       # libpq picks these up automatically — every `psql` call in this
       # container connects to the compose postgres without prompts.
       PGHOST: postgres
