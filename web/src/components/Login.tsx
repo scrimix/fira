@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, loginUrl } from '../api';
+import { BrandMark } from './BrandMark';
 
 export function Login() {
   // dev_auth gates the "Sign in as Maya" affordance; we only render it
@@ -46,10 +47,10 @@ export function Login() {
     <div className="login-shell">
       <div className="login-card">
         <div className="login-head">
-          <Mark />
+          <BrandMark size={44} className="login-mark" />
           <span className="login-wordmark">Fira</span>
         </div>
-        <p className="login-tag">Calendar-first task management.</p>
+        <p className="login-tag">Plan what actually fits.</p>
         <a className="login-google" href={loginUrl}>
           <GoogleMark /> Continue with Google
         </a>
@@ -72,19 +73,6 @@ export function Login() {
         )}
       </div>
     </div>
-  );
-}
-
-// Three stacked time-block bars; the middle one is the "now" — accent cyan.
-// Visualizes a planned day at a glance and reads as Fira's unit of work.
-function Mark() {
-  return (
-    <svg className="login-mark" width="44" height="44" viewBox="0 0 44 44" aria-hidden="true">
-      <rect x="2.5" y="2.5" width="39" height="39" fill="none" stroke="currentColor" strokeWidth="1"/>
-      <rect x="9" y="10" width="20" height="5" fill="currentColor" opacity="0.85"/>
-      <rect x="9" y="19" width="26" height="5" fill="var(--accent)"/>
-      <rect x="9" y="28" width="14" height="5" fill="currentColor" opacity="0.45"/>
-    </svg>
   );
 }
 
