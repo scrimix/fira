@@ -13,7 +13,7 @@ COPY web/ ./
 RUN pnpm build
 
 # --- api build ---------------------------------------------------------
-FROM rust:1.88-slim-bookworm AS api
+FROM rust:1.88-slim AS api
 WORKDIR /api
 # Pre-warm the cargo dep cache as its own layer so source-only edits
 # don't trigger a from-scratch rebuild of dependencies.
