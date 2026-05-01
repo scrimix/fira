@@ -55,6 +55,9 @@ impl AuthConfig {
             google_client_secret: std::env::var("GOOGLE_CLIENT_SECRET").unwrap_or_default(),
             redirect_url: std::env::var("OAUTH_REDIRECT_URL")
                 .unwrap_or_else(|_| "http://localhost:5173/api/auth/google/callback".into()),
+            // Note: dev callback path is `/api/auth/google/callback` — Vite
+            // proxies it to the api unchanged. In prod the api serves both,
+            // so the same path works there too.
             app_base_url: std::env::var("APP_BASE_URL")
                 .unwrap_or_else(|_| "http://localhost:5173".into()),
             cookie_secure: std::env::var("COOKIE_SECURE")

@@ -347,8 +347,11 @@ async fn main() -> anyhow::Result<()> {
     let serve_index = ServeFile::new(format!("{static_root}/index.html"));
     let static_svc = ServeDir::new(&static_root).not_found_service(serve_index);
 
-    let app = Router::new()
-        .route("/health", get(health))
+    // All JSON / auth routes live under `/api`. The SPA's fetch wrapper
+    // hard-codes `BASE = '/api'`; in dev, Vite proxies `/api/*` to the api on
+    // :3000 unchanged (no strip); in prod, the api serves itself and routes
+    // `/api/*` here. `/health` stays at the root for Fly's healthcheck.
+    let api = Router::new()
         .route("/me", get(auth::me))
         .route("/auth/config", get(auth::config))
         .route("/auth/google/login", get(auth::google_login))
@@ -368,11 +371,13 @@ async fn main() -> anyhow::Result<()> {
         .route("/changes", get(ops::get_changes));
 
     #[cfg(feature = "dev_auth")]
-    let app = app
+    let api = api
         .route("/auth/dev-login", get(auth::dev_login))
         .route("/auth/dev-seed", post(auth::dev_seed));
 
-    let app = app
+    let app = Router::new()
+        .route("/health", get(health))
+        .nest("/api", api)
         .with_state(state)
         .layer(TraceLayer::new_for_http())
         .fallback_service(static_svc);

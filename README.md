@@ -131,7 +131,7 @@ needed for first deploy. Required env / secrets on the Fly app:
 | `DATABASE_URL`          | postgres connection string (Fly Postgres or external) |
 | `GOOGLE_CLIENT_ID`      | Google OAuth client id                                |
 | `GOOGLE_CLIENT_SECRET`  | Google OAuth client secret                            |
-| `OAUTH_REDIRECT_URL`    | `https://<your-domain>/auth/google/callback`          |
+| `OAUTH_REDIRECT_URL`    | `https://<your-domain>/api/auth/google/callback`      |
 | `APP_BASE_URL`          | `https://<your-domain>`                               |
 | `COOKIE_SECURE`         | `1`                                                   |
 

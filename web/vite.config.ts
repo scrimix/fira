@@ -11,10 +11,12 @@ export default defineConfig({
     port: 5173,
     host: true,
     proxy: {
+      // The api mounts everything under `/api/*` (and `/health` at root for
+      // Fly). Forward unchanged — no strip — so dev and prod hit the same
+      // paths.
       '/api': {
         target: 'http://dev:3000',
         changeOrigin: true,
-        rewrite: (p) => p.replace(/^\/api/, ''),
       },
     },
   },
