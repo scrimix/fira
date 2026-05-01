@@ -103,7 +103,7 @@ export default function App() {
 
   if (!authChecked) {
     return (
-      <div style={{ padding: 24, color: 'var(--ink-3)', fontFamily: 'var(--font-mono)', fontSize: 12 }}>
+      <div style={{ padding: 24, color: 'var(--ink-3)', fontFamily: 'var(--font-mono)', fontSize: 'calc(12px * var(--fs-scale))' }}>
         loading…
       </div>
     );
@@ -115,7 +115,7 @@ export default function App() {
 
   if (!loaded) {
     return (
-      <div style={{ padding: 24, color: 'var(--ink-3)', fontFamily: 'var(--font-mono)', fontSize: 12 }}>
+      <div style={{ padding: 24, color: 'var(--ink-3)', fontFamily: 'var(--font-mono)', fontSize: 'calc(12px * var(--fs-scale))' }}>
         loading…
       </div>
     );

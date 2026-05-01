@@ -16,7 +16,6 @@ export function InboxView() {
   const inboxFilter = useFira((s) => s.inboxFilter);
   const tickTask = useFira((s) => s.tickTask);
   const tickSubtask = useFira((s) => s.tickSubtask);
-  const addSubtask = useFira((s) => s.addSubtask);
   const setSubtaskTitle = useFira((s) => s.setSubtaskTitle);
   const deleteSubtask = useFira((s) => s.deleteSubtask);
   const setTaskSection = useFira((s) => s.setTaskSection);
@@ -149,7 +148,6 @@ export function InboxView() {
     <TaskRow key={t.id} task={t} blocks={blocks}
              onTick={tickTask}
              onSubTick={tickSubtask}
-             onAddSub={addSubtask}
              onSubSave={setSubtaskTitle}
              onSubDelete={deleteSubtask}
              onOpen={openTask}
@@ -399,48 +397,11 @@ function InboxSubtaskRow({ title, done, onToggle, onSave, onDelete }: {
   );
 }
 
-function AddSubtaskRowInline({ onAdd }: { onAdd: (title: string) => void }) {
-  const [value, setValue] = useState('');
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  const commit = () => {
-    const v = value.trim();
-    if (v) onAdd(v);
-    setValue('');
-    inputRef.current?.focus();
-  };
-
-  return (
-    <div className="subtask-add" data-editing="true"
-         onClick={(e) => { e.stopPropagation(); inputRef.current?.focus(); }}>
-      <span className="sc-spacer">+</span>
-      <input
-        ref={inputRef}
-        className="subtask-add-input"
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        onClick={(e) => e.stopPropagation()}
-        onBlur={() => {
-          const v = value.trim();
-          if (v) onAdd(v);
-          setValue('');
-        }}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') { e.preventDefault(); commit(); }
-          else if (e.key === 'Escape') { setValue(''); inputRef.current?.blur(); }
-        }}
-        placeholder="Add subtask…"
-      />
-    </div>
-  );
-}
-
 interface RowProps {
   task: Task;
   blocks: TimeBlock[];
   onTick: (id: string) => void;
   onSubTick: (taskId: string, subId: string) => void;
-  onAddSub: (taskId: UUID, title: string) => void;
   onSubSave: (taskId: UUID, subId: UUID, title: string) => void;
   onSubDelete: (taskId: UUID, subId: UUID) => void;
   onOpen: (id: string) => void;
@@ -453,7 +414,7 @@ interface RowProps {
 }
 
 function TaskRow({
-  task, blocks, onTick, onSubTick, onAddSub, onSubSave, onSubDelete, onOpen,
+  task, blocks, onTick, onSubTick, onSubSave, onSubDelete, onOpen,
   onDragStart, onRowDragOver, onRowDrop, onRowDragLeave, dropMark, showSubs,
 }: RowProps) {
   const left = taskTimeLeft(task, blocks);
@@ -472,7 +433,7 @@ function TaskRow({
          onDrop={(e) => onRowDrop(e, task)}
          onClick={(e) => {
            const el = e.target as HTMLElement;
-           if (el.closest('.task-check, .subtask, .subtask-add, .task-grip')) return;
+           if (el.closest('.task-check, .subtask, .task-grip')) return;
            onOpen(task.id);
          }}>
       <div className="task-grip"
@@ -492,7 +453,7 @@ function TaskRow({
           {task.external_id && <span className="ext-id">{task.external_id}</span>}
           <span className="task-title">{task.title}</span>
         </div>
-        {showSubs && (
+        {showSubs && task.subtasks.length > 0 && (
           <div className="subtasks">
             {task.subtasks.map((s) => (
               <InboxSubtaskRow
@@ -504,13 +465,12 @@ function TaskRow({
                 onDelete={() => onSubDelete(task.id, s.id)}
               />
             ))}
-            <AddSubtaskRowInline onAdd={(title) => onAddSub(task.id, title)} />
           </div>
         )}
       </div>
       <div className="task-trail">
         {task.tags.slice(0, 1).map((tg) => (
-          <span key={tg} className="chip" style={{ height: 16, fontSize: 9 }}>{tg}</span>
+          <span key={tg} className="chip" style={{ height: 16, fontSize: 'calc(9px * var(--fs-scale))' }}>{tg}</span>
         ))}
         {task.estimate_min != null && left != null ? (
           left < 0 ? (

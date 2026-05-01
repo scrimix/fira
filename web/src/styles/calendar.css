@@ -45,7 +45,7 @@
 }
 .cal-toolbar .week-nav-btn:last-child { border-right: 0; }
 .cal-toolbar .week-nav-btn:hover { color: var(--ink); background: var(--paper-3); }
-.cal-toolbar .week-nav-btn.week-nav-today { letter-spacing: 0.06em; text-transform: uppercase; font-size: 10px; }
+.cal-toolbar .week-nav-btn.week-nav-today { letter-spacing: 0.06em; text-transform: uppercase; font-size: calc(10px * var(--fs-scale)); }
 .cal-toolbar .week-nav-btn.week-nav-today[data-active="true"] {
   color: var(--accent);
   background: var(--accent-soft);
@@ -72,7 +72,7 @@
   letter-spacing: 0;
   border-right: 1px solid var(--rule-2);
 }
-.cal-toolbar .user-pill .avatar { width: 16px; height: 16px; font-size: 8px; }
+.cal-toolbar .user-pill .avatar { width: 16px; height: 16px; font-size: calc(8px * var(--fs-scale)); }
 .cal-toolbar .user-pill:last-child { border-right: 0; }
 .cal-toolbar .user-pill:hover { color: var(--ink); background: var(--paper-3); }
 .cal-toolbar .user-pill[data-active="true"] {
@@ -106,7 +106,7 @@
   width: 14px; height: 14px;
   margin-left: 2px;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: calc(12px * var(--fs-scale));
   line-height: 1;
   color: inherit;
   cursor: pointer;
@@ -201,7 +201,7 @@
 .user-row-you { color: var(--ink-4); font-weight: 400; }
 .user-row-email {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: calc(10px * var(--fs-scale));
   color: var(--ink-4);
 }
 .cal-toolbar .totals {
@@ -256,14 +256,14 @@
 }
 .cal-dayhead .dow {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: calc(10px * var(--fs-scale));
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--ink-3);
 }
 .cal-dayhead .dnum {
   font-family: var(--font-mono);
-  font-size: 16px;
+  font-size: calc(16px * var(--fs-scale));
   font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
@@ -280,7 +280,7 @@
   height: var(--hour-h, 56px);
   position: relative;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: calc(10px * var(--fs-scale));
   color: var(--ink-4);
   text-align: right;
   padding-right: 6px;
@@ -389,7 +389,7 @@
   top: 2px;
   right: 4px;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: calc(11px * var(--fs-scale));
   color: var(--warn);
   pointer-events: none;
   z-index: 1;
@@ -416,7 +416,7 @@
 }
 .tblock[data-short="true"] .tb-meta { display: none; }
 .tblock[data-short="true"] .tb-title {
-  font-size: 10px;
+  font-size: calc(10px * var(--fs-scale));
   line-height: 1.1;
 }
 
@@ -435,7 +435,7 @@
   width: 16px; height: 16px;
   display: grid; place-items: center;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: calc(11px * var(--fs-scale));
   line-height: 1;
   background: var(--paper);
   border: 1px solid var(--rule-2);
@@ -474,7 +474,7 @@
 }
 .tb-meta {
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: calc(9px * var(--fs-scale));
   color: var(--ink-3);
   display: flex;
   align-items: center;
@@ -483,7 +483,7 @@
 .tb-meta .dot { width: 3px; height: 3px; background: currentColor; border-radius: 50%; }
 .tb-extid {
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: calc(9px * var(--fs-scale));
   color: var(--ink-3);
   opacity: 0.75;
   margin-top: auto;
@@ -522,7 +522,7 @@
   border: 1px dashed var(--rule-3);
   padding: 3px 6px;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: calc(10px * var(--fs-scale));
   color: var(--ink-3);
   z-index: 1;
   white-space: nowrap;
@@ -561,14 +561,14 @@
 }
 .rail-new-btn .rail-new-plus {
   font-family: var(--font-mono);
-  font-size: 14px;
+  font-size: calc(14px * var(--fs-scale));
   line-height: 1;
 }
 .rail-scope-btn {
   height: 24px;
   padding: 0 10px;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: calc(10px * var(--fs-scale));
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--ink-3);
@@ -606,7 +606,7 @@
   content: '↗ ';
   color: var(--ink-4);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: calc(10px * var(--fs-scale));
 }
 /* Project filter — moved out of the deprecated left rail. Sits as a
  * secondary panel at the top of the rail (paper-2 background) so it reads
@@ -620,7 +620,7 @@
 }
 .rail-projects-head {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: calc(10px * var(--fs-scale));
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--ink-3);
@@ -650,7 +650,7 @@
 }
 .rail-proj-count {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: calc(10px * var(--fs-scale));
   color: var(--ink-4);
   font-variant-numeric: tabular-nums;
 }
@@ -666,7 +666,7 @@
   display: flex; align-items: center; gap: 6px;
   padding: 8px 12px 6px;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: calc(10px * var(--fs-scale));
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--ink-3);
@@ -700,7 +700,7 @@
   position: absolute;
   right: 12px; top: 9px;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: calc(10px * var(--fs-scale));
   color: var(--done);
 }
 .rail-task[data-blocker="true"]::before {
@@ -723,7 +723,7 @@
   margin-top: 3px;
   display: flex; align-items: center; gap: 6px;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: calc(10px * var(--fs-scale));
   color: var(--ink-3);
 }
 .rail-task-meta .left {

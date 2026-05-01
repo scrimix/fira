@@ -175,10 +175,13 @@ pub async fn seed_all(tx: &mut Transaction<'_, Postgres>) -> sqlx::Result<()> {
     }
 
     // ---- Projects ----
+    // Icon names match `PROJECT_ICONS` in web/src/components/ProjectIcon.tsx
+    // so the seed appears in the same icon set the picker offers — not as
+    // unicode-glyph fallbacks that can't be re-selected.
     let projects = [
-        ("p_atlas", "Atlas", "◆", "#0F766E", "jira", "Core platform. Auth, billing, infra."),
-        ("p_relay", "Relay", "▲", "#B45309", "notion", "Internal tooling — sync engine."),
-        ("p_helix", "Helix", "◇", "#6D28D9", "local", "Personal R&D — embedding experiments."),
+        ("p_atlas", "Atlas", "Compass",  "#0F766E", "jira",   "Core platform. Auth, billing, infra."),
+        ("p_relay", "Relay", "Zap",      "#B45309", "notion", "Internal tooling — sync engine."),
+        ("p_helix", "Helix", "Sparkles", "#6D28D9", "local",  "Personal R&D — embedding experiments."),
     ];
     for (slug, title, icon, color, source, desc) in projects {
         sqlx::query(

@@ -115,7 +115,7 @@ export function TaskModal({ taskId }: Props) {
             <div style={{ marginTop: 16 }}>
               <h5 style={modalH5}>Time blocks · {taskBlocks.length}</h5>
               {taskBlocks.length === 0 ? (
-                <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink-4)', padding: '8px 0' }}>
+                <div style={{ fontFamily: 'var(--font-mono)', fontSize: 'calc(11px * var(--fs-scale))', color: 'var(--ink-4)', padding: '8px 0' }}>
                   No blocks yet.
                 </div>
               ) : taskBlocks.map(({ b, start_min, dur_min }) => {
@@ -128,24 +128,24 @@ export function TaskModal({ taskId }: Props) {
                     <span className="avatar" data-me={b.user_id === meId} title={u?.name ?? '?'}>
                       {u?.initials ?? '?'}
                     </span>
-                    <span style={{ color: 'var(--ink-2)', fontFamily: 'var(--font-mono)', fontSize: 11 }}>
+                    <span style={{ color: 'var(--ink-2)', fontFamily: 'var(--font-mono)', fontSize: 'calc(11px * var(--fs-scale))' }}>
                       {dateLabel}
                     </span>
-                    <span style={{ color: 'var(--ink-3)', fontFamily: 'var(--font-mono)', fontSize: 11 }}>
+                    <span style={{ color: 'var(--ink-3)', fontFamily: 'var(--font-mono)', fontSize: 'calc(11px * var(--fs-scale))' }}>
                       {fmtClockShort(start_min)} – {fmtClockShort(start_min + dur_min)}
                     </span>
-                    <span style={{ color: 'var(--ink-2)', fontFamily: 'var(--font-mono)', fontSize: 11, textAlign: 'right' }}>
+                    <span style={{ color: 'var(--ink-2)', fontFamily: 'var(--font-mono)', fontSize: 'calc(11px * var(--fs-scale))', textAlign: 'right' }}>
                       {fmtMin(dur_min)}
                     </span>
                     <span style={{
-                      fontFamily: 'var(--font-mono)', fontSize: 9, letterSpacing: '0.08em',
+                      fontFamily: 'var(--font-mono)', fontSize: 'calc(9px * var(--fs-scale))', letterSpacing: '0.08em',
                       textTransform: 'uppercase', textAlign: 'right',
                       display: 'inline-flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end',
                       color: b.state === 'completed' ? 'var(--done)' : b.state === 'planned' ? 'var(--accent)' : 'var(--ink-4)',
                     }}>
                       {stale && (
                         <span title="Task is marked done, but this block is still planned."
-                              style={{ color: 'var(--warn)', fontSize: 11 }}>⚠</span>
+                              style={{ color: 'var(--warn)', fontSize: 'calc(11px * var(--fs-scale))' }}>⚠</span>
                       )}
                       {b.state}
                     </span>
@@ -219,7 +219,7 @@ const MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct',
 const modalH5: React.CSSProperties = {
   margin: '18px 0 4px',
   fontFamily: 'var(--font-mono)',
-  fontSize: 10,
+  fontSize: 'calc(10px * var(--fs-scale))',
   letterSpacing: '0.1em',
   textTransform: 'uppercase',
   color: 'var(--ink-3)',
@@ -579,8 +579,8 @@ function ExternalLinkEditor({ label, url, resolvedUrl, hasTemplate, onSaveLabel,
           }}
         />
         <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-          <button className="btn" style={{ padding: '2px 8px', fontSize: 11 }} onClick={cancel}>Cancel</button>
-          <button className="btn" style={{ padding: '2px 8px', fontSize: 11 }} onClick={commit}>Save</button>
+          <button className="btn" style={{ padding: '2px 8px', fontSize: 'calc(11px * var(--fs-scale))' }} onClick={cancel}>Cancel</button>
+          <button className="btn" style={{ padding: '2px 8px', fontSize: 'calc(11px * var(--fs-scale))' }} onClick={commit}>Save</button>
         </div>
       </div>
     );
@@ -589,7 +589,7 @@ function ExternalLinkEditor({ label, url, resolvedUrl, hasTemplate, onSaveLabel,
   if (!label && !url) {
     return (
       <div onClick={() => setEditing(true)}
-           style={{ cursor: 'text', color: 'var(--ink-4)', fontFamily: 'var(--font-mono)', fontSize: 12 }}>
+           style={{ cursor: 'text', color: 'var(--ink-4)', fontFamily: 'var(--font-mono)', fontSize: 'calc(12px * var(--fs-scale))' }}>
         Click to add a link
       </div>
     );
@@ -607,7 +607,7 @@ function ExternalLinkEditor({ label, url, resolvedUrl, hasTemplate, onSaveLabel,
           {display}
         </a>
       ) : (
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--ink-2)' }}
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'calc(12px * var(--fs-scale))', color: 'var(--ink-2)' }}
               title="No URL — add one here or set a template on the project.">
           {display}
         </span>

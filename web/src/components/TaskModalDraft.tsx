@@ -195,7 +195,7 @@ export function TaskModalDraft({ draft }: Props) {
 const modalH5: React.CSSProperties = {
   margin: '18px 0 4px',
   fontFamily: 'var(--font-mono)',
-  fontSize: 10,
+  fontSize: 'calc(10px * var(--fs-scale))',
   letterSpacing: '0.1em',
   textTransform: 'uppercase',
   color: 'var(--ink-3)',
@@ -326,7 +326,7 @@ function DraftExternalLinkEditor({ label, url, onChangeLabel, onChangeUrl, hasTe
            style={{
              cursor: 'text',
              fontFamily: 'var(--font-mono)',
-             fontSize: 12,
+             fontSize: 'calc(12px * var(--fs-scale))',
              color: display ? 'var(--ink)' : 'var(--ink-4)',
              wordBreak: 'break-all',
            }}
