@@ -163,7 +163,7 @@
   background: var(--paper);
   color: var(--ink);
 }
-.user-search:focus { border-bottom-color: var(--accent-line); }
+.user-search:focus { border-bottom-color: var(--focus-line); }
 .user-list {
   max-height: 280px;
   overflow: auto;
@@ -594,7 +594,7 @@
   border: 1px solid var(--rule-2);
   outline: 0;
 }
-.rail-search:focus { border-color: var(--accent-line); }
+.rail-search:focus { border-color: var(--focus-line); }
 .rail-search::placeholder { color: var(--ink-4); }
 
 /* Tasks not owned by the active person are dimmed so the assignee's own

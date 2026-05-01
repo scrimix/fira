@@ -489,8 +489,8 @@
   cursor: text;
 }
 .desc-md.desc-md-edit:focus {
-  border-color: var(--accent-line);
-  outline: 1px solid var(--accent-line);
+  border-color: var(--focus-line);
+  outline: 1px solid var(--focus-line);
   outline-offset: -1px;
   background: var(--paper);
 }
@@ -597,7 +597,7 @@
 .status-option[data-tone="done"] { color: var(--done); }
 .status-option[data-tone="todo"] { color: var(--ink-2); }
 .status-option[data-tone="backlog"] { color: var(--ink-3); }
-.modal-side .side-input:focus { border-color: var(--accent-line); }
+.modal-side .side-input:focus { border-color: var(--focus-line); }
 .modal-side .side-input[data-bad="true"] { border-color: var(--danger); }
 
 .subtask-edit {

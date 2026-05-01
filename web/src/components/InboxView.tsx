@@ -35,6 +35,15 @@ export function InboxView() {
   const myProjectMembership = project?.members.find((m) => m.user_id === meId) ?? null;
   const canEditThisProject = myWorkspaceRole === 'owner'
     || myProjectMembership?.role === 'lead';
+
+  // Hooks must run unconditionally on every render — the empty-state branch
+  // below is an early return, so all useState/useRef calls live above it.
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({ done: true });
+  const [collapsedAssignee, setCollapsedAssignee] = useState<Record<UUID, boolean>>({});
+  const [dropTarget, setDropTarget] = useState<Section | null>(null);
+  const [assigneeDropTarget, setAssigneeDropTarget] = useState<UUID | null>(null);
+  const [rowDropAt, setRowDropAt] = useState<{ id: UUID; pos: 'before' | 'after' } | null>(null);
+
   if (!project) {
     // Three empty states:
     //   - workspace has projects but none is selected → prompt to pick one
@@ -78,11 +87,6 @@ export function InboxView() {
     ? [meId, ...memberIds.filter((u) => u !== meId)]
     : memberIds;
 
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({ done: true });
-  const [collapsedAssignee, setCollapsedAssignee] = useState<Record<UUID, boolean>>({});
-  const [dropTarget, setDropTarget] = useState<Section | null>(null);
-  const [assigneeDropTarget, setAssigneeDropTarget] = useState<UUID | null>(null);
-  const [rowDropAt, setRowDropAt] = useState<{ id: UUID; pos: 'before' | 'after' } | null>(null);
   const userById = (id: string | null) => users.find((u) => u.id === id);
 
   const onRowDragStart = (e: React.DragEvent, taskId: string) => {

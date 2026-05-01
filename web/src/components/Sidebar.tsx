@@ -1,6 +1,7 @@
 import { Settings } from 'lucide-react';
 import { useFira } from '../store';
 import { ProjectIcon } from './ProjectIcon';
+import { BrandMark } from './BrandMark';
 
 export function Sidebar() {
   const view = useFira((s) => s.view);
@@ -24,7 +25,7 @@ export function Sidebar() {
 
   return (
     <div className="sidebar">
-      <div className="brand">F</div>
+      <BrandMark className="brand" size={32} title="Fira" />
       <button className="nav-btn" data-active={view === 'calendar'}
               onClick={() => setView('calendar')} title="Calendar (G)">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
