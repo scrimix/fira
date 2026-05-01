@@ -298,18 +298,32 @@ async fn health() -> &'static str {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Pre-tracing breadcrumb so `docker logs` shows *something* even if
+    // tracing init panics or the process dies before we reach .init().
+    eprintln!("fira-api: starting");
     dotenvy::dotenv().ok();
 
+    // Default filter: everything from this crate at trace, everything else
+    // at info. Keeps app logs maximally verbose by default; library noise
+    // (sqlx query plans, hyper internals) stays at info. Override with
+    // RUST_LOG, e.g. `RUST_LOG=fira_api=info,sqlx=warn`.
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("fira_api=trace,info")),
         )
         .init();
 
     let database_url = std::env::var("DATABASE_URL")
         .unwrap_or_else(|_| "postgres://fira:fira@localhost:5432/fira".into());
     let bind = std::env::var("API_BIND_ADDR").unwrap_or_else(|_| "0.0.0.0:3000".into());
+    let static_root = std::env::var("STATIC_ROOT").unwrap_or_else(|_| "dist".into());
+    tracing::info!(
+        bind = %bind,
+        static_root = %static_root,
+        db_host = %redact_db_host(&database_url),
+        "resolved config"
+    );
 
     let pool = wait_for_pool(&database_url).await?;
     sqlx::migrate!("./migrations").run(&pool).await?;
@@ -367,6 +381,20 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("fira-api listening on {bind}");
     axum::serve(listener, app).await?;
     Ok(())
+}
+
+/// Strip credentials and surface only `host[:port]/db` from the
+/// connection string — safe to log, useful for "did the env var land".
+fn redact_db_host(url: &str) -> String {
+    match url::Url::parse(url) {
+        Ok(u) => {
+            let host = u.host_str().unwrap_or("?");
+            let port = u.port().map(|p| format!(":{p}")).unwrap_or_default();
+            let db = u.path().trim_start_matches('/');
+            format!("{host}{port}/{db}")
+        }
+        Err(_) => "<unparseable>".into(),
+    }
 }
 
 async fn wait_for_pool(url: &str) -> anyhow::Result<PgPool> {
