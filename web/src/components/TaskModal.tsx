@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Pencil } from 'lucide-react';
+import { Check, Copy, Pencil } from 'lucide-react';
 import { useFira } from '../store';
 import {
   fmtMin, fmtClockShort, parseEstimate,
   taskCompletedMin, taskPlannedMin, taskTimeLeft,
   blockToGrid,
 } from '../time';
-import type { Status, User, UUID } from '../types';
+import type { Status, Task, User, UUID } from '../types';
 
 interface Props { taskId: string }
 
@@ -86,7 +86,11 @@ export function TaskModal({ taskId }: Props) {
               </>
             )}
 
-            <h5 style={modalH5}>Description</h5>
+            <h5 style={{ ...modalH5, display: 'flex', alignItems: 'center' }}>
+              <span>Description</span>
+              <span style={{ flex: 1 }} />
+              <CopyMarkdownButton task={task} />
+            </h5>
             <DescriptionEditor
               taskId={task.id}
               value={task.description_md}
@@ -329,6 +333,61 @@ function DescriptionEditor({ taskId, value, onSave }: {
 function autosize(ta: HTMLTextAreaElement) {
   ta.style.height = 'auto';
   ta.style.height = `${ta.scrollHeight}px`;
+}
+
+// Build a markdown rendering of the task suitable for pasting into Notion,
+// Jira (which accepts markdown-ish), Linear, etc. Keeps title + description
+// + subtasks because that's the chunk a person typically wants to share —
+// not estimates, blocks, or assignee.
+function taskToMarkdown(task: Task): string {
+  const lines: string[] = [];
+  lines.push(`# ${task.title}`);
+  if (task.description_md.trim()) {
+    lines.push('');
+    lines.push(task.description_md.trim());
+  }
+  if (task.subtasks.length > 0) {
+    lines.push('');
+    lines.push('## Subtasks');
+    for (const s of task.subtasks) {
+      lines.push(`- [${s.done ? 'x' : ' '}] ${s.title}`);
+    }
+  }
+  return lines.join('\n');
+}
+
+function CopyMarkdownButton({ task }: { task: Task }) {
+  const [copied, setCopied] = useState(false);
+  const onClick = async () => {
+    try {
+      await navigator.clipboard.writeText(taskToMarkdown(task));
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Clipboard unavailable (insecure context, permission denied) — fail
+      // silently. Could fall back to a hidden textarea + execCommand, but
+      // every browser we care about supports the async clipboard on https.
+    }
+  };
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={copied ? 'Copied' : 'Copy title, description, and subtasks as markdown'}
+      style={{
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+        width: 20, height: 20,
+        padding: 0,
+        color: copied ? 'var(--done)' : 'var(--ink-2)',
+        background: 'transparent',
+        border: 0,
+        cursor: 'pointer',
+        transition: 'color 120ms ease',
+      }}
+    >
+      {copied ? <Check size={13} strokeWidth={2} /> : <Copy size={12} strokeWidth={1.5} />}
+    </button>
+  );
 }
 
 function SubtaskRow({ title, done, onToggle, onSave, onDelete }: {

@@ -33,6 +33,7 @@ export default function App() {
   });
   const hydrate = useFira((s) => s.hydrate);
   const activeWorkspaceId = useFira((s) => s.activeWorkspaceId);
+  const playgroundMode = useFira((s) => s.playgroundMode);
 
   useEffect(() => {
     hydrate();
@@ -63,14 +64,16 @@ export default function App() {
 
   // WS nudge channel: open one socket per active workspace. Each nudge
   // triggers the same syncOutbox+pollChanges sequence as the interval, so
-  // ordering and idempotency stay identical to the polled path.
+  // ordering and idempotency stay identical to the polled path. Playground
+  // mode has no server, so no socket — the open would just spin in
+  // reconnect backoff.
   useEffect(() => {
-    if (!activeWorkspaceId) return;
+    if (!activeWorkspaceId || playgroundMode) return;
     const handle = openNudgeSocket(activeWorkspaceId, () => {
       void syncOutbox().then(() => pollChanges());
     });
     return () => handle.close();
-  }, [activeWorkspaceId, syncOutbox, pollChanges]);
+  }, [activeWorkspaceId, syncOutbox, pollChanges, playgroundMode]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -141,3 +144,4 @@ export default function App() {
     </div>
   );
 }
+

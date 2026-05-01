@@ -272,6 +272,34 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
 }
 .login-google:hover { background: var(--paper-3); border-color: var(--rule-3); }
 
+.login-playground {
+  align-self: stretch;
+  margin-top: 10px;
+  height: 36px;
+  padding: 0 16px;
+  border: 1px dashed var(--rule-2);
+  background: transparent;
+  color: var(--ink-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: background 80ms ease, border-color 80ms ease, color 80ms ease;
+}
+.login-playground:hover {
+  background: var(--paper-3);
+  border-color: var(--rule-3);
+  color: var(--ink);
+}
+.login-playground-hint {
+  align-self: stretch;
+  margin: 6px 0 0;
+  color: var(--ink-3);
+  font-size: var(--fs-xs);
+  font-family: var(--font-mono);
+  letter-spacing: 0.02em;
+}
+
 .login-dev {
   align-self: stretch;
   margin-top: 10px;

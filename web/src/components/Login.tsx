@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, loginUrl } from '../api';
+import { useFira } from '../store';
 import { BrandMark } from './BrandMark';
 
 export function Login() {
@@ -8,6 +9,7 @@ export function Login() {
   const [devAuth, setDevAuth] = useState(false);
   const [signing, setSigning] = useState(false);
   const [signError, setSignError] = useState<string | null>(null);
+  const enterPlayground = useFira((s) => s.enterPlayground);
 
   useEffect(() => {
     let cancelled = false;
@@ -54,6 +56,17 @@ export function Login() {
         <a className="login-google" href={loginUrl}>
           <GoogleMark /> Continue with Google
         </a>
+        <button
+          type="button"
+          className="login-playground"
+          onClick={() => enterPlayground()}
+          title="Try Fira as Maya Chen — fully in your browser, no account needed"
+        >
+          Try as Maya in your browser
+        </button>
+        <p className="login-playground-hint">
+          Playground mode · changes stay on this device, no account.
+        </p>
         {devAuth && (
           <>
             <button

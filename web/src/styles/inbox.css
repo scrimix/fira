@@ -267,7 +267,7 @@
   font-family: var(--font-mono);
   font-size: calc(10px * var(--fs-scale));
   color: var(--ink-4);
-  margin-right: 6px;
+  margin-left: 6px;
 }
 
 .task-trail {
@@ -466,7 +466,7 @@
   outline: none;
 }
 .desc-md {
-  font-size: var(--fs-md);
+  font-size: var(--fs-sm);
   line-height: 1.55;
   color: var(--ink-2);
   white-space: pre-wrap;

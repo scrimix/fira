@@ -450,8 +450,8 @@ function TaskRow({
       </div>
       <div className="task-title-wrap">
         <div>
-          {task.external_id && <span className="ext-id">{task.external_id}</span>}
           <span className="task-title">{task.title}</span>
+          {task.external_id && <span className="ext-id">{task.external_id}</span>}
         </div>
         {showSubs && task.subtasks.length > 0 && (
           <div className="subtasks">

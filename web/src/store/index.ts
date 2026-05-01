@@ -12,6 +12,9 @@ import type {
 } from '../types';
 import { api, HttpError, setActiveWorkspaceId } from '../api';
 import { newOp, type Op, type OpKind, type AnyOpKind, type ChangeEntry } from './outbox';
+import {
+  buildPlaygroundSeed, clearPlayground, isPlayground, markPlayground,
+} from '../playground';
 
 // Sync state machine. The TopBar pill reads this directly.
 //   idle  — nothing queued, last attempt either succeeded or never ran
@@ -42,6 +45,9 @@ interface FiraState {
   authChecked: boolean;
   loaded: boolean;
   error: string | null;
+  // True when the app is running against the in-memory playground seed
+  // instead of a real backend. Gates network calls everywhere.
+  playgroundMode: boolean;
 
   users: User[];
   projects: Project[];
@@ -89,6 +95,7 @@ interface FiraState {
   projectModal: { kind: 'new' } | { kind: 'edit'; id: UUID } | null;
 
   hydrate: () => Promise<void>;
+  enterPlayground: () => void;
   logout: () => Promise<void>;
   switchWorkspace: (id: UUID) => Promise<void>;
   createWorkspace: (title: string) => Promise<Workspace>;
@@ -358,6 +365,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
   authChecked: false,
   loaded: false,
   error: null,
+  playgroundMode: false,
 
   users: [],
   projects: [],
@@ -395,6 +403,37 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
   openTaskId: null,
 
   hydrate: async () => {
+    // Playground mode bypasses the network entirely. If the persist layer
+    // already restored a playground session we just flip the flag and skip
+    // the seed (the persisted state IS the seed). Fresh entries fall through
+    // to enterPlayground via the login button.
+    if (isPlayground()) {
+      const cached = get();
+      if (cached.meId && cached.activeWorkspaceId && cached.projects.length > 0) {
+        setActiveWorkspaceId(cached.activeWorkspaceId);
+        // Re-derive inboxFilter from the cached projects — `inboxFilter` is
+        // not in the persist partialize, so on a reload it starts at the
+        // null-project_id default and the inbox view would say "Pick a
+        // project from the sidebar" until you switch projects manually.
+        const firstProject = cached.projects[0]?.id ?? null;
+        set({
+          authChecked: true,
+          loaded: true,
+          playgroundMode: true,
+          error: null,
+          inboxFilter: {
+            ...cached.inboxFilter,
+            project_id: firstProject,
+            assignee_id: cached.meId,
+          },
+        });
+        return;
+      }
+      // Flag set but no cached state (e.g. first paint right after the user
+      // clicked "Try as Maya"): build the seed now.
+      get().enterPlayground();
+      return;
+    }
     try {
       const me: User = await api.me();
       const workspaces = await api.listMyWorkspaces();
@@ -484,6 +523,47 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     }
   },
 
+  enterPlayground: () => {
+    markPlayground();
+    const seed = buildPlaygroundSeed();
+    setActiveWorkspaceId(seed.workspace.id);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('fira:activeWorkspace', seed.workspace.id);
+    }
+    const projectFilter: Record<UUID, boolean> = {};
+    seed.bootstrap.projects.forEach((p) => { projectFilter[p.id] = true; });
+    const firstProject = seed.bootstrap.projects[0]?.id ?? null;
+    set({
+      authChecked: true,
+      loaded: true,
+      error: null,
+      playgroundMode: true,
+      users: seed.bootstrap.users,
+      projects: seed.bootstrap.projects,
+      epics: seed.bootstrap.epics,
+      sprints: seed.bootstrap.sprints,
+      tasks: seed.bootstrap.tasks,
+      blocks: seed.bootstrap.blocks,
+      gcal: seed.bootstrap.gcal,
+      cursor: 0,
+      appliedOpIds: new Map(),
+      outbox: [],
+      meId: seed.me.id,
+      workspaces: [seed.workspace as Workspace],
+      activeWorkspaceId: seed.workspace.id,
+      myWorkspaceRole: 'owner',
+      selectedPersonIds: [seed.me.id],
+      activePersonId: seed.me.id,
+      projectFilter,
+      inboxFilter: {
+        ...get().inboxFilter,
+        project_id: firstProject,
+        assignee_id: seed.me.id,
+      },
+      view: 'calendar',
+    });
+  },
+
   switchWorkspace: async (id) => {
     const ws = get().workspaces.find((w) => w.id === id);
     if (!ws) return;
@@ -532,20 +612,37 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
   },
 
   createWorkspace: async (title) => {
-    const ws = await api.createWorkspace(title);
+    const playground = get().playgroundMode;
+    const meId = get().meId;
+    const ws: Workspace = playground
+      ? {
+          id: crypto.randomUUID(),
+          title,
+          is_personal: false,
+          members: meId ? [{ user_id: meId, role: 'owner' }] : [],
+        }
+      : await api.createWorkspace(title);
     set((s) => ({ workspaces: [...s.workspaces, ws] }));
     await get().switchWorkspace(ws.id);
     return ws;
   },
 
   renameWorkspace: async (id, title) => {
-    const ws = await api.renameWorkspace(id, title);
+    const playground = get().playgroundMode;
+    const existing = get().workspaces.find((w) => w.id === id);
+    const ws: Workspace = playground && existing
+      ? { ...existing, title }
+      : await api.renameWorkspace(id, title);
     set((s) => ({ workspaces: s.workspaces.map((w) => w.id === id ? ws : w) }));
     return ws;
   },
 
   setWorkspaceMembers: async (id, members) => {
-    const ws = await api.setWorkspaceMembers(id, members);
+    const playground = get().playgroundMode;
+    const existing = get().workspaces.find((w) => w.id === id);
+    const ws: Workspace = playground && existing
+      ? { ...existing, members }
+      : await api.setWorkspaceMembers(id, members);
     const meId = get().meId;
     set((s) => ({
       workspaces: s.workspaces.map((w) => w.id === id ? ws : w),
@@ -557,7 +654,14 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
   },
 
   setWorkspaceMemberRole: async (id, userId, role) => {
-    const ws = await api.setWorkspaceMemberRole(id, userId, role);
+    const playground = get().playgroundMode;
+    const existing = get().workspaces.find((w) => w.id === id);
+    const ws: Workspace = playground && existing
+      ? {
+          ...existing,
+          members: existing.members.map((m) => m.user_id === userId ? { ...m, role } : m),
+        }
+      : await api.setWorkspaceMemberRole(id, userId, role);
     const meId = get().meId;
     set((s) => ({
       workspaces: s.workspaces.map((w) => w.id === id ? ws : w),
@@ -569,6 +673,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
   },
 
   loadWorkspaceUsers: async (id) => {
+    if (get().playgroundMode) return;
     const all = await api.listWorkspaceUsers(id);
     set((s) => {
       const byId = new Map(s.users.map((u) => [u.id, u]));
@@ -582,7 +687,14 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
   closeWorkspaceModal: () => set({ workspaceModal: null }),
 
   logout: async () => {
-    try { await api.logout(); } catch { /* best-effort */ }
+    // Playground "logout" is just an exit — there's no session to invalidate
+    // server-side. Clear the flag so the next visit starts fresh on the
+    // login screen.
+    if (get().playgroundMode) {
+      clearPlayground();
+    } else {
+      try { await api.logout(); } catch { /* best-effort */ }
+    }
     // Drop the persisted snapshot so the next user's reload doesn't see
     // the previous session's projects/tasks. Hard reload after.
     try { localStorage.removeItem('fira:store-v1'); } catch { /* private mode */ }
@@ -590,8 +702,16 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
   },
 
   syncOutbox: async () => {
-    const { outbox, syncStatus } = get();
+    const { outbox, syncStatus, playgroundMode } = get();
     if (syncStatus.kind === 'syncing') return;
+    // Playground: there's no server. Mutations have already been applied
+    // locally via pushOp; just clear the queue so the sync pill stays clean.
+    if (playgroundMode) {
+      if (outbox.length > 0) {
+        set({ outbox: [], syncStatus: { kind: 'idle' }, lastSyncedAt: Date.now() });
+      }
+      return;
+    }
     // Take the first batch of queued ops. Errored ops also re-enter this
     // pool — the user (or the next interval tick) gets to retry them.
     const batch = outbox.filter((o) => o.status !== 'syncing').slice(0, SYNC_BATCH_SIZE);
@@ -680,6 +800,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
   })),
 
   pollChanges: async () => {
+    if (get().playgroundMode) return;
     const { cursor, appliedOpIds, applyRemoteOp } = get();
     let resp;
     try {
@@ -771,7 +892,20 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     // Project create is rare and deliberate — a synchronous round-trip is
     // fine and avoids the "appears in sidebar then vanishes on error" jank
     // that an outbox-style optimistic insert would cause.
-    const project = await api.createProject(input);
+    const { playgroundMode, activeWorkspaceId, meId } = get();
+    const project: Project = playgroundMode
+      ? {
+          id: crypto.randomUUID(),
+          workspace_id: activeWorkspaceId ?? '',
+          title: input.title,
+          icon: input.icon,
+          color: input.color,
+          source: 'local',
+          description: null,
+          external_url_template: null,
+          members: meId ? [{ user_id: meId, role: 'lead' }] : [],
+        }
+      : await api.createProject(input);
     set((s) => ({
       projects: [...s.projects, project].sort((a, b) => a.title.localeCompare(b.title)),
       projectFilter: { ...s.projectFilter, [project.id]: true },
@@ -785,7 +919,19 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
   },
 
   updateProject: async (id, patch) => {
-    const updated = await api.updateProject(id, patch);
+    const playground = get().playgroundMode;
+    const existing = get().projects.find((p) => p.id === id);
+    const updated: Project = playground && existing
+      ? {
+          ...existing,
+          ...(patch.title !== undefined ? { title: patch.title } : {}),
+          ...(patch.icon !== undefined ? { icon: patch.icon } : {}),
+          ...(patch.color !== undefined ? { color: patch.color } : {}),
+          ...(patch.external_url_template !== undefined
+            ? { external_url_template: patch.external_url_template }
+            : {}),
+        }
+      : await api.updateProject(id, patch);
     set((s) => ({
       projects: s.projects
         .map((p) => p.id === id ? updated : p)
@@ -795,7 +941,11 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
   },
 
   setProjectMembers: async (id, members) => {
-    const updated = await api.setProjectMembers(id, members);
+    const playground = get().playgroundMode;
+    const existing = get().projects.find((p) => p.id === id);
+    const updated: Project = playground && existing
+      ? { ...existing, members }
+      : await api.setProjectMembers(id, members);
     set((s) => ({
       projects: s.projects.map((p) => p.id === id ? updated : p),
     }));
@@ -803,6 +953,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
   },
 
   loadAllUsers: async () => {
+    if (get().playgroundMode) return; // user list is fixed by the seed
     const ws = get().activeWorkspaceId;
     if (!ws) return;
     const all = await api.listWorkspaceUsers(ws);
@@ -1044,6 +1195,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     myWorkspaceRole: s.myWorkspaceRole,
     selectedPersonIds: s.selectedPersonIds,
     activePersonId: s.activePersonId,
+    playgroundMode: s.playgroundMode,
   // partialize is loosely typed — zustand expects S but we're returning a
   // subset of fields. Cast through unknown is the canonical workaround.
   }) as unknown as FiraState,
