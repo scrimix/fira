@@ -26,7 +26,15 @@ RUN mkdir -p src src/bin \
 COPY api/ ./
 # `--no-default-features` strips the `dev_auth` feature so /auth/dev-login
 # and /auth/dev-seed don't exist in the prod binary.
-RUN cargo build --release --bin fira-api --no-default-features
+#
+# `touch` is load-bearing: Docker COPY preserves the build context's mtimes,
+# which are usually OLDER than the dummy build's fingerprint above. Without
+# this, cargo sees "source older than cache" and skips rebuilding, leaving
+# the placeholder `fn main(){}` binary in target/release/fira-api.
+RUN find src -name '*.rs' -exec touch {} + \
+    && cargo build --release --bin fira-api --no-default-features \
+    && { grep -q "fira-api: starting" /api/target/release/fira-api \
+         || { echo "ERROR: built binary is missing expected startup string — cargo likely served the cached dummy build"; exit 1; }; }
 
 # --- runtime ----------------------------------------------------------
 FROM debian:bookworm-slim
