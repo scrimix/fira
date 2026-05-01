@@ -1,75 +1,90 @@
 // Time helpers for the calendar grid.
 //
-// The DB stores ISO timestamps. The grid wants (day 0..6, start_min, dur_min)
-// relative to the visible week, anchored to Monday 00:00 UTC of the current
-// week — same anchor the seeder uses, so seeded blocks line up.
+// Storage and the wire format are UTC ISO 8601. Display is in the browser's
+// local timezone — the calendar grid, week range, and "now" line all anchor
+// to local midnight so a user in PST sees Monday start at their 00:00, not
+// at 16:00. Day arithmetic uses Date methods (not raw ms) so DST transitions
+// don't shift the grid by an hour.
 
 export const HOURS = Array.from({ length: 24 }, (_, i) => i);
 export const DAY_LABELS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
 
-function computeWeekStartUtc(): number {
+function computeWeekStart(): number {
   const now = new Date();
-  const dayFromMon = (now.getUTCDay() + 6) % 7; // 0=Mon..6=Sun
-  return Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - dayFromMon);
+  const dayFromMon = (now.getDay() + 6) % 7; // 0=Mon..6=Sun
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate() - dayFromMon).getTime();
 }
 
-// Resolved at module load. Calendar rendering is timezone-naive (uses UTC
-// arithmetic everywhere), so anchoring "today" in UTC keeps server and
-// client in lockstep without dragging a TZ library into the frontend.
-export const WEEK_START_UTC = computeWeekStartUtc();
-export const TODAY_DAY_INDEX = (new Date().getUTCDay() + 6) % 7;
+// Resolved at module load. Anchors the grid to Monday 00:00 in the user's
+// local timezone, expressed as an absolute epoch-ms timestamp.
+export const WEEK_START_MS = computeWeekStart();
+export const TODAY_DAY_INDEX = (new Date().getDay() + 6) % 7;
 export const NOW_TIME_MIN = (() => {
   const n = new Date();
-  return n.getUTCHours() * 60 + n.getUTCMinutes();
+  return n.getHours() * 60 + n.getMinutes();
 })();
 
-export const WEEK_MS = 7 * 86400000;
-
 export function weekStartFor(weekOffset: number): number {
-  return WEEK_START_UTC + weekOffset * WEEK_MS;
+  // Step by calendar days, not raw ms, so DST weeks still land on local
+  // midnight instead of drifting by an hour.
+  const ws = new Date(WEEK_START_MS);
+  return new Date(ws.getFullYear(), ws.getMonth(), ws.getDate() + weekOffset * 7).getTime();
+}
+
+function addDaysLocal(ms: number, days: number): Date {
+  const d = new Date(ms);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate() + days);
 }
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 export function fmtWeekRange(weekStartMs: number): string {
   const start = new Date(weekStartMs);
-  const end = new Date(weekStartMs + 6 * 86400000);
-  const sameMonth = start.getUTCMonth() === end.getUTCMonth();
-  const sameYear = start.getUTCFullYear() === end.getUTCFullYear();
-  const sm = MONTHS[start.getUTCMonth()];
-  const em = MONTHS[end.getUTCMonth()];
+  const end = addDaysLocal(weekStartMs, 6);
+  const sameMonth = start.getMonth() === end.getMonth();
+  const sameYear = start.getFullYear() === end.getFullYear();
+  const sm = MONTHS[start.getMonth()];
+  const em = MONTHS[end.getMonth()];
   if (sameMonth) {
-    return `${sm} ${start.getUTCDate()} – ${end.getUTCDate()}, ${start.getUTCFullYear()}`;
+    return `${sm} ${start.getDate()} – ${end.getDate()}, ${start.getFullYear()}`;
   }
   if (sameYear) {
-    return `${sm} ${start.getUTCDate()} – ${em} ${end.getUTCDate()}, ${start.getUTCFullYear()}`;
+    return `${sm} ${start.getDate()} – ${em} ${end.getDate()}, ${start.getFullYear()}`;
   }
-  return `${sm} ${start.getUTCDate()}, ${start.getUTCFullYear()} – ${em} ${end.getUTCDate()}, ${end.getUTCFullYear()}`;
+  return `${sm} ${start.getDate()}, ${start.getFullYear()} – ${em} ${end.getDate()}, ${end.getFullYear()}`;
 }
 
 export function dayOfMonthFor(weekStartMs: number, dayIdx: number): number {
-  return new Date(weekStartMs + dayIdx * 86400000).getUTCDate();
+  return addDaysLocal(weekStartMs, dayIdx).getDate();
 }
 
-export function blockToGrid(start_at: string, end_at: string, weekStartMs: number = WEEK_START_UTC): {
+export function blockToGrid(start_at: string, end_at: string, weekStartMs: number = WEEK_START_MS): {
   day: number; start_min: number; dur_min: number;
 } {
-  const s = Date.parse(start_at);
-  const e = Date.parse(end_at);
-  const offsetMin = Math.round((s - weekStartMs) / 60000);
-  const day = Math.floor(offsetMin / (24 * 60));
-  const start_min = offsetMin - day * 24 * 60;
-  const dur_min = Math.round((e - s) / 60000);
+  const s = new Date(start_at);
+  const e = new Date(end_at);
+  // Anchor both ends to local midnight before measuring the day diff so a
+  // DST transition in the week doesn't push a Tuesday block onto Monday.
+  const sMid = new Date(s.getFullYear(), s.getMonth(), s.getDate()).getTime();
+  const ws = new Date(weekStartMs);
+  const wsMid = new Date(ws.getFullYear(), ws.getMonth(), ws.getDate()).getTime();
+  const day = Math.round((sMid - wsMid) / 86400000);
+  const start_min = s.getHours() * 60 + s.getMinutes();
+  const dur_min = Math.round((e.getTime() - s.getTime()) / 60000);
   return { day, start_min, dur_min };
 }
 
-export function gridToBlock(day: number, start_min: number, dur_min: number, weekStartMs: number = WEEK_START_UTC): {
+export function gridToBlock(day: number, start_min: number, dur_min: number, weekStartMs: number = WEEK_START_MS): {
   start_at: string; end_at: string;
 } {
-  const startMs = weekStartMs + day * 86400000 + start_min * 60000;
-  const endMs = startMs + dur_min * 60000;
+  const ws = new Date(weekStartMs);
+  const start = new Date(
+    ws.getFullYear(), ws.getMonth(), ws.getDate() + day,
+    Math.floor(start_min / 60), start_min % 60, 0, 0,
+  );
+  const end = new Date(start.getTime() + dur_min * 60000);
   return {
-    start_at: new Date(startMs).toISOString(),
-    end_at: new Date(endMs).toISOString(),
+    start_at: start.toISOString(),
+    end_at: end.toISOString(),
   };
 }
 
@@ -134,7 +149,7 @@ export function taskTimeLeft(task: Task, blocks: TimeBlock[]): number | null {
   // i.e. the plan has gone over. Callers that only want a non-negative number
   // should clamp themselves.
   if (task.estimate_min == null) return null;
-  const todayStart = WEEK_START_UTC + TODAY_DAY_INDEX * 86400000;
+  const todayStart = addDaysLocal(WEEK_START_MS, TODAY_DAY_INDEX).getTime();
   const futurePlanned = blocks
     .filter((b) => b.task_id === task.id && b.state === 'planned' && Date.parse(b.start_at) >= todayStart)
     .reduce((s, b) => s + (Date.parse(b.end_at) - Date.parse(b.start_at)) / 60000, 0);

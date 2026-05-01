@@ -3,7 +3,7 @@ import { Check, Copy, Trash2 } from 'lucide-react';
 import { useFira } from '../store';
 import { ProjectIcon } from './ProjectIcon';
 import {
-  HOURS, DAY_LABELS, TODAY_DAY_INDEX, NOW_TIME_MIN, WEEK_START_UTC,
+  HOURS, DAY_LABELS, TODAY_DAY_INDEX, NOW_TIME_MIN, WEEK_START_MS,
   blockToGrid, gridToBlock, fmtClockShort, fmtMin, taskCompletedMin, taskPlannedMin, taskTimeLeft,
   weekStartFor, dayOfMonthFor,
 } from '../time';
@@ -819,7 +819,10 @@ function CalRail({ onDragTask, allocByProject }: {
 
 function isBlocker(task: Task, blocks: TimeBlock[]): boolean {
   if (task.section !== 'now' || task.status !== 'in_progress') return false;
-  const todayMs = WEEK_START_UTC + TODAY_DAY_INDEX * 86400000;
+  const ws = new Date(WEEK_START_MS);
+  const todayMs = new Date(
+    ws.getFullYear(), ws.getMonth(), ws.getDate() + TODAY_DAY_INDEX,
+  ).getTime();
   return !blocks.some((b) =>
     b.task_id === task.id && b.state === 'planned' && Date.parse(b.start_at) >= todayMs
   );

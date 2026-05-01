@@ -121,7 +121,7 @@ export function TaskModal({ taskId }: Props) {
               ) : taskBlocks.map(({ b, start_min, dur_min }) => {
                 const stale = task.status === 'done' && b.state === 'planned';
                 const startDate = new Date(b.start_at);
-                const dateLabel = `${MONTH_ABBR[startDate.getUTCMonth()]} ${startDate.getUTCDate()}`;
+                const dateLabel = `${MONTH_ABBR[startDate.getMonth()]} ${startDate.getDate()}`;
                 const u = users.find((x) => x.id === b.user_id);
                 return (
                   <div key={b.id} style={blockRow}>
