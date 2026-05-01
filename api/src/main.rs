@@ -6,7 +6,7 @@ use axum::{
     Router,
 };
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
+use sqlx::{postgres::PgPoolOptions, PgPool};
 use std::time::Duration;
 use tower_http::services::{ServeDir, ServeFile};
 use tower_http::trace::TraceLayer;
@@ -325,8 +325,28 @@ async fn main() -> anyhow::Result<()> {
         "resolved config"
     );
 
-    let pool = wait_for_pool(&database_url).await?;
-    sqlx::migrate!("./migrations").run(&pool).await?;
+    // Lazy pool: never blocks startup, opens connections on first query.
+    // Combined with the background migration loop below, this lets /health
+    // come up immediately so Fly's healthcheck succeeds even if Postgres is
+    // briefly unreachable (cold start, restart, network blip).
+    let pool = PgPoolOptions::new().connect_lazy(&database_url)?;
+    {
+        let pool = pool.clone();
+        tokio::spawn(async move {
+            loop {
+                match sqlx::migrate!("./migrations").run(&pool).await {
+                    Ok(()) => {
+                        tracing::info!("migrations applied");
+                        break;
+                    }
+                    Err(e) => {
+                        tracing::warn!("migrations failed ({e}), retrying in 5s");
+                        tokio::time::sleep(Duration::from_secs(5)).await;
+                    }
+                }
+            }
+        });
+    }
 
     let auth_cfg = AuthConfig::from_env();
     if auth_cfg.dev_auth {
@@ -402,19 +422,3 @@ fn redact_db_host(url: &str) -> String {
     }
 }
 
-async fn wait_for_pool(url: &str) -> anyhow::Result<PgPool> {
-    let mut attempts = 0;
-    loop {
-        match PgPool::connect(url).await {
-            Ok(p) => return Ok(p),
-            Err(e) => {
-                attempts += 1;
-                if attempts >= 30 {
-                    return Err(e.into());
-                }
-                tracing::warn!("postgres not ready ({e}), retry {attempts}/30");
-                tokio::time::sleep(Duration::from_secs(1)).await;
-            }
-        }
-    }
-}
