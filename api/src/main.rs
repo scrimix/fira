@@ -16,18 +16,23 @@ mod db;
 mod error;
 mod models;
 mod ops;
+mod pubsub;
 #[cfg(feature = "dev_auth")]
 mod seed;
 mod workspaces;
+mod ws;
 
 use auth::{AuthConfig, AuthCtx};
 use error::ApiResult;
 use models::*;
+use pubsub::Hub;
+use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct AppState {
     pub pool: PgPool,
     pub auth: AuthConfig,
+    pub hub: Arc<Hub>,
 }
 
 #[derive(Serialize)]
@@ -352,7 +357,9 @@ async fn main() -> anyhow::Result<()> {
     if auth_cfg.dev_auth {
         tracing::warn!("DEV_AUTH=1 — /auth/dev-login is enabled. Do not use in production.");
     }
-    let state = AppState { pool, auth: auth_cfg };
+    let hub = Hub::new();
+    pubsub::start_listener_task(pool.clone(), hub.clone());
+    let state = AppState { pool, auth: auth_cfg, hub };
 
     // Same-origin in both dev (Vite proxy) and prod (api serves the SPA).
     // No CorsLayer needed; re-add scoped to the prod domain if a non-browser
@@ -388,7 +395,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/workspaces/:id/users", get(workspaces::list_users))
         .route("/workspaces/:id/all-users", get(workspaces::list_all_users))
         .route("/ops", post(ops::post_ops))
-        .route("/changes", get(ops::get_changes));
+        .route("/changes", get(ops::get_changes))
+        .route("/ws", get(ws::ws_handler));
 
     #[cfg(feature = "dev_auth")]
     let api = api

@@ -19,8 +19,9 @@ default = ["dev_auth"]
 dev_auth = []
 
 [dependencies]
-axum = "0.7"
+axum = { version = "0.7", features = ["ws"] }
 axum-extra = { version = "0.9", features = ["cookie"] }
+futures-util = "0.3"
 tokio = { version = "1", features = ["full"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["cors", "trace", "fs"] }

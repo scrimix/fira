@@ -231,10 +231,19 @@ async fn apply_one(
         .fetch_optional(&mut *tx)
         .await?;
 
-        if inserted.is_none() {
-            tx.rollback().await?;
-            return Ok(ApplyOutcome::AlreadyApplied);
-        }
+        let seq = match inserted {
+            Some((s,)) => s,
+            None => {
+                tx.rollback().await?;
+                return Ok(ApplyOutcome::AlreadyApplied);
+            }
+        };
+        // Nudge: fires only on commit (NOTIFY is transactional). Listeners
+        // on every API instance receive it and dispatch to local WS clients.
+        sqlx::query("SELECT pg_notify('ops_changes', $1)")
+            .bind(crate::pubsub::format_payload(workspace_id, seq))
+            .execute(&mut *tx)
+            .await?;
         tx.commit().await?;
         Ok(ApplyOutcome::Applied)
     }).await;
@@ -526,9 +535,10 @@ pub async fn record_synthesized_op(
     project_id: Option<Uuid>,
 ) -> sqlx::Result<()> {
     let op_id = Uuid::new_v4().to_string();
-    sqlx::query(
+    let seq: (i64,) = sqlx::query_as(
         "INSERT INTO processed_ops (op_id, user_id, kind, payload, project_id, workspace_id)
-         VALUES ($1, $2, $3, $4, $5, $6)",
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING seq",
     )
     .bind(op_id)
     .bind(user_id)
@@ -536,8 +546,12 @@ pub async fn record_synthesized_op(
     .bind(payload)
     .bind(project_id)
     .bind(workspace_id)
-    .execute(&mut **tx)
+    .fetch_one(&mut **tx)
     .await?;
+    sqlx::query("SELECT pg_notify('ops_changes', $1)")
+        .bind(crate::pubsub::format_payload(workspace_id, seq.0))
+        .execute(&mut **tx)
+        .await?;
     Ok(())
 }
 
@@ -551,17 +565,22 @@ pub async fn record_workspace_op(
     workspace_id: Uuid,
 ) -> sqlx::Result<()> {
     let op_id = Uuid::new_v4().to_string();
-    sqlx::query(
+    let seq: (i64,) = sqlx::query_as(
         "INSERT INTO processed_ops (op_id, user_id, kind, payload, project_id, workspace_id)
-         VALUES ($1, $2, $3, $4, NULL, $5)",
+         VALUES ($1, $2, $3, $4, NULL, $5)
+         RETURNING seq",
     )
     .bind(op_id)
     .bind(user_id)
     .bind(kind)
     .bind(payload)
     .bind(workspace_id)
-    .execute(&mut **tx)
+    .fetch_one(&mut **tx)
     .await?;
+    sqlx::query("SELECT pg_notify('ops_changes', $1)")
+        .bind(crate::pubsub::format_payload(workspace_id, seq.0))
+        .execute(&mut **tx)
+        .await?;
     Ok(())
 }
 

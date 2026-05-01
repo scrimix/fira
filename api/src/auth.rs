@@ -161,7 +161,7 @@ fn unauthorized() -> Response {
         .into_response()
 }
 
-async fn load_session_user(pool: &PgPool, sid: &str) -> sqlx::Result<Option<AuthUser>> {
+pub async fn load_session_user(pool: &PgPool, sid: &str) -> sqlx::Result<Option<AuthUser>> {
     let row: Option<(Uuid, String, String, String, Option<String>, DateTime<Utc>)> = sqlx::query_as(
         "SELECT u.id, u.email, u.name, u.initials, u.avatar_url, s.expires_at
          FROM sessions s

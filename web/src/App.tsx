@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useFira } from './store';
+import { openNudgeSocket } from './ws';
 import { Sidebar } from './components/Sidebar';
 import { TopBar } from './components/TopBar';
 import { CalendarView } from './components/CalendarView';
@@ -31,28 +32,45 @@ export default function App() {
     return m?.kind === 'edit' ? s.workspaces.find((w) => w.id === m.id) ?? null : null;
   });
   const hydrate = useFira((s) => s.hydrate);
+  const activeWorkspaceId = useFira((s) => s.activeWorkspaceId);
 
   useEffect(() => {
     hydrate();
   }, [hydrate]);
 
-  // Sync workers: every 2s push outbox edits, then pull change-feed rows
-  // for anything written by other clients. Push-then-pull keeps the local
-  // appliedOpIds-set in front of the echo so we don't double-apply our own
-  // ops. Both bail out cleanly if there's nothing to do.
+  // Outbox push: fast cadence so locally-queued mutations hit the server
+  // within 2s of the user making the change. Without this, the slow read-side
+  // poll below would also gate writes — a click would only POST minutes later.
   useEffect(() => {
-    const tick = () => {
-      void syncOutbox().then(() => pollChanges());
-    };
-    const id = window.setInterval(tick, 2000);
-    window.addEventListener('focus', tick);
-    window.addEventListener('online', tick);
+    const flush = () => { void syncOutbox(); };
+    const id = window.setInterval(flush, 2000);
+    window.addEventListener('focus', flush);
+    window.addEventListener('online', flush);
     return () => {
       window.clearInterval(id);
-      window.removeEventListener('focus', tick);
-      window.removeEventListener('online', tick);
+      window.removeEventListener('focus', flush);
+      window.removeEventListener('online', flush);
     };
-  }, [syncOutbox, pollChanges]);
+  }, [syncOutbox]);
+
+  // Change-feed pull: WS nudges are the real-time path. This 60s timer is a
+  // fallback for missed nudges (transient disconnect, dropped frames) so
+  // remote changes still surface even if the socket is unhappy.
+  useEffect(() => {
+    const id = window.setInterval(() => { void pollChanges(); }, 60_000);
+    return () => window.clearInterval(id);
+  }, [pollChanges]);
+
+  // WS nudge channel: open one socket per active workspace. Each nudge
+  // triggers the same syncOutbox+pollChanges sequence as the interval, so
+  // ordering and idempotency stay identical to the polled path.
+  useEffect(() => {
+    if (!activeWorkspaceId) return;
+    const handle = openNudgeSocket(activeWorkspaceId, () => {
+      void syncOutbox().then(() => pollChanges());
+    });
+    return () => handle.close();
+  }, [activeWorkspaceId, syncOutbox, pollChanges]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
