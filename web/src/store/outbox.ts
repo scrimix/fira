@@ -37,7 +37,7 @@ export type OpKind =
 export type RemoteOnlyOpKind =
   | { kind: 'project.create'; project: import('../types').Project }
   | { kind: 'project.update'; project: import('../types').Project }
-  | { kind: 'project.set_members'; project_id: string; members: string[] };
+  | { kind: 'project.set_members'; project_id: string; members: import('../types').ProjectMember[] };
 
 export type AnyOpKind = OpKind | RemoteOnlyOpKind;
 

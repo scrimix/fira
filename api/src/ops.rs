@@ -24,7 +24,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
-use crate::auth::AuthUser;
+use crate::auth::AuthCtx;
 use crate::error::ApiResult;
 use crate::AppState;
 
@@ -172,12 +172,12 @@ pub struct OpsResponse {
 
 pub async fn post_ops(
     State(s): State<AppState>,
-    user: AuthUser,
+    ctx: AuthCtx,
     Json(req): Json<OpsRequest>,
 ) -> Result<(StatusCode, Json<OpsResponse>), StatusCode> {
     let mut results = Vec::with_capacity(req.ops.len());
     for env in req.ops {
-        let res = apply_one(&s.pool, user.id, env).await;
+        let res = apply_one(&s.pool, ctx.user.id, ctx.workspace_id, env).await;
         results.push(match res {
             Ok((op_id, _outcome)) => OpResult { op_id, status: "ok", error: None },
             Err((op_id, e)) => {
@@ -197,6 +197,7 @@ enum ApplyOutcome {
 async fn apply_one(
     pool: &PgPool,
     user_id: Uuid,
+    workspace_id: Uuid,
     env: OpEnvelope,
 ) -> Result<(String, ApplyOutcome), (String, anyhow::Error)> {
     let op_id = env.op_id.clone();
@@ -213,13 +214,13 @@ async fn apply_one(
         // Apply the mutation, capturing project_id along the way so we can
         // scope log delivery later. apply_payload returns Err on auth failure.
         let mut project_id: Option<Uuid> = None;
-        apply_payload(&mut tx, user_id, op, &mut project_id).await?;
+        apply_payload(&mut tx, user_id, workspace_id, op, &mut project_id).await?;
 
         // Log + idempotency: PK conflict on op_id means a concurrent retry
         // of the same op_id won. Roll back so we don't double-apply.
         let inserted: Option<(i64,)> = sqlx::query_as(
-            "INSERT INTO processed_ops (op_id, user_id, kind, payload, project_id)
-             VALUES ($1, $2, $3, $4, $5)
+            "INSERT INTO processed_ops (op_id, user_id, kind, payload, project_id, workspace_id)
+             VALUES ($1, $2, $3, $4, $5, $6)
              ON CONFLICT (op_id) DO NOTHING
              RETURNING seq",
         )
@@ -228,6 +229,7 @@ async fn apply_one(
         .bind(&kind)
         .bind(&payload_value)
         .bind(project_id)
+        .bind(workspace_id)
         .fetch_optional(&mut *tx)
         .await?;
 
@@ -248,12 +250,13 @@ async fn apply_one(
 async fn apply_payload(
     tx: &mut Transaction<'_, Postgres>,
     user_id: Uuid,
+    workspace_id: Uuid,
     payload: Op,
     out_project_id: &mut Option<Uuid>,
 ) -> anyhow::Result<()> {
     match payload {
         Op::TaskCreate { task } => {
-            require_project_access(tx, user_id, task.project_id).await?;
+            require_project_access(tx, user_id, workspace_id, task.project_id).await?;
             *out_project_id = Some(task.project_id);
             sqlx::query(
                 "INSERT INTO tasks (id, project_id, epic_id, sprint_id, assignee_id,
@@ -283,50 +286,50 @@ async fn apply_payload(
             .await?;
         }
         Op::TaskTick { task_id, done } => {
-            *out_project_id = Some(ensure_task_in_scope(tx, user_id, task_id).await?);
+            *out_project_id = Some(ensure_task_in_scope(tx, user_id, workspace_id, task_id).await?);
             let next = if done { "done" } else { "in_progress" };
             sqlx::query("UPDATE tasks SET status = $2, updated_at = now() WHERE id = $1")
                 .bind(task_id).bind(next).execute(&mut **tx).await?;
         }
         Op::TaskSetStatus { task_id, status } => {
-            *out_project_id = Some(ensure_task_in_scope(tx, user_id, task_id).await?);
+            *out_project_id = Some(ensure_task_in_scope(tx, user_id, workspace_id, task_id).await?);
             sqlx::query("UPDATE tasks SET status = $2, updated_at = now() WHERE id = $1")
                 .bind(task_id).bind(&status).execute(&mut **tx).await?;
         }
         Op::TaskSetSection { task_id, section } => {
-            *out_project_id = Some(ensure_task_in_scope(tx, user_id, task_id).await?);
+            *out_project_id = Some(ensure_task_in_scope(tx, user_id, workspace_id, task_id).await?);
             sqlx::query("UPDATE tasks SET section = $2, updated_at = now() WHERE id = $1")
                 .bind(task_id).bind(&section).execute(&mut **tx).await?;
         }
         Op::TaskSetAssignee { task_id, assignee_id } => {
-            *out_project_id = Some(ensure_task_in_scope(tx, user_id, task_id).await?);
+            *out_project_id = Some(ensure_task_in_scope(tx, user_id, workspace_id, task_id).await?);
             sqlx::query("UPDATE tasks SET assignee_id = $2, updated_at = now() WHERE id = $1")
                 .bind(task_id).bind(assignee_id).execute(&mut **tx).await?;
         }
         Op::TaskSetEstimate { task_id, estimate_min } => {
-            *out_project_id = Some(ensure_task_in_scope(tx, user_id, task_id).await?);
+            *out_project_id = Some(ensure_task_in_scope(tx, user_id, workspace_id, task_id).await?);
             sqlx::query("UPDATE tasks SET estimate_min = $2, updated_at = now() WHERE id = $1")
                 .bind(task_id).bind(estimate_min).execute(&mut **tx).await?;
         }
         Op::TaskSetTitle { task_id, title } => {
-            *out_project_id = Some(ensure_task_in_scope(tx, user_id, task_id).await?);
+            *out_project_id = Some(ensure_task_in_scope(tx, user_id, workspace_id, task_id).await?);
             sqlx::query("UPDATE tasks SET title = $2, updated_at = now() WHERE id = $1")
                 .bind(task_id).bind(&title).execute(&mut **tx).await?;
         }
         Op::TaskSetDescription { task_id, description_md } => {
-            *out_project_id = Some(ensure_task_in_scope(tx, user_id, task_id).await?);
+            *out_project_id = Some(ensure_task_in_scope(tx, user_id, workspace_id, task_id).await?);
             sqlx::query("UPDATE tasks SET description_md = $2, updated_at = now() WHERE id = $1")
                 .bind(task_id).bind(&description_md).execute(&mut **tx).await?;
         }
         Op::TaskSetExternalId { task_id, external_id } => {
-            *out_project_id = Some(ensure_task_in_scope(tx, user_id, task_id).await?);
+            *out_project_id = Some(ensure_task_in_scope(tx, user_id, workspace_id, task_id).await?);
             // Empty string from the UI = clear (consistent with PATCH semantics).
             let value = external_id.as_deref().map(str::trim).filter(|s| !s.is_empty());
             sqlx::query("UPDATE tasks SET external_id = $2, updated_at = now() WHERE id = $1")
                 .bind(task_id).bind(value).execute(&mut **tx).await?;
         }
         Op::TaskSetExternalUrl { task_id, external_url } => {
-            *out_project_id = Some(ensure_task_in_scope(tx, user_id, task_id).await?);
+            *out_project_id = Some(ensure_task_in_scope(tx, user_id, workspace_id, task_id).await?);
             let value = external_url.as_deref().map(str::trim).filter(|s| !s.is_empty());
             // Soft validation — same shape as projects.external_url_template.
             if let Some(u) = value {
@@ -340,7 +343,7 @@ async fn apply_payload(
                 .bind(task_id).bind(value).execute(&mut **tx).await?;
         }
         Op::TaskReorder { project_id, section: _, ordered } => {
-            require_project_access(tx, user_id, project_id).await?;
+            require_project_access(tx, user_id, workspace_id, project_id).await?;
             *out_project_id = Some(project_id);
             for (i, task_id) in ordered.iter().enumerate() {
                 let sort_key = format!("{:08}", (i + 1) * 1000);
@@ -353,7 +356,7 @@ async fn apply_payload(
             }
         }
         Op::SubtaskCreate { subtask } => {
-            *out_project_id = Some(ensure_task_in_scope(tx, user_id, subtask.task_id).await?);
+            *out_project_id = Some(ensure_task_in_scope(tx, user_id, workspace_id, subtask.task_id).await?);
             sqlx::query(
                 "INSERT INTO subtasks (id, task_id, title, done, sort_key)
                  VALUES ($1,$2,$3,$4,$5)
@@ -367,22 +370,22 @@ async fn apply_payload(
             .execute(&mut **tx).await?;
         }
         Op::SubtaskTick { subtask_id, done } => {
-            *out_project_id = Some(ensure_subtask_in_scope(tx, user_id, subtask_id).await?);
+            *out_project_id = Some(ensure_subtask_in_scope(tx, user_id, workspace_id, subtask_id).await?);
             sqlx::query("UPDATE subtasks SET done = $2 WHERE id = $1")
                 .bind(subtask_id).bind(done).execute(&mut **tx).await?;
         }
         Op::SubtaskSetTitle { subtask_id, title } => {
-            *out_project_id = Some(ensure_subtask_in_scope(tx, user_id, subtask_id).await?);
+            *out_project_id = Some(ensure_subtask_in_scope(tx, user_id, workspace_id, subtask_id).await?);
             sqlx::query("UPDATE subtasks SET title = $2 WHERE id = $1")
                 .bind(subtask_id).bind(&title).execute(&mut **tx).await?;
         }
         Op::SubtaskDelete { subtask_id } => {
-            *out_project_id = Some(ensure_subtask_in_scope(tx, user_id, subtask_id).await?);
+            *out_project_id = Some(ensure_subtask_in_scope(tx, user_id, workspace_id, subtask_id).await?);
             sqlx::query("DELETE FROM subtasks WHERE id = $1")
                 .bind(subtask_id).execute(&mut **tx).await?;
         }
         Op::BlockCreate { block } => {
-            *out_project_id = Some(ensure_task_in_scope(tx, user_id, block.task_id).await?);
+            *out_project_id = Some(ensure_task_in_scope(tx, user_id, workspace_id, block.task_id).await?);
             sqlx::query(
                 "INSERT INTO time_blocks (id, task_id, user_id, start_at, end_at, state)
                  VALUES ($1,$2,$3,$4,$5,$6)
@@ -397,7 +400,7 @@ async fn apply_payload(
             .execute(&mut **tx).await?;
         }
         Op::BlockUpdate { block_id, patch } => {
-            *out_project_id = Some(ensure_block_in_scope(tx, user_id, block_id).await?);
+            *out_project_id = Some(ensure_block_in_scope(tx, user_id, workspace_id, block_id).await?);
             sqlx::query(
                 "UPDATE time_blocks SET
                     start_at = COALESCE($2, start_at),
@@ -412,7 +415,7 @@ async fn apply_payload(
             .execute(&mut **tx).await?;
         }
         Op::BlockDelete { block_id } => {
-            *out_project_id = Some(ensure_block_in_scope(tx, user_id, block_id).await?);
+            *out_project_id = Some(ensure_block_in_scope(tx, user_id, workspace_id, block_id).await?);
             sqlx::query("DELETE FROM time_blocks WHERE id = $1")
                 .bind(block_id).execute(&mut **tx).await?;
         }
@@ -445,35 +448,45 @@ pub struct ChangeEntry {
 
 pub async fn get_changes(
     State(s): State<AppState>,
-    user: AuthUser,
+    ctx: AuthCtx,
     Query(q): Query<ChangesQuery>,
 ) -> ApiResult<Json<ChangesResponse>> {
     let since = q.since.unwrap_or(0);
 
-    // Change-feed scope is broader than the bootstrap scope: a user who was
-    // just soft-removed needs to receive the `project.update` op that did
-    // the removing so their client can drop the project from local state.
-    // We bound that with `applied_at <= removed_at` so the ex-member gets
-    // exactly one terminal op and nothing after — no read-leak of ongoing
-    // project activity once they're out.
+    // Change-feed scope, in workspace context:
+    //   - workspace.* ops (workspace_id set, project_id NULL): every active
+    //     workspace member receives them.
+    //   - project ops: scoped to projects the user can see in the workspace
+    //     (own + member). Ex-members still get the terminal `project.set_members`
+    //     op (`applied_at <= removed_at`) so their client can drop state.
     let rows: Vec<(i64, String, String, serde_json::Value, DateTime<Utc>)> = sqlx::query_as(
         "SELECT po.seq, po.op_id, po.kind, po.payload, po.applied_at
          FROM processed_ops po
          WHERE po.seq > $1
-           AND po.project_id IS NOT NULL
+           AND po.workspace_id = $3
            AND (
-             po.project_id IN (SELECT id FROM projects WHERE owner_id = $2)
+             (po.project_id IS NULL AND EXISTS (
+               SELECT 1 FROM workspace_members wm
+               WHERE wm.workspace_id = $3 AND wm.user_id = $2 AND wm.removed_at IS NULL
+             ))
+             OR po.project_id IN (SELECT id FROM projects WHERE owner_id = $2 AND workspace_id = $3)
              OR po.project_id IN (
                SELECT pm.project_id FROM project_members pm
-               WHERE pm.user_id = $2
+               WHERE pm.user_id = $2 AND pm.workspace_id = $3
                  AND (pm.removed_at IS NULL OR po.applied_at <= pm.removed_at)
              )
+             OR (po.project_id IS NOT NULL AND EXISTS (
+               SELECT 1 FROM workspace_members wm
+               WHERE wm.workspace_id = $3 AND wm.user_id = $2
+                 AND wm.removed_at IS NULL AND wm.role = 'owner'
+             ))
            )
          ORDER BY po.seq ASC
          LIMIT 500",
     )
     .bind(since)
-    .bind(user.id)
+    .bind(ctx.user.id)
+    .bind(ctx.workspace_id)
     .fetch_all(&s.pool)
     .await?;
 
@@ -504,24 +517,51 @@ pub async fn current_cursor(pool: &PgPool) -> sqlx::Result<i64> {
 // --- log helper for non-/ops mutations (project create/update) ---
 
 /// Write a synthesized op to the change log so REST mutations propagate
-/// through /changes the same as outbox-driven ones.
+/// through /changes the same as outbox-driven ones. Used for project.*
+/// REST writes that originate outside the outbox.
 pub async fn record_synthesized_op(
     tx: &mut Transaction<'_, Postgres>,
     user_id: Uuid,
+    workspace_id: Uuid,
     kind: &str,
     payload: serde_json::Value,
     project_id: Option<Uuid>,
 ) -> sqlx::Result<()> {
     let op_id = Uuid::new_v4().to_string();
     sqlx::query(
-        "INSERT INTO processed_ops (op_id, user_id, kind, payload, project_id)
-         VALUES ($1, $2, $3, $4, $5)",
+        "INSERT INTO processed_ops (op_id, user_id, kind, payload, project_id, workspace_id)
+         VALUES ($1, $2, $3, $4, $5, $6)",
     )
     .bind(op_id)
     .bind(user_id)
     .bind(kind)
     .bind(payload)
     .bind(project_id)
+    .bind(workspace_id)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
+/// Workspace-scoped op (no project). Goes to every workspace member via
+/// the change feed.
+pub async fn record_workspace_op(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+    kind: &str,
+    payload: serde_json::Value,
+    workspace_id: Uuid,
+) -> sqlx::Result<()> {
+    let op_id = Uuid::new_v4().to_string();
+    sqlx::query(
+        "INSERT INTO processed_ops (op_id, user_id, kind, payload, project_id, workspace_id)
+         VALUES ($1, $2, $3, $4, NULL, $5)",
+    )
+    .bind(op_id)
+    .bind(user_id)
+    .bind(kind)
+    .bind(payload)
+    .bind(workspace_id)
     .execute(&mut **tx)
     .await?;
     Ok(())
@@ -529,17 +569,32 @@ pub async fn record_synthesized_op(
 
 // --- authorization helpers ---
 
+// Auth predicate: caller owns the project, is an explicit member, OR is an
+// owner/lead of the project's workspace. The workspace_id parameter scopes
+// the check so an `X-Workspace-Id` header can't be paired with a project_id
+// from a different workspace — the project row's workspace_id must match.
 async fn require_project_access(
     tx: &mut Transaction<'_, Postgres>,
     user_id: Uuid,
+    workspace_id: Uuid,
     project_id: Uuid,
 ) -> anyhow::Result<()> {
     let row: Option<(Uuid,)> = sqlx::query_as(
-        "SELECT id FROM projects WHERE id = $1
-         AND (owner_id = $2 OR id IN (SELECT project_id FROM project_members WHERE user_id = $2 AND removed_at IS NULL))",
+        "SELECT id FROM projects p
+         WHERE id = $1 AND p.workspace_id = $3
+           AND (
+             p.owner_id = $2
+             OR p.id IN (SELECT project_id FROM project_members WHERE user_id = $2 AND removed_at IS NULL)
+             OR EXISTS (
+               SELECT 1 FROM workspace_members wm
+               WHERE wm.workspace_id = $3 AND wm.user_id = $2
+                 AND wm.removed_at IS NULL AND wm.role = 'owner'
+             )
+           )",
     )
     .bind(project_id)
     .bind(user_id)
+    .bind(workspace_id)
     .fetch_optional(&mut **tx)
     .await?;
     if row.is_none() {
@@ -551,16 +606,26 @@ async fn require_project_access(
 async fn ensure_task_in_scope(
     tx: &mut Transaction<'_, Postgres>,
     user_id: Uuid,
+    workspace_id: Uuid,
     task_id: Uuid,
 ) -> anyhow::Result<Uuid> {
     let row: Option<(Uuid,)> = sqlx::query_as(
         "SELECT t.project_id FROM tasks t
          JOIN projects p ON p.id = t.project_id
-         WHERE t.id = $1
-         AND (p.owner_id = $2 OR p.id IN (SELECT project_id FROM project_members WHERE user_id = $2 AND removed_at IS NULL))",
+         WHERE t.id = $1 AND p.workspace_id = $3
+           AND (
+             p.owner_id = $2
+             OR p.id IN (SELECT project_id FROM project_members WHERE user_id = $2 AND removed_at IS NULL)
+             OR EXISTS (
+               SELECT 1 FROM workspace_members wm
+               WHERE wm.workspace_id = $3 AND wm.user_id = $2
+                 AND wm.removed_at IS NULL AND wm.role = 'owner'
+             )
+           )",
     )
     .bind(task_id)
     .bind(user_id)
+    .bind(workspace_id)
     .fetch_optional(&mut **tx)
     .await?;
     row.map(|(p,)| p).ok_or_else(|| anyhow::anyhow!("task not in scope"))
@@ -569,17 +634,27 @@ async fn ensure_task_in_scope(
 async fn ensure_subtask_in_scope(
     tx: &mut Transaction<'_, Postgres>,
     user_id: Uuid,
+    workspace_id: Uuid,
     subtask_id: Uuid,
 ) -> anyhow::Result<Uuid> {
     let row: Option<(Uuid,)> = sqlx::query_as(
         "SELECT t.project_id FROM subtasks s
          JOIN tasks t ON t.id = s.task_id
          JOIN projects p ON p.id = t.project_id
-         WHERE s.id = $1
-         AND (p.owner_id = $2 OR p.id IN (SELECT project_id FROM project_members WHERE user_id = $2 AND removed_at IS NULL))",
+         WHERE s.id = $1 AND p.workspace_id = $3
+           AND (
+             p.owner_id = $2
+             OR p.id IN (SELECT project_id FROM project_members WHERE user_id = $2 AND removed_at IS NULL)
+             OR EXISTS (
+               SELECT 1 FROM workspace_members wm
+               WHERE wm.workspace_id = $3 AND wm.user_id = $2
+                 AND wm.removed_at IS NULL AND wm.role = 'owner'
+             )
+           )",
     )
     .bind(subtask_id)
     .bind(user_id)
+    .bind(workspace_id)
     .fetch_optional(&mut **tx)
     .await?;
     row.map(|(p,)| p).ok_or_else(|| anyhow::anyhow!("subtask not in scope"))
@@ -588,17 +663,27 @@ async fn ensure_subtask_in_scope(
 async fn ensure_block_in_scope(
     tx: &mut Transaction<'_, Postgres>,
     user_id: Uuid,
+    workspace_id: Uuid,
     block_id: Uuid,
 ) -> anyhow::Result<Uuid> {
     let row: Option<(Uuid,)> = sqlx::query_as(
         "SELECT t.project_id FROM time_blocks b
          JOIN tasks t ON t.id = b.task_id
          JOIN projects p ON p.id = t.project_id
-         WHERE b.id = $1
-         AND (p.owner_id = $2 OR p.id IN (SELECT project_id FROM project_members WHERE user_id = $2 AND removed_at IS NULL))",
+         WHERE b.id = $1 AND p.workspace_id = $3
+           AND (
+             p.owner_id = $2
+             OR p.id IN (SELECT project_id FROM project_members WHERE user_id = $2 AND removed_at IS NULL)
+             OR EXISTS (
+               SELECT 1 FROM workspace_members wm
+               WHERE wm.workspace_id = $3 AND wm.user_id = $2
+                 AND wm.removed_at IS NULL AND wm.role = 'owner'
+             )
+           )",
     )
     .bind(block_id)
     .bind(user_id)
+    .bind(workspace_id)
     .fetch_optional(&mut **tx)
     .await?;
     row.map(|(p,)| p).ok_or_else(|| anyhow::anyhow!("block not in scope"))

@@ -17,8 +17,9 @@ mod error;
 mod models;
 mod ops;
 mod seed;
+mod workspaces;
 
-use auth::{AuthConfig, AuthUser};
+use auth::{AuthConfig, AuthCtx};
 use error::ApiResult;
 use models::*;
 
@@ -44,17 +45,17 @@ struct Bootstrap {
 
 async fn bootstrap(
     State(s): State<AppState>,
-    user: AuthUser,
+    ctx: AuthCtx,
 ) -> ApiResult<Json<Bootstrap>> {
-    let scope = db::project_scope(&s.pool, user.id).await?;
+    let scope = db::project_scope(&s.pool, ctx.user.id, ctx.workspace_id).await?;
     let (users, projects, epics, sprints, tasks, blocks, gcal, cursor) = tokio::try_join!(
-        db::list_users_in_scope(&s.pool, &scope, user.id),
+        db::list_users_in_scope(&s.pool, ctx.workspace_id, ctx.user.id),
         db::list_projects_in_scope(&s.pool, &scope),
         db::list_epics_in_scope(&s.pool, &scope),
         db::list_sprints_in_scope(&s.pool, &scope),
         db::list_tasks_in_scope(&s.pool, &scope),
         db::list_blocks_in_scope(&s.pool, &scope),
-        db::list_gcal_for_user(&s.pool, user.id),
+        db::list_gcal_for_user(&s.pool, ctx.user.id),
         ops::current_cursor(&s.pool),
     )?;
     Ok(Json(Bootstrap { users, projects, epics, sprints, tasks, blocks, gcal, cursor }))
@@ -62,21 +63,10 @@ async fn bootstrap(
 
 async fn projects(
     State(s): State<AppState>,
-    user: AuthUser,
+    ctx: AuthCtx,
 ) -> ApiResult<Json<Vec<Project>>> {
-    let scope = db::project_scope(&s.pool, user.id).await?;
+    let scope = db::project_scope(&s.pool, ctx.user.id, ctx.workspace_id).await?;
     Ok(Json(db::list_projects_in_scope(&s.pool, &scope).await?))
-}
-
-// All users in the system, used by the project editor's Members picker so
-// owners can add teammates they haven't worked with yet. Auth is required
-// (no anonymous user enumeration) but no scope filter — the picker needs
-// the full directory.
-async fn all_users(
-    State(s): State<AppState>,
-    _user: AuthUser,
-) -> ApiResult<Json<Vec<User>>> {
-    Ok(Json(db::list_all_users(&s.pool).await?))
 }
 
 #[derive(Deserialize)]
@@ -88,9 +78,14 @@ struct CreateProject {
 
 async fn create_project(
     State(s): State<AppState>,
-    user: AuthUser,
+    ctx: AuthCtx,
     Json(body): Json<CreateProject>,
 ) -> Result<(StatusCode, Json<Project>), error::ApiError> {
+    if !ctx.is_owner() {
+        return Err(error::ApiError::BadRequest(
+            "only workspace owners can create projects".into(),
+        ));
+    }
     let title = body.title.trim();
     validate_title(title)?;
     if !is_hex_color(&body.color) {
@@ -98,12 +93,13 @@ async fn create_project(
     }
     validate_icon(&body.icon)?;
     let mut tx = s.pool.begin().await?;
-    let project = db::create_project_tx(&mut tx, user.id, title, &body.icon, &body.color).await?;
-    // Log so peers viewing the same project see the new project show up in
-    // their next /changes poll. The synthesized op kind matches what the
-    // client knows how to apply.
+    let project = db::create_project_tx(
+        &mut tx, ctx.workspace_id, ctx.user.id, title, &body.icon, &body.color,
+    ).await?;
     let payload = serde_json::json!({ "kind": "project.create", "project": &project });
-    ops::record_synthesized_op(&mut tx, user.id, "project.create", payload, Some(project.id)).await?;
+    ops::record_synthesized_op(
+        &mut tx, ctx.user.id, ctx.workspace_id, "project.create", payload, Some(project.id),
+    ).await?;
     tx.commit().await?;
     Ok((StatusCode::CREATED, Json(project)))
 }
@@ -135,10 +131,11 @@ where
 
 async fn update_project(
     State(s): State<AppState>,
-    user: AuthUser,
+    ctx: AuthCtx,
     Path(id): Path<uuid::Uuid>,
     Json(body): Json<UpdateProject>,
 ) -> ApiResult<Json<Project>> {
+    authorize_project_edit(&s.pool, &ctx, id).await?;
     let title = match body.title.as_deref().map(str::trim) {
         Some(t) => { validate_title(t)?; Some(t) }
         None => None,
@@ -162,7 +159,6 @@ async fn update_project(
     let mut tx = s.pool.begin().await?;
     let project = db::update_project_tx(
         &mut tx,
-        user.id,
         id,
         title,
         body.icon.as_deref(),
@@ -172,9 +168,35 @@ async fn update_project(
     .await?
     .ok_or(error::ApiError::NotFound)?;
     let payload = serde_json::json!({ "kind": "project.update", "project": &project });
-    ops::record_synthesized_op(&mut tx, user.id, "project.update", payload, Some(project.id)).await?;
+    ops::record_synthesized_op(
+        &mut tx, ctx.user.id, ctx.workspace_id, "project.update", payload, Some(project.id),
+    ).await?;
     tx.commit().await?;
     Ok(Json(project))
+}
+
+/// Project edits are allowed for the workspace owner OR any project
+/// `lead`. Returns 404 if the project doesn't exist or sits in a
+/// different workspace from the caller's `X-Workspace-Id`.
+async fn authorize_project_edit(
+    pool: &sqlx::PgPool,
+    ctx: &AuthCtx,
+    project_id: uuid::Uuid,
+) -> Result<(), error::ApiError> {
+    let info = db::project_owner_and_workspace(pool, project_id)
+        .await?
+        .ok_or(error::ApiError::NotFound)?;
+    let (workspace_id, _owner_id) = info;
+    if workspace_id != ctx.workspace_id {
+        return Err(error::ApiError::NotFound);
+    }
+    if db::has_project_lead_authority(pool, ctx.workspace_id, project_id, ctx.user.id).await? {
+        Ok(())
+    } else {
+        Err(error::ApiError::BadRequest(
+            "project edits require project lead or workspace owner".into(),
+        ))
+    }
 }
 
 fn validate_url_template(t: &str) -> Result<(), error::ApiError> {
@@ -191,7 +213,13 @@ fn validate_url_template(t: &str) -> Result<(), error::ApiError> {
 
 #[derive(Deserialize)]
 struct SetMembers {
-    members: Vec<uuid::Uuid>,
+    members: Vec<MemberSpec>,
+}
+
+#[derive(Deserialize, Clone)]
+struct MemberSpec {
+    user_id: uuid::Uuid,
+    role: String,
 }
 
 // Replace project membership wholesale. Member changes are their own op
@@ -200,12 +228,26 @@ struct SetMembers {
 // from local state on receiving the removal op.
 async fn set_project_members(
     State(s): State<AppState>,
-    user: AuthUser,
+    ctx: AuthCtx,
     Path(id): Path<uuid::Uuid>,
     Json(body): Json<SetMembers>,
 ) -> ApiResult<Json<Project>> {
+    authorize_project_edit(&s.pool, &ctx, id).await?;
+    let info = db::project_owner_and_workspace(&s.pool, id)
+        .await?
+        .ok_or(error::ApiError::NotFound)?;
+    for m in &body.members {
+        if m.role != "lead" && m.role != "member" {
+            return Err(error::ApiError::BadRequest("role must be lead|member".into()));
+        }
+    }
+    // Only workspace owners may set/promote roles. Project leads can change
+    // the membership set but can't reshuffle roles.
+    let allow_role_change = ctx.is_owner();
+    let desired: Vec<(uuid::Uuid, String)> = body.members.iter()
+        .map(|m| (m.user_id, m.role.clone())).collect();
     let mut tx = s.pool.begin().await?;
-    let project = db::set_project_members_tx(&mut tx, user.id, id, &body.members)
+    let project = db::set_project_members_tx(&mut tx, id, info.1, &desired, allow_role_change)
         .await?
         .ok_or(error::ApiError::NotFound)?;
     let payload = serde_json::json!({
@@ -214,7 +256,7 @@ async fn set_project_members(
         "members": &project.members,
     });
     ops::record_synthesized_op(
-        &mut tx, user.id, "project.set_members", payload, Some(project.id),
+        &mut tx, ctx.user.id, ctx.workspace_id, "project.set_members", payload, Some(project.id),
     ).await?;
     tx.commit().await?;
     Ok(Json(project))
@@ -298,7 +340,12 @@ async fn main() -> anyhow::Result<()> {
         .route("/projects", get(projects).post(create_project))
         .route("/projects/:id", patch(update_project))
         .route("/projects/:id/members", put(set_project_members))
-        .route("/users", get(all_users))
+        .route("/workspaces", get(workspaces::list_my).post(workspaces::create))
+        .route("/workspaces/:id", patch(workspaces::rename))
+        .route("/workspaces/:id/members", put(workspaces::set_members))
+        .route("/workspaces/:id/members/:user_id", patch(workspaces::set_member_role))
+        .route("/workspaces/:id/users", get(workspaces::list_users))
+        .route("/workspaces/:id/all-users", get(workspaces::list_all_users))
         .route("/ops", post(ops::post_ops))
         .route("/changes", get(ops::get_changes))
         .with_state(state)

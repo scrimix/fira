@@ -72,6 +72,8 @@ pub async fn wipe(tx: &mut Transaction<'_, Postgres>) -> sqlx::Result<()> {
         "epics",
         "project_members",
         "projects",
+        "workspace_members",
+        "workspaces",
     ] {
         sqlx::query(&format!("DELETE FROM {table}"))
             .execute(&mut **tx)
@@ -86,6 +88,10 @@ pub async fn wipe(tx: &mut Transaction<'_, Postgres>) -> sqlx::Result<()> {
     Ok(())
 }
 
+/// Slug of the shared fixture workspace. Maya is `owner`, others are members
+/// or leads — see seed_all.
+pub const TEAM_WORKSPACE_SLUG: &str = "w_team";
+
 /// Insert all fixture data. Caller is responsible for opening/committing
 /// the transaction and for any preceding wipe.
 pub async fn seed_all(tx: &mut Transaction<'_, Postgres>) -> sqlx::Result<()> {
@@ -93,12 +99,13 @@ pub async fn seed_all(tx: &mut Transaction<'_, Postgres>) -> sqlx::Result<()> {
     // google_sub is filled with a stable `dev-*` placeholder so a real Google
     // login doesn't collide with these fixture users (real subs are numeric
     // strings; the index treats nulls as distinct).
-    for (slug, name, initials, email) in [
+    let users: &[(&str, &str, &str, &str)] = &[
         (PRIMARY_USER_SLUG, "Maya Chen", "MC", PRIMARY_USER_EMAIL),
         ("u_anna", "Anna Park", "AP", "anna@fira.dev"),
         ("u_bob", "Bob Reyes", "BR", "bob@fira.dev"),
         ("u_jin", "Jin Okafor", "JO", "jin@fira.dev"),
-    ] {
+    ];
+    for (slug, name, initials, email) in users {
         sqlx::query(
             "INSERT INTO users (id, email, name, initials, google_sub) VALUES ($1,$2,$3,$4,$5)",
         )
@@ -111,6 +118,62 @@ pub async fn seed_all(tx: &mut Transaction<'_, Postgres>) -> sqlx::Result<()> {
         .await?;
     }
 
+    // ---- Workspaces ----
+    // One shared "Default" workspace for the team-style projects, plus a
+    // personal workspace per user (empty by default — gives the dogfood
+    // case somewhere to put solo tasks).
+    sqlx::query(
+        "INSERT INTO workspaces (id, title, is_personal, created_by)
+         VALUES ($1, 'Default', false, $2)",
+    )
+    .bind(id(TEAM_WORKSPACE_SLUG))
+    .bind(primary_user_id())
+    .execute(&mut **tx)
+    .await?;
+
+    // Team workspace membership: Maya owns it; everyone else is a workspace
+    // member. Per-project authority gets granted via the project_members.role
+    // column further down.
+    let team_roles: &[(&str, &str)] = &[
+        (PRIMARY_USER_SLUG, "owner"),
+        ("u_anna", "member"),
+        ("u_bob", "member"),
+        ("u_jin", "member"),
+    ];
+    for (slug, role) in team_roles {
+        sqlx::query(
+            "INSERT INTO workspace_members (workspace_id, user_id, role)
+             VALUES ($1, $2, $3)",
+        )
+        .bind(id(TEAM_WORKSPACE_SLUG))
+        .bind(id(slug))
+        .bind(*role)
+        .execute(&mut **tx)
+        .await?;
+    }
+
+    for (slug, name, _initials, _email) in users {
+        let ws_slug = format!("w_personal_{slug}");
+        let first_name = name.split_whitespace().next().unwrap_or(name);
+        sqlx::query(
+            "INSERT INTO workspaces (id, title, is_personal, created_by)
+             VALUES ($1, $2, true, $3)",
+        )
+        .bind(id(&ws_slug))
+        .bind(format!("{first_name}'s workspace"))
+        .bind(id(slug))
+        .execute(&mut **tx)
+        .await?;
+        sqlx::query(
+            "INSERT INTO workspace_members (workspace_id, user_id, role)
+             VALUES ($1, $2, 'owner')",
+        )
+        .bind(id(&ws_slug))
+        .bind(id(slug))
+        .execute(&mut **tx)
+        .await?;
+    }
+
     // ---- Projects ----
     let projects = [
         ("p_atlas", "Atlas", "◆", "#0F766E", "jira", "Core platform. Auth, billing, infra."),
@@ -119,10 +182,11 @@ pub async fn seed_all(tx: &mut Transaction<'_, Postgres>) -> sqlx::Result<()> {
     ];
     for (slug, title, icon, color, source, desc) in projects {
         sqlx::query(
-            "INSERT INTO projects (id, title, icon, color, source, description, owner_id)
-             VALUES ($1,$2,$3,$4,$5,$6,$7)",
+            "INSERT INTO projects (id, workspace_id, title, icon, color, source, description, owner_id)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8)",
         )
         .bind(id(slug))
+        .bind(id(TEAM_WORKSPACE_SLUG))
         .bind(title)
         .bind(icon)
         .bind(color)
@@ -134,18 +198,22 @@ pub async fn seed_all(tx: &mut Transaction<'_, Postgres>) -> sqlx::Result<()> {
     }
 
     // ---- Project members ----
-    let members: &[(&str, &[&str])] = &[
-        ("p_atlas", &["u_maya", "u_anna", "u_bob"]),
-        ("p_relay", &["u_maya", "u_jin"]),
-        ("p_helix", &["u_maya"]),
+    // Each row carries a role: 'lead' or 'member'. The project's owner_id is
+    // implicitly added as 'lead' by create_project_tx, but we're inserting
+    // raw rows here, so spell out the role for everyone including Maya.
+    let members: &[(&str, &[(&str, &str)])] = &[
+        ("p_atlas", &[("u_maya", "lead"), ("u_anna", "lead"), ("u_bob", "member")]),
+        ("p_relay", &[("u_maya", "lead"), ("u_jin", "member")]),
+        ("p_helix", &[("u_maya", "lead")]),
     ];
-    for (proj, users) in members {
-        for u in *users {
+    for (proj, rows) in members {
+        for (u, role) in *rows {
             sqlx::query(
-                "INSERT INTO project_members (project_id, user_id) VALUES ($1,$2)",
+                "INSERT INTO project_members (project_id, user_id, role) VALUES ($1,$2,$3)",
             )
             .bind(id(proj))
             .bind(id(u))
+            .bind(*role)
             .execute(&mut **tx)
             .await?;
         }

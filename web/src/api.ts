@@ -1,4 +1,4 @@
-import type { Bootstrap, User } from './types';
+import type { Bootstrap, User, Workspace, WorkspaceRole } from './types';
 
 // Always go through the Vite dev proxy at /api. The proxy target is
 // configured server-side in vite.config.ts (env: VITE_API_PROXY_TARGET),
@@ -12,11 +12,22 @@ export class HttpError extends Error {
   }
 }
 
+// Module-level mutable header. Routes that need a workspace context (every
+// scoped read + every write) ride on this. The store sets it after the user
+// picks a workspace (default: their personal one).
+let activeWorkspaceId: string | null = null;
+export function setActiveWorkspaceId(id: string | null) {
+  activeWorkspaceId = id;
+}
+
 async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const headers: Record<string, string> = {};
+  if (body !== undefined) headers['content-type'] = 'application/json';
+  if (activeWorkspaceId) headers['x-workspace-id'] = activeWorkspaceId;
   const res = await fetch(`${BASE}${path}`, {
     method,
     credentials: 'same-origin',
-    headers: body !== undefined ? { 'content-type': 'application/json' } : undefined,
+    headers,
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) throw new HttpError(res.status, path);
@@ -39,7 +50,13 @@ export const api = {
   me: () => req<User>('GET', '/me'),
   bootstrap: () => req<Bootstrap>('GET', '/bootstrap'),
   authConfig: () => req<{ dev_auth: boolean }>('GET', '/auth/config'),
-  devSeed: () => req<void>('POST', '/auth/dev-seed'),
+  /// Dev-only: drop a session for an existing fixture user. Doesn't touch
+  /// data — re-seeding is a separate CLI step (`cargo run --bin seed -- --drop`).
+  devLogin: (email: string) =>
+    fetch(`${BASE}/auth/dev-login?email=${encodeURIComponent(email)}`, {
+      credentials: 'same-origin',
+      redirect: 'manual',
+    }),
   logout: () => req<void>('POST', '/auth/logout'),
   createProject: (input: { title: string; icon: string; color: string }) =>
     req<import('./types').Project>('POST', '/projects', input),
@@ -54,9 +71,27 @@ export const api = {
       external_url_template: string | null;
     }>,
   ) => req<import('./types').Project>('PATCH', `/projects/${id}`, patch),
-  setProjectMembers: (id: string, members: string[]) =>
-    req<import('./types').Project>('PUT', `/projects/${id}/members`, { members }),
-  listAllUsers: () => req<User[]>('GET', '/users'),
+  setProjectMembers: (
+    id: string,
+    members: { user_id: string; role: import('./types').ProjectRole }[],
+  ) => req<import('./types').Project>('PUT', `/projects/${id}/members`, { members }),
+  listMyWorkspaces: () => req<Workspace[]>('GET', '/workspaces'),
+  createWorkspace: (title: string) =>
+    req<Workspace>('POST', '/workspaces', { title }),
+  renameWorkspace: (id: string, title: string) =>
+    req<Workspace>('PATCH', `/workspaces/${id}`, { title }),
+  setWorkspaceMembers: (
+    id: string,
+    members: { user_id: string; role: WorkspaceRole }[],
+  ) => req<Workspace>('PUT', `/workspaces/${id}/members`, { members }),
+  setWorkspaceMemberRole: (id: string, userId: string, role: WorkspaceRole) =>
+    req<Workspace>('PATCH', `/workspaces/${id}/members/${userId}`, { role }),
+  listWorkspaceUsers: (id: string) =>
+    req<User[]>('GET', `/workspaces/${id}/users`),
+  /// Owner-only: every user in the system, including ones not yet in any
+  /// shared workspace — needed when adding a brand-new Google sign-in.
+  listAllUsersForWorkspace: (id: string) =>
+    req<User[]>('GET', `/workspaces/${id}/all-users`),
   postOps: (ops: import('./store/outbox').Op[]) =>
     req<{ results: OpResult[] }>('POST', '/ops', { ops }),
   getChanges: (since: number) =>

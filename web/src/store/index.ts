@@ -5,10 +5,12 @@
 // Components never await network calls.
 
 import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
 import type {
   Bootstrap, Project, User, Epic, Sprint, Task, TimeBlock, GcalEvent, UUID, Section, Subtask, Status,
+  Workspace, WorkspaceRole,
 } from '../types';
-import { api, HttpError } from '../api';
+import { api, HttpError, setActiveWorkspaceId } from '../api';
 import { newOp, type Op, type OpKind, type AnyOpKind, type ChangeEntry } from './outbox';
 
 // Sync state machine. The TopBar pill reads this directly.
@@ -65,6 +67,13 @@ interface FiraState {
 
   // session
   meId: UUID | null;
+  workspaces: Workspace[];
+  // Active workspace id. Null only briefly between login and bootstrap;
+  // every signed-in user always has at least their personal workspace.
+  activeWorkspaceId: UUID | null;
+  // The caller's role in the active workspace — drives UI gating.
+  myWorkspaceRole: WorkspaceRole | null;
+  workspaceModal: { kind: 'new' } | { kind: 'edit'; id: UUID } | null;
   view: 'calendar' | 'inbox';
   // Pinned set of people the user can flip between, like browser tabs.
   selectedPersonIds: UUID[];
@@ -81,12 +90,35 @@ interface FiraState {
 
   hydrate: () => Promise<void>;
   logout: () => Promise<void>;
+  switchWorkspace: (id: UUID) => Promise<void>;
+  createWorkspace: (title: string) => Promise<Workspace>;
+  renameWorkspace: (id: UUID, title: string) => Promise<Workspace>;
+  setWorkspaceMembers: (
+    id: UUID,
+    members: { user_id: UUID; role: WorkspaceRole }[],
+  ) => Promise<Workspace>;
+  setWorkspaceMemberRole: (id: UUID, userId: UUID, role: WorkspaceRole) => Promise<Workspace>;
+  loadWorkspaceUsers: (id: UUID) => Promise<void>;
+  openCreateWorkspace: () => void;
+  openEditWorkspace: (id: UUID) => void;
+  closeWorkspaceModal: () => void;
   // Drain the outbox once. Safe to call concurrently — re-entrant calls
   // bail out while a sync is in flight.
   syncOutbox: () => Promise<void>;
   // Pull change-feed rows since `cursor`, apply each through applyRemoteOp,
   // advance cursor.
   pollChanges: () => Promise<void>;
+  // Move an errored op back to 'queued' so the next syncOutbox tick
+  // picks it up. Useful when the server-side validation is fixed (e.g.
+  // the user edited the URL template after a malformed value 400'd).
+  retryOp: (op_id: UUID) => void;
+  // Drop an errored op from the outbox without sending it. The local
+  // mutation already happened — the user accepts that the server will
+  // never know about it. Used when the server permanently rejects an op.
+  discardOp: (op_id: UUID) => void;
+  // Bulk retry / discard for the failed-ops popover.
+  retryAllFailed: () => void;
+  discardAllFailed: () => void;
   // Apply a remote op — upsert-tolerant for create kinds so an echo of an
   // op the local client already created does nothing.
   applyRemoteOp: (entry: ChangeEntry) => void;
@@ -116,10 +148,13 @@ interface FiraState {
   // Member changes are their own op (`project.set_members`) — separate from
   // visual edits — so the apply path can treat removal-from-project as a
   // dedicated event and drop project state cleanly.
-  setProjectMembers: (id: UUID, members: UUID[]) => Promise<Project>;
-  // Pulls the full user directory and merges into `users` so the project
-  // editor's Members picker can offer teammates the caller hasn't worked
-  // with yet (bootstrap only includes co-members of in-scope projects).
+  setProjectMembers: (
+    id: UUID,
+    members: { user_id: UUID; role: import('../types').ProjectRole }[],
+  ) => Promise<Project>;
+  // Pulls the active workspace's directory and merges into `users` so the
+  // project editor's Members picker can offer teammates the caller hasn't
+  // worked with yet (bootstrap only includes workspace + project members).
   loadAllUsers: () => Promise<void>;
 
   // mutations — update local state synchronously + emit op
@@ -272,7 +307,7 @@ function applyOpToState(s: FiraState, op: AnyOpKind): Partial<FiraState> {
       // change feed will deliver this op once and then fall silent for the
       // project — drop everything we have for it locally so the UI doesn't
       // linger on stale state.
-      if (s.meId != null && !op.members.includes(s.meId)) {
+      if (s.meId != null && !op.members.some((m) => m.user_id === s.meId)) {
         const droppedTaskIds = new Set(
           s.tasks.filter((t) => t.project_id === op.project_id).map((t) => t.id),
         );
@@ -306,7 +341,20 @@ function applyOpToState(s: FiraState, op: AnyOpKind): Partial<FiraState> {
   }
 }
 
-export const useFira = create<FiraState>((set, get) => ({
+// JSON can't round-trip a Map (we use one for appliedOpIds), so the
+// persisted form tags it and the reviver rebuilds it on load.
+const replacer = (_k: string, v: unknown) =>
+  v instanceof Map
+    ? { __type: 'Map', entries: Array.from(v.entries()) }
+    : v;
+const reviver = (_k: string, v: unknown) => {
+  if (v && typeof v === 'object' && (v as { __type?: string }).__type === 'Map') {
+    return new Map((v as { entries: [string, number][] }).entries);
+  }
+  return v;
+};
+
+export const useFira = create<FiraState>()(persist((set, get) => ({
   authChecked: false,
   loaded: false,
   error: null,
@@ -326,6 +374,10 @@ export const useFira = create<FiraState>((set, get) => ({
   appliedOpIds: new Map(),
 
   meId: null,
+  workspaces: [],
+  activeWorkspaceId: null,
+  myWorkspaceRole: null,
+  workspaceModal: null,
   view: 'calendar',
   selectedPersonIds: [],
   activePersonId: null,
@@ -345,10 +397,25 @@ export const useFira = create<FiraState>((set, get) => ({
   hydrate: async () => {
     try {
       const me: User = await api.me();
+      const workspaces = await api.listMyWorkspaces();
+      // Last-active workspace is sticky across reloads via localStorage; falls
+      // back to personal if the persisted one disappears (rare, e.g. removed).
+      const persisted = typeof localStorage !== 'undefined'
+        ? localStorage.getItem('fira:activeWorkspace')
+        : null;
+      const fallback = workspaces.find((w) => w.is_personal) ?? workspaces[0];
+      const active = workspaces.find((w) => w.id === persisted) ?? fallback;
+      if (!active) {
+        // Should never happen — every user has a personal workspace.
+        set({ authChecked: true, error: 'No workspace available' });
+        return;
+      }
+      setActiveWorkspaceId(active.id);
       const data: Bootstrap = await api.bootstrap();
       const projectFilter: Record<UUID, boolean> = {};
       data.projects.forEach((p) => { projectFilter[p.id] = true; });
       const firstProject = data.projects[0]?.id ?? null;
+      const myMember = active.members.find((m) => m.user_id === me.id);
       set({
         authChecked: true,
         loaded: true,
@@ -362,6 +429,9 @@ export const useFira = create<FiraState>((set, get) => ({
         gcal: data.gcal,
         cursor: data.cursor ?? 0,
         meId: me.id,
+        workspaces,
+        activeWorkspaceId: active.id,
+        myWorkspaceRole: (myMember?.role ?? 'member') as WorkspaceRole,
         selectedPersonIds: [me.id],
         activePersonId: me.id,
         projectFilter,
@@ -372,20 +442,145 @@ export const useFira = create<FiraState>((set, get) => ({
         },
       });
     } catch (e) {
-      // 401 from /me means "not logged in" — that's a normal state, not an
-      // error. Anything else is a real failure.
+      // 401 from /me means the session expired — drop cached data and
+      // bounce to login. Anything else (network error, 5xx) is treated as
+      // offline: if we have cached state from a previous session we boot
+      // into offline mode so the user can keep working until connectivity
+      // returns. The 2 s ticker keeps trying syncOutbox() / pollChanges()
+      // in the background, so reconnection is automatic.
       if (e instanceof HttpError && e.status === 401) {
-        set({ authChecked: true, loaded: false, error: null, meId: null });
+        set({
+          authChecked: true,
+          loaded: false,
+          error: null,
+          meId: null,
+          users: [], projects: [], epics: [], sprints: [], tasks: [], blocks: [], gcal: [],
+          workspaces: [], activeWorkspaceId: null, myWorkspaceRole: null,
+          outbox: [], cursor: 0, appliedOpIds: new Map(),
+        });
+        return;
+      }
+      const cached = get();
+      if (cached.meId && cached.activeWorkspaceId && cached.projects.length >= 0) {
+        // We have a usable cache. Render the app with whatever was
+        // persisted; show the offline state in the sync pill.
+        setActiveWorkspaceId(cached.activeWorkspaceId);
+        set({
+          authChecked: true,
+          loaded: true,
+          error: null,
+          syncStatus: {
+            kind: 'offline',
+            message: e instanceof Error ? e.message : String(e),
+          },
+        });
         return;
       }
       set({ authChecked: true, error: e instanceof Error ? e.message : String(e) });
     }
   },
 
+  switchWorkspace: async (id) => {
+    const ws = get().workspaces.find((w) => w.id === id);
+    if (!ws) return;
+    setActiveWorkspaceId(id);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('fira:activeWorkspace', id);
+    }
+    // Re-bootstrap into the new workspace's data. We could try to be clever
+    // and merge, but it's simpler and safer to re-fetch — the state shape
+    // mirrors a fresh hydrate.
+    set({
+      loaded: false,
+      activeWorkspaceId: id,
+      cursor: 0,
+      outbox: [],
+      appliedOpIds: new Map(),
+    });
+    const data = await api.bootstrap();
+    const projectFilter: Record<UUID, boolean> = {};
+    data.projects.forEach((p) => { projectFilter[p.id] = true; });
+    const firstProject = data.projects[0]?.id ?? null;
+    const meId = get().meId;
+    const myMember = ws.members.find((m) => m.user_id === meId);
+    set((s) => ({
+      loaded: true,
+      users: data.users,
+      projects: data.projects,
+      epics: data.epics,
+      sprints: data.sprints,
+      tasks: data.tasks,
+      blocks: data.blocks,
+      gcal: data.gcal,
+      cursor: data.cursor ?? 0,
+      myWorkspaceRole: (myMember?.role ?? 'member') as WorkspaceRole,
+      projectFilter,
+      selectedPersonIds: meId ? [meId] : [],
+      activePersonId: meId,
+      inboxFilter: {
+        ...s.inboxFilter,
+        project_id: firstProject,
+        assignee_id: meId,
+      },
+      view: 'calendar',
+    }));
+  },
+
+  createWorkspace: async (title) => {
+    const ws = await api.createWorkspace(title);
+    set((s) => ({ workspaces: [...s.workspaces, ws] }));
+    await get().switchWorkspace(ws.id);
+    return ws;
+  },
+
+  renameWorkspace: async (id, title) => {
+    const ws = await api.renameWorkspace(id, title);
+    set((s) => ({ workspaces: s.workspaces.map((w) => w.id === id ? ws : w) }));
+    return ws;
+  },
+
+  setWorkspaceMembers: async (id, members) => {
+    const ws = await api.setWorkspaceMembers(id, members);
+    const meId = get().meId;
+    set((s) => ({
+      workspaces: s.workspaces.map((w) => w.id === id ? ws : w),
+      myWorkspaceRole: id === s.activeWorkspaceId
+        ? ((ws.members.find((m) => m.user_id === meId)?.role ?? 'member') as WorkspaceRole)
+        : s.myWorkspaceRole,
+    }));
+    return ws;
+  },
+
+  setWorkspaceMemberRole: async (id, userId, role) => {
+    const ws = await api.setWorkspaceMemberRole(id, userId, role);
+    const meId = get().meId;
+    set((s) => ({
+      workspaces: s.workspaces.map((w) => w.id === id ? ws : w),
+      myWorkspaceRole: id === s.activeWorkspaceId && userId === meId
+        ? role
+        : s.myWorkspaceRole,
+    }));
+    return ws;
+  },
+
+  loadWorkspaceUsers: async (id) => {
+    const all = await api.listWorkspaceUsers(id);
+    set((s) => {
+      const byId = new Map(s.users.map((u) => [u.id, u]));
+      for (const u of all) byId.set(u.id, u);
+      return { users: Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name)) };
+    });
+  },
+
+  openCreateWorkspace: () => set({ workspaceModal: { kind: 'new' } }),
+  openEditWorkspace: (id) => set({ workspaceModal: { kind: 'edit', id } }),
+  closeWorkspaceModal: () => set({ workspaceModal: null }),
+
   logout: async () => {
     try { await api.logout(); } catch { /* best-effort */ }
-    // Hard reload so any in-memory state (outbox, modals) is dropped and the
-    // next /me check decides what to render.
+    // Drop the persisted snapshot so the next user's reload doesn't see
+    // the previous session's projects/tasks. Hard reload after.
+    try { localStorage.removeItem('fira:store-v1'); } catch { /* private mode */ }
     window.location.assign('/');
   },
 
@@ -440,6 +635,44 @@ export const useFira = create<FiraState>((set, get) => ({
       }));
     }
   },
+
+  retryOp: (op_id) => set((s) => {
+    const remaining = s.outbox.map((o) =>
+      o.op_id === op_id && o.status === 'error' ? { ...o, status: 'queued' as const } : o,
+    );
+    const stillFailed = (s.syncStatus.kind === 'error'
+      ? s.syncStatus.failedOpIds.filter((x) => x !== op_id)
+      : []);
+    return {
+      outbox: remaining,
+      syncStatus: stillFailed.length > 0
+        ? { ...s.syncStatus as Extract<SyncStatus, { kind: 'error' }>, failedOpIds: stillFailed }
+        : { kind: 'idle' as const },
+    };
+  }),
+
+  discardOp: (op_id) => set((s) => {
+    const remaining = s.outbox.filter((o) => o.op_id !== op_id);
+    const stillFailed = (s.syncStatus.kind === 'error'
+      ? s.syncStatus.failedOpIds.filter((x) => x !== op_id)
+      : []);
+    return {
+      outbox: remaining,
+      syncStatus: stillFailed.length > 0
+        ? { ...s.syncStatus as Extract<SyncStatus, { kind: 'error' }>, failedOpIds: stillFailed }
+        : { kind: 'idle' as const },
+    };
+  }),
+
+  retryAllFailed: () => set((s) => ({
+    outbox: s.outbox.map((o) => o.status === 'error' ? { ...o, status: 'queued' as const } : o),
+    syncStatus: { kind: 'idle' as const },
+  })),
+
+  discardAllFailed: () => set((s) => ({
+    outbox: s.outbox.filter((o) => o.status !== 'error'),
+    syncStatus: { kind: 'idle' as const },
+  })),
 
   pollChanges: async () => {
     const { cursor, appliedOpIds, applyRemoteOp } = get();
@@ -565,7 +798,9 @@ export const useFira = create<FiraState>((set, get) => ({
   },
 
   loadAllUsers: async () => {
-    const all = await api.listAllUsers();
+    const ws = get().activeWorkspaceId;
+    if (!ws) return;
+    const all = await api.listWorkspaceUsers(ws);
     set((s) => {
       const byId = new Map(s.users.map((u) => [u.id, u]));
       for (const u of all) byId.set(u.id, u);
@@ -779,6 +1014,40 @@ export const useFira = create<FiraState>((set, get) => ({
     blocks: s.blocks.filter((b) => b.id !== blockId),
     ...pushOp(s, { kind: 'block.delete', block_id: blockId }),
   })),
+}), {
+  name: 'fira:store-v1',
+  storage: createJSONStorage(() => localStorage, { replacer, reviver }),
+  // Persist only data we want to recover offline. Skip transient UI state
+  // (modals, view, drag draft) and ephemeral flags (authChecked, loaded,
+  // error, syncStatus). Re-bootstrap will overwrite the data fields when
+  // the network is back.
+  partialize: (s) => ({
+    users: s.users,
+    projects: s.projects,
+    epics: s.epics,
+    sprints: s.sprints,
+    tasks: s.tasks,
+    blocks: s.blocks,
+    gcal: s.gcal,
+    outbox: s.outbox,
+    cursor: s.cursor,
+    appliedOpIds: s.appliedOpIds,
+    lastSyncedAt: s.lastSyncedAt,
+    meId: s.meId,
+    workspaces: s.workspaces,
+    activeWorkspaceId: s.activeWorkspaceId,
+    myWorkspaceRole: s.myWorkspaceRole,
+    selectedPersonIds: s.selectedPersonIds,
+    activePersonId: s.activePersonId,
+  // partialize is loosely typed — zustand expects S but we're returning a
+  // subset of fields. Cast through unknown is the canonical workaround.
+  }) as unknown as FiraState,
+  onRehydrateStorage: () => (state) => {
+    // After hydration, re-arm the api wrapper with the persisted active
+    // workspace so the very first request after reload carries the
+    // X-Workspace-Id header even before /me runs.
+    if (state?.activeWorkspaceId) setActiveWorkspaceId(state.activeWorkspaceId);
+  },
 }));
 
 // Selectors that components subscribe to. Putting these here keeps the

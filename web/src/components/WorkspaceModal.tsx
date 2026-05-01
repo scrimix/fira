@@ -1,64 +1,58 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Plus } from 'lucide-react';
 import { useFira } from '../store';
-import { PROJECT_ICONS, DEFAULT_ICON, ProjectIcon } from './ProjectIcon';
+import { api } from '../api';
+import type { User, UUID, Workspace, WorkspaceRole } from '../types';
 import { Select } from './Select';
-import type { Project, ProjectMember, ProjectRole, UUID } from '../types';
 
-// Editorial-utilitarian palette. All Tailwind ~700 shades so each chip sits
-// at the same perceived weight on paper — distinguishable by hue, not by
-// brightness. Two existing seed projects (teal, amber) live here unchanged.
-const COLORS: { hex: string; name: string }[] = [
-  { hex: '#0F766E', name: 'Teal' },
-  { hex: '#0E7490', name: 'Cyan' },
-  { hex: '#1D4ED8', name: 'Blue' },
-  { hex: '#6D28D9', name: 'Violet' },
-  { hex: '#BE185D', name: 'Pink' },
-  { hex: '#B45309', name: 'Amber' },
-  { hex: '#15803D', name: 'Green' },
-  { hex: '#334155', name: 'Slate' },
-];
+// Two modes:
+//   - { kind: 'new' }  — title-only create. Caller becomes owner.
+//   - { kind: 'edit' } — title rename + members + roles. Owner-only.
+//
+// Personal workspaces show the title (read-only — could be made editable
+// later) and hide the members section since their membership is fixed.
 
 interface Props {
-  // undefined = create new; otherwise edit this project.
-  project?: Project;
+  workspace?: Workspace;
 }
 
-export function ProjectModal({ project }: Props) {
-  const isEdit = !!project;
-  const close = useFira((s) => s.closeProjectModal);
-  const addProject = useFira((s) => s.addProject);
-  const updateProject = useFira((s) => s.updateProject);
-  const setProjectMembers = useFira((s) => s.setProjectMembers);
-  const loadAllUsers = useFira((s) => s.loadAllUsers);
-  const allUsers = useFira((s) => s.users);
+export function WorkspaceModal({ workspace }: Props) {
+  const isEdit = !!workspace;
+  const close = useFira((s) => s.closeWorkspaceModal);
+  const createWorkspace = useFira((s) => s.createWorkspace);
+  const renameWorkspace = useFira((s) => s.renameWorkspace);
+  const setWorkspaceMembers = useFira((s) => s.setWorkspaceMembers);
   const meId = useFira((s) => s.meId);
-  const myWorkspaceRole = useFira((s) => s.myWorkspaceRole);
-  // Only workspace owners may flip a project member's role to/from `lead`.
-  // Project leads can edit the membership set but their role choices are
-  // server-side ignored — gating in the UI keeps the affordance honest.
-  const canEditRoles = myWorkspaceRole === 'owner';
+  const allUsers = useFira((s) => s.users);
 
-  const initialMembers: ProjectMember[] = useMemo(
-    () => (project?.members ?? []).filter((m) => m.user_id !== meId),
-    [project, meId],
+  const [title, setTitle] = useState(workspace?.title ?? '');
+  const [members, setMembers] = useState<{ user_id: UUID; role: WorkspaceRole }[]>(
+    () => (workspace?.members ?? [])
+      .filter((m) => m.user_id !== meId)
+      .map((m) => ({ user_id: m.user_id, role: m.role })),
   );
-
-  const [title, setTitle] = useState(project?.title ?? '');
-  const [icon, setIcon] = useState(project?.icon || DEFAULT_ICON);
-  const [color, setColor] = useState(project?.color || COLORS[0].hex);
-  const [urlTemplate, setUrlTemplate] = useState(project?.external_url_template ?? '');
-  // Members are owner-locked: meId (the project owner / "you" row) is
-  // implicit and not in this set. Each row carries (user_id, role).
-  const [members, setMembers] = useState<ProjectMember[]>(initialMembers);
   const [armedRemove, setArmedRemove] = useState<UUID | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
+  // Pull the directory once for this workspace so the picker has more than
+  // just the existing members. We pull from the API directly rather than
+  // through the store loader because the workspace might not be the active
+  // one yet (rare, but happens with create-then-edit).
+  const [directory, setDirectory] = useState<User[]>([]);
   useEffect(() => {
-    if (isEdit) loadAllUsers().catch(() => { /* non-fatal */ });
-  }, [isEdit, loadAllUsers]);
+    if (!isEdit || workspace?.is_personal) return;
+    // Owner-only endpoint: returns every user in the system so the picker
+    // can offer people who aren't in this workspace yet (e.g. a teammate
+    // who just signed in via Google for the first time).
+    api.listAllUsersForWorkspace(workspace!.id).catch(() => null).then((rows) => {
+      if (!rows) return;
+      const merged = mergeUsers(allUsers, rows);
+      setDirectory(merged);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEdit, workspace?.id]);
 
+  // Disarm pending remove on outside click.
   useEffect(() => {
     if (armedRemove == null) return;
     const onDoc = (e: MouseEvent) => {
@@ -70,18 +64,13 @@ export function ProjectModal({ project }: Props) {
   }, [armedRemove]);
 
   const trimmed = title.trim();
-  const trimmedUrl = urlTemplate.trim();
   const valid = trimmed.length > 0 && trimmed.length <= 80;
-  const membersDirty = isEdit && !memberListEqual(members, initialMembers);
-  const initialUrl = project?.external_url_template ?? '';
-  const urlDirty = isEdit && trimmedUrl !== initialUrl;
-  const dirty = !isEdit || (
-    trimmed !== project!.title
-    || icon !== project!.icon
-    || color !== project!.color
-    || urlDirty
-    || membersDirty
-  );
+  const initialMembers = (workspace?.members ?? [])
+    .filter((m) => m.user_id !== meId)
+    .map((m) => ({ user_id: m.user_id, role: m.role }));
+  const membersDirty = isEdit && !memberSetEqual(members, initialMembers);
+  const titleDirty = !isEdit || trimmed !== workspace!.title;
+  const dirty = titleDirty || membersDirty;
 
   const submit = async () => {
     if (!valid || submitting || !dirty) return;
@@ -89,39 +78,33 @@ export function ProjectModal({ project }: Props) {
     setError(null);
     try {
       if (isEdit) {
-        const visualDirty = trimmed !== project!.title
-          || icon !== project!.icon
-          || color !== project!.color
-          || urlDirty;
-        if (visualDirty) {
-          await updateProject(project!.id, {
-            title: trimmed,
-            icon,
-            color,
-            ...(urlDirty ? { external_url_template: trimmedUrl || null } : {}),
-          });
+        if (titleDirty) {
+          await renameWorkspace(workspace!.id, trimmed);
         }
-        if (membersDirty) {
-          await setProjectMembers(project!.id, members);
+        if (membersDirty && !workspace!.is_personal) {
+          await setWorkspaceMembers(workspace!.id, members);
         }
         close();
       } else {
-        await addProject({ title: trimmed, icon, color });
+        await createWorkspace(trimmed);
+        close();
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to save project');
+      setError(e instanceof Error ? e.message : 'Failed to save workspace');
       setSubmitting(false);
     }
   };
+
+  const showMembers = isEdit && !workspace!.is_personal;
+  const usersForPicker = directory.length > 0 ? directory : allUsers;
 
   return (
     <div className="modal-backdrop" onClick={close}>
       <div className="modal np-modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <span className="np-preview" style={{ color, borderColor: color }}>
-            <ProjectIcon name={icon} size={14} strokeWidth={1.75} />
+          <span className="ext">
+            {trimmed || (isEdit ? workspace!.title : 'New workspace')}
           </span>
-          <span className="ext">{trimmed || (isEdit ? project!.title : 'New project')}</span>
           <span className="grow" />
           <button className="icon-btn" onClick={close} title="Close (Esc)">×</button>
         </div>
@@ -132,10 +115,10 @@ export function ProjectModal({ project }: Props) {
             className="np-title"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="Project name"
+            placeholder="Workspace name"
             maxLength={80}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey || valid)) {
+              if (e.key === 'Enter' && valid) {
                 e.preventDefault();
                 submit();
               }
@@ -143,63 +126,13 @@ export function ProjectModal({ project }: Props) {
             }}
           />
 
-          <label className="np-label">Icon</label>
-          <div className="np-icons">
-            {PROJECT_ICONS.map(({ name, icon: I }) => (
-              <button
-                key={name}
-                type="button"
-                className="np-icon"
-                data-active={name === icon}
-                onClick={() => setIcon(name)}
-                title={name}
-                aria-label={name}
-              >
-                <I size={18} strokeWidth={1.75} />
-              </button>
-            ))}
-          </div>
-
-          <label className="np-label">Color</label>
-          <div className="np-colors">
-            {COLORS.map((c) => (
-              <button
-                key={c.hex}
-                type="button"
-                className="np-color"
-                data-active={c.hex === color}
-                style={{ ['--swatch' as string]: c.hex }}
-                onClick={() => setColor(c.hex)}
-                title={c.name}
-                aria-label={c.name}
-              >
-                <span className="np-color-fill" />
-              </button>
-            ))}
-          </div>
-
-          {isEdit && (
+          {showMembers && (
             <>
-              <label className="np-label">Issue URL template</label>
-              <input
-                className="np-title"
-                value={urlTemplate}
-                onChange={(e) => setUrlTemplate(e.target.value)}
-                placeholder="https://acme.atlassian.net/browse/{key}"
-                spellCheck={false}
-              />
-              <div className="np-hint">
-                {trimmedUrl && !trimmedUrl.includes('{key}')
-                  ? 'Tip: include {key} where the issue id should go.'
-                  : 'Tasks with an issue id render as a link via this template.'}
-              </div>
-
               <label className="np-label">Members</label>
-              <MembersEditor
-                allUsers={allUsers}
+              <WorkspaceMembersEditor
+                allUsers={usersForPicker}
                 ownerId={meId}
                 members={members}
-                canEditRoles={canEditRoles}
                 armedRemove={armedRemove}
                 setArmedRemove={setArmedRemove}
                 onAdd={(uid) => setMembers((m) =>
@@ -213,12 +146,13 @@ export function ProjectModal({ project }: Props) {
                   m.map((x) => x.user_id === uid ? { ...x, role } : x)
                 )}
               />
-              {!canEditRoles && (
-                <div className="np-hint">
-                  Only the workspace owner can change project roles.
-                </div>
-              )}
             </>
+          )}
+
+          {isEdit && workspace!.is_personal && (
+            <p className="np-hint">
+              Personal workspace — only you. Add teammates by creating a new workspace.
+            </p>
           )}
 
           {error && <div className="np-error">{error}</div>}
@@ -232,7 +166,7 @@ export function ProjectModal({ project }: Props) {
             >
               {submitting
                 ? (isEdit ? 'Saving…' : 'Creating…')
-                : (isEdit ? 'Save changes' : 'Create project')}
+                : (isEdit ? 'Save changes' : 'Create workspace')}
             </button>
           </div>
         </div>
@@ -242,20 +176,18 @@ export function ProjectModal({ project }: Props) {
 }
 
 interface MembersEditorProps {
-  allUsers: { id: UUID; name: string; initials: string; email: string }[];
+  allUsers: User[];
   ownerId: UUID | null;
-  members: ProjectMember[];
-  canEditRoles: boolean;
+  members: { user_id: UUID; role: WorkspaceRole }[];
   armedRemove: UUID | null;
   setArmedRemove: (id: UUID | null) => void;
   onAdd: (id: UUID) => void;
   onRemove: (id: UUID) => void;
-  onRoleChange: (id: UUID, role: ProjectRole) => void;
+  onRoleChange: (id: UUID, role: WorkspaceRole) => void;
 }
 
-function MembersEditor({
-  allUsers, ownerId, members, canEditRoles, armedRemove, setArmedRemove,
-  onAdd, onRemove, onRoleChange,
+function WorkspaceMembersEditor({
+  allUsers, ownerId, members, armedRemove, setArmedRemove, onAdd, onRemove, onRoleChange,
 }: MembersEditorProps) {
   const [picking, setPicking] = useState(false);
   const [query, setQuery] = useState('');
@@ -270,7 +202,7 @@ function MembersEditor({
         const u = allUsers.find((x) => x.id === m.user_id);
         return u ? { user: u, role: m.role } : null;
       })
-      .filter((r): r is { user: MembersEditorProps['allUsers'][number]; role: ProjectRole } => !!r),
+      .filter((r): r is { user: User; role: WorkspaceRole } => r !== null),
     [members, allUsers],
   );
 
@@ -304,10 +236,10 @@ function MembersEditor({
     <div className="np-members" ref={wrapRef}>
       <div className="np-members-list">
         {owner && (
-          <div className="np-member np-member-owner" title="Project lead — can't be removed by themselves">
+          <div className="np-member np-member-owner" title="Workspace creator — owner role">
             <span className="avatar" data-me="true">{owner.initials}</span>
             <span className="np-member-name">{owner.name}</span>
-            <span className="np-member-tag">lead (you)</span>
+            <span className="np-member-tag">owner (you)</span>
           </div>
         )}
         {memberRows.map(({ user: u, role }) => {
@@ -316,26 +248,21 @@ function MembersEditor({
             <div key={u.id} className="np-member" data-armed={u.id}>
               <span className="avatar">{u.initials}</span>
               <span className="np-member-name">{u.name}</span>
-              {canEditRoles ? (
-                <Select<ProjectRole>
-                  size="sm"
-                  value={role}
-                  menuMinWidth={140}
-                  onChange={(v) => onRoleChange(u.id, v)}
-                  options={[
-                    { value: 'lead', label: 'lead', hint: 'edits project + members' },
-                    { value: 'member', label: 'member', hint: 'works tasks' },
-                  ]}
-                />
-              ) : (
-                <span className="np-member-tag">{role}</span>
-              )}
+              <Select<WorkspaceRole>
+                size="sm"
+                value={role}
+                menuMinWidth={140}
+                onChange={(v) => onRoleChange(u.id, v)}
+                options={[
+                  { value: 'owner', label: 'owner', hint: 'manages workspace + roles' },
+                  { value: 'member', label: 'member', hint: 'works in projects they belong to' },
+                ]}
+              />
               {armed ? (
                 <button
                   type="button"
                   className="np-member-confirm"
                   onClick={() => onRemove(u.id)}
-                  title="Confirm remove"
                 >
                   Remove
                 </button>
@@ -344,7 +271,7 @@ function MembersEditor({
                   type="button"
                   className="np-member-x"
                   onClick={() => setArmedRemove(u.id)}
-                  title="Remove from project"
+                  title="Remove from workspace"
                   aria-label={`Remove ${u.name}`}
                 >
                   ×
@@ -395,8 +322,17 @@ function MembersEditor({
   );
 }
 
-function memberListEqual(a: ProjectMember[], b: ProjectMember[]): boolean {
+function memberSetEqual(
+  a: { user_id: UUID; role: WorkspaceRole }[],
+  b: { user_id: UUID; role: WorkspaceRole }[],
+): boolean {
   if (a.length !== b.length) return false;
   const byA = new Map(a.map((m) => [m.user_id, m.role]));
   return b.every((m) => byA.get(m.user_id) === m.role);
+}
+
+function mergeUsers(existing: User[], more: User[]): User[] {
+  const byId = new Map(existing.map((u) => [u.id, u]));
+  for (const u of more) byId.set(u.id, u);
+  return Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name));
 }

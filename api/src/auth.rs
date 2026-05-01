@@ -36,6 +36,7 @@ const SESSION_COOKIE: &str = "sid";
 const OAUTH_STATE_COOKIE: &str = "oauth_state";
 const SESSION_DAYS: i64 = 30;
 const STATE_TTL_SECONDS: i64 = 300;
+const WORKSPACE_HEADER: &str = "x-workspace-id";
 
 #[derive(Clone)]
 pub struct AuthConfig {
@@ -97,6 +98,53 @@ where
             .map_err(|_| unauthorized())?
             .ok_or_else(unauthorized)
     }
+}
+
+/// Authenticated user *and* the workspace they're operating in. The
+/// workspace is taken from the `X-Workspace-Id` header — clients send it
+/// after `/me` tells them which workspaces exist. If the header is missing,
+/// invalid, or doesn't refer to a workspace the user belongs to, the
+/// request is rejected with 401.
+#[derive(Clone)]
+pub struct AuthCtx {
+    pub user: AuthUser,
+    pub workspace_id: Uuid,
+    pub role: String,
+}
+
+impl AuthCtx {
+    pub fn is_owner(&self) -> bool { self.role == "owner" }
+}
+
+#[async_trait]
+impl<S> FromRequestParts<S> for AuthCtx
+where
+    S: Send + Sync,
+    AppState: FromRef<S>,
+{
+    type Rejection = Response;
+
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        let user = AuthUser::from_request_parts(parts, state).await?;
+        let app_state = AppState::from_ref(state);
+        let header = parts
+            .headers
+            .get(WORKSPACE_HEADER)
+            .and_then(|h| h.to_str().ok())
+            .ok_or_else(|| forbidden("workspace header required"))?;
+        let workspace_id: Uuid = header
+            .parse()
+            .map_err(|_| forbidden("invalid workspace id"))?;
+        let role = crate::db::workspace_role(&app_state.pool, workspace_id, user.id)
+            .await
+            .map_err(|_| forbidden("workspace lookup failed"))?
+            .ok_or_else(|| forbidden("not a workspace member"))?;
+        Ok(AuthCtx { user, workspace_id, role })
+    }
+}
+
+fn forbidden(msg: &str) -> Response {
+    (StatusCode::FORBIDDEN, Json(serde_json::json!({ "error": msg }))).into_response()
 }
 
 fn unauthorized() -> Response {
@@ -272,6 +320,14 @@ pub async fn google_callback(
             return (StatusCode::INTERNAL_SERVER_ERROR, "user upsert failed").into_response();
         }
     };
+
+    // Personal workspace is the universal landing pad — every user has one.
+    // Idempotent so repeat logins don't churn.
+    let display_name = info.name.clone().unwrap_or_else(|| info.email.clone());
+    if let Err(e) = crate::db::ensure_personal_workspace(&s.pool, user_id, &display_name).await {
+        tracing::error!("ensure_personal_workspace failed: {e:?}");
+        return (StatusCode::INTERNAL_SERVER_ERROR, "workspace setup failed").into_response();
+    }
 
     let sid = match create_session(&s.pool, user_id).await {
         Ok(s) => s,

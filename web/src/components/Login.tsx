@@ -2,11 +2,11 @@ import { useEffect, useState } from 'react';
 import { api, loginUrl } from '../api';
 
 export function Login() {
-  // dev_auth gates the "Seed dev data" button; we only render it when the
-  // server has DEV_AUTH=1, so production builds never show it.
+  // dev_auth gates the "Sign in as Maya" affordance; we only render it
+  // when the server has DEV_AUTH=1, so production builds never show it.
   const [devAuth, setDevAuth] = useState(false);
-  const [seeding, setSeeding] = useState(false);
-  const [seedError, setSeedError] = useState<string | null>(null);
+  const [signing, setSigning] = useState(false);
+  const [signError, setSignError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -23,18 +23,22 @@ export function Login() {
     };
   }, []);
 
-  const onSeed = async () => {
-    if (seeding) return;
-    setSeeding(true);
-    setSeedError(null);
+  const onMayaSignIn = async () => {
+    if (signing) return;
+    setSigning(true);
+    setSignError(null);
     try {
-      await api.devSeed();
-      // Hard reload so /me runs against the new session cookie and the
+      // dev-login drops a session cookie and 302s to "/". We follow with a
+      // hard reload either way so /me runs against the fresh cookie and the
       // store hydrates from a clean state.
+      const res = await api.devLogin('maya@fira.dev');
+      if (!res.ok && res.type !== 'opaqueredirect') {
+        throw new Error(`dev-login failed (${res.status})`);
+      }
       window.location.assign('/');
     } catch (e) {
-      setSeedError(e instanceof Error ? e.message : String(e));
-      setSeeding(false);
+      setSignError(e instanceof Error ? e.message : String(e));
+      setSigning(false);
     }
   };
 
@@ -54,15 +58,16 @@ export function Login() {
             <button
               type="button"
               className="login-dev"
-              onClick={onSeed}
-              disabled={seeding}
+              onClick={onMayaSignIn}
+              disabled={signing}
             >
-              {seeding ? 'Seeding…' : 'Seed dev data & sign in'}
+              {signing ? 'Signing in…' : 'Sign in as Maya'}
             </button>
             <p className="login-dev-hint">
-              Dev mode · wipes the database and signs you in as Maya.
+              Dev mode · uses the fixture user. Reseed with{' '}
+              <code>cargo run --bin seed -- --drop</code>.
             </p>
-            {seedError && <p className="login-dev-error">{seedError}</p>}
+            {signError && <p className="login-dev-error">{signError}</p>}
           </>
         )}
       </div>

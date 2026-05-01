@@ -272,9 +272,7 @@ docker compose exec api cargo run --bin seed
 # open http://localhost:5173
 ```
 
-Postgres on `:5432`, API on `:3000`, web on `:5173`. The web dev server
-proxies `/api/*` to the api service via `VITE_API_PROXY_TARGET` (set to
-`http://api:3000` in compose).
+Postgres on `:5432`, API on `:3000`, web on `:5173`
 
 ## 9. Out of scope for this iteration
 

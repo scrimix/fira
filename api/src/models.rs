@@ -13,6 +13,7 @@ pub struct User {
 #[derive(Debug, Serialize, sqlx::FromRow)]
 pub struct Project {
     pub id: Uuid,
+    pub workspace_id: Uuid,
     pub title: String,
     pub icon: String,
     pub color: String,
@@ -22,7 +23,29 @@ pub struct Project {
     /// with the task's `external_id`. NULL = no tracker configured.
     pub external_url_template: Option<String>,
     #[sqlx(skip)]
-    pub members: Vec<Uuid>,
+    pub members: Vec<ProjectMember>,
+}
+
+#[derive(Debug, Serialize, sqlx::FromRow, Clone)]
+pub struct ProjectMember {
+    pub user_id: Uuid,
+    /// `lead` or `member`.
+    pub role: String,
+}
+
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct Workspace {
+    pub id: Uuid,
+    pub title: String,
+    pub is_personal: bool,
+    #[sqlx(skip)]
+    pub members: Vec<WorkspaceMember>,
+}
+
+#[derive(Debug, Serialize, sqlx::FromRow, Clone)]
+pub struct WorkspaceMember {
+    pub user_id: Uuid,
+    pub role: String,
 }
 
 #[derive(Debug, Serialize, sqlx::FromRow)]

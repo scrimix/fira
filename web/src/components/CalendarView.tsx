@@ -671,9 +671,11 @@ function CalRail({ onDragTask, allocByProject }: {
   const openTask = useFira((s) => s.openTask);
   const openCreate = useFira((s) => s.openCreate);
 
-  // "Mine only" (default) vs "All in project". Showing all is what makes
-  // logging time on a task someone else owns possible — drag any task onto
-  // your calendar and the block becomes yours regardless of the assignee.
+  // "My tasks only" (default) vs "All in project". Showing all is what
+  // makes logging time on a task someone else owns possible — drag any
+  // task onto your calendar and the block becomes yours regardless of the
+  // assignee. The button label names the action you'd take by clicking
+  // (verb-style), not the current filter state.
   const [showAll, setShowAll] = useState(false);
   const [titleQuery, setTitleQuery] = useState('');
   const q = titleQuery.trim().toLowerCase();
@@ -712,9 +714,9 @@ function CalRail({ onDragTask, allocByProject }: {
                 onClick={() => setShowAll((v) => !v)}
                 data-active={showAll}
                 title={showAll
-                  ? 'Showing every task in the project — drag any onto your calendar'
+                  ? 'Showing every task in the project — click to filter back to your own'
                   : 'Show every task in the project (so you can log time on tasks you don’t own)'}>
-          {showAll ? 'All' : 'Mine'}
+          {showAll ? 'My' : 'All'}
         </button>
       </div>
       <div className="rail-projects">

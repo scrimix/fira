@@ -3,57 +3,362 @@ use sqlx::{PgPool, Postgres, Transaction};
 use std::collections::HashMap;
 use uuid::Uuid;
 
-// Set of project IDs visible to a user: projects they own, plus projects
-// they're an explicit (non-removed) member of. Soft-removed memberships are
-// excluded so the project disappears from the user's UI without losing
-// historical task assignments stored alongside the row.
-pub async fn project_scope(pool: &PgPool, user_id: Uuid) -> sqlx::Result<Vec<Uuid>> {
+// Set of project IDs visible to a user, scoped to a single workspace.
+// Workspace owners see every project in the workspace (administrative
+// scope). Everyone else sees projects they're an explicit member of.
+pub async fn project_scope(
+    pool: &PgPool,
+    user_id: Uuid,
+    workspace_id: Uuid,
+) -> sqlx::Result<Vec<Uuid>> {
     let rows: Vec<(Uuid,)> = sqlx::query_as(
-        "SELECT id FROM projects WHERE owner_id = $1
-         UNION
-         SELECT project_id FROM project_members
-         WHERE user_id = $1 AND removed_at IS NULL",
+        "SELECT p.id FROM projects p
+         WHERE p.workspace_id = $2
+           AND (
+             p.id IN (
+               SELECT project_id FROM project_members
+               WHERE user_id = $1 AND removed_at IS NULL
+             )
+             OR EXISTS (
+               SELECT 1 FROM workspace_members wm
+               WHERE wm.workspace_id = $2 AND wm.user_id = $1
+                 AND wm.removed_at IS NULL AND wm.role = 'owner'
+             )
+           )",
     )
     .bind(user_id)
+    .bind(workspace_id)
     .fetch_all(pool)
     .await?;
     Ok(rows.into_iter().map(|(id,)| id).collect())
 }
 
-// Full directory — used by the project editor's Members picker so an owner
-// can add a teammate they haven't shared a project with yet. No scope filter
-// (we already require auth) but we exclude no one.
+/// Whether the caller is a workspace owner. Used wherever owner-only
+/// authority matters (workspace mutations, project creation, role
+/// changes on project members).
+pub async fn is_workspace_owner(
+    pool: &PgPool,
+    workspace_id: Uuid,
+    user_id: Uuid,
+) -> sqlx::Result<bool> {
+    Ok(workspace_role(pool, workspace_id, user_id).await?.as_deref() == Some("owner"))
+}
+
+/// Whether the caller is a `lead` on a given project (explicit row) OR
+/// a workspace owner (implicit lead in every project). Used by handlers
+/// that gate project edits.
+pub async fn has_project_lead_authority(
+    pool: &PgPool,
+    workspace_id: Uuid,
+    project_id: Uuid,
+    user_id: Uuid,
+) -> sqlx::Result<bool> {
+    if is_workspace_owner(pool, workspace_id, user_id).await? {
+        return Ok(true);
+    }
+    let row: Option<(String,)> = sqlx::query_as(
+        "SELECT role FROM project_members
+         WHERE project_id = $1 AND user_id = $2 AND removed_at IS NULL",
+    )
+    .bind(project_id)
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(|(r,)| r == "lead").unwrap_or(false))
+}
+
+/// Workspaces a user belongs to (active membership only — soft-removed
+/// rows are hidden). Sorted by personal first, then title.
+pub async fn list_user_workspaces(pool: &PgPool, user_id: Uuid) -> sqlx::Result<Vec<Workspace>> {
+    let mut workspaces: Vec<Workspace> = sqlx::query_as(
+        "SELECT w.id, w.title, w.is_personal
+         FROM workspaces w
+         JOIN workspace_members wm ON wm.workspace_id = w.id
+         WHERE wm.user_id = $1 AND wm.removed_at IS NULL
+         ORDER BY w.is_personal DESC, w.title",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await?;
+
+    let ids: Vec<Uuid> = workspaces.iter().map(|w| w.id).collect();
+    if ids.is_empty() {
+        return Ok(workspaces);
+    }
+    let rows: Vec<(Uuid, Uuid, String)> = sqlx::query_as(
+        "SELECT workspace_id, user_id, role FROM workspace_members
+         WHERE workspace_id = ANY($1) AND removed_at IS NULL",
+    )
+    .bind(&ids)
+    .fetch_all(pool)
+    .await?;
+    let mut by_ws: HashMap<Uuid, Vec<WorkspaceMember>> = HashMap::new();
+    for (ws, user, role) in rows {
+        by_ws.entry(ws).or_default().push(WorkspaceMember { user_id: user, role });
+    }
+    for w in &mut workspaces {
+        if let Some(m) = by_ws.remove(&w.id) {
+            w.members = m;
+        }
+    }
+    Ok(workspaces)
+}
+
+/// The caller's role in a workspace, or None if not a member (or removed).
+pub async fn workspace_role(
+    pool: &PgPool,
+    workspace_id: Uuid,
+    user_id: Uuid,
+) -> sqlx::Result<Option<String>> {
+    let row: Option<(String,)> = sqlx::query_as(
+        "SELECT role FROM workspace_members
+         WHERE workspace_id = $1 AND user_id = $2 AND removed_at IS NULL",
+    )
+    .bind(workspace_id)
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(|(r,)| r))
+}
+
+/// Create a workspace and seat the creator as `owner`.
+pub async fn create_workspace_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    creator_id: Uuid,
+    title: &str,
+    is_personal: bool,
+) -> sqlx::Result<Workspace> {
+    let id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO workspaces (id, title, is_personal, created_by)
+         VALUES ($1, $2, $3, $4)",
+    )
+    .bind(id)
+    .bind(title)
+    .bind(is_personal)
+    .bind(creator_id)
+    .execute(&mut **tx)
+    .await?;
+    sqlx::query(
+        "INSERT INTO workspace_members (workspace_id, user_id, role, removed_at)
+         VALUES ($1, $2, 'owner', NULL)",
+    )
+    .bind(id)
+    .bind(creator_id)
+    .execute(&mut **tx)
+    .await?;
+    Ok(Workspace {
+        id,
+        title: title.to_string(),
+        is_personal,
+        members: vec![WorkspaceMember { user_id: creator_id, role: "owner".into() }],
+    })
+}
+
+/// Ensure every Google-authenticated user has a personal workspace. Idempotent
+/// — repeats on every login but only inserts if absent.
+pub async fn ensure_personal_workspace(
+    pool: &PgPool,
+    user_id: Uuid,
+    user_name: &str,
+) -> sqlx::Result<Uuid> {
+    let existing: Option<(Uuid,)> = sqlx::query_as(
+        "SELECT w.id FROM workspaces w
+         JOIN workspace_members wm ON wm.workspace_id = w.id
+         WHERE wm.user_id = $1 AND w.is_personal = true AND wm.removed_at IS NULL
+         LIMIT 1",
+    )
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await?;
+    if let Some((id,)) = existing {
+        return Ok(id);
+    }
+    let mut tx = pool.begin().await?;
+    let title = if user_name.trim().is_empty() {
+        "Personal".to_string()
+    } else {
+        format!("{}'s workspace", user_name.split_whitespace().next().unwrap_or(user_name))
+    };
+    let ws = create_workspace_tx(&mut tx, user_id, &title, true).await?;
+    tx.commit().await?;
+    Ok(ws.id)
+}
+
+pub async fn rename_workspace_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    workspace_id: Uuid,
+    title: &str,
+) -> sqlx::Result<Option<Workspace>> {
+    let row: Option<(Uuid, String, bool)> = sqlx::query_as(
+        "UPDATE workspaces SET title = $2 WHERE id = $1
+         RETURNING id, title, is_personal",
+    )
+    .bind(workspace_id)
+    .bind(title)
+    .fetch_optional(&mut **tx)
+    .await?;
+    let Some((id, title, is_personal)) = row else { return Ok(None); };
+    let members = list_workspace_members_tx(tx, id).await?;
+    Ok(Some(Workspace { id, title, is_personal, members }))
+}
+
+async fn list_workspace_members_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    workspace_id: Uuid,
+) -> sqlx::Result<Vec<WorkspaceMember>> {
+    let rows: Vec<(Uuid, String)> = sqlx::query_as(
+        "SELECT user_id, role FROM workspace_members
+         WHERE workspace_id = $1 AND removed_at IS NULL
+         ORDER BY role",
+    )
+    .bind(workspace_id)
+    .fetch_all(&mut **tx)
+    .await?;
+    Ok(rows.into_iter().map(|(user_id, role)| WorkspaceMember { user_id, role }).collect())
+}
+
+/// Replace the active member set of a workspace. `desired` is a list of
+/// (user_id, role). The acting user (caller) is force-kept as `owner` so a
+/// workspace can never lock itself out of management. Members not in the
+/// desired list get soft-removed; new members get added (or re-activated if
+/// previously removed).
+pub async fn set_workspace_members_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    workspace_id: Uuid,
+    actor_id: Uuid,
+    desired: &[(Uuid, String)],
+) -> sqlx::Result<Option<Workspace>> {
+    let row: Option<(Uuid, String, bool)> = sqlx::query_as(
+        "SELECT id, title, is_personal FROM workspaces WHERE id = $1",
+    )
+    .bind(workspace_id)
+    .fetch_optional(&mut **tx)
+    .await?;
+    let Some((id, title, is_personal)) = row else { return Ok(None); };
+
+    // Personal workspaces don't have managed membership — the single owner
+    // is fixed at creation. Refuse to touch their member set.
+    if is_personal {
+        return Ok(Some(Workspace {
+            id, title, is_personal,
+            members: list_workspace_members_tx(tx, id).await?,
+        }));
+    }
+
+    let mut want: Vec<(Uuid, String)> = desired.to_vec();
+    if !want.iter().any(|(u, _)| *u == actor_id) {
+        want.push((actor_id, "owner".to_string()));
+    }
+
+    for (uid, role) in &want {
+        sqlx::query(
+            "INSERT INTO workspace_members (workspace_id, user_id, role, removed_at)
+             VALUES ($1, $2, $3, NULL)
+             ON CONFLICT (workspace_id, user_id) DO UPDATE
+                 SET role = EXCLUDED.role, removed_at = NULL",
+        )
+        .bind(id)
+        .bind(uid)
+        .bind(role)
+        .execute(&mut **tx)
+        .await?;
+    }
+
+    let want_ids: Vec<Uuid> = want.iter().map(|(u, _)| *u).collect();
+    sqlx::query(
+        "UPDATE workspace_members SET removed_at = now()
+         WHERE workspace_id = $1 AND removed_at IS NULL AND user_id <> ALL($2)",
+    )
+    .bind(id)
+    .bind(&want_ids)
+    .execute(&mut **tx)
+    .await?;
+
+    Ok(Some(Workspace {
+        id, title, is_personal,
+        members: list_workspace_members_tx(tx, id).await?,
+    }))
+}
+
+/// Update one member's role.
+pub async fn set_workspace_member_role_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    workspace_id: Uuid,
+    user_id: Uuid,
+    role: &str,
+) -> sqlx::Result<Option<Workspace>> {
+    let updated = sqlx::query(
+        "UPDATE workspace_members SET role = $3
+         WHERE workspace_id = $1 AND user_id = $2 AND removed_at IS NULL",
+    )
+    .bind(workspace_id)
+    .bind(user_id)
+    .bind(role)
+    .execute(&mut **tx)
+    .await?;
+    if updated.rows_affected() == 0 {
+        return Ok(None);
+    }
+    let row: Option<(Uuid, String, bool)> = sqlx::query_as(
+        "SELECT id, title, is_personal FROM workspaces WHERE id = $1",
+    )
+    .bind(workspace_id)
+    .fetch_optional(&mut **tx)
+    .await?;
+    let Some((id, title, is_personal)) = row else { return Ok(None); };
+    Ok(Some(Workspace {
+        id, title, is_personal,
+        members: list_workspace_members_tx(tx, id).await?,
+    }))
+}
+
+/// Users in a workspace, used by the project editor's Members picker.
+pub async fn list_users_in_workspace(
+    pool: &PgPool,
+    workspace_id: Uuid,
+) -> sqlx::Result<Vec<User>> {
+    sqlx::query_as(
+        "SELECT u.id, u.email, u.name, u.initials
+         FROM users u
+         JOIN workspace_members wm ON wm.user_id = u.id
+         WHERE wm.workspace_id = $1 AND wm.removed_at IS NULL
+         ORDER BY u.name",
+    )
+    .bind(workspace_id)
+    .fetch_all(pool)
+    .await
+}
+
+/// Every user in the system. Used by the workspace settings modal so
+/// owners can add people who aren't in any workspace they share yet —
+/// a Google-authenticated user who's never been added to a team
+/// workspace lives here, even if their personal workspace is the only
+/// row connecting them to anything.
 pub async fn list_all_users(pool: &PgPool) -> sqlx::Result<Vec<User>> {
     sqlx::query_as("SELECT id, email, name, initials FROM users ORDER BY name")
         .fetch_all(pool)
         .await
 }
 
-// Users surfaced to the client = the caller plus any co-members of their
-// projects. Personal mode returns just the caller; company mode includes
-// teammates without leaking unrelated users.
+// Users surfaced to the client = the caller plus the active workspace's
+// members. Bootstrap returns this so calendar views, member pickers, and
+// "(you)" lookups have everyone they need.
 pub async fn list_users_in_scope(
     pool: &PgPool,
-    scope: &[Uuid],
+    workspace_id: Uuid,
     me: Uuid,
 ) -> sqlx::Result<Vec<User>> {
-    if scope.is_empty() {
-        return sqlx::query_as("SELECT id, email, name, initials FROM users WHERE id = $1")
-            .bind(me)
-            .fetch_all(pool)
-            .await;
-    }
     sqlx::query_as(
         "SELECT DISTINCT u.id, u.email, u.name, u.initials
          FROM users u
          WHERE u.id = $1
-            OR u.id IN (SELECT user_id FROM project_members
-                        WHERE project_id = ANY($2) AND removed_at IS NULL)
-            OR u.id IN (SELECT owner_id FROM projects WHERE id = ANY($2) AND owner_id IS NOT NULL)
+            OR u.id IN (SELECT user_id FROM workspace_members
+                        WHERE workspace_id = $2 AND removed_at IS NULL)
          ORDER BY u.name",
     )
     .bind(me)
-    .bind(scope)
+    .bind(workspace_id)
     .fetch_all(pool)
     .await
 }
@@ -66,23 +371,23 @@ pub async fn list_projects_in_scope(
         return Ok(vec![]);
     }
     let mut projects: Vec<Project> = sqlx::query_as(
-        "SELECT id, title, icon, color, source, description, external_url_template
+        "SELECT id, workspace_id, title, icon, color, source, description, external_url_template
          FROM projects WHERE id = ANY($1) ORDER BY title",
     )
     .bind(scope)
     .fetch_all(pool)
     .await?;
 
-    let rows: Vec<(Uuid, Uuid)> = sqlx::query_as(
-        "SELECT project_id, user_id FROM project_members
+    let rows: Vec<(Uuid, Uuid, String)> = sqlx::query_as(
+        "SELECT project_id, user_id, role FROM project_members
          WHERE project_id = ANY($1) AND removed_at IS NULL",
     )
     .bind(scope)
     .fetch_all(pool)
     .await?;
-    let mut by_project: HashMap<Uuid, Vec<Uuid>> = HashMap::new();
-    for (pid, uid) in rows {
-        by_project.entry(pid).or_default().push(uid);
+    let mut by_project: HashMap<Uuid, Vec<ProjectMember>> = HashMap::new();
+    for (pid, uid, role) in rows {
+        by_project.entry(pid).or_default().push(ProjectMember { user_id: uid, role });
     }
     for p in &mut projects {
         if let Some(m) = by_project.remove(&p.id) {
@@ -156,6 +461,7 @@ pub async fn list_tasks_in_scope(pool: &PgPool, scope: &[Uuid]) -> sqlx::Result<
 
 pub async fn create_project_tx(
     tx: &mut Transaction<'_, Postgres>,
+    workspace_id: Uuid,
     owner_id: Uuid,
     title: &str,
     icon: &str,
@@ -165,10 +471,11 @@ pub async fn create_project_tx(
     // source = 'local' for personal-mode projects; integrations will set it
     // to 'jira'/'notion' through their own write paths later.
     sqlx::query(
-        "INSERT INTO projects (id, title, icon, color, source, owner_id)
-         VALUES ($1, $2, $3, $4, 'local', $5)",
+        "INSERT INTO projects (id, workspace_id, title, icon, color, source, owner_id)
+         VALUES ($1, $2, $3, $4, $5, 'local', $6)",
     )
     .bind(id)
+    .bind(workspace_id)
     .bind(title)
     .bind(icon)
     .bind(color)
@@ -176,13 +483,13 @@ pub async fn create_project_tx(
     .execute(&mut **tx)
     .await?;
 
-    // The owner is implicitly a member. Keeps the membership query in
-    // `list_users_in_scope` honest and means switching this project to
-    // "shared" later is a no-op.
+    // The owner is implicitly a project lead. workspace_id is filled in by
+    // the BEFORE-INSERT trigger, so we don't bind it here.
     sqlx::query(
-        "INSERT INTO project_members (project_id, user_id, removed_at)
-         VALUES ($1, $2, NULL)
-         ON CONFLICT (project_id, user_id) DO UPDATE SET removed_at = NULL",
+        "INSERT INTO project_members (project_id, user_id, removed_at, role)
+         VALUES ($1, $2, NULL, 'lead')
+         ON CONFLICT (project_id, user_id) DO UPDATE
+             SET removed_at = NULL, role = 'lead'",
     )
     .bind(id)
     .bind(owner_id)
@@ -191,13 +498,14 @@ pub async fn create_project_tx(
 
     Ok(Project {
         id,
+        workspace_id,
         title: title.to_string(),
         icon: icon.to_string(),
         color: color.to_string(),
         source: "local".to_string(),
         description: None,
         external_url_template: None,
-        members: vec![owner_id],
+        members: vec![ProjectMember { user_id: owner_id, role: "lead".into() }],
     })
 }
 
@@ -207,7 +515,6 @@ pub async fn create_project_tx(
 // Membership is handled separately by `set_project_members_tx`.
 pub async fn update_project_tx(
     tx: &mut Transaction<'_, Postgres>,
-    owner_id: Uuid,
     project_id: Uuid,
     title: Option<&str>,
     icon: Option<&str>,
@@ -219,20 +526,19 @@ pub async fn update_project_tx(
     // a JSON `null` clears the column while an absent field leaves it.
     let (eut_set, eut_value): (&str, Option<&str>) = match external_url_template {
         None => ("external_url_template", None),
-        Some(v) => ("$6", v),
+        Some(v) => ("$5", v),
     };
     let sql = format!(
         "UPDATE projects SET
-            title = COALESCE($3, title),
-            icon  = COALESCE($4, icon),
-            color = COALESCE($5, color),
+            title = COALESCE($2, title),
+            icon  = COALESCE($3, icon),
+            color = COALESCE($4, color),
             external_url_template = {eut_set}
-         WHERE id = $1 AND owner_id = $2
-         RETURNING id, title, icon, color, source, description, external_url_template",
+         WHERE id = $1
+         RETURNING id, workspace_id, title, icon, color, source, description, external_url_template",
     );
-    let mut q = sqlx::query_as::<_, (Uuid, String, String, String, String, Option<String>, Option<String>)>(&sql)
+    let mut q = sqlx::query_as::<_, (Uuid, Uuid, String, String, String, String, Option<String>, Option<String>)>(&sql)
         .bind(project_id)
-        .bind(owner_id)
         .bind(title)
         .bind(icon)
         .bind(color);
@@ -241,12 +547,12 @@ pub async fn update_project_tx(
     }
     let row = q.fetch_optional(&mut **tx).await?;
 
-    let Some((id, title, icon, color, source, description, external_url_template)) = row else {
+    let Some((id, workspace_id, title, icon, color, source, description, external_url_template)) = row else {
         return Ok(None);
     };
 
-    let members_rows: Vec<(Uuid,)> = sqlx::query_as(
-        "SELECT user_id FROM project_members
+    let members_rows: Vec<(Uuid, String)> = sqlx::query_as(
+        "SELECT user_id, role FROM project_members
          WHERE project_id = $1 AND removed_at IS NULL",
     )
     .bind(id)
@@ -255,14 +561,31 @@ pub async fn update_project_tx(
 
     Ok(Some(Project {
         id,
+        workspace_id,
         title,
         icon,
         color,
         source,
         description,
         external_url_template,
-        members: members_rows.into_iter().map(|(u,)| u).collect(),
+        members: members_rows.into_iter().map(|(u, r)| ProjectMember { user_id: u, role: r }).collect(),
     }))
+}
+
+/// Look up a project's workspace and its owner — used by handlers to
+/// authorize edits before calling update_project_tx / set_project_members_tx.
+/// Returns None if the project doesn't exist.
+pub async fn project_owner_and_workspace(
+    pool: &PgPool,
+    project_id: Uuid,
+) -> sqlx::Result<Option<(Uuid, Option<Uuid>)>> {
+    let row: Option<(Uuid, Option<Uuid>)> = sqlx::query_as(
+        "SELECT workspace_id, owner_id FROM projects WHERE id = $1",
+    )
+    .bind(project_id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row)
 }
 
 // Reconcile project_members for `project_id` to exactly `desired` (plus the
@@ -274,42 +597,76 @@ pub async fn update_project_tx(
 //
 // Returns the refreshed Project, or None if the project doesn't exist or the
 // caller isn't the owner. Mirrors update_project_tx's not-found behavior.
+/// Reconcile project_members for `project_id` to exactly `desired`.
+/// Each desired entry is `(user_id, role)`. The project's `owner_id` is
+/// force-included as `lead` so an owner can never lock themselves out.
+///
+/// `allow_role_change`: if false (project lead is editing), existing
+/// rows keep their role and new rows are inserted with whatever role is
+/// in `desired` *except* `lead` — leads can only add `member`s. Workspace
+/// owners pass true and can promote/demote freely.
 pub async fn set_project_members_tx(
     tx: &mut Transaction<'_, Postgres>,
-    owner_id: Uuid,
     project_id: Uuid,
-    desired: &[Uuid],
+    project_owner_id: Option<Uuid>,
+    desired: &[(Uuid, String)],
+    allow_role_change: bool,
 ) -> sqlx::Result<Option<Project>> {
-    let row: Option<(Uuid, String, String, String, String, Option<String>, Option<String>)> = sqlx::query_as(
-        "SELECT id, title, icon, color, source, description, external_url_template
-         FROM projects WHERE id = $1 AND owner_id = $2",
+    let row: Option<(Uuid, Uuid, String, String, String, String, Option<String>, Option<String>)> = sqlx::query_as(
+        "SELECT id, workspace_id, title, icon, color, source, description, external_url_template
+         FROM projects WHERE id = $1",
     )
     .bind(project_id)
-    .bind(owner_id)
     .fetch_optional(&mut **tx)
     .await?;
 
-    let Some((id, title, icon, color, source, description, external_url_template)) = row else {
+    let Some((id, workspace_id, title, icon, color, source, description, external_url_template)) = row else {
         return Ok(None);
     };
 
-    let mut want: Vec<Uuid> = desired.to_vec();
-    if !want.contains(&owner_id) {
-        want.push(owner_id);
+    let mut want: Vec<(Uuid, String)> = desired.to_vec();
+    if let Some(o) = project_owner_id {
+        if !want.iter().any(|(u, _)| *u == o) {
+            want.push((o, "lead".into()));
+        }
     }
 
-    for u in &want {
+    // Pre-existing rows we have to read so non-owner edits don't accidentally
+    // demote a lead. We only consult this when role changes are not allowed.
+    let existing: Vec<(Uuid, String)> = sqlx::query_as(
+        "SELECT user_id, role FROM project_members
+         WHERE project_id = $1 AND removed_at IS NULL",
+    )
+    .bind(id)
+    .fetch_all(&mut **tx)
+    .await?;
+    let existing_role: std::collections::HashMap<Uuid, String> =
+        existing.into_iter().collect();
+
+    for (uid, role_in) in &want {
+        let role = if allow_role_change {
+            role_in.clone()
+        } else {
+            // Non-owner editing: keep existing role if any, otherwise force 'member'.
+            existing_role
+                .get(uid)
+                .cloned()
+                .unwrap_or_else(|| "member".to_string())
+        };
         sqlx::query(
-            "INSERT INTO project_members (project_id, user_id, removed_at)
-             VALUES ($1, $2, NULL)
-             ON CONFLICT (project_id, user_id) DO UPDATE SET removed_at = NULL",
+            "INSERT INTO project_members (project_id, user_id, removed_at, role)
+             VALUES ($1, $2, NULL, $3)
+             ON CONFLICT (project_id, user_id) DO UPDATE
+                 SET removed_at = NULL, role = EXCLUDED.role",
         )
         .bind(id)
-        .bind(u)
+        .bind(uid)
+        .bind(&role)
         .execute(&mut **tx)
         .await?;
     }
 
+    let want_ids: Vec<Uuid> = want.iter().map(|(u, _)| *u).collect();
     sqlx::query(
         "UPDATE project_members SET removed_at = now()
          WHERE project_id = $1
@@ -317,12 +674,12 @@ pub async fn set_project_members_tx(
            AND user_id <> ALL($2)",
     )
     .bind(id)
-    .bind(&want)
+    .bind(&want_ids)
     .execute(&mut **tx)
     .await?;
 
-    let members_rows: Vec<(Uuid,)> = sqlx::query_as(
-        "SELECT user_id FROM project_members
+    let members_rows: Vec<(Uuid, String)> = sqlx::query_as(
+        "SELECT user_id, role FROM project_members
          WHERE project_id = $1 AND removed_at IS NULL",
     )
     .bind(id)
@@ -331,13 +688,14 @@ pub async fn set_project_members_tx(
 
     Ok(Some(Project {
         id,
+        workspace_id,
         title,
         icon,
         color,
         source,
         description,
         external_url_template,
-        members: members_rows.into_iter().map(|(u,)| u).collect(),
+        members: members_rows.into_iter().map(|(u, r)| ProjectMember { user_id: u, role: r }).collect(),
     }))
 }
 
