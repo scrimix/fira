@@ -3,12 +3,33 @@ import { api, loginUrl } from '../api';
 import { useFira } from '../store';
 import { BrandMark } from './BrandMark';
 
+const SUBTITLES = [
+  'Make plans real.',
+  'Looks familiar. Works differently.',
+  'Stop handling everything in your head, write things down.',
+  'Idea? Capture. Bug? Log. Think later.',
+  'Plan together. Adjust together.',
+  'Plan what actually fits.',
+  'Plans drift. Adjust.',
+  'Built for how work actually happens.',
+  "'I'll do it tomorrow.' — tomorrow.",
+  'A task in-progress for weeks is a signal.',
+  'Your plan needs feedback from reality.',
+  "Meetings aren't the only thing that takes time.",
+  'Stop scheduling "deep work." Schedule the work.',
+  'The last 20% is another 80%.',
+  'Scope hides until the deadline shows up.',
+];
+
 export function Login() {
   // dev_auth gates the "Sign in as Maya" affordance; we only render it
   // when the server has DEV_AUTH=1, so production builds never show it.
   const [devAuth, setDevAuth] = useState(false);
   const [signing, setSigning] = useState(false);
   const [signError, setSignError] = useState<string | null>(null);
+  const [subtitle] = useState(
+    () => SUBTITLES[Math.floor(Math.random() * SUBTITLES.length)],
+  );
   const enterPlayground = useFira((s) => s.enterPlayground);
 
   useEffect(() => {
@@ -52,7 +73,7 @@ export function Login() {
           <BrandMark size={44} className="login-mark" />
           <span className="login-wordmark">Fira</span>
         </div>
-        <p className="login-tag">Plan what actually fits.</p>
+        <p className="login-tag">{subtitle}</p>
         <a className="login-google" href={loginUrl}>
           <GoogleMark /> Continue with Google
         </a>
