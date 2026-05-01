@@ -440,6 +440,10 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
           project_id: firstProject,
           assignee_id: me.id,
         },
+        // Empty workspace lands on inbox: that view's empty state has the
+        // owner-aware "Create your first project" / "ask an admin" CTA.
+        // Calendar can't usefully render with zero projects.
+        view: data.projects.length === 0 ? 'inbox' : 'calendar',
       });
     } catch (e) {
       // 401 from /me means the session expired — drop cached data and
@@ -522,7 +526,8 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
         project_id: firstProject,
         assignee_id: meId,
       },
-      view: 'calendar',
+      // Same empty-workspace rule as initial hydrate.
+      view: data.projects.length === 0 ? 'inbox' : 'calendar',
     }));
   },
 
