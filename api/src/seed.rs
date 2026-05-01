@@ -591,45 +591,47 @@ async fn seed_tasks(tx: &mut Transaction<'_, Postgres>) -> sqlx::Result<()> {
 }
 
 async fn seed_blocks(tx: &mut Transaction<'_, Postgres>) -> sqlx::Result<()> {
-    // (day, start_min, dur_min, task_slug). State is derived from the wall
-    // clock at seed time: anything that has already ended is "completed",
-    // anything still in the future is "planned". This way the demo always
-    // shows a believable mix no matter which day the seeder runs on.
-    let blocks: &[(i64, i64, i64, &str)] = &[
-        // MON
-        (0, 9 * 60, 90, "t_atlas_oauth"),
-        (0, 10 * 60 + 30, 60, "t_atlas_review"),
-        (0, 13 * 60, 120, "t_atlas_billing"),
-        (0, 15 * 60 + 30, 90, "t_relay_jira"),
-        // TUE
-        (1, 9 * 60, 120, "t_atlas_oauth"),
-        (1, 11 * 60 + 30, 90, "t_helix_emb"),
-        (1, 14 * 60, 90, "t_relay_jira"),
-        (1, 16 * 60, 60, "t_atlas_review"),
-        // WED
-        (2, 9 * 60, 90, "t_atlas_oauth"),
-        (2, 11 * 60, 60, "t_atlas_billing"),
-        (2, 13 * 60, 90, "t_relay_jira"),
-        (2, 15 * 60, 60, "t_atlas_review"),
-        (2, 16 * 60 + 30, 90, "t_helix_emb"),
-        // THU
-        (3, 9 * 60, 120, "t_atlas_oauth"),
-        (3, 11 * 60 + 30, 60, "t_atlas_billing"),
-        (3, 13 * 60, 90, "t_relay_jira"),
-        (3, 15 * 60, 120, "t_relay_diff"),
-        // FRI
-        (4, 9 * 60, 90, "t_atlas_billing"),
-        (4, 10 * 60 + 30, 60, "t_atlas_oauth"),
-        (4, 13 * 60, 120, "t_helix_emb"),
-        (4, 15 * 60 + 30, 90, "t_relay_jira"),
-        // SAT
-        (5, 10 * 60, 90, "t_helix_emb"),
+    // (day, start_min, dur_min, state, task_slug). State is hardcoded per
+    // block — explicitly NOT derived from the wallclock at seed time. The
+    // dump-bootstrap snapshot freezes "now", so a wallclock-driven state
+    // would mean a snapshot taken Sunday night shows every block of the
+    // week as "completed" and the demo loses its done/planned mix. Instead
+    // the seed declares "Mon–Wed morning are done, the rest is planned" as
+    // the canonical fixture, and the demo reads the same regardless of
+    // when the dump ran.
+    let blocks: &[(i64, i64, i64, &str, &str)] = &[
+        // MON — fully completed
+        (0, 9 * 60,           90,  "completed", "t_atlas_oauth"),
+        (0, 10 * 60 + 30,     60,  "completed", "t_atlas_review"),
+        (0, 13 * 60,         120,  "completed", "t_atlas_billing"),
+        (0, 15 * 60 + 30,     90,  "completed", "t_relay_jira"),
+        // TUE — fully completed
+        (1, 9 * 60,          120,  "completed", "t_atlas_oauth"),
+        (1, 11 * 60 + 30,     90,  "completed", "t_helix_emb"),
+        (1, 14 * 60,          90,  "completed", "t_relay_jira"),
+        (1, 16 * 60,          60,  "completed", "t_atlas_review"),
+        // WED — morning completed, afternoon still planned
+        (2, 9 * 60,           90,  "completed", "t_atlas_oauth"),
+        (2, 11 * 60,          60,  "completed", "t_atlas_billing"),
+        (2, 13 * 60,          90,  "planned",   "t_relay_jira"),
+        (2, 15 * 60,          60,  "planned",   "t_atlas_review"),
+        (2, 16 * 60 + 30,     90,  "planned",   "t_helix_emb"),
+        // THU — all planned
+        (3, 9 * 60,          120,  "planned",   "t_atlas_oauth"),
+        (3, 11 * 60 + 30,     60,  "planned",   "t_atlas_billing"),
+        (3, 13 * 60,          90,  "planned",   "t_relay_jira"),
+        (3, 15 * 60,         120,  "planned",   "t_relay_diff"),
+        // FRI — all planned
+        (4, 9 * 60,           90,  "planned",   "t_atlas_billing"),
+        (4, 10 * 60 + 30,     60,  "planned",   "t_atlas_oauth"),
+        (4, 13 * 60,         120,  "planned",   "t_helix_emb"),
+        (4, 15 * 60 + 30,     90,  "planned",   "t_relay_jira"),
+        // SAT — planned
+        (5, 10 * 60,          90,  "planned",   "t_helix_emb"),
     ];
-    let now = Utc::now();
-    for (i, (day, start_min, dur, slug)) in blocks.iter().enumerate() {
+    for (i, (day, start_min, dur, state, slug)) in blocks.iter().enumerate() {
         let start_at = ts(*day, *start_min);
         let end_at = ts(*day, *start_min + *dur);
-        let state = if end_at <= now { "completed" } else { "planned" };
         sqlx::query(
             "INSERT INTO time_blocks (id, task_id, user_id, start_at, end_at, state)
              VALUES ($1,$2,$3,$4,$5,$6)",
@@ -639,7 +641,7 @@ async fn seed_blocks(tx: &mut Transaction<'_, Postgres>) -> sqlx::Result<()> {
         .bind(primary_user_id())
         .bind(start_at)
         .bind(end_at)
-        .bind(state)
+        .bind(*state)
         .execute(&mut **tx)
         .await?;
     }

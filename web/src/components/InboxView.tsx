@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Pencil } from 'lucide-react';
+import { Check, Pencil } from 'lucide-react';
 import { useFira } from '../store';
 import { fmtMin, taskTimeLeft } from '../time';
 import { ProjectIcon } from './ProjectIcon';
@@ -373,7 +373,9 @@ function InboxSubtaskRow({ title, done, onToggle, onSave, onDelete }: {
   return (
     <div className={editing ? 'subtask subtask-edit' : 'subtask'} data-done={done}
          onClick={(e) => e.stopPropagation()}>
-      <span className="sc" onClick={onToggle}>{done ? '✓' : ''}</span>
+      <span className="sc" onClick={onToggle} aria-label={done ? 'Mark not done' : 'Mark done'}>
+        {done && <Check size={11} strokeWidth={3} />}
+      </span>
       {editing ? (
         <input
           ref={inputRef}

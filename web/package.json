@@ -9,7 +9,8 @@
     "dev:second": "PORT=5174 API_PORT=3001 vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc -b --noEmit"
+    "typecheck": "tsc -b --noEmit",
+    "playground:dump": "cd ../api && cargo run --quiet --bin dump-bootstrap > ../web/src/playground/bootstrap.json && echo 'wrote web/src/playground/bootstrap.json'"
   },
   "dependencies": {
     "lucide-react": "^1.14.0",

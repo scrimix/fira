@@ -9,25 +9,38 @@
 export const HOURS = Array.from({ length: 24 }, (_, i) => i);
 export const DAY_LABELS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
 
-function computeWeekStart(): number {
-  const now = new Date();
-  const dayFromMon = (now.getDay() + 6) % 7; // 0=Mon..6=Sun
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate() - dayFromMon).getTime();
+// "Now" provider. Lives behind a function so the playground (and any future
+// snapshot/replay mode) can freeze it to the snapshot's timestamp without
+// every component reaching for `Date.now()`. Real auth never touches this;
+// the override is null and `now()` returns wallclock.
+let _frozenNowMs: number | null = null;
+export function setFrozenNow(iso: string | null): void {
+  _frozenNowMs = iso ? Date.parse(iso) : null;
+}
+function now(): Date {
+  return _frozenNowMs == null ? new Date() : new Date(_frozenNowMs);
 }
 
-// Resolved at module load. Anchors the grid to Monday 00:00 in the user's
-// local timezone, expressed as an absolute epoch-ms timestamp.
-export const WEEK_START_MS = computeWeekStart();
-export const TODAY_DAY_INDEX = (new Date().getDay() + 6) % 7;
-export const NOW_TIME_MIN = (() => {
-  const n = new Date();
+// Anchors the grid to Monday 00:00 in the user's local timezone, expressed
+// as an absolute epoch-ms timestamp. Functions, not const exports, so each
+// call re-reads `now()` — important for snapshot mode.
+export function weekStartMs(): number {
+  const n = now();
+  const dayFromMon = (n.getDay() + 6) % 7;
+  return new Date(n.getFullYear(), n.getMonth(), n.getDate() - dayFromMon).getTime();
+}
+export function todayDayIndex(): number {
+  return (now().getDay() + 6) % 7;
+}
+export function nowTimeMin(): number {
+  const n = now();
   return n.getHours() * 60 + n.getMinutes();
-})();
+}
 
 export function weekStartFor(weekOffset: number): number {
   // Step by calendar days, not raw ms, so DST weeks still land on local
   // midnight instead of drifting by an hour.
-  const ws = new Date(WEEK_START_MS);
+  const ws = new Date(weekStartMs());
   return new Date(ws.getFullYear(), ws.getMonth(), ws.getDate() + weekOffset * 7).getTime();
 }
 
@@ -37,9 +50,9 @@ function addDaysLocal(ms: number, days: number): Date {
 }
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-export function fmtWeekRange(weekStartMs: number): string {
-  const start = new Date(weekStartMs);
-  const end = addDaysLocal(weekStartMs, 6);
+export function fmtWeekRange(weekStart: number): string {
+  const start = new Date(weekStart);
+  const end = addDaysLocal(weekStart, 6);
   const sameMonth = start.getMonth() === end.getMonth();
   const sameYear = start.getFullYear() === end.getFullYear();
   const sm = MONTHS[start.getMonth()];
@@ -53,11 +66,11 @@ export function fmtWeekRange(weekStartMs: number): string {
   return `${sm} ${start.getDate()}, ${start.getFullYear()} – ${em} ${end.getDate()}, ${end.getFullYear()}`;
 }
 
-export function dayOfMonthFor(weekStartMs: number, dayIdx: number): number {
-  return addDaysLocal(weekStartMs, dayIdx).getDate();
+export function dayOfMonthFor(weekStart: number, dayIdx: number): number {
+  return addDaysLocal(weekStart, dayIdx).getDate();
 }
 
-export function blockToGrid(start_at: string, end_at: string, weekStartMs: number = WEEK_START_MS): {
+export function blockToGrid(start_at: string, end_at: string, weekStart: number = weekStartMs()): {
   day: number; start_min: number; dur_min: number;
 } {
   const s = new Date(start_at);
@@ -65,7 +78,7 @@ export function blockToGrid(start_at: string, end_at: string, weekStartMs: numbe
   // Anchor both ends to local midnight before measuring the day diff so a
   // DST transition in the week doesn't push a Tuesday block onto Monday.
   const sMid = new Date(s.getFullYear(), s.getMonth(), s.getDate()).getTime();
-  const ws = new Date(weekStartMs);
+  const ws = new Date(weekStart);
   const wsMid = new Date(ws.getFullYear(), ws.getMonth(), ws.getDate()).getTime();
   const day = Math.round((sMid - wsMid) / 86400000);
   const start_min = s.getHours() * 60 + s.getMinutes();
@@ -73,10 +86,10 @@ export function blockToGrid(start_at: string, end_at: string, weekStartMs: numbe
   return { day, start_min, dur_min };
 }
 
-export function gridToBlock(day: number, start_min: number, dur_min: number, weekStartMs: number = WEEK_START_MS): {
+export function gridToBlock(day: number, start_min: number, dur_min: number, weekStart: number = weekStartMs()): {
   start_at: string; end_at: string;
 } {
-  const ws = new Date(weekStartMs);
+  const ws = new Date(weekStart);
   const start = new Date(
     ws.getFullYear(), ws.getMonth(), ws.getDate() + day,
     Math.floor(start_min / 60), start_min % 60, 0, 0,
@@ -149,7 +162,7 @@ export function taskTimeLeft(task: Task, blocks: TimeBlock[]): number | null {
   // i.e. the plan has gone over. Callers that only want a non-negative number
   // should clamp themselves.
   if (task.estimate_min == null) return null;
-  const todayStart = addDaysLocal(WEEK_START_MS, TODAY_DAY_INDEX).getTime();
+  const todayStart = addDaysLocal(weekStartMs(), todayDayIndex()).getTime();
   const futurePlanned = blocks
     .filter((b) => b.task_id === task.id && b.state === 'planned' && Date.parse(b.start_at) >= todayStart)
     .reduce((s, b) => s + (Date.parse(b.end_at) - Date.parse(b.start_at)) / 60000, 0);

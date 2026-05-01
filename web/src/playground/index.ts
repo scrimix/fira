@@ -24,5 +24,4 @@ export function clearPlayground() {
   try { localStorage.removeItem(FLAG_KEY); } catch { /* private mode */ }
 }
 
-export { buildPlaygroundSeed } from './seed';
-export type { PlaygroundSeed } from './seed';
+export { loadPlaygroundSnapshot } from './seed';

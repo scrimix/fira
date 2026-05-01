@@ -28,6 +28,7 @@ export type OpKind =
   | { kind: 'subtask.tick'; subtask_id: string; done: boolean }
   | { kind: 'subtask.set_title'; subtask_id: string; title: string }
   | { kind: 'subtask.delete'; subtask_id: string }
+  | { kind: 'subtask.reorder'; task_id: string; ordered: string[] }
   | { kind: 'block.create'; block: import('../types').TimeBlock }
   | { kind: 'block.update'; block_id: string; patch: Partial<import('../types').TimeBlock> }
   | { kind: 'block.delete'; block_id: string };

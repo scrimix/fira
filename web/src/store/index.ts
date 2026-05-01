@@ -13,8 +13,9 @@ import type {
 import { api, HttpError, setActiveWorkspaceId } from '../api';
 import { newOp, type Op, type OpKind, type AnyOpKind, type ChangeEntry } from './outbox';
 import {
-  buildPlaygroundSeed, clearPlayground, isPlayground, markPlayground,
+  clearPlayground, isPlayground, loadPlaygroundSnapshot, markPlayground,
 } from '../playground';
+import { setFrozenNow } from '../time';
 
 // Sync state machine. The TopBar pill reads this directly.
 //   idle  — nothing queued, last attempt either succeeded or never ran
@@ -180,6 +181,7 @@ interface FiraState {
   tickSubtask: (taskId: UUID, subId: UUID) => void;
   setSubtaskTitle: (taskId: UUID, subId: UUID, title: string) => void;
   deleteSubtask: (taskId: UUID, subId: UUID) => void;
+  reorderSubtasks: (taskId: UUID, orderedIds: UUID[]) => void;
   upsertBlock: (block: TimeBlock) => void;
   updateBlock: (blockId: UUID, patch: Partial<TimeBlock>) => void;
   duplicateBlock: (blockId: UUID) => UUID | null;
@@ -277,6 +279,25 @@ function applyOpToState(s: FiraState, op: AnyOpKind): Partial<FiraState> {
           subtasks: t.subtasks.filter((st) => st.id !== op.subtask_id),
         })),
       };
+    case 'subtask.reorder':
+      return {
+        tasks: s.tasks.map((t) => {
+          if (t.id !== op.task_id) return t;
+          const byId = new Map(t.subtasks.map((st) => [st.id, st]));
+          const reordered = op.ordered
+            .map((id, i) => {
+              const existing = byId.get(id);
+              if (!existing) return null;
+              byId.delete(id);
+              return { ...existing, sort_key: `M${String(i).padStart(3, '0')}` };
+            })
+            .filter((x): x is NonNullable<typeof x> => x != null);
+          // Append any subtasks the caller didn't include (defensive against
+          // a stale ordered list racing with a concurrent subtask.create).
+          const tail = Array.from(byId.values());
+          return { ...t, subtasks: [...reordered, ...tail] };
+        }),
+      };
     case 'block.create': {
       if (s.blocks.some((b) => b.id === op.block.id)) return {};
       return { blocks: [...s.blocks, op.block] };
@@ -361,6 +382,57 @@ const reviver = (_k: string, v: unknown) => {
   return v;
 };
 
+/// Apply a fresh bootstrap response (real or playground) into the store.
+/// Called from both hydrate paths so the bootstrap → state derivation
+/// (projectFilter init, inboxFilter defaults, view selection by project
+/// count, role lookup) lives in one place.
+function applyBootstrap(
+  set: (partial: Partial<FiraState>) => void,
+  get: () => FiraState,
+  data: Bootstrap,
+  me: User,
+  active: Workspace,
+  workspaces: Workspace[],
+  playground: boolean,
+): void {
+  const projectFilter: Record<UUID, boolean> = {};
+  data.projects.forEach((p) => { projectFilter[p.id] = true; });
+  const firstProject = data.projects[0]?.id ?? null;
+  const myMember = active.members.find((m) => m.user_id === me.id);
+  set({
+    authChecked: true,
+    loaded: true,
+    error: null,
+    playgroundMode: playground,
+    users: data.users,
+    projects: data.projects,
+    epics: data.epics,
+    sprints: data.sprints,
+    tasks: data.tasks,
+    blocks: data.blocks,
+    gcal: data.gcal,
+    cursor: data.cursor ?? 0,
+    appliedOpIds: new Map(),
+    outbox: [],
+    meId: me.id,
+    workspaces,
+    activeWorkspaceId: active.id,
+    myWorkspaceRole: (myMember?.role ?? 'member') as WorkspaceRole,
+    selectedPersonIds: [me.id],
+    activePersonId: me.id,
+    projectFilter,
+    inboxFilter: {
+      ...get().inboxFilter,
+      project_id: firstProject,
+      assignee_id: me.id,
+    },
+    // Empty workspace lands on inbox: that view's empty state has the
+    // owner-aware "Create your first project" / "ask an admin" CTA.
+    // Calendar can't usefully render with zero projects.
+    view: data.projects.length === 0 ? 'inbox' : 'calendar',
+  });
+}
+
 export const useFira = create<FiraState>()(persist((set, get) => ({
   authChecked: false,
   loaded: false,
@@ -403,37 +475,24 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
   openTaskId: null,
 
   hydrate: async () => {
-    // Playground mode bypasses the network entirely. If the persist layer
-    // already restored a playground session we just flip the flag and skip
-    // the seed (the persisted state IS the seed). Fresh entries fall through
-    // to enterPlayground via the login button.
+    // Playground reads its bootstrap from the bundled snapshot JSON; real
+    // auth fetches from /api/bootstrap. From there the two flows feed
+    // identical state shape into `applyBootstrap`, so every downstream
+    // component sees the same kind of data regardless of source.
     if (isPlayground()) {
-      const cached = get();
-      if (cached.meId && cached.activeWorkspaceId && cached.projects.length > 0) {
-        setActiveWorkspaceId(cached.activeWorkspaceId);
-        // Re-derive inboxFilter from the cached projects — `inboxFilter` is
-        // not in the persist partialize, so on a reload it starts at the
-        // null-project_id default and the inbox view would say "Pick a
-        // project from the sidebar" until you switch projects manually.
-        const firstProject = cached.projects[0]?.id ?? null;
-        set({
-          authChecked: true,
-          loaded: true,
-          playgroundMode: true,
-          error: null,
-          inboxFilter: {
-            ...cached.inboxFilter,
-            project_id: firstProject,
-            assignee_id: cached.meId,
-          },
-        });
-        return;
+      markPlayground();
+      const snap = loadPlaygroundSnapshot();
+      // Freeze "now" to the snapshot timestamp BEFORE applying state, so
+      // the calendar's first render aligns with the snapshot's week.
+      setFrozenNow(snap.snapshot_at);
+      setActiveWorkspaceId(snap.workspace.id);
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('fira:activeWorkspace', snap.workspace.id);
       }
-      // Flag set but no cached state (e.g. first paint right after the user
-      // clicked "Try as Maya"): build the seed now.
-      get().enterPlayground();
+      applyBootstrap(set, get, snap.bootstrap, snap.me, snap.workspace, [snap.workspace], true);
       return;
     }
+    setFrozenNow(null);
     try {
       const me: User = await api.me();
       const workspaces = await api.listMyWorkspaces();
@@ -451,39 +510,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
       }
       setActiveWorkspaceId(active.id);
       const data: Bootstrap = await api.bootstrap();
-      const projectFilter: Record<UUID, boolean> = {};
-      data.projects.forEach((p) => { projectFilter[p.id] = true; });
-      const firstProject = data.projects[0]?.id ?? null;
-      const myMember = active.members.find((m) => m.user_id === me.id);
-      set({
-        authChecked: true,
-        loaded: true,
-        error: null,
-        users: data.users,
-        projects: data.projects,
-        epics: data.epics,
-        sprints: data.sprints,
-        tasks: data.tasks,
-        blocks: data.blocks,
-        gcal: data.gcal,
-        cursor: data.cursor ?? 0,
-        meId: me.id,
-        workspaces,
-        activeWorkspaceId: active.id,
-        myWorkspaceRole: (myMember?.role ?? 'member') as WorkspaceRole,
-        selectedPersonIds: [me.id],
-        activePersonId: me.id,
-        projectFilter,
-        inboxFilter: {
-          ...get().inboxFilter,
-          project_id: firstProject,
-          assignee_id: me.id,
-        },
-        // Empty workspace lands on inbox: that view's empty state has the
-        // owner-aware "Create your first project" / "ask an admin" CTA.
-        // Calendar can't usefully render with zero projects.
-        view: data.projects.length === 0 ? 'inbox' : 'calendar',
-      });
+      applyBootstrap(set, get, data, me, active, workspaces, false);
     } catch (e) {
       // 401 from /me means the session expired — drop cached data and
       // bounce to login. Anything else (network error, 5xx) is treated as
@@ -524,44 +551,13 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
   },
 
   enterPlayground: () => {
+    // The Login button calls this to flip the flag and reload. After
+    // reload, hydrate() sees `isPlayground()` and routes through the
+    // shared bootstrap apply path. Implemented as flag-then-reload (not
+    // an inline state poke) so the playground entry point goes through
+    // the exact same code path as a "user already in playground" reload.
     markPlayground();
-    const seed = buildPlaygroundSeed();
-    setActiveWorkspaceId(seed.workspace.id);
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem('fira:activeWorkspace', seed.workspace.id);
-    }
-    const projectFilter: Record<UUID, boolean> = {};
-    seed.bootstrap.projects.forEach((p) => { projectFilter[p.id] = true; });
-    const firstProject = seed.bootstrap.projects[0]?.id ?? null;
-    set({
-      authChecked: true,
-      loaded: true,
-      error: null,
-      playgroundMode: true,
-      users: seed.bootstrap.users,
-      projects: seed.bootstrap.projects,
-      epics: seed.bootstrap.epics,
-      sprints: seed.bootstrap.sprints,
-      tasks: seed.bootstrap.tasks,
-      blocks: seed.bootstrap.blocks,
-      gcal: seed.bootstrap.gcal,
-      cursor: 0,
-      appliedOpIds: new Map(),
-      outbox: [],
-      meId: seed.me.id,
-      workspaces: [seed.workspace as Workspace],
-      activeWorkspaceId: seed.workspace.id,
-      myWorkspaceRole: 'owner',
-      selectedPersonIds: [seed.me.id],
-      activePersonId: seed.me.id,
-      projectFilter,
-      inboxFilter: {
-        ...get().inboxFilter,
-        project_id: firstProject,
-        assignee_id: seed.me.id,
-      },
-      view: 'calendar',
-    });
+    window.location.assign('/');
   },
 
   switchWorkspace: async (id) => {
@@ -1111,6 +1107,26 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     }),
     ...pushOp(s, { kind: 'subtask.delete', subtask_id: subId }),
   })),
+
+  reorderSubtasks: (taskId, orderedIds) => set((s) => {
+    const tasks = s.tasks.map((t) => {
+      if (t.id !== taskId) return t;
+      const byId = new Map(t.subtasks.map((st) => [st.id, st]));
+      const reordered = orderedIds
+        .map((id, i) => {
+          const existing = byId.get(id);
+          if (!existing) return null;
+          byId.delete(id);
+          return { ...existing, sort_key: `M${String(i).padStart(3, '0')}` };
+        })
+        .filter((x): x is NonNullable<typeof x> => x != null);
+      return { ...t, subtasks: [...reordered, ...Array.from(byId.values())] };
+    });
+    return {
+      tasks,
+      ...pushOp(s, { kind: 'subtask.reorder', task_id: taskId, ordered: orderedIds }),
+    };
+  }),
 
   tickSubtask: (taskId, subId) => set((s) => {
     let nextDone = false;

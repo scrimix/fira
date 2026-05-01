@@ -333,11 +333,16 @@
   cursor: text;
   user-select: none;
 }
+/* Mirror the grip column on subtask rows so the "+ Add subtask" input lines
+ * up with subtask titles instead of laddering left. Width matches
+ * `.subtask .subtask-grip` exactly. */
+.subtask-add .grip-spacer {
+  width: 14px; height: 14px;
+  flex-shrink: 0;
+}
 .subtask-add .sc-spacer {
-  width: 11px; height: 11px;
-  display: grid; place-items: center;
-  font-family: var(--font-mono);
-  font-size: calc(10px * var(--fs-scale));
+  width: 14px; height: 14px;
+  display: inline-flex; align-items: center; justify-content: center;
   color: var(--ink-4);
   flex-shrink: 0;
 }
@@ -366,34 +371,18 @@
   padding: 2px 0;
 }
 .subtask .sc {
-  width: 11px; height: 11px;
+  width: 14px; height: 14px;
   border: 1px solid var(--rule-3);
   background: var(--paper);
-  position: relative;
+  display: inline-flex; align-items: center; justify-content: center;
   flex-shrink: 0;
   cursor: pointer;
   padding: 0;
-  /* Hide the inline text content; we render the check as a CSS shape. */
-  font-size: 0;
-  color: transparent;
-}
-/* CSS-drawn check, vertically centered. Two borders form the tick — does not
-   depend on font baseline so it stays put across font-rendering quirks. */
-.subtask[data-done="true"] .sc::after {
-  content: '';
-  position: absolute;
-  left: 2px;
-  top: 0px;
-  width: 4px;
-  height: 7px;
-  border: solid var(--paper);
-  border-width: 0 1.5px 1.5px 0;
-  transform: rotate(45deg);
+  color: var(--paper);
 }
 .subtask[data-done="true"] .sc {
   background: var(--ink-3);
   border-color: var(--ink-3);
-  color: var(--paper);
 }
 .subtask[data-done="true"] .sname {
   text-decoration: line-through;
@@ -446,11 +435,11 @@
 .modal-side h5 {
   margin: 0 0 4px;
   font-family: var(--font-mono);
-  font-size: calc(10px * var(--fs-scale));
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  font-size: var(--fs-sm);
   color: var(--ink-3);
   font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
 }
 .modal-side .field {
   padding: 8px 0;
@@ -617,20 +606,51 @@
 }
 .subtask-edit .subtask-del {
   margin-left: auto;
-  width: 14px; height: 14px;
-  display: grid; place-items: center;
-  font-family: var(--font-mono);
-  font-size: calc(12px * var(--fs-scale));
-  line-height: 1;
-  color: var(--ink-4);
+  width: 22px; height: 22px;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--ink-3);
   background: transparent;
   border: 0;
+  border-radius: 3px;
   cursor: pointer;
   opacity: 0;
   padding: 0;
+  transition: opacity 80ms ease, color 80ms ease, background 80ms ease;
 }
+.subtask-edit .subtask-del:hover { background: var(--paper-3); }
 .subtask-edit:hover .subtask-del { opacity: 1; }
 .subtask-edit .subtask-del:hover { color: var(--danger); }
+
+.subtask .subtask-grip {
+  width: 14px; height: 14px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-family: var(--font-mono);
+  font-size: calc(12px * var(--fs-scale));
+  letter-spacing: -2px;
+  color: var(--ink-4);
+  cursor: grab;
+  user-select: none;
+  flex-shrink: 0;
+  padding: 0;
+  opacity: 0;
+  transition: opacity 80ms ease;
+}
+.subtask:hover .subtask-grip { opacity: 1; }
+.subtask .subtask-grip:active { cursor: grabbing; }
+/* Drop indicator: a 2px accent line above or below the row depending on
+ * which half of the target the pointer is over. Same convention task-rows
+ * use, so reordering subtasks feels like reordering tasks. */
+.subtask[data-drop-mark="before"]::before,
+.subtask[data-drop-mark="after"]::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0;
+  height: 2px;
+  background: var(--accent);
+  pointer-events: none;
+}
+.subtask[data-drop-mark="before"]::before { top: -1px; }
+.subtask[data-drop-mark="after"]::after  { bottom: -1px; }
 .subtask-edit[data-done="true"] .subtask-edit-input,
 .subtask-edit[data-done="true"] .sname {
   text-decoration: line-through;

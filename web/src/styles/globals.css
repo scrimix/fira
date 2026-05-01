@@ -628,6 +628,29 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
 
 .sync-pill-wrap { position: relative; display: inline-flex; }
 
+/* Sits flush against the sync-pill so the two read as one segmented status
+ * cluster on the right. Same height + typography; muted tone (paper-3 bg,
+ * ink-2 text) so the label is clear without competing with the sync state's
+ * accent / warn / danger colors. */
+.playground-pill {
+  display: inline-flex; align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  font-family: var(--font-mono);
+  font-size: calc(10px * var(--fs-scale));
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border: 1px solid var(--rule-2);
+  background: var(--paper-3);
+  color: var(--ink-2);
+  /* Pull the next pill's left edge over our right border by 1px so the
+   * seam is a single line, not two stacked borders or a sliver of
+   * background. Keep our own border-right intact (was missing before,
+   * which made the right edge look invisible against the sync-pill). */
+  margin-right: -1px;
+}
+.playground-pill + .sync-pill-wrap .sync-pill { margin-left: 0; }
+
 /* Popover that lists failed ops with per-op Retry / Discard. Sits to the
    right of the pill and aligns to its top so it stays readable when the
    pill is at the very edge of the topbar. */

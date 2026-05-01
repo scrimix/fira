@@ -1,0 +1,960 @@
+{
+  "snapshot_at": "2026-05-01T21:20:33.922974628Z",
+  "me": {
+    "id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+    "email": "maya@fira.dev",
+    "name": "Maya Chen",
+    "initials": "MC"
+  },
+  "workspace": {
+    "id": "736b2d57-f2e4-5317-9453-df009aef1100",
+    "title": "Default",
+    "is_personal": false,
+    "members": [
+      {
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "role": "owner"
+      },
+      {
+        "user_id": "90cdb98a-ef9a-562c-aeef-c0c065a9989c",
+        "role": "member"
+      },
+      {
+        "user_id": "adf9eeb1-caa7-5647-b726-ee7b6e2e9901",
+        "role": "member"
+      },
+      {
+        "user_id": "b2ac03c3-49da-5183-8562-9566ac49624f",
+        "role": "member"
+      }
+    ]
+  },
+  "bootstrap": {
+    "users": [
+      {
+        "id": "90cdb98a-ef9a-562c-aeef-c0c065a9989c",
+        "email": "anna@fira.dev",
+        "name": "Anna Park",
+        "initials": "AP"
+      },
+      {
+        "id": "adf9eeb1-caa7-5647-b726-ee7b6e2e9901",
+        "email": "bob@fira.dev",
+        "name": "Bob Reyes",
+        "initials": "BR"
+      },
+      {
+        "id": "b2ac03c3-49da-5183-8562-9566ac49624f",
+        "email": "jin@fira.dev",
+        "name": "Jin Okafor",
+        "initials": "JO"
+      },
+      {
+        "id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "email": "maya@fira.dev",
+        "name": "Maya Chen",
+        "initials": "MC"
+      }
+    ],
+    "projects": [
+      {
+        "id": "394c700e-b98f-5f49-911b-aeded755c4dc",
+        "workspace_id": "736b2d57-f2e4-5317-9453-df009aef1100",
+        "title": "Atlas",
+        "icon": "Compass",
+        "color": "#0F766E",
+        "source": "jira",
+        "description": "Core platform. Auth, billing, infra.",
+        "external_url_template": null,
+        "members": [
+          {
+            "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+            "role": "lead"
+          },
+          {
+            "user_id": "90cdb98a-ef9a-562c-aeef-c0c065a9989c",
+            "role": "lead"
+          },
+          {
+            "user_id": "adf9eeb1-caa7-5647-b726-ee7b6e2e9901",
+            "role": "member"
+          }
+        ]
+      },
+      {
+        "id": "7b459832-624e-51e4-80c1-eca4c89e000d",
+        "workspace_id": "736b2d57-f2e4-5317-9453-df009aef1100",
+        "title": "Helix",
+        "icon": "Sparkles",
+        "color": "#6D28D9",
+        "source": "local",
+        "description": "Personal R&D — embedding experiments.",
+        "external_url_template": null,
+        "members": [
+          {
+            "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+            "role": "lead"
+          }
+        ]
+      },
+      {
+        "id": "68480002-0192-5810-a90a-d9e2f7d069c2",
+        "workspace_id": "736b2d57-f2e4-5317-9453-df009aef1100",
+        "title": "Relay",
+        "icon": "Zap",
+        "color": "#B45309",
+        "source": "notion",
+        "description": "Internal tooling — sync engine.",
+        "external_url_template": null,
+        "members": [
+          {
+            "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+            "role": "lead"
+          },
+          {
+            "user_id": "b2ac03c3-49da-5183-8562-9566ac49624f",
+            "role": "member"
+          }
+        ]
+      }
+    ],
+    "epics": [
+      {
+        "id": "89a4fbf0-a385-5f68-9dae-09d00b92134c",
+        "project_id": "394c700e-b98f-5f49-911b-aeded755c4dc",
+        "title": "Auth v2 (refresh + SSO)"
+      },
+      {
+        "id": "adb95d75-2317-577e-aba2-001c853f9484",
+        "project_id": "394c700e-b98f-5f49-911b-aeded755c4dc",
+        "title": "Billing reliability"
+      },
+      {
+        "id": "9cb9ca34-f049-58ce-87fb-404be15f2feb",
+        "project_id": "7b459832-624e-51e4-80c1-eca4c89e000d",
+        "title": "Misc exploration"
+      },
+      {
+        "id": "50818215-768d-5f16-8011-ede85e537af7",
+        "project_id": "394c700e-b98f-5f49-911b-aeded755c4dc",
+        "title": "Perf + observability"
+      },
+      {
+        "id": "e0dd95f3-b2a3-5717-a551-f7e8c50e2c71",
+        "project_id": "7b459832-624e-51e4-80c1-eca4c89e000d",
+        "title": "Semantic task search"
+      },
+      {
+        "id": "7cd9ca47-8d45-557f-bba7-e2263a87ba46",
+        "project_id": "68480002-0192-5810-a90a-d9e2f7d069c2",
+        "title": "Source onboarding"
+      },
+      {
+        "id": "adaf067f-1fc0-50fe-a3ce-cdf466e1bd49",
+        "project_id": "68480002-0192-5810-a90a-d9e2f7d069c2",
+        "title": "Sync engine v1"
+      }
+    ],
+    "sprints": [
+      {
+        "id": "e727d996-477b-5783-b015-19f0239c6ef7",
+        "project_id": "394c700e-b98f-5f49-911b-aeded755c4dc",
+        "title": "Atlas · Apr 27",
+        "dates": "Apr 27 – May 8",
+        "active": true
+      },
+      {
+        "id": "f511ca38-bd12-5aeb-a7da-c977d4a5c8f0",
+        "project_id": "394c700e-b98f-5f49-911b-aeded755c4dc",
+        "title": "Atlas · May 11",
+        "dates": "May 11 – May 22",
+        "active": false
+      },
+      {
+        "id": "ae9863d3-f216-58f8-9778-90576783109e",
+        "project_id": "7b459832-624e-51e4-80c1-eca4c89e000d",
+        "title": "Helix · Q2",
+        "dates": "Apr – Jun",
+        "active": true
+      },
+      {
+        "id": "9b593847-9229-55f4-b9ec-491341ca9db2",
+        "project_id": "68480002-0192-5810-a90a-d9e2f7d069c2",
+        "title": "Relay · Sprint 10",
+        "dates": "May 6 – May 19",
+        "active": false
+      },
+      {
+        "id": "bc2244e4-8b87-5a4b-966d-e92698563324",
+        "project_id": "68480002-0192-5810-a90a-d9e2f7d069c2",
+        "title": "Relay · Sprint 9",
+        "dates": "Apr 22 – May 5",
+        "active": true
+      }
+    ],
+    "tasks": [
+      {
+        "id": "198ad86d-7c58-5bac-9a96-1b20432d8d72",
+        "project_id": "394c700e-b98f-5f49-911b-aeded755c4dc",
+        "epic_id": "89a4fbf0-a385-5f68-9dae-09d00b92134c",
+        "sprint_id": "e727d996-477b-5783-b015-19f0239c6ef7",
+        "assignee_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "title": "OAuth refresh token rotation",
+        "description_md": "Rotate refresh tokens on every use. Invalidate the old token within a 30-second grace window.\n\nFollow RFC 6749 §10.4 + §6 recommendations.",
+        "section": "now",
+        "status": "in_progress",
+        "priority": "p1",
+        "source": "jira",
+        "external_id": "ATL-412",
+        "external_url": null,
+        "estimate_min": 360,
+        "spent_min": 120,
+        "tags": [
+          "auth",
+          "security"
+        ],
+        "sort_key": "M",
+        "subtasks": [
+          {
+            "id": "7b5d1680-2b5d-5394-8fa4-7ef5f5a9b0ca",
+            "task_id": "198ad86d-7c58-5bac-9a96-1b20432d8d72",
+            "title": "Audit current refresh logic",
+            "done": true,
+            "sort_key": "M000"
+          },
+          {
+            "id": "19c2d570-8d67-5db6-a2de-f18ee2b1182e",
+            "task_id": "198ad86d-7c58-5bac-9a96-1b20432d8d72",
+            "title": "Add rotation endpoint",
+            "done": true,
+            "sort_key": "M001"
+          },
+          {
+            "id": "3d557504-c7cb-5880-a4e9-c2fa6dc9e4e7",
+            "task_id": "198ad86d-7c58-5bac-9a96-1b20432d8d72",
+            "title": "Migrate existing tokens",
+            "done": false,
+            "sort_key": "M002"
+          },
+          {
+            "id": "a7f2bd0f-900f-5c52-90ca-30328e44d40a",
+            "task_id": "198ad86d-7c58-5bac-9a96-1b20432d8d72",
+            "title": "Backfill metrics dashboard",
+            "done": false,
+            "sort_key": "M003"
+          }
+        ]
+      },
+      {
+        "id": "027b9d13-09ea-522f-9c66-d558c2250ccd",
+        "project_id": "394c700e-b98f-5f49-911b-aeded755c4dc",
+        "epic_id": "adb95d75-2317-577e-aba2-001c853f9484",
+        "sprint_id": "e727d996-477b-5783-b015-19f0239c6ef7",
+        "assignee_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "title": "Stripe webhook idempotency",
+        "description_md": "Webhook delivery is at-least-once. Dedup by event id, store last 30 days.",
+        "section": "now",
+        "status": "in_progress",
+        "priority": "p1",
+        "source": "jira",
+        "external_id": "ATL-433",
+        "external_url": null,
+        "estimate_min": 240,
+        "spent_min": 60,
+        "tags": [
+          "billing"
+        ],
+        "sort_key": "M",
+        "subtasks": [
+          {
+            "id": "b1ad7f7d-ef33-59a2-a531-13fda00e084e",
+            "task_id": "027b9d13-09ea-522f-9c66-d558c2250ccd",
+            "title": "Create dedup table",
+            "done": true,
+            "sort_key": "M000"
+          },
+          {
+            "id": "b098bc65-9ceb-5c5d-90ae-ffc63a8609a8",
+            "task_id": "027b9d13-09ea-522f-9c66-d558c2250ccd",
+            "title": "Wrap webhook handlers",
+            "done": false,
+            "sort_key": "M001"
+          },
+          {
+            "id": "6f1a641c-0294-5993-9d20-fea5e3f7affe",
+            "task_id": "027b9d13-09ea-522f-9c66-d558c2250ccd",
+            "title": "Add metrics",
+            "done": false,
+            "sort_key": "M002"
+          }
+        ]
+      },
+      {
+        "id": "d7a540e7-b137-574b-8d2d-cea798f369aa",
+        "project_id": "394c700e-b98f-5f49-911b-aeded755c4dc",
+        "epic_id": "50818215-768d-5f16-8011-ede85e537af7",
+        "sprint_id": "e727d996-477b-5783-b015-19f0239c6ef7",
+        "assignee_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "title": "Code review: rate-limit middleware",
+        "description_md": "Bob's PR. Token bucket per IP + per user. Check the redis fallback.",
+        "section": "now",
+        "status": "todo",
+        "priority": "p2",
+        "source": "jira",
+        "external_id": "ATL-440",
+        "external_url": null,
+        "estimate_min": 60,
+        "spent_min": 0,
+        "tags": [
+          "review"
+        ],
+        "sort_key": "M",
+        "subtasks": []
+      },
+      {
+        "id": "8daf604d-850e-579f-85a4-8afddb0fdec8",
+        "project_id": "394c700e-b98f-5f49-911b-aeded755c4dc",
+        "epic_id": "89a4fbf0-a385-5f68-9dae-09d00b92134c",
+        "sprint_id": "f511ca38-bd12-5aeb-a7da-c977d4a5c8f0",
+        "assignee_id": "90cdb98a-ef9a-562c-aeef-c0c065a9989c",
+        "title": "SAML SSO for enterprise tier",
+        "description_md": "",
+        "section": "now",
+        "status": "todo",
+        "priority": "p1",
+        "source": "jira",
+        "external_id": "ATL-451",
+        "external_url": null,
+        "estimate_min": 480,
+        "spent_min": 0,
+        "tags": [
+          "auth",
+          "enterprise"
+        ],
+        "sort_key": "M",
+        "subtasks": []
+      },
+      {
+        "id": "9c0aafc2-4c24-53f5-950b-cc78a85562f8",
+        "project_id": "394c700e-b98f-5f49-911b-aeded755c4dc",
+        "epic_id": "50818215-768d-5f16-8011-ede85e537af7",
+        "sprint_id": "f511ca38-bd12-5aeb-a7da-c977d4a5c8f0",
+        "assignee_id": "90cdb98a-ef9a-562c-aeef-c0c065a9989c",
+        "title": "Audit log retention policy",
+        "description_md": "",
+        "section": "now",
+        "status": "todo",
+        "priority": "p2",
+        "source": "jira",
+        "external_id": "ATL-446",
+        "external_url": null,
+        "estimate_min": 180,
+        "spent_min": 0,
+        "tags": [
+          "compliance"
+        ],
+        "sort_key": "M",
+        "subtasks": []
+      },
+      {
+        "id": "a2dea70a-f1e6-5136-84c7-36f2851856d7",
+        "project_id": "394c700e-b98f-5f49-911b-aeded755c4dc",
+        "epic_id": "50818215-768d-5f16-8011-ede85e537af7",
+        "sprint_id": "e727d996-477b-5783-b015-19f0239c6ef7",
+        "assignee_id": "adf9eeb1-caa7-5647-b726-ee7b6e2e9901",
+        "title": "Investigate p99 spike on /sessions",
+        "description_md": "p99 went from 80ms → 320ms after the auth refactor merge. Bisect commits.",
+        "section": "now",
+        "status": "in_progress",
+        "priority": "p0",
+        "source": "jira",
+        "external_id": "ATL-449",
+        "external_url": null,
+        "estimate_min": 240,
+        "spent_min": 60,
+        "tags": [
+          "perf"
+        ],
+        "sort_key": "M",
+        "subtasks": []
+      },
+      {
+        "id": "549d50ab-8db4-5a4b-a8c8-49720a384cd1",
+        "project_id": "68480002-0192-5810-a90a-d9e2f7d069c2",
+        "epic_id": "adaf067f-1fc0-50fe-a3ce-cdf466e1bd49",
+        "sprint_id": "bc2244e4-8b87-5a4b-966d-e92698563324",
+        "assignee_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "title": "Jira webhook → task upsert",
+        "description_md": "Receive Jira webhook, debounce 500ms, upsert task by external_id.",
+        "section": "now",
+        "status": "in_progress",
+        "priority": "p1",
+        "source": "notion",
+        "external_id": "sync-engine/47",
+        "external_url": null,
+        "estimate_min": 300,
+        "spent_min": 90,
+        "tags": [
+          "sync"
+        ],
+        "sort_key": "M",
+        "subtasks": [
+          {
+            "id": "d21ccc42-433f-5a65-939b-b61fc9ff368d",
+            "task_id": "549d50ab-8db4-5a4b-a8c8-49720a384cd1",
+            "title": "Webhook signature verification",
+            "done": true,
+            "sort_key": "M000"
+          },
+          {
+            "id": "3abf8287-5694-5a56-a4c4-a63f50cbcda3",
+            "task_id": "549d50ab-8db4-5a4b-a8c8-49720a384cd1",
+            "title": "Debounce queue",
+            "done": false,
+            "sort_key": "M001"
+          },
+          {
+            "id": "a939bbb5-2f5f-5002-a6be-0141cae5153f",
+            "task_id": "549d50ab-8db4-5a4b-a8c8-49720a384cd1",
+            "title": "Conflict detection (source_updated_at > last_synced_at)",
+            "done": false,
+            "sort_key": "M002"
+          }
+        ]
+      },
+      {
+        "id": "e3033d1f-5344-5070-8e59-ab513339cc52",
+        "project_id": "68480002-0192-5810-a90a-d9e2f7d069c2",
+        "epic_id": "adaf067f-1fc0-50fe-a3ce-cdf466e1bd49",
+        "sprint_id": "bc2244e4-8b87-5a4b-966d-e92698563324",
+        "assignee_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "title": "Diff viewer for diverged tasks",
+        "description_md": "When a task is diverged, show side-by-side diff so user picks a side.",
+        "section": "now",
+        "status": "todo",
+        "priority": "p2",
+        "source": "notion",
+        "external_id": "sync-engine/52",
+        "external_url": null,
+        "estimate_min": 240,
+        "spent_min": 0,
+        "tags": [
+          "ui"
+        ],
+        "sort_key": "M",
+        "subtasks": []
+      },
+      {
+        "id": "3abd086a-bf57-510c-86b3-95cc862f6fd6",
+        "project_id": "68480002-0192-5810-a90a-d9e2f7d069c2",
+        "epic_id": "7cd9ca47-8d45-557f-bba7-e2263a87ba46",
+        "sprint_id": "9b593847-9229-55f4-b9ec-491341ca9db2",
+        "assignee_id": "b2ac03c3-49da-5183-8562-9566ac49624f",
+        "title": "Notion column-mapping flow",
+        "description_md": "",
+        "section": "now",
+        "status": "todo",
+        "priority": "p1",
+        "source": "notion",
+        "external_id": "sync-engine/55",
+        "external_url": null,
+        "estimate_min": 360,
+        "spent_min": 0,
+        "tags": [
+          "onboarding"
+        ],
+        "sort_key": "M",
+        "subtasks": []
+      },
+      {
+        "id": "c03a7499-0469-5c9e-943c-db26f6a356fe",
+        "project_id": "7b459832-624e-51e4-80c1-eca4c89e000d",
+        "epic_id": "e0dd95f3-b2a3-5717-a551-f7e8c50e2c71",
+        "sprint_id": "ae9863d3-f216-58f8-9778-90576783109e",
+        "assignee_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "title": "Sentence embeddings for task search",
+        "description_md": "Try bge-small + qdrant, measure recall@10 on held-out set.",
+        "section": "now",
+        "status": "in_progress",
+        "priority": "p2",
+        "source": "local",
+        "external_id": null,
+        "external_url": null,
+        "estimate_min": 240,
+        "spent_min": 30,
+        "tags": [
+          "research"
+        ],
+        "sort_key": "M",
+        "subtasks": [
+          {
+            "id": "06ecf45b-feb2-5941-a499-9bd525edccfe",
+            "task_id": "c03a7499-0469-5c9e-943c-db26f6a356fe",
+            "title": "Spin up qdrant locally",
+            "done": true,
+            "sort_key": "M000"
+          },
+          {
+            "id": "e708a828-b535-5c7a-95f5-d2c0487a6ec3",
+            "task_id": "c03a7499-0469-5c9e-943c-db26f6a356fe",
+            "title": "Index 1k sample tasks",
+            "done": false,
+            "sort_key": "M001"
+          },
+          {
+            "id": "a1bc5a6f-40da-510c-ab3a-3875f494494f",
+            "task_id": "c03a7499-0469-5c9e-943c-db26f6a356fe",
+            "title": "Build held-out eval",
+            "done": false,
+            "sort_key": "M002"
+          }
+        ]
+      },
+      {
+        "id": "b6e2d8b5-6aab-59c1-90c0-10bfe5c0997c",
+        "project_id": "7b459832-624e-51e4-80c1-eca4c89e000d",
+        "epic_id": "9cb9ca34-f049-58ce-87fb-404be15f2feb",
+        "sprint_id": "ae9863d3-f216-58f8-9778-90576783109e",
+        "assignee_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "title": "Sketch: estimate-confidence band on tasks",
+        "description_md": "",
+        "section": "now",
+        "status": "todo",
+        "priority": "p3",
+        "source": "local",
+        "external_id": null,
+        "external_url": null,
+        "estimate_min": 60,
+        "spent_min": 0,
+        "tags": [
+          "design"
+        ],
+        "sort_key": "M",
+        "subtasks": []
+      },
+      {
+        "id": "2e752adc-37bc-5d7a-8548-41810957477c",
+        "project_id": "394c700e-b98f-5f49-911b-aeded755c4dc",
+        "epic_id": "89a4fbf0-a385-5f68-9dae-09d00b92134c",
+        "sprint_id": null,
+        "assignee_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "title": "Magic-link auth fallback",
+        "description_md": "",
+        "section": "later",
+        "status": "backlog",
+        "priority": "p2",
+        "source": "jira",
+        "external_id": "ATL-501",
+        "external_url": null,
+        "estimate_min": null,
+        "spent_min": 0,
+        "tags": [],
+        "sort_key": "M",
+        "subtasks": []
+      },
+      {
+        "id": "79389414-d6e0-5d0d-8d98-f5bd494a55e4",
+        "project_id": "394c700e-b98f-5f49-911b-aeded755c4dc",
+        "epic_id": "89a4fbf0-a385-5f68-9dae-09d00b92134c",
+        "sprint_id": null,
+        "assignee_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "title": "Admin UI: revoke session",
+        "description_md": "",
+        "section": "later",
+        "status": "backlog",
+        "priority": "p3",
+        "source": "jira",
+        "external_id": "ATL-510",
+        "external_url": null,
+        "estimate_min": 180,
+        "spent_min": 0,
+        "tags": [],
+        "sort_key": "M",
+        "subtasks": []
+      },
+      {
+        "id": "a50cf4cf-1a05-56a6-9737-41577867a4d4",
+        "project_id": "394c700e-b98f-5f49-911b-aeded755c4dc",
+        "epic_id": "89a4fbf0-a385-5f68-9dae-09d00b92134c",
+        "sprint_id": null,
+        "assignee_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "title": "Investigate FIDO2 / passkeys",
+        "description_md": "",
+        "section": "later",
+        "status": "backlog",
+        "priority": "p3",
+        "source": "jira",
+        "external_id": "ATL-515",
+        "external_url": null,
+        "estimate_min": null,
+        "spent_min": 0,
+        "tags": [],
+        "sort_key": "M",
+        "subtasks": []
+      },
+      {
+        "id": "0ebba8dd-b9b5-51ad-a2b9-57dd024b74b0",
+        "project_id": "68480002-0192-5810-a90a-d9e2f7d069c2",
+        "epic_id": "7cd9ca47-8d45-557f-bba7-e2263a87ba46",
+        "sprint_id": null,
+        "assignee_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "title": "GitHub Issues source adapter",
+        "description_md": "",
+        "section": "later",
+        "status": "backlog",
+        "priority": "p3",
+        "source": "notion",
+        "external_id": "sync-engine/61",
+        "external_url": null,
+        "estimate_min": null,
+        "spent_min": 0,
+        "tags": [],
+        "sort_key": "M",
+        "subtasks": []
+      },
+      {
+        "id": "17db4175-a1fb-52ce-9342-4c625639a6a1",
+        "project_id": "68480002-0192-5810-a90a-d9e2f7d069c2",
+        "epic_id": "adaf067f-1fc0-50fe-a3ce-cdf466e1bd49",
+        "sprint_id": null,
+        "assignee_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "title": "Bug: Notion poll skips archived pages",
+        "description_md": "Spotted in standup 2026-04-28. Repro: archive a page, watch poll cycle.",
+        "section": "later",
+        "status": "backlog",
+        "priority": "p2",
+        "source": "local",
+        "external_id": null,
+        "external_url": null,
+        "estimate_min": 60,
+        "spent_min": 0,
+        "tags": [],
+        "sort_key": "M",
+        "subtasks": []
+      },
+      {
+        "id": "babf0e6f-82ae-53f4-af4e-13ceb6312430",
+        "project_id": "7b459832-624e-51e4-80c1-eca4c89e000d",
+        "epic_id": "9cb9ca34-f049-58ce-87fb-404be15f2feb",
+        "sprint_id": null,
+        "assignee_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "title": "Read: \"Notion Calendar postmortem\" blog",
+        "description_md": "",
+        "section": "later",
+        "status": "backlog",
+        "priority": "p3",
+        "source": "local",
+        "external_id": null,
+        "external_url": null,
+        "estimate_min": 30,
+        "spent_min": 0,
+        "tags": [],
+        "sort_key": "M",
+        "subtasks": []
+      },
+      {
+        "id": "7c06ca32-581f-58e1-b763-9bc04f29cf71",
+        "project_id": "7b459832-624e-51e4-80c1-eca4c89e000d",
+        "epic_id": "9cb9ca34-f049-58ce-87fb-404be15f2feb",
+        "sprint_id": null,
+        "assignee_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "title": "Try DuckDB for snapshot replay queries",
+        "description_md": "",
+        "section": "later",
+        "status": "backlog",
+        "priority": "p3",
+        "source": "local",
+        "external_id": null,
+        "external_url": null,
+        "estimate_min": null,
+        "spent_min": 0,
+        "tags": [],
+        "sort_key": "M",
+        "subtasks": []
+      },
+      {
+        "id": "5e875d0f-119b-5765-b948-13f36227cbe7",
+        "project_id": "394c700e-b98f-5f49-911b-aeded755c4dc",
+        "epic_id": "89a4fbf0-a385-5f68-9dae-09d00b92134c",
+        "sprint_id": "e727d996-477b-5783-b015-19f0239c6ef7",
+        "assignee_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "title": "Migrate session store to Redis 7",
+        "description_md": "",
+        "section": "done",
+        "status": "done",
+        "priority": null,
+        "source": "jira",
+        "external_id": "ATL-401",
+        "external_url": null,
+        "estimate_min": 240,
+        "spent_min": 280,
+        "tags": [],
+        "sort_key": "M",
+        "subtasks": []
+      },
+      {
+        "id": "68688958-63bd-5f25-be4b-886e6e574468",
+        "project_id": "68480002-0192-5810-a90a-d9e2f7d069c2",
+        "epic_id": "adaf067f-1fc0-50fe-a3ce-cdf466e1bd49",
+        "sprint_id": "bc2244e4-8b87-5a4b-966d-e92698563324",
+        "assignee_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "title": "Initial Jira OAuth flow",
+        "description_md": "",
+        "section": "done",
+        "status": "done",
+        "priority": null,
+        "source": "notion",
+        "external_id": "sync-engine/40",
+        "external_url": null,
+        "estimate_min": 360,
+        "spent_min": 420,
+        "tags": [],
+        "sort_key": "M",
+        "subtasks": []
+      },
+      {
+        "id": "d9d98d09-1076-562b-8f56-021ad92a031d",
+        "project_id": "7b459832-624e-51e4-80c1-eca4c89e000d",
+        "epic_id": "e0dd95f3-b2a3-5717-a551-f7e8c50e2c71",
+        "sprint_id": "ae9863d3-f216-58f8-9778-90576783109e",
+        "assignee_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "title": "Spike: pgvector vs qdrant benchmark",
+        "description_md": "",
+        "section": "done",
+        "status": "done",
+        "priority": null,
+        "source": "local",
+        "external_id": null,
+        "external_url": null,
+        "estimate_min": 180,
+        "spent_min": 240,
+        "tags": [],
+        "sort_key": "M",
+        "subtasks": []
+      }
+    ],
+    "blocks": [
+      {
+        "id": "ec9faf3e-8324-5ba4-bef9-867640268f5b",
+        "task_id": "198ad86d-7c58-5bac-9a96-1b20432d8d72",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-04-27T09:00:00Z",
+        "end_at": "2026-04-27T10:30:00Z",
+        "state": "completed"
+      },
+      {
+        "id": "bf521e6d-5903-5ca9-9515-f558f7c4ebdf",
+        "task_id": "d7a540e7-b137-574b-8d2d-cea798f369aa",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-04-27T10:30:00Z",
+        "end_at": "2026-04-27T11:30:00Z",
+        "state": "completed"
+      },
+      {
+        "id": "b94f2e36-ae0d-5f83-a96d-f55ea10b163f",
+        "task_id": "027b9d13-09ea-522f-9c66-d558c2250ccd",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-04-27T13:00:00Z",
+        "end_at": "2026-04-27T15:00:00Z",
+        "state": "completed"
+      },
+      {
+        "id": "be4eadb1-c6b6-590b-a992-7905ea18d6ce",
+        "task_id": "549d50ab-8db4-5a4b-a8c8-49720a384cd1",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-04-27T15:30:00Z",
+        "end_at": "2026-04-27T17:00:00Z",
+        "state": "completed"
+      },
+      {
+        "id": "781cd267-faa8-5a04-96da-6415d4f290a1",
+        "task_id": "198ad86d-7c58-5bac-9a96-1b20432d8d72",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-04-28T09:00:00Z",
+        "end_at": "2026-04-28T11:00:00Z",
+        "state": "completed"
+      },
+      {
+        "id": "82447b56-483b-552f-a05a-09a969b489ca",
+        "task_id": "c03a7499-0469-5c9e-943c-db26f6a356fe",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-04-28T11:30:00Z",
+        "end_at": "2026-04-28T13:00:00Z",
+        "state": "completed"
+      },
+      {
+        "id": "a302e976-e18b-5804-a279-e40f12e51bbe",
+        "task_id": "549d50ab-8db4-5a4b-a8c8-49720a384cd1",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-04-28T14:00:00Z",
+        "end_at": "2026-04-28T15:30:00Z",
+        "state": "completed"
+      },
+      {
+        "id": "8fc29603-a94d-53c8-8a06-531bf1e32d86",
+        "task_id": "d7a540e7-b137-574b-8d2d-cea798f369aa",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-04-28T16:00:00Z",
+        "end_at": "2026-04-28T17:00:00Z",
+        "state": "completed"
+      },
+      {
+        "id": "4002a3de-a482-5c5e-882a-0b3115978503",
+        "task_id": "198ad86d-7c58-5bac-9a96-1b20432d8d72",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-04-29T09:00:00Z",
+        "end_at": "2026-04-29T10:30:00Z",
+        "state": "completed"
+      },
+      {
+        "id": "13272597-dc23-5bc7-9ed5-a12496ac7431",
+        "task_id": "027b9d13-09ea-522f-9c66-d558c2250ccd",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-04-29T11:00:00Z",
+        "end_at": "2026-04-29T12:00:00Z",
+        "state": "completed"
+      },
+      {
+        "id": "10c6dba3-5d71-5dfa-8bb8-2e9db1b5eee6",
+        "task_id": "549d50ab-8db4-5a4b-a8c8-49720a384cd1",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-04-29T13:00:00Z",
+        "end_at": "2026-04-29T14:30:00Z",
+        "state": "planned"
+      },
+      {
+        "id": "d8d3d669-6c65-56ee-9156-7ae1483a736d",
+        "task_id": "d7a540e7-b137-574b-8d2d-cea798f369aa",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-04-29T15:00:00Z",
+        "end_at": "2026-04-29T16:00:00Z",
+        "state": "planned"
+      },
+      {
+        "id": "d1bd362b-0686-5cd9-b9d0-7db73cf51aaf",
+        "task_id": "c03a7499-0469-5c9e-943c-db26f6a356fe",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-04-29T16:30:00Z",
+        "end_at": "2026-04-29T18:00:00Z",
+        "state": "planned"
+      },
+      {
+        "id": "7c42ff2e-71b5-5279-af49-a5078a08e24d",
+        "task_id": "198ad86d-7c58-5bac-9a96-1b20432d8d72",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-04-30T09:00:00Z",
+        "end_at": "2026-04-30T11:00:00Z",
+        "state": "planned"
+      },
+      {
+        "id": "57e4004b-f901-5655-b327-73c0de19378a",
+        "task_id": "027b9d13-09ea-522f-9c66-d558c2250ccd",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-04-30T11:30:00Z",
+        "end_at": "2026-04-30T12:30:00Z",
+        "state": "planned"
+      },
+      {
+        "id": "ee5ae5b1-f99f-5a8e-84d0-4f30c915d9c2",
+        "task_id": "549d50ab-8db4-5a4b-a8c8-49720a384cd1",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-04-30T13:00:00Z",
+        "end_at": "2026-04-30T14:30:00Z",
+        "state": "planned"
+      },
+      {
+        "id": "22faba14-0cab-51c2-b204-f30bc915d696",
+        "task_id": "e3033d1f-5344-5070-8e59-ab513339cc52",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-04-30T15:00:00Z",
+        "end_at": "2026-04-30T17:00:00Z",
+        "state": "planned"
+      },
+      {
+        "id": "9aab8af6-ab54-57f2-a7d3-64a7c3883cf5",
+        "task_id": "027b9d13-09ea-522f-9c66-d558c2250ccd",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-05-01T09:00:00Z",
+        "end_at": "2026-05-01T10:30:00Z",
+        "state": "planned"
+      },
+      {
+        "id": "d1237a90-13ee-52e0-bea7-4347fa04b4ae",
+        "task_id": "198ad86d-7c58-5bac-9a96-1b20432d8d72",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-05-01T10:30:00Z",
+        "end_at": "2026-05-01T11:30:00Z",
+        "state": "planned"
+      },
+      {
+        "id": "1e0d1332-c149-5d5d-ab0f-807d665986ce",
+        "task_id": "c03a7499-0469-5c9e-943c-db26f6a356fe",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-05-01T13:00:00Z",
+        "end_at": "2026-05-01T15:00:00Z",
+        "state": "planned"
+      },
+      {
+        "id": "fd6ac5d4-8134-5337-bd03-e58f40c22239",
+        "task_id": "549d50ab-8db4-5a4b-a8c8-49720a384cd1",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-05-01T15:30:00Z",
+        "end_at": "2026-05-01T17:00:00Z",
+        "state": "planned"
+      },
+      {
+        "id": "aea25bcb-3439-5fa9-b28e-b3bf9dff6481",
+        "task_id": "c03a7499-0469-5c9e-943c-db26f6a356fe",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-05-02T10:00:00Z",
+        "end_at": "2026-05-02T11:30:00Z",
+        "state": "planned"
+      }
+    ],
+    "gcal": [
+      {
+        "id": "b37fc99f-b89f-5ff0-807a-910e6d3980da",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "title": "1:1 with Anna",
+        "start_at": "2026-04-27T11:30:00Z",
+        "end_at": "2026-04-27T12:00:00Z"
+      },
+      {
+        "id": "aea1bdde-81bc-58fe-b5e8-c9d3ef92479e",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "title": "Atlas standup",
+        "start_at": "2026-04-28T13:00:00Z",
+        "end_at": "2026-04-28T14:00:00Z"
+      },
+      {
+        "id": "9f03ad85-01f7-5fb8-86ea-b7aa63eae792",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "title": "Standup",
+        "start_at": "2026-04-29T10:30:00Z",
+        "end_at": "2026-04-29T11:00:00Z"
+      },
+      {
+        "id": "6839a0a8-e73a-5975-85f6-91a9018e29ef",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "title": "Design review",
+        "start_at": "2026-04-29T14:30:00Z",
+        "end_at": "2026-04-29T15:00:00Z"
+      },
+      {
+        "id": "93e70eff-8b44-5418-a3f2-d3f12b30cebf",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "title": "Atlas standup",
+        "start_at": "2026-04-30T13:00:00Z",
+        "end_at": "2026-04-30T14:00:00Z"
+      },
+      {
+        "id": "404aa827-9471-5b4d-b06b-222c9394af74",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "title": "Demo prep",
+        "start_at": "2026-05-01T11:30:00Z",
+        "end_at": "2026-05-01T12:00:00Z"
+      }
+    ],
+    "cursor": 0
+  }
+}

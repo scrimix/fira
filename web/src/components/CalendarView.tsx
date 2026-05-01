@@ -3,7 +3,7 @@ import { Check, Copy, Trash2 } from 'lucide-react';
 import { useFira } from '../store';
 import { ProjectIcon } from './ProjectIcon';
 import {
-  HOURS, DAY_LABELS, TODAY_DAY_INDEX, NOW_TIME_MIN, WEEK_START_MS,
+  HOURS, DAY_LABELS, todayDayIndex, nowTimeMin, weekStartMs,
   blockToGrid, gridToBlock, fmtClockShort, fmtMin, taskCompletedMin, taskPlannedMin, taskTimeLeft,
   weekStartFor, dayOfMonthFor,
 } from '../time';
@@ -127,8 +127,10 @@ export function CalendarView() {
   const setActivePerson = useFira((s) => s.setActivePerson);
   const weekOffset = useFira((s) => s.weekOffset);
   const setWeekOffset = useFira((s) => s.setWeekOffset);
-  const weekStartMs = weekStartFor(weekOffset);
+  const weekStart = weekStartFor(weekOffset);
   const isCurrentWeek = weekOffset === 0;
+  const todayIndex = todayDayIndex();
+  const nowMin = nowTimeMin();
   const gridRef = useRef<HTMLDivElement>(null);
   const innerGridRef = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
@@ -156,8 +158,8 @@ export function CalendarView() {
     if (e.button !== 0) return;
     if ((e.target as HTMLElement).closest('.tb-action')) return;
     // Capture grid coordinates against the *visible* week so the drop's
-    // gridToBlock(weekStartMs) round-trips to the same absolute time.
-    const { day, start_min, dur_min } = blockToGrid(b.start_at, b.end_at, weekStartMs);
+    // gridToBlock(weekStart) round-trips to the same absolute time.
+    const { day, start_min, dur_min } = blockToGrid(b.start_at, b.end_at, weekStart);
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const offsetY = e.clientY - rect.top;
     const offsetFromBottom = rect.bottom - e.clientY;
@@ -229,7 +231,7 @@ export function CalendarView() {
           d.curDurMin !== d.origDurMin ||
           d.curDay !== d.origDay
         ) {
-          const { start_at, end_at } = gridToBlock(d.curDay, d.curStartMin, d.curDurMin, weekStartMs);
+          const { start_at, end_at } = gridToBlock(d.curDay, d.curStartMin, d.curDurMin, weekStart);
           updateBlock(d.blockId, { start_at, end_at });
         }
       } else {
@@ -260,8 +262,8 @@ export function CalendarView() {
     });
   }, [myBlocks, tasks, projectFilter]);
   const placed = useMemo(
-    () => placeBlocks(visibleBlocks, tasks, projects, weekStartMs),
-    [visibleBlocks, tasks, projects, weekStartMs],
+    () => placeBlocks(visibleBlocks, tasks, projects, weekStart),
+    [visibleBlocks, tasks, projects, weekStart],
   );
 
   const totalMin = myBlocks.reduce((s, b) => s + dur(b), 0);
@@ -321,7 +323,7 @@ export function CalendarView() {
     const dur = taskDurFor(taskId);
     const start_min = dayDropStartMin(e);
     const dur_min = Math.min(dur, 24 * 60 - start_min);
-    const { start_at, end_at } = gridToBlock(day, start_min, dur_min, weekStartMs);
+    const { start_at, end_at } = gridToBlock(day, start_min, dur_min, weekStart);
     upsertBlock({
       id: crypto.randomUUID(),
       task_id: t.id,
@@ -367,10 +369,10 @@ export function CalendarView() {
             <div className="cal-headcorner" />
             {DAY_LABELS.map((lbl, i) => (
               <div key={i} className="cal-dayhead"
-                   data-today={isCurrentWeek && i === TODAY_DAY_INDEX}
+                   data-today={isCurrentWeek && i === todayIndex}
                    data-weekend={i >= 5}>
                 <span className="dow">{lbl}</span>
-                <span className="dnum">{dayOfMonthFor(weekStartMs, i)}</span>
+                <span className="dnum">{dayOfMonthFor(weekStart, i)}</span>
               </div>
             ))}
 
@@ -386,8 +388,8 @@ export function CalendarView() {
                 if (drag?.blockId === p.block.id) return drag.curDay === dayIdx;
                 return p.day === dayIdx;
               });
-              const dayGcal = myGcal.filter((g) => blockToGrid(g.start_at, g.end_at, weekStartMs).day === dayIdx);
-              const isToday = isCurrentWeek && dayIdx === TODAY_DAY_INDEX;
+              const dayGcal = myGcal.filter((g) => blockToGrid(g.start_at, g.end_at, weekStart).day === dayIdx);
+              const isToday = isCurrentWeek && dayIdx === todayIndex;
               const isWeekend = dayIdx >= 5;
               const showPreview = dropPreview?.day === dayIdx;
               return (
@@ -412,7 +414,7 @@ export function CalendarView() {
                     }} />
                   )}
                   {dayGcal.map((g) => {
-                    const { start_min, dur_min } = blockToGrid(g.start_at, g.end_at, weekStartMs);
+                    const { start_min, dur_min } = blockToGrid(g.start_at, g.end_at, weekStart);
                     return (
                       <div key={g.id} className="gcal-evt" style={{
                         top: (start_min / 60) * HOUR_H,
@@ -423,7 +425,7 @@ export function CalendarView() {
                     );
                   })}
                   {isToday && (
-                    <div className="cal-nowline" style={{ top: (NOW_TIME_MIN / 60) * HOUR_H }} />
+                    <div className="cal-nowline" style={{ top: (nowMin / 60) * HOUR_H }} />
                   )}
                   {dayPlaced.map(({ block: b, task: t, project: p, start_min, dur_min, lane, lanes }) => {
                     const isDragging = drag?.blockId === b.id;
@@ -819,9 +821,9 @@ function CalRail({ onDragTask, allocByProject }: {
 
 function isBlocker(task: Task, blocks: TimeBlock[]): boolean {
   if (task.section !== 'now' || task.status !== 'in_progress') return false;
-  const ws = new Date(WEEK_START_MS);
+  const ws = new Date(weekStartMs());
   const todayMs = new Date(
-    ws.getFullYear(), ws.getMonth(), ws.getDate() + TODAY_DAY_INDEX,
+    ws.getFullYear(), ws.getMonth(), ws.getDate() + todayDayIndex(),
   ).getTime();
   return !blocks.some((b) =>
     b.task_id === task.id && b.state === 'planned' && Date.parse(b.start_at) >= todayMs

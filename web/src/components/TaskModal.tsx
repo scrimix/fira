@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Check, Copy, Pencil } from 'lucide-react';
+import { Check, Copy, Pencil, Plus, X } from 'lucide-react';
 import { useFira } from '../store';
 import {
   fmtMin, fmtClockShort, parseEstimate,
@@ -23,6 +23,7 @@ export function TaskModal({ taskId }: Props) {
   const addSubtask = useFira((s) => s.addSubtask);
   const setSubtaskTitle = useFira((s) => s.setSubtaskTitle);
   const deleteSubtask = useFira((s) => s.deleteSubtask);
+  const reorderSubtasks = useFira((s) => s.reorderSubtasks);
   const setTaskDescription = useFira((s) => s.setTaskDescription);
   const setTaskTitle = useFira((s) => s.setTaskTitle);
   const setTaskEstimate = useFira((s) => s.setTaskEstimate);
@@ -102,19 +103,14 @@ export function TaskModal({ taskId }: Props) {
                 <> · {task.subtasks.filter((s) => s.done).length}/{task.subtasks.length}</>
               )}
             </h5>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              {task.subtasks.map((s) => (
-                <SubtaskRow
-                  key={s.id}
-                  title={s.title}
-                  done={s.done}
-                  onToggle={() => tickSubtask(task.id, s.id)}
-                  onSave={(v) => setSubtaskTitle(task.id, s.id, v)}
-                  onDelete={() => deleteSubtask(task.id, s.id)}
-                />
-              ))}
-              <AddSubtaskRow onAdd={(title) => addSubtask(task.id, title)} />
-            </div>
+            <SubtaskList
+              task={task}
+              tickSubtask={tickSubtask}
+              setSubtaskTitle={setSubtaskTitle}
+              deleteSubtask={deleteSubtask}
+              reorderSubtasks={reorderSubtasks}
+              addSubtask={addSubtask}
+            />
 
             <div style={{ marginTop: 16 }}>
               <h5 style={modalH5}>Time blocks · {taskBlocks.length}</h5>
@@ -223,11 +219,11 @@ const MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct',
 const modalH5: React.CSSProperties = {
   margin: '18px 0 4px',
   fontFamily: 'var(--font-mono)',
-  fontSize: 'calc(10px * var(--fs-scale))',
-  letterSpacing: '0.1em',
-  textTransform: 'uppercase',
+  fontSize: 'var(--fs-sm)',
   color: 'var(--ink-3)',
   fontWeight: 500,
+  letterSpacing: '0.02em',
+  textTransform: 'uppercase',
 };
 const blockRow: React.CSSProperties = {
   display: 'grid',
@@ -390,15 +386,87 @@ function CopyMarkdownButton({ task }: { task: Task }) {
   );
 }
 
-function SubtaskRow({ title, done, onToggle, onSave, onDelete }: {
+function SubtaskList({
+  task, tickSubtask, setSubtaskTitle, deleteSubtask, reorderSubtasks, addSubtask,
+}: {
+  task: Task;
+  tickSubtask: (taskId: string, subId: string) => void;
+  setSubtaskTitle: (taskId: string, subId: string, v: string) => void;
+  deleteSubtask: (taskId: string, subId: string) => void;
+  reorderSubtasks: (taskId: string, orderedIds: string[]) => void;
+  addSubtask: (taskId: string, title: string) => void;
+}) {
+  const [draggedId, setDraggedId] = useState<string | null>(null);
+  const [dropAt, setDropAt] = useState<{ id: string; pos: 'before' | 'after' } | null>(null);
+
+  const commitReorder = () => {
+    if (!draggedId || !dropAt || draggedId === dropAt.id) {
+      setDraggedId(null);
+      setDropAt(null);
+      return;
+    }
+    const ids = task.subtasks.map((s) => s.id);
+    const from = ids.indexOf(draggedId);
+    const targetIdx = ids.indexOf(dropAt.id);
+    if (from === -1 || targetIdx === -1) {
+      setDraggedId(null);
+      setDropAt(null);
+      return;
+    }
+    ids.splice(from, 1);
+    let insertAt = targetIdx;
+    if (from < targetIdx) insertAt -= 1;
+    if (dropAt.pos === 'after') insertAt += 1;
+    ids.splice(insertAt, 0, draggedId);
+    reorderSubtasks(task.id, ids);
+    setDraggedId(null);
+    setDropAt(null);
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      {task.subtasks.map((s) => (
+        <SubtaskRow
+          key={s.id}
+          id={s.id}
+          title={s.title}
+          done={s.done}
+          onToggle={() => tickSubtask(task.id, s.id)}
+          onSave={(v) => setSubtaskTitle(task.id, s.id, v)}
+          onDelete={() => deleteSubtask(task.id, s.id)}
+          onDragStart={(id) => setDraggedId(id)}
+          onDragOver={(id, pos) => setDropAt((cur) =>
+            cur?.id === id && cur.pos === pos ? cur : { id, pos }
+          )}
+          onDragLeave={() => { /* keep last marker until pointer enters another row */ }}
+          onDrop={commitReorder}
+          dropMark={dropAt?.id === s.id ? dropAt.pos : null}
+        />
+      ))}
+      <AddSubtaskRow onAdd={(title) => addSubtask(task.id, title)} />
+    </div>
+  );
+}
+
+function SubtaskRow({
+  id, title, done, onToggle, onSave, onDelete,
+  onDragStart, onDragOver, onDragLeave, onDrop, dropMark,
+}: {
+  id: string;
   title: string;
   done: boolean;
   onToggle: () => void;
   onSave: (v: string) => void;
   onDelete: () => void;
+  onDragStart: (id: string) => void;
+  onDragOver: (id: string, pos: 'before' | 'after') => void;
+  onDragLeave: () => void;
+  onDrop: () => void;
+  dropMark: 'before' | 'after' | null;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(title);
+  const [dragOnHandle, setDragOnHandle] = useState(false);
   const ref = useRef<HTMLInputElement>(null);
 
   useEffect(() => { setDraft(title); }, [title]);
@@ -415,8 +483,36 @@ function SubtaskRow({ title, done, onToggle, onSave, onDelete }: {
   };
 
   return (
-    <div className="subtask subtask-edit" data-done={done}>
-      <span className="sc" onClick={onToggle}>{done ? '✓' : ''}</span>
+    <div
+      className="subtask subtask-edit"
+      data-done={done}
+      data-drop-mark={dropMark ?? undefined}
+      draggable={dragOnHandle}
+      onDragStart={(e) => {
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', id);
+        onDragStart(id);
+      }}
+      onDragEnd={() => setDragOnHandle(false)}
+      onDragOver={(e) => {
+        if (!e.dataTransfer.types.includes('text/plain')) return;
+        e.preventDefault();
+        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+        const pos: 'before' | 'after' = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+        onDragOver(id, pos);
+      }}
+      onDragLeave={onDragLeave}
+      onDrop={(e) => { e.preventDefault(); onDrop(); }}
+    >
+      <span
+        className="subtask-grip"
+        title="Drag to reorder"
+        onMouseDown={() => setDragOnHandle(true)}
+        onMouseUp={() => setDragOnHandle(false)}
+      >::</span>
+      <span className="sc" onClick={onToggle} aria-label={done ? 'Mark not done' : 'Mark done'}>
+        {done && <Check size={11} strokeWidth={3} />}
+      </span>
       {editing ? (
         <input
           ref={ref}
@@ -435,7 +531,9 @@ function SubtaskRow({ title, done, onToggle, onSave, onDelete }: {
           {title}
         </span>
       )}
-      <button className="subtask-del" onClick={onDelete} title="Remove">×</button>
+      <button className="subtask-del" onClick={onDelete} title="Remove">
+        <X size={14} strokeWidth={1.75} />
+      </button>
     </div>
   );
 }
@@ -454,7 +552,10 @@ function AddSubtaskRow({ onAdd }: { onAdd: (title: string) => void }) {
   return (
     <div className="subtask-add" data-editing="true"
          onClick={() => inputRef.current?.focus()}>
-      <span className="sc-spacer">+</span>
+      <span className="grip-spacer" aria-hidden="true" />
+      <span className="sc-spacer" aria-hidden="true">
+        <Plus size={11} strokeWidth={2} />
+      </span>
       <input
         ref={inputRef}
         className="subtask-add-input"
@@ -502,7 +603,8 @@ function EstimateEditor({ value, onSave }: {
       <div onClick={() => setEditing(true)}
            style={{
              cursor: 'text',
-             fontFamily: 'var(--font-mono)',
+             fontFamily: 'var(--font-sans)',
+             fontSize: 'var(--fs-sm)',
              fontVariantNumeric: 'tabular-nums',
              color: value != null ? 'var(--ink)' : 'var(--ink-4)',
            }}>

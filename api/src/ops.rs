@@ -69,6 +69,8 @@ pub enum Op {
     SubtaskSetTitle { subtask_id: Uuid, title: String },
     #[serde(rename = "subtask.delete")]
     SubtaskDelete { subtask_id: Uuid },
+    #[serde(rename = "subtask.reorder")]
+    SubtaskReorder { task_id: Uuid, ordered: Vec<Uuid> },
     #[serde(rename = "block.create")]
     BlockCreate { block: BlockInput },
     #[serde(rename = "block.update")]
@@ -95,6 +97,7 @@ impl Op {
             Op::SubtaskTick { .. } => "subtask.tick",
             Op::SubtaskSetTitle { .. } => "subtask.set_title",
             Op::SubtaskDelete { .. } => "subtask.delete",
+            Op::SubtaskReorder { .. } => "subtask.reorder",
             Op::BlockCreate { .. } => "block.create",
             Op::BlockUpdate { .. } => "block.update",
             Op::BlockDelete { .. } => "block.delete",
@@ -390,6 +393,19 @@ async fn apply_payload(
             *out_project_id = Some(ensure_subtask_in_scope(tx, user_id, workspace_id, subtask_id).await?);
             sqlx::query("DELETE FROM subtasks WHERE id = $1")
                 .bind(subtask_id).execute(&mut **tx).await?;
+        }
+        Op::SubtaskReorder { task_id, ordered } => {
+            *out_project_id = Some(ensure_task_in_scope(tx, user_id, workspace_id, task_id).await?);
+            // Same `M{NNN}` sort_key scheme tasks use — fixed-width so a
+            // text comparison gives the desired order.
+            for (i, sub_id) in ordered.iter().enumerate() {
+                let sort_key = format!("M{:03}", i);
+                sqlx::query(
+                    "UPDATE subtasks SET sort_key = $2 WHERE id = $1 AND task_id = $3",
+                )
+                .bind(sub_id).bind(&sort_key).bind(task_id)
+                .execute(&mut **tx).await?;
+            }
         }
         Op::BlockCreate { block } => {
             *out_project_id = Some(ensure_task_in_scope(tx, user_id, workspace_id, block.task_id).await?);

@@ -7,11 +7,9 @@
 // matching the current DB (e.g. the workspace migration TRUNCATEs project
 // rows on a freshly-migrated DB but is a no-op if 0008 already ran).
 
+use fira_api::seed;
 use sqlx::{postgres::PgPoolOptions, PgPool};
 use std::time::Duration as StdDuration;
-
-#[path = "../seed.rs"]
-mod seed;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

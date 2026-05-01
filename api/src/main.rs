@@ -5,66 +5,31 @@ use axum::{
     routing::{get, patch, post, put},
     Router,
 };
-use serde::{Deserialize, Serialize};
-use sqlx::{postgres::PgPoolOptions, PgPool};
+use serde::Deserialize;
+use sqlx::postgres::PgPoolOptions;
 use std::time::Duration;
 use tower_http::services::{ServeDir, ServeFile};
 use tower_http::trace::TraceLayer;
 
-mod auth;
-mod db;
-mod error;
-mod models;
-mod ops;
-mod pubsub;
-#[cfg(feature = "dev_auth")]
-mod seed;
-mod workspaces;
-mod ws;
-
-use auth::{AuthConfig, AuthCtx};
-use error::ApiResult;
-use models::*;
-use pubsub::Hub;
-use std::sync::Arc;
-
-#[derive(Clone)]
-pub struct AppState {
-    pub pool: PgPool,
-    pub auth: AuthConfig,
-    pub hub: Arc<Hub>,
-}
-
-#[derive(Serialize)]
-struct Bootstrap {
-    users: Vec<User>,
-    projects: Vec<Project>,
-    epics: Vec<Epic>,
-    sprints: Vec<Sprint>,
-    tasks: Vec<Task>,
-    blocks: Vec<TimeBlock>,
-    gcal: Vec<GcalEvent>,
-    /// Initial cursor for the change feed. Clients should poll
-    /// `/changes?since=cursor` from this watermark forward.
-    cursor: i64,
-}
+use fira_api::{
+    auth::{self, AuthConfig, AuthCtx},
+    db, error,
+    error::ApiResult,
+    load_bootstrap,
+    models::*,
+    ops, pubsub,
+    pubsub::Hub,
+    workspaces, ws, AppState, Bootstrap,
+};
 
 async fn bootstrap(
     State(s): State<AppState>,
     ctx: AuthCtx,
 ) -> ApiResult<Json<Bootstrap>> {
-    let scope = db::project_scope(&s.pool, ctx.user.id, ctx.workspace_id).await?;
-    let (users, projects, epics, sprints, tasks, blocks, gcal, cursor) = tokio::try_join!(
-        db::list_users_in_scope(&s.pool, ctx.workspace_id, ctx.user.id),
-        db::list_projects_in_scope(&s.pool, &scope),
-        db::list_epics_in_scope(&s.pool, &scope),
-        db::list_sprints_in_scope(&s.pool, &scope),
-        db::list_tasks_in_scope(&s.pool, &scope),
-        db::list_blocks_in_scope(&s.pool, &scope),
-        db::list_gcal_for_user(&s.pool, ctx.user.id),
-        ops::current_cursor(&s.pool),
-    )?;
-    Ok(Json(Bootstrap { users, projects, epics, sprints, tasks, blocks, gcal, cursor }))
+    let data = load_bootstrap(&s.pool, ctx.workspace_id, ctx.user.id)
+        .await
+        .map_err(error::ApiError::from)?;
+    Ok(Json(data))
 }
 
 async fn projects(

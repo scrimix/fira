@@ -19,8 +19,10 @@ WORKDIR /api
 # don't trigger a from-scratch rebuild of dependencies.
 COPY api/Cargo.toml api/Cargo.lock ./
 RUN mkdir -p src src/bin \
+    && echo '' > src/lib.rs \
     && echo 'fn main(){}' > src/main.rs \
     && echo 'fn main(){}' > src/bin/seed.rs \
+    && echo 'fn main(){}' > src/bin/dump_bootstrap.rs \
     && cargo build --release --bin fira-api --no-default-features \
     && rm -rf src
 COPY api/ ./
