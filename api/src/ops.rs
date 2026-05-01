@@ -31,8 +31,6 @@ use crate::AppState;
 #[derive(Debug, Deserialize)]
 pub struct OpEnvelope {
     pub op_id: String,
-    #[serde(default)]
-    pub created_at: Option<DateTime<Utc>>,
     /// Wire-shape JSON of the op. We deserialize a typed `Op` from it for
     /// dispatch, but the original Value is what we persist + replay.
     pub payload: serde_json::Value,
@@ -62,7 +60,7 @@ pub enum Op {
     #[serde(rename = "task.set_external_url")]
     TaskSetExternalUrl { task_id: Uuid, external_url: Option<String> },
     #[serde(rename = "task.reorder")]
-    TaskReorder { project_id: Uuid, section: String, ordered: Vec<Uuid> },
+    TaskReorder { project_id: Uuid, ordered: Vec<Uuid> },
     #[serde(rename = "subtask.create")]
     SubtaskCreate { subtask: SubtaskInput },
     #[serde(rename = "subtask.tick")]
@@ -342,7 +340,7 @@ async fn apply_payload(
             sqlx::query("UPDATE tasks SET external_url = $2, updated_at = now() WHERE id = $1")
                 .bind(task_id).bind(value).execute(&mut **tx).await?;
         }
-        Op::TaskReorder { project_id, section: _, ordered } => {
+        Op::TaskReorder { project_id, ordered } => {
             require_project_access(tx, user_id, workspace_id, project_id).await?;
             *out_project_id = Some(project_id);
             for (i, task_id) in ordered.iter().enumerate() {

@@ -60,9 +60,15 @@ impl AuthConfig {
             cookie_secure: std::env::var("COOKIE_SECURE")
                 .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
                 .unwrap_or(false),
+            // DEV_AUTH only consulted when the `dev_auth` feature is on. Prod
+            // builds compile this branch out so the env var can't accidentally
+            // re-enable the dev endpoints.
+            #[cfg(feature = "dev_auth")]
             dev_auth: std::env::var("DEV_AUTH")
                 .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
                 .unwrap_or(false),
+            #[cfg(not(feature = "dev_auth"))]
+            dev_auth: false,
         }
     }
 }
@@ -438,11 +444,13 @@ async fn create_session(pool: &PgPool, user_id: Uuid) -> sqlx::Result<String> {
 
 // ---- dev login (no Google) ----
 
+#[cfg(feature = "dev_auth")]
 #[derive(Deserialize)]
 pub struct DevLoginParams {
     email: String,
 }
 
+#[cfg(feature = "dev_auth")]
 pub async fn dev_login(
     State(s): State<AppState>,
     jar: CookieJar,
@@ -486,6 +494,7 @@ pub async fn dev_login(
 // Refuses to run unless DEV_AUTH=1, both as a guard against shipping it to
 // production and so the login UI can hide the button by reading /auth/config.
 
+#[cfg(feature = "dev_auth")]
 pub async fn dev_seed(State(s): State<AppState>, jar: CookieJar) -> Response {
     if !s.auth.dev_auth {
         return StatusCode::NOT_FOUND.into_response();

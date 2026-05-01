@@ -39,7 +39,8 @@ ops) so peers converge through the same path as task ops.
 
 ```
 fira/
-├── docker-compose.yml      # postgres + api + web
+├── Dockerfile              # production image (web build → api build → runtime)
+├── docker-compose.yml      # postgres only (api + web run from the dev shell)
 ├── api/                    # Rust + Axum + sqlx
 │   ├── migrations/         # SQL migrations (sqlx::migrate!)
 │   └── src/
@@ -62,49 +63,93 @@ fira/
 └── docs/                   # design docs + sprint logs
 ```
 
-## Quick start — VS Code devcontainer
+## Running locally
 
-Open the repo in VS Code and "Reopen in Container" — `.devcontainer/`
-provisions a Rust + Node + psql shell that shares the docker network with
-the api/web/postgres services, so `psql -h postgres`, `curl http://api:3000`
-all work from inside the shell. The post-start hook seeds the DB on first
-boot.
+The dev workflow is: **devcontainer** (Rust + Node + psql shell) on top of
+**docker compose postgres** (the only service in `docker-compose.yml`).
+The api and web are run by hand inside the devcontainer — no `api` or
+`web` service in compose.
 
-## Quick start — plain compose
+### VS Code devcontainer (recommended)
 
-Requires Docker (with the compose plugin).
+Open the repo in VS Code and "Reopen in Container". `.devcontainer/`
+provisions a shell that shares the compose network with postgres, so
+`psql -h postgres` works from inside. The post-start hook waits for
+postgres and runs migrations on first boot.
 
-```bash
-# 1. Start Postgres + API + web (first run pulls images, ~2 min)
-docker compose up -d postgres
-docker compose up --build api web
-
-# 2. In another terminal, seed the database (once)
-docker compose exec api cargo run --bin seed
-```
-
-Then open <http://localhost:5173>.
-
-The web app proxies `/api/*` to the Rust API at `:3000`. Postgres listens on
-`:5432` (user/pass/db all `fira`).
-
-## Local dev (no docker)
-
-If you'd rather run the toolchains on the host:
+Inside the devcontainer shell:
 
 ```bash
-# postgres still in docker for convenience
-docker compose up -d postgres
-
-# api
+# api (terminal 1) — listens on :3000
 cd api
-cargo run --bin seed       # one-time
+cargo run --bin seed       # one-time, populates fixture data
 cargo watch -x run         # dev loop
 
-# web (separate terminal)
+# web (terminal 2) — listens on :5173, proxies /api/* to :3000
+cd web
+pnpm install               # one-time
+pnpm dev --host
+```
+
+Then open <http://localhost:5173>. Set `DEV_AUTH=1` before `cargo run`
+to enable `/auth/dev-login` and the "Seed dev data" button on the login
+screen.
+
+### Plain host (no devcontainer)
+
+Postgres still runs in compose; the toolchains run on the host:
+
+```bash
+docker compose up -d postgres
+
+# api (terminal 1)
+cd api
+cargo run --bin seed
+cargo watch -x run
+
+# web (terminal 2)
 cd web
 pnpm install
-pnpm dev
+pnpm dev --host
+```
+
+Postgres listens on `:5432` (user/pass/db all `fira`).
+
+## Production build (Fly.io)
+
+The repo-root [Dockerfile](Dockerfile) is a three-stage build (web → api
+→ debian-slim runtime) that produces one image serving the SPA and the
+JSON API on the same origin (`/api/*` routes go to the api, everything
+else falls through to `dist/index.html` so React Router handles
+client-side routes).
+
+Fly.io's web UI auto-detects the root `Dockerfile`; no `fly.toml` is
+needed for first deploy. Required env / secrets on the Fly app:
+
+| name                    | what                                                  |
+|-------------------------|-------------------------------------------------------|
+| `DATABASE_URL`          | postgres connection string (Fly Postgres or external) |
+| `GOOGLE_CLIENT_ID`      | Google OAuth client id                                |
+| `GOOGLE_CLIENT_SECRET`  | Google OAuth client secret                            |
+| `OAUTH_REDIRECT_URL`    | `https://<your-domain>/auth/google/callback`          |
+| `APP_BASE_URL`          | `https://<your-domain>`                               |
+| `COOKIE_SECURE`         | `1`                                                   |
+
+The image already sets `STATIC_ROOT=/app/dist` and
+`API_BIND_ADDR=0.0.0.0:8080`. The prod binary is built with
+`--no-default-features`, which strips the `dev_auth` cargo feature —
+`/auth/dev-login` and `/auth/dev-seed` don't exist in the prod binary.
+
+To preview the prod image locally:
+
+```bash
+docker build -t fira .
+docker run --rm -p 8080:8080 \
+  -e DATABASE_URL=postgres://fira:fira@host.docker.internal:5432/fira \
+  -e GOOGLE_CLIENT_ID=... -e GOOGLE_CLIENT_SECRET=... \
+  -e OAUTH_REDIRECT_URL=http://localhost:8080/auth/google/callback \
+  -e APP_BASE_URL=http://localhost:8080 \
+  fira
 ```
 
 ## API

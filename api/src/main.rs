@@ -8,7 +8,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use std::time::Duration;
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::services::{ServeDir, ServeFile};
 use tower_http::trace::TraceLayer;
 
 mod auth;
@@ -16,6 +16,7 @@ mod db;
 mod error;
 mod models;
 mod ops;
+#[cfg(feature = "dev_auth")]
 mod seed;
 mod workspaces;
 
@@ -319,13 +320,18 @@ async fn main() -> anyhow::Result<()> {
     }
     let state = AppState { pool, auth: auth_cfg };
 
-    // CORS: the web SPA hits the API same-origin in dev (via Vite's /api proxy)
-    // and in prod (served behind the same domain). Keep it permissive for read
-    // routes but allow credentials so cookies travel on auth routes.
-    let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any)
-        .allow_headers(Any);
+    // Same-origin in both dev (Vite proxy) and prod (api serves the SPA).
+    // No CorsLayer needed; re-add scoped to the prod domain if a non-browser
+    // caller appears.
+
+    // SPA static fallback: any request that doesn't match an /api route falls
+    // through to ServeDir, which serves files under STATIC_ROOT and rewrites
+    // unknown paths to index.html so React Router can handle client-side
+    // routing. In dev, STATIC_ROOT defaults to "dist" which doesn't exist —
+    // ServeDir returns 404 and the developer is hitting Vite on :5173 anyway.
+    let static_root = std::env::var("STATIC_ROOT").unwrap_or_else(|_| "dist".into());
+    let serve_index = ServeFile::new(format!("{static_root}/index.html"));
+    let static_svc = ServeDir::new(&static_root).not_found_service(serve_index);
 
     let app = Router::new()
         .route("/health", get(health))
@@ -334,8 +340,6 @@ async fn main() -> anyhow::Result<()> {
         .route("/auth/google/login", get(auth::google_login))
         .route("/auth/google/callback", get(auth::google_callback))
         .route("/auth/logout", post(auth::logout))
-        .route("/auth/dev-login", get(auth::dev_login))
-        .route("/auth/dev-seed", post(auth::dev_seed))
         .route("/bootstrap", get(bootstrap))
         .route("/projects", get(projects).post(create_project))
         .route("/projects/:id", patch(update_project))
@@ -347,10 +351,17 @@ async fn main() -> anyhow::Result<()> {
         .route("/workspaces/:id/users", get(workspaces::list_users))
         .route("/workspaces/:id/all-users", get(workspaces::list_all_users))
         .route("/ops", post(ops::post_ops))
-        .route("/changes", get(ops::get_changes))
+        .route("/changes", get(ops::get_changes));
+
+    #[cfg(feature = "dev_auth")]
+    let app = app
+        .route("/auth/dev-login", get(auth::dev_login))
+        .route("/auth/dev-seed", post(auth::dev_seed));
+
+    let app = app
         .with_state(state)
-        .layer(cors)
-        .layer(TraceLayer::new_for_http());
+        .layer(TraceLayer::new_for_http())
+        .fallback_service(static_svc);
 
     let listener = tokio::net::TcpListener::bind(&bind).await?;
     tracing::info!("fira-api listening on {bind}");
