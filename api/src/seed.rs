@@ -4,10 +4,12 @@
 // IDs are deterministic UUID-v5 derived from slug strings ("u_maya",
 // "t_atlas_oauth", ...) so reseeding produces stable IDs across runs.
 //
-// Time blocks are stored as real timestamps. The prototype's (day, start_min,
-// dur_min) is anchored to Mon Apr 27 2026 00:00 PT (= Apr 27 07:00 UTC, PDT).
+// Time blocks are stored as real timestamps anchored to Monday 00:00 UTC of
+// the *current* week. Block states are recomputed against the wall clock at
+// seed time so the demo always shows a believable "morning done, rest
+// planned" snapshot regardless of which day of the week the seeder runs on.
 
-use chrono::{DateTime, Duration, TimeZone, Utc};
+use chrono::{DateTime, Datelike, Duration, NaiveDate, TimeZone, Utc};
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 
@@ -29,16 +31,34 @@ pub fn primary_user_id() -> Uuid {
 }
 
 fn week_anchor() -> DateTime<Utc> {
-    // Mon Apr 27 2026 00:00 PT (PDT is UTC-7)
-    Utc.with_ymd_and_hms(2026, 4, 27, 7, 0, 0).unwrap()
+    // Monday 00:00 UTC of the current week.
+    let today = Utc::now().date_naive();
+    let monday = today - Duration::days(today.weekday().num_days_from_monday() as i64);
+    Utc.from_utc_datetime(&monday.and_hms_opt(0, 0, 0).unwrap())
 }
 
 fn ts(day: i64, start_min: i64) -> DateTime<Utc> {
     week_anchor() + Duration::days(day) + Duration::minutes(start_min)
 }
 
-/// Wipe the per-tenant fixture tables. Leaves auth-only tables (`sessions`)
-/// alone so the calling user's session survives a reseed.
+const MONTHS: [&str; 12] = [
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
+fn fmt_md(d: NaiveDate) -> String {
+    format!("{} {}", MONTHS[d.month0() as usize], d.day())
+}
+
+fn sprint_dates(start_offset: i64, end_offset: i64) -> String {
+    let anchor = week_anchor().date_naive();
+    let start = anchor + Duration::days(start_offset);
+    let end = anchor + Duration::days(end_offset);
+    format!("{} – {}", fmt_md(start), fmt_md(end))
+}
+
+/// Wipe the per-tenant fixture tables. Leaves auth-only tables (`sessions`,
+/// `processed_ops`) alone so the calling user's session survives a reseed.
 pub async fn wipe(tx: &mut Transaction<'_, Postgres>) -> sqlx::Result<()> {
     // Truncate the change-log too: replaying ops that target IDs we just
     // deleted would fail or resurrect stale state on other clients.
@@ -221,14 +241,31 @@ pub async fn seed_all(tx: &mut Transaction<'_, Postgres>) -> sqlx::Result<()> {
     }
 
     // ---- Sprints ----
+    // Dates are computed relative to this week's Monday so the active sprint
+    // always brackets "today". Offsets in days from week_anchor.
+    let anchor_date = week_anchor().date_naive();
+    let q_start = anchor_date;
+    let q_end = anchor_date + Duration::days(60);
     let sprints = [
-        ("s_apr27", "p_atlas", "Atlas · Apr 27", "Apr 27 – May 8", true),
-        ("s_may11", "p_atlas", "Atlas · May 11", "May 11 – May 22", false),
-        ("s_relay9", "p_relay", "Relay · Sprint 9", "Apr 22 – May 5", true),
-        ("s_relay10", "p_relay", "Relay · Sprint 10", "May 6 – May 19", false),
-        ("s_helix_q2", "p_helix", "Helix · Q2", "Apr – Jun", true),
+        ("s_apr27", "p_atlas",
+         format!("Atlas · {}", fmt_md(anchor_date)),
+         sprint_dates(0, 11), true),
+        ("s_may11", "p_atlas",
+         format!("Atlas · {}", fmt_md(anchor_date + Duration::days(14))),
+         sprint_dates(14, 25), false),
+        ("s_relay9", "p_relay",
+         "Relay · Sprint 9".to_string(),
+         sprint_dates(-5, 8), true),
+        ("s_relay10", "p_relay",
+         "Relay · Sprint 10".to_string(),
+         sprint_dates(9, 22), false),
+        ("s_helix_q2", "p_helix",
+         "Helix · Q2".to_string(),
+         format!("{} – {}", MONTHS[q_start.month0() as usize], MONTHS[q_end.month0() as usize]),
+         true),
     ];
-    for (slug, proj, title, dates, active) in sprints {
+    for (slug, proj, title, dates, active) in &sprints {
+        let (slug, proj, title, dates, active) = (*slug, *proj, title.as_str(), dates.as_str(), *active);
         sqlx::query(
             "INSERT INTO sprints (id, project_id, title, dates, active)
              VALUES ($1,$2,$3,$4,$5)",
@@ -551,38 +588,45 @@ async fn seed_tasks(tx: &mut Transaction<'_, Postgres>) -> sqlx::Result<()> {
 }
 
 async fn seed_blocks(tx: &mut Transaction<'_, Postgres>) -> sqlx::Result<()> {
-    // (day, start_min, dur_min, task_slug, state)
-    let blocks: &[(i64, i64, i64, &str, &str)] = &[
+    // (day, start_min, dur_min, task_slug). State is derived from the wall
+    // clock at seed time: anything that has already ended is "completed",
+    // anything still in the future is "planned". This way the demo always
+    // shows a believable mix no matter which day the seeder runs on.
+    let blocks: &[(i64, i64, i64, &str)] = &[
         // MON
-        (0, 9 * 60, 90, "t_atlas_oauth", "completed"),
-        (0, 10 * 60 + 30, 60, "t_atlas_review", "completed"),
-        (0, 13 * 60, 120, "t_atlas_billing", "completed"),
-        (0, 15 * 60 + 30, 90, "t_relay_jira", "completed"),
+        (0, 9 * 60, 90, "t_atlas_oauth"),
+        (0, 10 * 60 + 30, 60, "t_atlas_review"),
+        (0, 13 * 60, 120, "t_atlas_billing"),
+        (0, 15 * 60 + 30, 90, "t_relay_jira"),
         // TUE
-        (1, 9 * 60, 120, "t_atlas_oauth", "completed"),
-        (1, 11 * 60 + 30, 90, "t_helix_emb", "completed"),
-        (1, 14 * 60, 90, "t_relay_jira", "completed"),
-        (1, 16 * 60, 60, "t_atlas_review", "planned"),
-        // WED (today)
-        (2, 9 * 60, 90, "t_atlas_oauth", "completed"),
-        (2, 11 * 60, 60, "t_atlas_billing", "planned"),
-        (2, 13 * 60, 90, "t_relay_jira", "planned"),
-        (2, 15 * 60, 60, "t_atlas_review", "planned"),
-        (2, 16 * 60 + 30, 90, "t_helix_emb", "planned"),
+        (1, 9 * 60, 120, "t_atlas_oauth"),
+        (1, 11 * 60 + 30, 90, "t_helix_emb"),
+        (1, 14 * 60, 90, "t_relay_jira"),
+        (1, 16 * 60, 60, "t_atlas_review"),
+        // WED
+        (2, 9 * 60, 90, "t_atlas_oauth"),
+        (2, 11 * 60, 60, "t_atlas_billing"),
+        (2, 13 * 60, 90, "t_relay_jira"),
+        (2, 15 * 60, 60, "t_atlas_review"),
+        (2, 16 * 60 + 30, 90, "t_helix_emb"),
         // THU
-        (3, 9 * 60, 120, "t_atlas_oauth", "planned"),
-        (3, 11 * 60 + 30, 60, "t_atlas_billing", "planned"),
-        (3, 13 * 60, 90, "t_relay_jira", "planned"),
-        (3, 15 * 60, 120, "t_relay_diff", "planned"),
+        (3, 9 * 60, 120, "t_atlas_oauth"),
+        (3, 11 * 60 + 30, 60, "t_atlas_billing"),
+        (3, 13 * 60, 90, "t_relay_jira"),
+        (3, 15 * 60, 120, "t_relay_diff"),
         // FRI
-        (4, 9 * 60, 90, "t_atlas_billing", "planned"),
-        (4, 10 * 60 + 30, 60, "t_atlas_oauth", "planned"),
-        (4, 13 * 60, 120, "t_helix_emb", "planned"),
-        (4, 15 * 60 + 30, 90, "t_relay_jira", "planned"),
+        (4, 9 * 60, 90, "t_atlas_billing"),
+        (4, 10 * 60 + 30, 60, "t_atlas_oauth"),
+        (4, 13 * 60, 120, "t_helix_emb"),
+        (4, 15 * 60 + 30, 90, "t_relay_jira"),
         // SAT
-        (5, 10 * 60, 90, "t_helix_emb", "planned"),
+        (5, 10 * 60, 90, "t_helix_emb"),
     ];
-    for (i, (day, start_min, dur, slug, state)) in blocks.iter().enumerate() {
+    let now = Utc::now();
+    for (i, (day, start_min, dur, slug)) in blocks.iter().enumerate() {
+        let start_at = ts(*day, *start_min);
+        let end_at = ts(*day, *start_min + *dur);
+        let state = if end_at <= now { "completed" } else { "planned" };
         sqlx::query(
             "INSERT INTO time_blocks (id, task_id, user_id, start_at, end_at, state)
              VALUES ($1,$2,$3,$4,$5,$6)",
@@ -590,9 +634,9 @@ async fn seed_blocks(tx: &mut Transaction<'_, Postgres>) -> sqlx::Result<()> {
         .bind(id(&format!("b_{i}")))
         .bind(id(slug))
         .bind(primary_user_id())
-        .bind(ts(*day, *start_min))
-        .bind(ts(*day, *start_min + *dur))
-        .bind(*state)
+        .bind(start_at)
+        .bind(end_at)
+        .bind(state)
         .execute(&mut **tx)
         .await?;
     }

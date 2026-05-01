@@ -1,20 +1,27 @@
 // Time helpers for the calendar grid.
 //
 // The DB stores ISO timestamps. The grid wants (day 0..6, start_min, dur_min)
-// relative to the visible week. Anchor: Mon 00:00 in the user's local TZ.
-//
-// For the seeded mock data, "today" is Wed Apr 29 2026; we hardcode it so the
-// calendar's visible week matches the fixture even when the wall clock differs
-// — this makes the prototype a reproducible fixture rather than a moving target.
+// relative to the visible week, anchored to Monday 00:00 UTC of the current
+// week — same anchor the seeder uses, so seeded blocks line up.
 
 export const HOURS = Array.from({ length: 24 }, (_, i) => i);
 export const DAY_LABELS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
 
-// Mon Apr 27 2026 00:00 PT == 2026-04-27T07:00:00Z (PDT, UTC-7).
-// We anchor in UTC to match what the seeder emits.
-export const WEEK_START_UTC = Date.parse('2026-04-27T07:00:00Z');
-export const TODAY_DAY_INDEX = 2; // Wed
-export const NOW_TIME_MIN = 14 * 60 + 32;
+function computeWeekStartUtc(): number {
+  const now = new Date();
+  const dayFromMon = (now.getUTCDay() + 6) % 7; // 0=Mon..6=Sun
+  return Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - dayFromMon);
+}
+
+// Resolved at module load. Calendar rendering is timezone-naive (uses UTC
+// arithmetic everywhere), so anchoring "today" in UTC keeps server and
+// client in lockstep without dragging a TZ library into the frontend.
+export const WEEK_START_UTC = computeWeekStartUtc();
+export const TODAY_DAY_INDEX = (new Date().getUTCDay() + 6) % 7;
+export const NOW_TIME_MIN = (() => {
+  const n = new Date();
+  return n.getUTCHours() * 60 + n.getUTCMinutes();
+})();
 
 export const WEEK_MS = 7 * 86400000;
 
