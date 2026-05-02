@@ -187,6 +187,11 @@ export function CalendarView() {
 
   const onBlockPointerDown = (e: React.PointerEvent, b: TimeBlock, taskId: UUID) => {
     if (e.button !== 0) return;
+    // Touch is disabled until we wire up a real long-press / handle-based
+    // gesture. Without this guard a tap on a block becomes a drag and
+    // taps inside the block (the X / tick / duplicate buttons) get
+    // hijacked by pointer-capture before their own click fires.
+    if (e.pointerType === 'touch') return;
     if ((e.target as HTMLElement).closest('.tb-action')) return;
     // Capture grid coordinates against the *visible* week so the drop's
     // gridToBlock(weekStart) round-trips to the same absolute time.
@@ -325,6 +330,9 @@ export function CalendarView() {
 
   const onDayColPointerDown = (e: React.PointerEvent, day: number) => {
     if (e.button !== 0) return;
+    // Touch is disabled — see onBlockPointerDown. Without the guard, a
+    // page scroll on the day column starts a phantom block draft.
+    if (e.pointerType === 'touch') return;
     // Only initiate drag-to-create when the press is on the day column
     // background — clicking on an existing block or gcal event must not
     // start a new draft.

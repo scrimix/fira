@@ -1,4 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { ChevronDown } from 'lucide-react';
 
 // Generic dropdown that replaces the native <select>. Native selects render
@@ -122,7 +123,7 @@ export function Select<T extends string>({
         <span className="select-value">{current?.label ?? '—'}</span>
         <ChevronDown size={size === 'sm' ? 11 : 13} strokeWidth={1.75} />
       </button>
-      {open && (
+      {open && createPortal(
         <div
           ref={menuRef}
           id={id}
@@ -135,7 +136,7 @@ export function Select<T extends string>({
                 left: menuPos.left,
                 minWidth: menuPos.width,
               }
-            : { visibility: 'hidden' }}
+            : { visibility: 'hidden', position: 'fixed', top: 0, left: 0 }}
         >
           {options.map((o) => (
             <button
@@ -157,7 +158,8 @@ export function Select<T extends string>({
               {o.hint && <span className="select-option-hint">{o.hint}</span>}
             </button>
           ))}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
