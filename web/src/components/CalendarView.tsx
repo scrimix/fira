@@ -120,6 +120,7 @@ export function CalendarView() {
   const deleteBlock = useFira((s) => s.deleteBlock);
   const upsertBlock = useFira((s) => s.upsertBlock);
   const duplicateBlock = useFira((s) => s.duplicateBlock);
+  const openCreate = useFira((s) => s.openCreate);
   const users = useFira((s) => s.users);
   const meId = useFira((s) => s.meId);
   const addPerson = useFira((s) => s.addPerson);
@@ -141,6 +142,20 @@ export function CalendarView() {
   } | null>(null);
   const [draggedTaskId, setDraggedTaskId] = useState<UUID | null>(null);
   const [lastBlockId, setLastBlockId] = useState<UUID | null>(null);
+  // Drag-to-create flow: pointer-down on an empty day column anchors at a
+  // time, drag extends the range, pointer-up (only if the user actually
+  // moved) opens the task draft modal with the time range pre-filled. A
+  // bare click does nothing — same convention as Google Calendar.
+  const [createDrag, setCreateDrag] = useState<{
+    day: number;
+    anchorMin: number;
+    curMin: number;
+    pointerId: number;
+    rectTop: number;
+    rectHeight: number;
+  } | null>(null);
+  const createDragRef = useRef<typeof createDrag>(null);
+  createDragRef.current = createDrag;
 
   useEffect(() => {
     if (gridRef.current) gridRef.current.scrollTop = 7 * HOUR_H - 12;
@@ -249,6 +264,70 @@ export function CalendarView() {
       window.removeEventListener('pointercancel', onUp);
     };
   }, [drag?.blockId, drag?.pointerId, openTask, updateBlock]);
+
+  // Window-level move/up for the drag-to-create flow. Mirrors the existing
+  // block-drag effect: events go through window so a re-render of the source
+  // day column doesn't lose pointer capture.
+  useEffect(() => {
+    if (!createDrag) return;
+    const snap = (m: number) => Math.round(m / SNAP_MIN) * SNAP_MIN;
+
+    const onMove = (e: PointerEvent) => {
+      const d = createDragRef.current;
+      if (!d || e.pointerId !== d.pointerId) return;
+      const y = Math.max(0, Math.min(d.rectHeight, e.clientY - d.rectTop));
+      const curMin = Math.max(0, Math.min(24 * 60, snap((y / HOUR_H) * 60)));
+      if (curMin !== d.curMin) setCreateDrag({ ...d, curMin });
+    };
+
+    const onUp = (e: PointerEvent) => {
+      const d = createDragRef.current;
+      if (!d || e.pointerId !== d.pointerId) return;
+      setCreateDrag(null);
+      // No movement → bare click → do nothing.
+      if (d.curMin === d.anchorMin) return;
+      const startMin = Math.min(d.anchorMin, d.curMin);
+      const endMin = Math.max(d.anchorMin, d.curMin);
+      const durMin = Math.max(SNAP_MIN, endMin - startMin);
+      const userId = activePersonId ?? meId;
+      if (!userId) return;
+      const { start_at, end_at } = gridToBlock(d.day, startMin, durMin, weekStart);
+      // Open the draft modal seeded with the dragged time range.
+      // Submit creates the task + block; cancel discards both.
+      openCreate({ block: { start_at, end_at, user_id: userId } });
+    };
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+    };
+  }, [createDrag?.pointerId, activePersonId, meId, weekStart, openCreate]);
+
+  const onDayColPointerDown = (e: React.PointerEvent, day: number) => {
+    if (e.button !== 0) return;
+    // Only initiate drag-to-create when the press is on the day column
+    // background — clicking on an existing block or gcal event must not
+    // start a new draft.
+    const t = e.target as HTMLElement;
+    if (t.closest('.tblock') || t.closest('.gcal-evt')) return;
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const y = e.clientY - rect.top;
+    const snap = (m: number) => Math.round(m / SNAP_MIN) * SNAP_MIN;
+    const min = Math.max(0, Math.min(24 * 60, snap((y / HOUR_H) * 60)));
+    e.preventDefault();
+    setCreateDrag({
+      day,
+      anchorMin: min,
+      curMin: min,
+      pointerId: e.pointerId,
+      rectTop: rect.top,
+      rectHeight: rect.height,
+    });
+  };
 
   const myBlocks = useMemo(
     () => blocks.filter((b) => b.user_id === activePersonId),
@@ -397,6 +476,7 @@ export function CalendarView() {
                      data-today={isToday} data-weekend={isWeekend}
                      data-drop-target={showPreview ? 'true' : undefined}
                      style={{ gridColumn: dayIdx + 2, gridRow: 2, height: 24 * HOUR_H, position: 'relative' }}
+                     onPointerDown={(e) => onDayColPointerDown(e, dayIdx)}
                      onDragOver={(e) => onDayDragOver(e, dayIdx)}
                      onDragLeave={(e) => {
                        const next = e.relatedTarget as Node | null;
@@ -411,6 +491,12 @@ export function CalendarView() {
                     <div className="tblock-preview" style={{
                       top: (dropPreview.start_min / 60) * HOUR_H,
                       height: (dropPreview.dur_min / 60) * HOUR_H - 2,
+                    }} />
+                  )}
+                  {createDrag && createDrag.day === dayIdx && createDrag.curMin !== createDrag.anchorMin && (
+                    <div className="tblock-preview" style={{
+                      top: (Math.min(createDrag.anchorMin, createDrag.curMin) / 60) * HOUR_H,
+                      height: (Math.abs(createDrag.curMin - createDrag.anchorMin) / 60) * HOUR_H - 2,
                     }} />
                   )}
                   {dayGcal.map((g) => {

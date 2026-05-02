@@ -7,7 +7,12 @@ import type { UUID } from '../types';
 interface DraftSubtask { localId: string; title: string; done: boolean }
 
 interface Props {
-  draft: { project_id: UUID | null; section: 'now' | 'later'; assignee_id: UUID | null };
+  draft: {
+    project_id: UUID | null;
+    section: 'now' | 'later';
+    assignee_id: UUID | null;
+    block?: { start_at: string; end_at: string; user_id: UUID } | null;
+  };
 }
 
 export function TaskModalDraft({ draft }: Props) {
@@ -21,6 +26,7 @@ export function TaskModalDraft({ draft }: Props) {
   const setTaskExternalId = useFira((s) => s.setTaskExternalId);
   const setTaskExternalUrl = useFira((s) => s.setTaskExternalUrl);
   const addSubtask = useFira((s) => s.addSubtask);
+  const upsertBlock = useFira((s) => s.upsertBlock);
 
   const [projectId, setProjectId] = useState<UUID | ''>(
     draft.project_id ?? projects[0]?.id ?? ''
@@ -63,6 +69,19 @@ export function TaskModalDraft({ draft }: Props) {
     for (const s of subtasks) {
       const t = s.title.trim();
       if (t) addSubtask(id, t);
+    }
+    // Drag-to-create flow: the calendar handed us a pending block. Persist
+    // it now that the task it points at exists. Cancel path never reaches
+    // here, so the block is silently discarded — exactly what we want.
+    if (draft.block) {
+      upsertBlock({
+        id: crypto.randomUUID(),
+        task_id: id,
+        user_id: draft.block.user_id,
+        start_at: draft.block.start_at,
+        end_at: draft.block.end_at,
+        state: 'planned',
+      });
     }
     closeCreate();
   };

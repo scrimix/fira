@@ -98,7 +98,15 @@ interface FiraState {
   projectFilter: Record<UUID, boolean>;
   inboxFilter: InboxFilter;
   openTaskId: UUID | null;
-  creatingDraft: { project_id: UUID | null; section: 'now' | 'later'; assignee_id: UUID | null } | null;
+  creatingDraft: {
+    project_id: UUID | null;
+    section: 'now' | 'later';
+    assignee_id: UUID | null;
+    // Optional pending time-block — set when the draft was opened by
+    // dragging on the calendar. Submit creates the task AND a block; cancel
+    // creates neither (the drag rendered a ghost only).
+    block?: { start_at: string; end_at: string; user_id: UUID } | null;
+  } | null;
   // Discriminated union — one modal serves both create and edit. null = closed.
   projectModal: { kind: 'new' } | { kind: 'edit'; id: UUID } | null;
   // Transient notifications. Auto-dismissed after a few seconds; the user
@@ -153,7 +161,12 @@ interface FiraState {
   toggleProjectFilter: (id: UUID) => void;
   setInboxFilter: (patch: Partial<InboxFilter>) => void;
   openTask: (id: UUID | null) => void;
-  openCreate: (initial?: Partial<{ project_id: UUID | null; section: 'now' | 'later'; assignee_id: UUID | null }>) => void;
+  openCreate: (initial?: Partial<{
+    project_id: UUID | null;
+    section: 'now' | 'later';
+    assignee_id: UUID | null;
+    block: { start_at: string; end_at: string; user_id: UUID } | null;
+  }>) => void;
   closeCreate: () => void;
   openCreateProject: () => void;
   openEditProject: (id: UUID) => void;
@@ -1017,6 +1030,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
       project_id: initial?.project_id ?? s.inboxFilter.project_id ?? s.projects[0]?.id ?? null,
       section: initial?.section ?? 'now',
       assignee_id: initial?.assignee_id ?? s.meId,
+      block: initial?.block ?? null,
     },
     openTaskId: null,
   })),
