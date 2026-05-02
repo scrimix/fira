@@ -689,7 +689,7 @@ function CalRail({ onDragTask, allocByProject }: {
       tasks: tasks.filter((t) =>
         t.project_id === p.id &&
         (showAll || t.assignee_id === activePersonId) &&
-        t.section !== 'done' &&
+        t.section === 'now' &&
         (!q
           || t.title.toLowerCase().includes(q)
           || (t.external_id?.toLowerCase().includes(q) ?? false)),
