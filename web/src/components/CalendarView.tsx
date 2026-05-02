@@ -541,12 +541,19 @@ export function CalendarView() {
               {showPersonal ? 'Hide personal' : 'Show personal'}
             </button>
           )}
+          {/* Desktop: inline at the right end of the toolbar, sharing
+           * the line with Today / user picker / link toggles. CSS
+           * hides this copy on phone widths in favor of the strip
+           * below. */}
+          <div className="totals cal-totals-inline">
+            <span className="totals-done"><strong>{fmtMin(completedMin)}</strong> done</span>
+            <span className="totals-planned"><strong>{fmtMin(plannedMin)}</strong> planned</span>
+            <span className="totals-total"><strong>{fmtMin(totalMin)}</strong> total</span>
+          </div>
         </div>
-        {/* Mobile-only totals strip — the rail (where these live on
-         * desktop) is hidden below 1000 px, but the user still wants
-         * to see done/planned/total at a glance. Rendered as its own
-         * row above the calendar grid; CSS toggles visibility. */}
-        <div className="totals cal-totals-mobile">
+        {/* Phone-only fallback row — toolbar runs out of horizontal
+         * room, so the totals get their own band below it. */}
+        <div className="totals cal-totals-strip">
           <span className="totals-done"><strong>{fmtMin(completedMin)}</strong> done</span>
           <span className="totals-planned"><strong>{fmtMin(plannedMin)}</strong> planned</span>
           <span className="totals-total"><strong>{fmtMin(totalMin)}</strong> total</span>

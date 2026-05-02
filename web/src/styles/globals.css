@@ -600,6 +600,10 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   color: var(--ink-3);
   border: 1px solid var(--rule-2);
   background: var(--paper);
+  /* Topbar gets cramped on phones; without nowrap "Log out" splits
+   * into two lines and breaks the row's height. */
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 .topbar .logout-btn:hover {
   color: var(--ink);

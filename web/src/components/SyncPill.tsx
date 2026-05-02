@@ -75,30 +75,34 @@ export function SyncPill() {
   let Icon = Check;
   let title: string;
 
+  // Non-error states are icon-only (plus the count for pending /
+  // offline-with-pending). The tooltip carries the human-readable
+  // text. Failed edits keep the explicit "N failed" label since that
+  // state demands attention, not a glance.
   if (failedCount > 0) {
     label = `${failedCount} failed`;
     tone = 'error';
     Icon = AlertTriangle;
     title = 'Some edits were rejected by the server — click for details';
   } else if (effectiveKind === 'syncing') {
-    label = 'Syncing…';
+    label = '';
     tone = 'syncing';
     Icon = Loader2;
     title = 'Sending edits to the server';
   } else if (effectiveKind === 'offline') {
-    label = pending > 0 ? `Offline · ${pending} pending` : 'Offline';
+    label = pending > 0 ? String(pending) : '';
     tone = 'offline';
     Icon = CloudOff;
     title = status.kind === 'offline'
-      ? `Couldn't reach server (${status.message}) — will retry automatically`
-      : 'Offline · retrying…';
+      ? `Offline (${status.message})${pending > 0 ? ` · ${pending} pending` : ''} — will retry automatically`
+      : `Offline · retrying${pending > 0 ? ` · ${pending} pending` : ''}…`;
   } else if (pending > 0) {
-    label = `${pending} pending`;
+    label = String(pending);
     tone = 'pending';
     Icon = Loader2;
     title = `${pending} edit${pending === 1 ? '' : 's'} queued`;
   } else {
-    label = 'Synced';
+    label = '';
     tone = 'ok';
     Icon = Check;
     title = lastSyncedAt
@@ -130,7 +134,7 @@ export function SyncPill() {
           strokeWidth={2}
           className={tone === 'syncing' ? 'sync-pill-spin' : undefined}
         />
-        <span>{label}</span>
+        {label && <span>{label}</span>}
       </button>
       {open && failedCount > 0 && (
         <div className="sync-popover">

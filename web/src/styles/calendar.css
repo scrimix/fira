@@ -232,21 +232,21 @@
 .totals .totals-planned strong { color: var(--accent); }
 .totals .totals-total strong   { color: var(--ink); }
 
-.rail-totals {
-  padding: 8px 16px;
+/* Inline copy lives in the toolbar at the right; strip copy lives
+ * below the toolbar. Exactly one is visible at a time — the inline
+ * copy fits desktop widths, the strip carries phones where the
+ * toolbar runs out of horizontal room. */
+.cal-totals-inline {
+  margin-left: auto;
+}
+.cal-totals-strip {
+  display: none;
+  padding: 6px 12px;
   border-bottom: 1px solid var(--rule);
 }
-/* Mobile-only strip sits above the toolbar; hidden on desktop where
- * the rail's totals carry the same data. */
-.cal-totals-mobile {
-  display: none;
-}
-@media (max-width: 1000px) {
-  .cal-totals-mobile {
-    display: flex;
-    padding: 8px 12px;
-    border-bottom: 1px solid var(--rule);
-  }
+@media (max-width: 700px) {
+  .cal-totals-inline { display: none; }
+  .cal-totals-strip { display: flex; }
 }
 
 .cal-grid-wrap {

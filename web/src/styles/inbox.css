@@ -105,6 +105,11 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  /* Otherwise "Archive ticked" wraps to two lines on phone widths
+   * where the head row is tight. The button is fine being wider
+   * than the others. */
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 .inbox-proj-head .archive-btn:not([disabled]) {
   color: var(--ink-2);
