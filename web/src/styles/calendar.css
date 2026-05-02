@@ -566,6 +566,24 @@
   z-index: 1;
 }
 
+/* Personal-workspace overlay — caller's own blocks from a different
+ * workspace. Read-only like the linked overlay, but visually distinct:
+ * left accent stripe instead of dashed border, slightly less faded.
+ * Shape mirrors .tblock-linked so the layout treats them the same. */
+.tblock-personal {
+  left: 1px !important;
+  width: calc(100% - 2px) !important;
+  z-index: 1;
+  opacity: 0.7;
+  cursor: default;
+  background: color-mix(in oklab, var(--proj-color, var(--ink-3)) 10%, var(--paper));
+  border: 1px solid color-mix(in oklab, var(--proj-color, var(--ink-3)) 35%, var(--rule-2));
+  border-left: 3px solid color-mix(in oklab, var(--proj-color, var(--ink-3)) 65%, var(--rule-3));
+}
+.tblock-personal .tb-title { color: var(--ink-2); }
+.tblock-personal .tb-meta { color: var(--ink-3); }
+.tblock-personal:hover { opacity: 0.9; z-index: 1; }
+
 /* Toolbar toggle for showing the linked partner's calendar. Same
  * baseline as the rail "Mine/All" button. */
 .link-toggle {

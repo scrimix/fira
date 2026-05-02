@@ -141,6 +141,14 @@ export interface LinkedCalendar {
   gcal: GcalEvent[];
 }
 
+/// Caller's personal-workspace overlay — same shape as LinkedCalendar
+/// but without a partner (it's the caller's own data, just from a
+/// different workspace) and without gcal (gcal isn't workspace-scoped).
+export interface PersonalCalendar {
+  blocks: TimeBlock[];
+  tasks: LinkedTask[];
+}
+
 export interface Bootstrap {
   users: User[];
   projects: Project[];

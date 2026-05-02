@@ -118,6 +118,12 @@ interface FiraState {
   // Calendar toggle: render the partner's blocks alongside mine. Off by
   // default — the user opts in once they've linked.
   showLinked: boolean;
+  // Personal-workspace overlay — caller's own blocks from their personal
+  // workspace, projected read-only when the active workspace is a team
+  // one. Same toggle/loader pattern as linked.
+  personalBlocks: TimeBlock[];
+  personalTasks: LinkedTask[];
+  showPersonal: boolean;
   linkModalOpen: boolean;
   // Discriminated union — one modal serves both create and edit. null = closed.
   projectModal: { kind: 'new' } | { kind: 'edit'; id: UUID } | null;
@@ -190,6 +196,8 @@ interface FiraState {
   cancelLink: (id: UUID) => Promise<void>;
   loadLinkedCalendar: () => Promise<void>;
   setShowLinked: (v: boolean) => void;
+  loadPersonalCalendar: () => Promise<void>;
+  setShowPersonal: (v: boolean) => void;
   openLinkModal: () => void;
   closeLinkModal: () => void;
   dismissToast: (id: string) => void;
@@ -559,6 +567,9 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
   linkedTasks: [],
   linkedGcal: [],
   showLinked: false,
+  personalBlocks: [],
+  personalTasks: [],
+  showPersonal: false,
   linkModalOpen: false,
   view: 'calendar',
   selectedPersonIds: [],
@@ -685,6 +696,11 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
       linkedBlocks: [],
       linkedTasks: [],
       linkedGcal: [],
+      // Personal overlay is workspace-specific (it only renders in team
+      // workspaces). Drop on switch so a stale projection doesn't leak.
+      personalBlocks: [],
+      personalTasks: [],
+      showPersonal: false,
     });
     const data = await api.bootstrap();
     const projectFilter: Record<UUID, boolean> = {};
@@ -1145,6 +1161,17 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
   },
 
   setShowLinked: (v) => set({ showLinked: v }),
+
+  loadPersonalCalendar: async () => {
+    if (get().playgroundMode) return;
+    try {
+      const data = await api.personalCalendar();
+      set({ personalBlocks: data.blocks, personalTasks: data.tasks });
+    } catch {
+      // Silent — same posture as loadLinkedCalendar.
+    }
+  },
+  setShowPersonal: (v) => set({ showPersonal: v }),
   openLinkModal: () => set({ linkModalOpen: true }),
   closeLinkModal: () => set({ linkModalOpen: false }),
 
@@ -1493,6 +1520,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     playgroundMode: s.playgroundMode,
     links: s.links,
     showLinked: s.showLinked,
+    showPersonal: s.showPersonal,
   // partialize is loosely typed — zustand expects S but we're returning a
   // subset of fields. Cast through unknown is the canonical workaround.
   }) as unknown as FiraState,

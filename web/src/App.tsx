@@ -29,6 +29,11 @@ export default function App() {
   const reloadWorkspaces = useFira((s) => s.reloadWorkspaces);
   const reloadLinks = useFira((s) => s.reloadLinks);
   const loadLinkedCalendar = useFira((s) => s.loadLinkedCalendar);
+  const loadPersonalCalendar = useFira((s) => s.loadPersonalCalendar);
+  const inTeamWorkspace = useFira((s) => {
+    const ws = s.workspaces.find((w) => w.id === s.activeWorkspaceId);
+    return ws ? !ws.is_personal : false;
+  });
   const hasAcceptedLink = useFira((s) =>
     s.links.some((l) => l.status === 'accepted'),
   );
@@ -113,6 +118,14 @@ export default function App() {
     if (!hasAcceptedLink || playgroundMode) return;
     void loadLinkedCalendar();
   }, [hasAcceptedLink, activeWorkspaceId, playgroundMode, loadLinkedCalendar]);
+
+  // Personal-workspace overlay: only meaningful in a team workspace.
+  // Reload on workspace switch so the projection always matches the
+  // currently-active team context.
+  useEffect(() => {
+    if (!inTeamWorkspace || playgroundMode) return;
+    void loadPersonalCalendar();
+  }, [inTeamWorkspace, activeWorkspaceId, playgroundMode, loadPersonalCalendar]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

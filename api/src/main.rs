@@ -398,6 +398,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/links/:id", delete(links::delete))
         .route("/links/:id/accept", post(links::accept))
         .route("/linked/calendar", get(links::linked_calendar))
+        .route("/personal/calendar", get(links::personal_calendar))
         .route("/ops", post(ops::post_ops))
         .route("/changes", get(ops::get_changes))
         .route("/ws", get(ws::ws_handler))

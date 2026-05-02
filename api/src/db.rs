@@ -911,6 +911,64 @@ pub async fn list_linked_tasks_for_blocks(
     .await
 }
 
+/// Caller's personal workspace id, if they have one. Used by the
+/// personal-overlay endpoint to know which workspace's data to project.
+pub async fn personal_workspace_id(pool: &PgPool, user_id: Uuid) -> sqlx::Result<Option<Uuid>> {
+    let row: Option<(Uuid,)> = sqlx::query_as(
+        "SELECT w.id FROM workspaces w
+         JOIN workspace_members wm ON wm.workspace_id = w.id
+         WHERE wm.user_id = $1 AND w.is_personal = true AND wm.removed_at IS NULL
+         LIMIT 1",
+    )
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(|(id,)| id))
+}
+
+/// Blocks owned by `user_id` whose tasks live under projects in
+/// `workspace_id`. Used by the personal-workspace overlay (caller's own
+/// blocks but in a different workspace than the active one).
+pub async fn list_blocks_in_workspace_for_user(
+    pool: &PgPool,
+    workspace_id: Uuid,
+    user_id: Uuid,
+) -> sqlx::Result<Vec<TimeBlock>> {
+    sqlx::query_as(
+        "SELECT b.id, b.task_id, b.user_id, b.start_at, b.end_at, b.state
+         FROM time_blocks b
+         JOIN tasks t ON t.id = b.task_id
+         JOIN projects p ON p.id = t.project_id
+         WHERE b.user_id = $1 AND p.workspace_id = $2
+         ORDER BY b.start_at",
+    )
+    .bind(user_id)
+    .bind(workspace_id)
+    .fetch_all(pool)
+    .await
+}
+
+/// Minimal task projection for the caller's personal-workspace blocks.
+/// Mirrors `list_linked_tasks_for_blocks` but scoped to a workspace
+/// rather than to "every block this user owns".
+pub async fn list_linked_tasks_in_workspace_for_user(
+    pool: &PgPool,
+    workspace_id: Uuid,
+    user_id: Uuid,
+) -> sqlx::Result<Vec<LinkedTask>> {
+    sqlx::query_as(
+        "SELECT DISTINCT t.id, t.title, t.status, p.color AS project_color
+         FROM tasks t
+         JOIN projects p ON p.id = t.project_id
+         JOIN time_blocks b ON b.task_id = t.id
+         WHERE b.user_id = $1 AND p.workspace_id = $2",
+    )
+    .bind(user_id)
+    .bind(workspace_id)
+    .fetch_all(pool)
+    .await
+}
+
 /// Whether two users are mutually accepted-linked. Used for ad-hoc
 /// authorization checks (e.g. /api/linked/calendar) to make sure the
 /// caller still has the link before exposing the partner's data.

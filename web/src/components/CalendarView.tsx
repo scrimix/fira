@@ -119,6 +119,14 @@ export function CalendarView() {
   const acceptedLink = useFira((s) =>
     s.links.find((l) => l.status === 'accepted') ?? null,
   );
+  const personalBlocks = useFira((s) => s.personalBlocks);
+  const personalTasks = useFira((s) => s.personalTasks);
+  const showPersonal = useFira((s) => s.showPersonal);
+  const setShowPersonal = useFira((s) => s.setShowPersonal);
+  const inTeamWorkspace = useFira((s) => {
+    const ws = s.workspaces.find((w) => w.id === s.activeWorkspaceId);
+    return ws ? !ws.is_personal : false;
+  });
   const projectFilter = useFira((s) => s.projectFilter);
   const selectedPersonIds = useFira((s) => s.selectedPersonIds);
   const activePersonId = useFira((s) => s.activePersonId);
@@ -376,6 +384,15 @@ export function CalendarView() {
   const visibleLinkedBlocks = overlayActive ? linkedBlocks : [];
   const visibleLinkedGcal = overlayActive ? linkedGcal : [];
 
+  // Personal-workspace overlay — same posture as linked: only on my own
+  // tab, only in a team workspace, only when the user opted in.
+  const personalOverlayActive = showPersonal && inTeamWorkspace && activePersonId === meId;
+  const personalTaskById = useMemo(
+    () => new Map(personalTasks.map((t) => [t.id, t])),
+    [personalTasks],
+  );
+  const visiblePersonalBlocks = personalOverlayActive ? personalBlocks : [];
+
   const tickBlock = (b: TimeBlock) => {
     updateBlock(b.id, { state: b.state === 'completed' ? 'planned' : 'completed' });
   };
@@ -462,6 +479,18 @@ export function CalendarView() {
               {showLinked ? 'Hide linked' : 'Show linked'}
             </button>
           )}
+          {inTeamWorkspace && activePersonId === meId && (
+            <button
+              className="link-toggle"
+              data-active={showPersonal || undefined}
+              onClick={() => setShowPersonal(!showPersonal)}
+              title={showPersonal
+                ? 'Hide personal-workspace blocks'
+                : 'Show personal-workspace blocks (read-only)'}
+            >
+              {showPersonal ? 'Hide personal' : 'Show personal'}
+            </button>
+          )}
           <div className="totals">
             <span className="totals-done"><strong>{fmtMin(completedMin)}</strong> done</span>
             <span className="totals-planned"><strong>{fmtMin(plannedMin)}</strong> planned</span>
@@ -503,6 +532,12 @@ export function CalendarView() {
               const dayLinkedGcal = visibleLinkedGcal.filter(
                 (g) => blockToGrid(g.start_at, g.end_at, weekStart).day === dayIdx,
               );
+              const dayPersonalBlocks = visiblePersonalBlocks
+                .map((b) => {
+                  const grid = blockToGrid(b.start_at, b.end_at, weekStart);
+                  return grid.day === dayIdx ? { block: b, ...grid } : null;
+                })
+                .filter((x): x is NonNullable<typeof x> => x !== null);
               const isToday = isCurrentWeek && dayIdx === todayIndex;
               const isWeekend = dayIdx >= 5;
               const showPreview = dropPreview?.day === dayIdx;
@@ -570,6 +605,28 @@ export function CalendarView() {
                            }}
                            title={`${lt?.title ?? 'Linked task'} · ${fmtMin(dur_min)} (linked, read-only)`}>
                         <div className="tb-title">{lt?.title ?? 'Linked task'}</div>
+                        <div className="tb-meta">
+                          <span>{fmtClockShort(start_min)}</span>
+                          <span className="dot" />
+                          <span>{fmtMin(dur_min)}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {dayPersonalBlocks.map(({ block: b, start_min, dur_min }) => {
+                    const pt = personalTaskById.get(b.task_id);
+                    return (
+                      <div key={`p-b-${b.id}`} className="tblock tblock-personal"
+                           data-state={b.state}
+                           data-task-done={pt?.status === 'done' ? 'true' : undefined}
+                           data-short={dur_min < 60 ? 'true' : undefined}
+                           style={{
+                             top: (start_min / 60) * HOUR_H,
+                             height: (dur_min / 60) * HOUR_H - 2,
+                             ['--proj-color' as string]: pt?.project_color ?? 'var(--ink-3)',
+                           }}
+                           title={`${pt?.title ?? 'Personal task'} · ${fmtMin(dur_min)} (personal, read-only)`}>
+                        <div className="tb-title">{pt?.title ?? 'Personal task'}</div>
                         <div className="tb-meta">
                           <span>{fmtClockShort(start_min)}</span>
                           <span className="dot" />
