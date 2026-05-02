@@ -102,10 +102,20 @@ where
             .get(SESSION_COOKIE)
             .map(|c| c.value().to_string())
             .ok_or_else(unauthorized)?;
-        load_session_user(&app_state.pool, &sid)
-            .await
-            .map_err(|_| unauthorized())?
-            .ok_or_else(unauthorized)
+        // DB error during session lookup is *not* an auth failure — it's
+        // a transient infrastructure blip (pool exhaustion, statement
+        // timeout, connection reset). Map it to 503 so the client treats
+        // it as offline (keeps the session, falls back to cache) rather
+        // than as 401 (drops the session and bounces to login). Mapping
+        // every DB hiccup to 401 was the cause of the "random logouts".
+        match load_session_user(&app_state.pool, &sid).await {
+            Ok(Some(user)) => Ok(user),
+            Ok(None) => Err(unauthorized()),
+            Err(e) => {
+                tracing::warn!("session lookup transient error: {e:?}");
+                Err(service_unavailable("session lookup unavailable"))
+            }
+        }
     }
 }
 
@@ -144,10 +154,18 @@ where
         let workspace_id: Uuid = header
             .parse()
             .map_err(|_| forbidden("invalid workspace id"))?;
-        let role = crate::db::workspace_role(&app_state.pool, workspace_id, user.id)
-            .await
-            .map_err(|_| forbidden("workspace lookup failed"))?
-            .ok_or_else(|| forbidden("not a workspace member"))?;
+        // Same posture as session lookup: a DB error here is transient
+        // infrastructure, not "you're not a member of this workspace".
+        // Surfacing it as 503 keeps the client in offline mode with
+        // cached state instead of forcing a re-login.
+        let role = match crate::db::workspace_role(&app_state.pool, workspace_id, user.id).await {
+            Ok(Some(r)) => r,
+            Ok(None) => return Err(forbidden("not a workspace member")),
+            Err(e) => {
+                tracing::warn!("workspace_role transient error: {e:?}");
+                return Err(service_unavailable("workspace lookup unavailable"));
+            }
+        };
         Ok(AuthCtx { user, workspace_id, role })
     }
 }
@@ -158,6 +176,14 @@ fn forbidden(msg: &str) -> Response {
 
 fn unauthorized() -> Response {
     (StatusCode::UNAUTHORIZED, Json(serde_json::json!({ "error": "unauthorized" })))
+        .into_response()
+}
+
+fn service_unavailable(msg: &str) -> Response {
+    (
+        StatusCode::SERVICE_UNAVAILABLE,
+        Json(serde_json::json!({ "error": msg })),
+    )
         .into_response()
 }
 
