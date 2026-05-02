@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Check, Copy, Trash2 } from 'lucide-react';
+import { Check, Copy, Trash2, X } from 'lucide-react';
 import { useFira } from '../store';
 import { ProjectIcon } from './ProjectIcon';
 import {
@@ -816,7 +816,10 @@ function UserPicker({ users, meId, selectedPersonIds, activePersonId, onAdd, onR
             {!isOnlyAndMe && (
               <button className="user-pill-x"
                       onClick={(e) => { e.stopPropagation(); onRemove(u.id); }}
-                      title={`Remove ${u.name}`}>×</button>
+                      title={`Remove ${u.name}`}
+                      aria-label={`Remove ${u.name}`}>
+                <X size={11} strokeWidth={1.75} />
+              </button>
             )}
           </span>
         );
@@ -896,14 +899,23 @@ function CalRail({ onDragTask, allocByProject }: {
     .filter((p) => projectFilter[p.id] !== false)
     .map((p) => ({
       project: p,
-      tasks: tasks.filter((t) =>
-        t.project_id === p.id &&
-        (showAll || t.assignee_id === activePersonId) &&
-        t.section === 'now' &&
-        (!q
-          || t.title.toLowerCase().includes(q)
-          || (t.external_id?.toLowerCase().includes(q) ?? false)),
-      ),
+      // Match the inbox order so the rail reads the same way: section
+      // first (Now before Later), then sort_key within each section. The
+      // inbox is the source of truth users curate against; the rail
+      // diverging from it makes drag-to-calendar feel unpredictable.
+      tasks: tasks
+        .filter((t) =>
+          t.project_id === p.id &&
+          (showAll || t.assignee_id === activePersonId) &&
+          (showAll ? (t.section === 'now' || t.section === 'later') : t.section === 'now') &&
+          (!q
+            || t.title.toLowerCase().includes(q)
+            || (t.external_id?.toLowerCase().includes(q) ?? false)),
+        )
+        .sort((a, b) => {
+          if (a.section !== b.section) return a.section === 'now' ? -1 : 1;
+          return a.sort_key.localeCompare(b.sort_key);
+        }),
     }))
     .filter((g) => g.tasks.length > 0);
 

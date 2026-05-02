@@ -239,12 +239,9 @@ async fn set_project_members(
     Json(body): Json<SetMembers>,
 ) -> ApiResult<Json<Project>> {
     authorize_project_edit(&s.pool, &ctx, id).await?;
-    let info = db::project_owner_and_workspace(&s.pool, id)
-        .await?
-        .ok_or(error::ApiError::NotFound)?;
     for m in &body.members {
-        if m.role != "lead" && m.role != "member" {
-            return Err(error::ApiError::BadRequest("role must be lead|member".into()));
+        if m.role != "owner" && m.role != "lead" && m.role != "member" && m.role != "inactive" {
+            return Err(error::ApiError::BadRequest("role must be owner|lead|member|inactive".into()));
         }
     }
     // Only workspace owners may set/promote roles. Project leads can change
@@ -253,7 +250,7 @@ async fn set_project_members(
     let desired: Vec<(uuid::Uuid, String)> = body.members.iter()
         .map(|m| (m.user_id, m.role.clone())).collect();
     let mut tx = s.pool.begin().await?;
-    let project = db::set_project_members_tx(&mut tx, id, info.1, &desired, allow_role_change)
+    let project = db::set_project_members_tx(&mut tx, id, &desired, allow_role_change)
         .await?
         .ok_or(error::ApiError::NotFound)?;
     let payload = serde_json::json!({

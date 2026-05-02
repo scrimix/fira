@@ -45,9 +45,9 @@ pub async fn is_workspace_owner(
     Ok(workspace_role(pool, workspace_id, user_id).await?.as_deref() == Some("owner"))
 }
 
-/// Whether the caller is a `lead` on a given project (explicit row) OR
-/// a workspace owner (implicit lead in every project). Used by handlers
-/// that gate project edits.
+/// Whether the caller has project-edit authority: an explicit `owner` or
+/// `lead` row on the project, OR workspace ownership (wildcard across every
+/// project). Used by handlers that gate project edits.
 pub async fn has_project_lead_authority(
     pool: &PgPool,
     workspace_id: Uuid,
@@ -65,7 +65,7 @@ pub async fn has_project_lead_authority(
     .bind(user_id)
     .fetch_optional(pool)
     .await?;
-    Ok(row.map(|(r,)| r == "lead").unwrap_or(false))
+    Ok(row.map(|(r,)| r == "lead" || r == "owner").unwrap_or(false))
 }
 
 /// Workspaces a user belongs to (active membership only — soft-removed
@@ -507,13 +507,16 @@ pub async fn create_project_tx(
     .execute(&mut **tx)
     .await?;
 
-    // The owner is implicitly a project lead. workspace_id is filled in by
-    // the BEFORE-INSERT trigger, so we don't bind it here.
+    // Project creation is gated to workspace owners, so the creator is the
+    // workspace owner — they get the per-project 'owner' row, which is
+    // hidden from inbox assignee groups by default until they up-rank
+    // themselves or get tasks assigned. workspace_id on project_members is
+    // filled in by the BEFORE-INSERT trigger.
     sqlx::query(
         "INSERT INTO project_members (project_id, user_id, removed_at, role)
-         VALUES ($1, $2, NULL, 'lead')
+         VALUES ($1, $2, NULL, 'owner')
          ON CONFLICT (project_id, user_id) DO UPDATE
-             SET removed_at = NULL, role = 'lead'",
+             SET removed_at = NULL, role = 'owner'",
     )
     .bind(id)
     .bind(owner_id)
@@ -529,7 +532,7 @@ pub async fn create_project_tx(
         source: "local".to_string(),
         description: None,
         external_url_template: None,
-        members: vec![ProjectMember { user_id: owner_id, role: "lead".into() }],
+        members: vec![ProjectMember { user_id: owner_id, role: "owner".into() }],
     })
 }
 
@@ -637,17 +640,21 @@ pub async fn project_owner_and_workspace(
 // Returns the refreshed Project, or None if the project doesn't exist or the
 // caller isn't the owner. Mirrors update_project_tx's not-found behavior.
 /// Reconcile project_members for `project_id` to exactly `desired`.
-/// Each desired entry is `(user_id, role)`. The project's `owner_id` is
-/// force-included as `lead` so an owner can never lock themselves out.
+/// Each desired entry is `(user_id, role)`. The current workspace owner is
+/// force-included so they can never be locked out — if `desired` names them
+/// the role is honored, otherwise they default to `owner`. Workspace
+/// ownership is the anchor (rather than `projects.owner_id`, the historical
+/// creator) because that's the user who actually has cross-project authority
+/// today.
 ///
 /// `allow_role_change`: if false (project lead is editing), existing
 /// rows keep their role and new rows are inserted with whatever role is
-/// in `desired` *except* `lead` — leads can only add `member`s. Workspace
-/// owners pass true and can promote/demote freely.
+/// in `desired` *except* `lead`/`owner` — non-owner editors can only add
+/// `member`s. Workspace owners pass true and can promote/demote freely,
+/// including their own row.
 pub async fn set_project_members_tx(
     tx: &mut Transaction<'_, Postgres>,
     project_id: Uuid,
-    project_owner_id: Option<Uuid>,
     desired: &[(Uuid, String)],
     allow_role_change: bool,
 ) -> sqlx::Result<Option<Project>> {
@@ -663,10 +670,23 @@ pub async fn set_project_members_tx(
         return Ok(None);
     };
 
+    // Look up the workspace owner once so we can force-include them below.
+    // There's exactly one owner per workspace under current invariants; if
+    // that ever changes, the first row wins and the rest still survive
+    // because their existing project_members rows are preserved.
+    let ws_owner: Option<(Uuid,)> = sqlx::query_as(
+        "SELECT user_id FROM workspace_members
+         WHERE workspace_id = $1 AND role = 'owner' AND removed_at IS NULL
+         LIMIT 1",
+    )
+    .bind(workspace_id)
+    .fetch_optional(&mut **tx)
+    .await?;
+
     let mut want: Vec<(Uuid, String)> = desired.to_vec();
-    if let Some(o) = project_owner_id {
+    if let Some((o,)) = ws_owner {
         if !want.iter().any(|(u, _)| *u == o) {
-            want.push((o, "lead".into()));
+            want.push((o, "owner".into()));
         }
     }
 

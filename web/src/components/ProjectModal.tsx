@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, X } from 'lucide-react';
 import { useFira } from '../store';
 import { PROJECT_ICONS, DEFAULT_ICON, ProjectIcon } from './ProjectIcon';
 import { Select } from './Select';
@@ -42,9 +42,15 @@ export function ProjectModal({ project }: Props) {
   // server-side ignored — gating in the UI keeps the affordance honest.
   const canEditRoles = myWorkspaceRole === 'owner';
 
+  // Workspace owners edit their own role from this list (so they can
+  // up-rank to 'lead' or de-rank to 'member' from the per-project default
+  // 'owner'). Non-WS-owners see themselves as a read-only header row, so
+  // their meId is filtered out of the editable list.
   const initialMembers: ProjectMember[] = useMemo(
-    () => (project?.members ?? []).filter((m) => m.user_id !== meId),
-    [project, meId],
+    () => canEditRoles
+      ? (project?.members ?? [])
+      : (project?.members ?? []).filter((m) => m.user_id !== meId),
+    [project, meId, canEditRoles],
   );
 
   const [title, setTitle] = useState(project?.title ?? '');
@@ -141,7 +147,9 @@ export function ProjectModal({ project }: Props) {
               <Trash2 size={15} strokeWidth={1.75} />
             </button>
           )}
-          <button className="icon-btn" onClick={close} title="Close (Esc)">×</button>
+          <button className="icon-btn" onClick={close} title="Close (Esc)" aria-label="Close">
+            <X size={15} strokeWidth={1.75} />
+          </button>
         </div>
         <div className="np-body">
           <label className="np-label">Name</label>
@@ -215,7 +223,7 @@ export function ProjectModal({ project }: Props) {
               <label className="np-label">Members</label>
               <MembersEditor
                 allUsers={allUsers}
-                ownerId={meId}
+                meId={meId}
                 members={members}
                 canEditRoles={canEditRoles}
                 armedRemove={armedRemove}
@@ -289,7 +297,7 @@ export function ProjectModal({ project }: Props) {
 
 interface MembersEditorProps {
   allUsers: { id: UUID; name: string; initials: string; email: string }[];
-  ownerId: UUID | null;
+  meId: UUID | null;
   members: ProjectMember[];
   canEditRoles: boolean;
   armedRemove: UUID | null;
@@ -300,7 +308,7 @@ interface MembersEditorProps {
 }
 
 function MembersEditor({
-  allUsers, ownerId, members, canEditRoles, armedRemove, setArmedRemove,
+  allUsers, meId, members, canEditRoles, armedRemove, setArmedRemove,
   onAdd, onRemove, onRoleChange,
 }: MembersEditorProps) {
   const [picking, setPicking] = useState(false);
@@ -309,26 +317,32 @@ function MembersEditor({
   const inputRef = useRef<HTMLInputElement>(null);
 
   const memberSet = useMemo(() => new Set(members.map((m) => m.user_id)), [members]);
-  const owner = ownerId ? allUsers.find((u) => u.id === ownerId) : null;
+  // When the caller can edit roles (workspace owner) they appear inline as
+  // an editable row, so we don't render a separate read-only header. For
+  // everyone else, we surface the caller's actual project role at the top.
+  const myMembership = meId ? members.find((m) => m.user_id === meId) ?? null : null;
+  const headerSelf = !canEditRoles && meId
+    ? allUsers.find((u) => u.id === meId) ?? null
+    : null;
   const memberRows = useMemo(
     () => members
+      .filter((m) => canEditRoles || m.user_id !== meId)
       .map((m) => {
         const u = allUsers.find((x) => x.id === m.user_id);
         return u ? { user: u, role: m.role } : null;
       })
       .filter((r): r is { user: MembersEditorProps['allUsers'][number]; role: ProjectRole } => !!r),
-    [members, allUsers],
+    [members, allUsers, canEditRoles, meId],
   );
 
   const candidates = useMemo(() => {
     const q = query.trim().toLowerCase();
     return allUsers.filter((u) => {
-      if (u.id === ownerId) return false;
       if (memberSet.has(u.id)) return false;
       if (!q) return true;
       return u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q);
     });
-  }, [allUsers, ownerId, memberSet, query]);
+  }, [allUsers, memberSet, query]);
 
   useEffect(() => {
     if (!picking) return;
@@ -349,34 +363,37 @@ function MembersEditor({
   return (
     <div className="np-members" ref={wrapRef}>
       <div className="np-members-list">
-        {owner && (
-          <div className="np-member np-member-owner" title="Project lead — can't be removed by themselves">
-            <span className="avatar" data-me="true">{owner.initials}</span>
-            <span className="np-member-name">{owner.name}</span>
-            <span className="np-member-tag">lead (you)</span>
+        {headerSelf && (
+          <div className="np-member np-member-owner" title="You can't remove yourself">
+            <span className="avatar" data-me="true">{headerSelf.initials}</span>
+            <span className="np-member-name">{headerSelf.name}</span>
+            <span className="np-member-tag">{myMembership?.role ?? 'member'} (you)</span>
           </div>
         )}
         {memberRows.map(({ user: u, role }) => {
           const armed = armedRemove === u.id;
+          const isSelf = u.id === meId;
           return (
-            <div key={u.id} className="np-member" data-armed={u.id}>
-              <span className="avatar">{u.initials}</span>
-              <span className="np-member-name">{u.name}</span>
+            <div key={u.id} className="np-member" data-armed={u.id} data-me={isSelf || undefined}>
+              <span className="avatar" data-me={isSelf || undefined}>{u.initials}</span>
+              <span className="np-member-name">{u.name}{isSelf ? ' (you)' : ''}</span>
               {canEditRoles ? (
                 <Select<ProjectRole>
                   size="sm"
                   value={role}
-                  menuMinWidth={140}
+                  menuMinWidth={180}
                   onChange={(v) => onRoleChange(u.id, v)}
                   options={[
+                    { value: 'owner', label: 'owner', hint: 'hidden from inbox unless tasks assigned' },
                     { value: 'lead', label: 'lead', hint: 'edits project + members' },
                     { value: 'member', label: 'member', hint: 'works tasks' },
+                    { value: 'inactive', label: 'inactive', hint: 'hidden from inbox unless tasks assigned' },
                   ]}
                 />
               ) : (
                 <span className="np-member-tag">{role}</span>
               )}
-              {armed ? (
+              {!isSelf && (armed ? (
                 <button
                   type="button"
                   className="np-member-confirm"
@@ -393,9 +410,9 @@ function MembersEditor({
                   title="Remove from project"
                   aria-label={`Remove ${u.name}`}
                 >
-                  ×
+                  <X size={12} strokeWidth={1.75} />
                 </button>
-              )}
+              ))}
             </div>
           );
         })}

@@ -29,11 +29,14 @@ export function InboxView() {
   const canCreateProject = myWorkspaceRole === 'owner';
 
   const project = projects.find((p) => p.id === inboxFilter.project_id);
-  // Workspace owner can edit any project; project leads can edit theirs.
-  // Members and outsiders see no pencil.
+  // Workspace owner can edit any project; project leads/owners (the
+  // per-project role 'owner' carries the same edit power as 'lead', it
+  // just controls inbox visibility) can edit theirs. Members and outsiders
+  // see no pencil.
   const myProjectMembership = project?.members.find((m) => m.user_id === meId) ?? null;
   const canEditThisProject = myWorkspaceRole === 'owner'
-    || myProjectMembership?.role === 'lead';
+    || myProjectMembership?.role === 'lead'
+    || myProjectMembership?.role === 'owner';
 
   // Hooks must run unconditionally on every render — the empty-state branch
   // below is an early return, so all useState/useRef calls live above it.
@@ -80,8 +83,15 @@ export function InboxView() {
   const laterTasks = projectTasks.filter((t) => t.section === 'later').sort(byKey);
   const doneTasks = projectTasks.filter((t) => t.section === 'done').sort(byKey);
   // Caller floats to the top of the assignee groups; the rest stay in
-  // membership order.
-  const memberIds = project.members.map((m) => m.user_id);
+  // membership order. Members with role 'owner' (the workspace owner's
+  // default per-project stance) or 'inactive' (a member who's been parked)
+  // are hidden unless they have a Now task assigned — otherwise they'd
+  // render as empty assignee groups regardless of involvement.
+  const nowAssignees = new Set(nowTasks.map((t) => t.assignee_id).filter((x): x is UUID => !!x));
+  const visibleMembers = project.members.filter(
+    (m) => (m.role !== 'owner' && m.role !== 'inactive') || nowAssignees.has(m.user_id),
+  );
+  const memberIds = visibleMembers.map((m) => m.user_id);
   const assigneeIds = meId && memberIds.includes(meId)
     ? [meId, ...memberIds.filter((u) => u !== meId)]
     : memberIds;
@@ -106,6 +116,7 @@ export function InboxView() {
     e.stopPropagation();
     setRowDropAt(null);
     setDropTarget(null);
+    setAssigneeDropTarget(null);
     const draggedId = e.dataTransfer.getData('text/plain');
     if (!draggedId || draggedId === target.id) return;
     const dragged = tasks.find((t) => t.id === draggedId);
@@ -263,10 +274,35 @@ export function InboxView() {
                 );
               }) : (
                 <>
-                  {nowTasks.map((t) => renderRow(t, true))}
+                  {nowTasks.filter((t) => t.assignee_id != null).map((t) => renderRow(t, true))}
                   <AddTaskRow onAdd={(title) => addTask(project.id, 'now', title)} />
                 </>
               )}
+              {(() => {
+                // Unassigned bucket: surfaces Now tasks with no owner. We
+                // render it only when it has tasks so it doesn't add noise
+                // to projects where every Now task is owned. Unassigning
+                // through the modal auto-flips to Later (see
+                // setTaskAssignee), so this bucket should normally stay
+                // small — it exists for legacy data and explicit
+                // "ownerless" Now tasks.
+                const unassigned = nowTasks.filter((t) => t.assignee_id == null);
+                if (unassigned.length === 0) return null;
+                const folded = !!collapsedAssignee['__unassigned'];
+                return (
+                  <div className="assignee-group">
+                    <div className="assignee-head"
+                         onClick={() => setCollapsedAssignee({ ...collapsedAssignee, ['__unassigned']: !folded })}>
+                      <span className="ah-caret">{folded ? '▸' : '▾'}</span>
+                      <div className="avatar">?</div>
+                      <span>Unassigned</span>
+                      <span className="ah-rule" />
+                      <span className="ah-count">{unassigned.length}</span>
+                    </div>
+                    {!folded && unassigned.map((t) => renderRow(t, true))}
+                  </div>
+                );
+              })()}
             </>
           )}
         </div>

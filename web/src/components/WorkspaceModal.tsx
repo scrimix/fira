@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, X } from 'lucide-react';
 import { useFira } from '../store';
 import { api } from '../api';
 import type { User, UUID, Workspace, WorkspaceRole } from '../types';
@@ -129,7 +129,9 @@ export function WorkspaceModal({ workspace }: Props) {
               <Trash2 size={15} strokeWidth={1.75} />
             </button>
           )}
-          <button className="icon-btn" onClick={close} title="Close (Esc)">×</button>
+          <button className="icon-btn" onClick={close} title="Close (Esc)" aria-label="Close">
+            <X size={15} strokeWidth={1.75} />
+          </button>
         </div>
         <div className="np-body">
           <label className="np-label">Name</label>
@@ -325,7 +327,7 @@ function WorkspaceMembersEditor({
                   title="Remove from workspace"
                   aria-label={`Remove ${u.name}`}
                 >
-                  ×
+                  <X size={12} strokeWidth={1.75} />
                 </button>
               )}
             </div>

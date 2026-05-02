@@ -1077,7 +1077,11 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
   openTask: (id) => set({ openTaskId: id, creatingDraft: id ? null : get().creatingDraft }),
   openCreate: (initial) => set((s) => ({
     creatingDraft: {
-      project_id: initial?.project_id ?? s.inboxFilter.project_id ?? s.projects[0]?.id ?? null,
+      // No fallback to the active inbox filter or the first project: the
+      // Draft button should make the caller pick explicitly. Easy
+      // mis-targeting otherwise — you draft "from Atlas" and it lands in
+      // Atlas before you even glance at the project field.
+      project_id: initial?.project_id ?? null,
       section: initial?.section ?? 'now',
       assignee_id: initial?.assignee_id ?? s.meId,
       block: initial?.block ?? null,
@@ -1190,7 +1194,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
           source: 'local',
           description: null,
           external_url_template: null,
-          members: meId ? [{ user_id: meId, role: 'lead' }] : [],
+          members: meId ? [{ user_id: meId, role: 'owner' }] : [],
         }
       : await api.createProject(input);
     set((s) => ({
@@ -1315,10 +1319,21 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     ...pushOp(s, { kind: 'task.set_section', task_id: taskId, section }),
   })),
 
-  setTaskAssignee: (taskId, assigneeId) => set((s) => ({
-    tasks: s.tasks.map((x) => x.id === taskId ? { ...x, assignee_id: assigneeId } : x),
-    ...pushOp(s, { kind: 'task.set_assignee', task_id: taskId, assignee_id: assigneeId }),
-  })),
+  setTaskAssignee: (taskId, assigneeId) => set((s) => {
+    // Unassigning a task that lives in Now flips it to Later — without an
+    // owner, a "Now" task has no group to render under (it sits in the
+    // "Unassigned" bucket which is for parked work, not active work).
+    const cur = s.tasks.find((x) => x.id === taskId);
+    const flipToLater = assigneeId === null && cur?.section === 'now';
+    const tasks = s.tasks.map((x) => x.id === taskId
+      ? { ...x, assignee_id: assigneeId, ...(flipToLater ? { section: 'later' as const } : {}) }
+      : x);
+    let acc = pushOp(s, { kind: 'task.set_assignee', task_id: taskId, assignee_id: assigneeId });
+    if (flipToLater) {
+      acc = pushOp({ ...s, ...acc }, { kind: 'task.set_section', task_id: taskId, section: 'later' });
+    }
+    return { tasks, ...acc };
+  }),
 
   reorderTasks: (projectId, section, orderedIds) => set((s) => {
     // Re-number sort keys with wide spacing so future inserts can be done

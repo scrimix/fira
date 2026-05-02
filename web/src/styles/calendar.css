@@ -105,9 +105,6 @@
   display: inline-grid; place-items: center;
   width: 14px; height: 14px;
   margin-left: 2px;
-  font-family: var(--font-mono);
-  font-size: calc(12px * var(--fs-scale));
-  line-height: 1;
   color: inherit;
   cursor: pointer;
   background: transparent;

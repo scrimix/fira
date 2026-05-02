@@ -75,7 +75,9 @@ export function TaskModal({ taskId }: Props) {
           >
             <Trash2 size={15} strokeWidth={1.75} />
           </button>
-          <button className="icon-btn" onClick={() => close(null)} title="Close (Esc)">×</button>
+          <button className="icon-btn" onClick={() => close(null)} title="Close (Esc)" aria-label="Close">
+            <X size={15} strokeWidth={1.75} />
+          </button>
         </div>
         <div className="modal-body">
           <div className="modal-main">
@@ -97,22 +99,19 @@ export function TaskModal({ taskId }: Props) {
               </>
             )}
 
-            <h5 style={{ ...modalH5, display: 'flex', alignItems: 'center' }}>
-              <span>Description</span>
-              <span style={{ flex: 1 }} />
-              <CopyMarkdownButton task={task} />
-            </h5>
+            <SectionHeading title="Description" trailing={<CopyMarkdownButton task={task} />} />
             <DescriptionEditor
               taskId={task.id}
               value={task.description_md}
               onSave={(v) => setTaskDescription(task.id, v)}
             />
 
-            <h5 style={modalH5}>
-              Subtasks{task.subtasks.length > 0 && (
-                <> · {task.subtasks.filter((s) => s.done).length}/{task.subtasks.length}</>
-              )}
-            </h5>
+            <SectionHeading
+              title="Subtasks"
+              hint={task.subtasks.length > 0
+                ? `${task.subtasks.filter((s) => s.done).length}/${task.subtasks.length}`
+                : undefined}
+            />
             <SubtaskList
               task={task}
               tickSubtask={tickSubtask}
@@ -122,13 +121,10 @@ export function TaskModal({ taskId }: Props) {
               addSubtask={addSubtask}
             />
 
-            <div style={{ marginTop: 16 }}>
-              <h5 style={modalH5}>Time blocks · {taskBlocks.length}</h5>
-              {taskBlocks.length === 0 ? (
-                <div style={{ fontFamily: 'var(--font-mono)', fontSize: 'calc(11px * var(--fs-scale))', color: 'var(--ink-4)', padding: '8px 0' }}>
-                  No blocks yet.
-                </div>
-              ) : taskBlocks.map(({ b, start_min, dur_min }) => {
+            <SectionHeading title="Time blocks" hint={String(taskBlocks.length)} />
+            {taskBlocks.length === 0 ? (
+              <div className="tm-section-empty">No blocks yet.</div>
+            ) : taskBlocks.map(({ b, start_min, dur_min }) => {
                 const stale = task.status === 'done' && b.state === 'planned';
                 const startDate = new Date(b.start_at);
                 const dateLabel = `${MONTH_ABBR[startDate.getMonth()]} ${startDate.getDate()}`;
@@ -162,7 +158,6 @@ export function TaskModal({ taskId }: Props) {
                   </div>
                 );
               })}
-            </div>
           </div>
           <div className="modal-side">
             <Field label="Project" value={
@@ -242,15 +237,20 @@ export function TaskModal({ taskId }: Props) {
 
 const MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
-const modalH5: React.CSSProperties = {
-  margin: '18px 0 4px',
-  fontFamily: 'var(--font-mono)',
-  fontSize: 'var(--fs-sm)',
-  color: 'var(--ink-3)',
-  fontWeight: 500,
-  letterSpacing: '0.02em',
-  textTransform: 'uppercase',
-};
+function SectionHeading({ title, hint, trailing }: {
+  title: string;
+  hint?: string;
+  trailing?: React.ReactNode;
+}) {
+  return (
+    <h5 className="tm-section-h">
+      <span className="tm-section-h-title">{title}</span>
+      {hint != null && <span className="tm-section-h-hint">· {hint}</span>}
+      {trailing != null && <span className="tm-section-h-trailing">{trailing}</span>}
+    </h5>
+  );
+}
+
 const blockRow: React.CSSProperties = {
   display: 'grid',
   gridTemplateColumns: '20px 50px 1fr 60px 80px',

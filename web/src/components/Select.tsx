@@ -77,7 +77,11 @@ export function Select<T extends string>({
 
   useEffect(() => {
     if (!open) return;
-    const onDoc = (e: MouseEvent) => {
+    // pointerdown covers both mouse and touch in one event — the prior
+    // `mousedown` only fires synthesized on iOS *after* a click and is
+    // dropped entirely on touch-without-mouse hardware, which is why the
+    // popover felt broken on phones.
+    const onDoc = (e: PointerEvent) => {
       const t = e.target as Node;
       if (
         (wrapRef.current && wrapRef.current.contains(t))
@@ -88,10 +92,10 @@ export function Select<T extends string>({
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setOpen(false);
     };
-    document.addEventListener('mousedown', onDoc);
+    document.addEventListener('pointerdown', onDoc);
     document.addEventListener('keydown', onKey);
     return () => {
-      document.removeEventListener('mousedown', onDoc);
+      document.removeEventListener('pointerdown', onDoc);
       document.removeEventListener('keydown', onKey);
     };
   }, [open]);

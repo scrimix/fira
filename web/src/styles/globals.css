@@ -516,11 +516,11 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
 .np-member-x {
   background: transparent;
   border: 0;
-  font-size: calc(18px * var(--fs-scale));
-  line-height: 1;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px;
   color: var(--ink-4);
   cursor: pointer;
-  padding: 0 4px;
+  padding: 0;
 }
 .np-member-x:hover { color: var(--danger); }
 .np-member-confirm {
@@ -952,7 +952,12 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   text-align: left;
   cursor: pointer;
   min-width: 0;
+  /* Suppress iOS Safari's 300ms double-tap-zoom delay on this control —
+   * without it the trigger sometimes swallows the click and the dropdown
+   * never opens on touch devices. */
+  touch-action: manipulation;
 }
+.select-option { touch-action: manipulation; }
 .select-trigger:hover { color: var(--ink); background: var(--paper-3); }
 .select-trigger:disabled { color: var(--ink-4); cursor: not-allowed; background: var(--paper-2); }
 .select-trigger .select-value {

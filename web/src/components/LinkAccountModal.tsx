@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { X } from 'lucide-react';
 import { useFira } from '../store';
 
 // One modal serves four states, picked from `links`:
@@ -150,7 +151,9 @@ export function LinkAccountModal() {
           <span className="ext">Link account</span>
           <span className="grow" />
           {!sticky && (
-            <button className="icon-btn" onClick={close} title="Close (Esc)">×</button>
+            <button className="icon-btn" onClick={close} title="Close (Esc)" aria-label="Close">
+              <X size={15} strokeWidth={1.75} />
+            </button>
           )}
         </div>
         {body}

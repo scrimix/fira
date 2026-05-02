@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Check, X } from 'lucide-react';
 import { useFira } from '../store';
 import { fmtMin, parseEstimate } from '../time';
 import { Select } from './Select';
@@ -28,9 +29,10 @@ export function TaskModalDraft({ draft }: Props) {
   const addSubtask = useFira((s) => s.addSubtask);
   const upsertBlock = useFira((s) => s.upsertBlock);
 
-  const [projectId, setProjectId] = useState<UUID | ''>(
-    draft.project_id ?? projects[0]?.id ?? ''
-  );
+  // No default project: defaulting to the first one made it easy to create
+  // a task in the wrong project by tapping through the modal. Caller must
+  // explicitly pick — the Create button stays disabled until they do.
+  const [projectId, setProjectId] = useState<UUID | ''>(draft.project_id ?? '');
   const project = projects.find((p) => p.id === projectId) ?? null;
 
   const [assigneeId, setAssigneeId] = useState<UUID | ''>(
@@ -99,7 +101,9 @@ export function TaskModalDraft({ draft }: Props) {
           <span className="ext">{project?.title ?? 'No project'}</span>
           <span className="grow" />
           <span className="chip" data-tone="now">draft</span>
-          <button className="icon-btn" onClick={closeCreate} title="Close (Esc)">×</button>
+          <button className="icon-btn" onClick={closeCreate} title="Close (Esc)" aria-label="Close">
+            <X size={15} strokeWidth={1.75} />
+          </button>
         </div>
         <div className="modal-body">
           <div className="modal-main">
@@ -235,7 +239,9 @@ function DraftSubtaskRow({ value, done, onToggle, onChange, onDelete }: {
 }) {
   return (
     <div className="subtask subtask-edit" data-done={done}>
-      <span className="sc" onClick={onToggle}>{done ? '✓' : ''}</span>
+      <span className="sc" onClick={onToggle} aria-label={done ? 'Mark not done' : 'Mark done'}>
+        {done && <Check size={11} strokeWidth={3} />}
+      </span>
       <input
         className="subtask-edit-input"
         value={value}
@@ -244,7 +250,9 @@ function DraftSubtaskRow({ value, done, onToggle, onChange, onDelete }: {
           if (e.key === 'Backspace' && !value) { e.preventDefault(); onDelete(); }
         }}
       />
-      <button className="subtask-del" onClick={onDelete} title="Remove">×</button>
+      <button className="subtask-del" onClick={onDelete} title="Remove" aria-label="Remove">
+        <X size={12} strokeWidth={1.75} />
+      </button>
     </div>
   );
 }

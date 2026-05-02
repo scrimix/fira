@@ -439,7 +439,8 @@
   overflow: auto;
   background: var(--paper-2);
 }
-.modal-side h5 {
+.modal-side h5,
+.tm-section-h {
   margin: 0 0 4px;
   font-family: var(--font-mono);
   font-size: var(--fs-sm);
@@ -447,6 +448,36 @@
   font-weight: 500;
   letter-spacing: 0.02em;
   text-transform: uppercase;
+}
+/* Sections in the main pane stack vertically; give all of them the same
+ * generous breathing room so Description / Subtasks / Time blocks read as
+ * peers rather than three different things. */
+.tm-section-h {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 18px 0 4px;
+}
+.tm-section-h-title { /* base color from .tm-section-h */ }
+.tm-section-h-hint {
+  color: var(--ink-4);
+  font-weight: 400;
+}
+.tm-section-h-trailing {
+  margin-left: auto;
+  align-self: center;
+}
+/* Mirror .desc-md[data-empty] so "No blocks yet." reads as a peer of
+ * "No description. Click to edit." — same font family (inherit, sans),
+ * same size, same ink, same vertical rhythm. */
+.tm-section-empty {
+  font-size: var(--fs-sm);
+  line-height: 1.55;
+  color: var(--ink-4);
+  padding: 4px 6px;
+  margin: 6px 0 14px;
+  margin-left: -6px;
+  min-height: 1.55em;
 }
 .modal-side .field {
   padding: 8px 0;
@@ -487,6 +518,11 @@
   font-family: inherit;
   width: 100%;
   resize: none;
+  /* Autosize sets the height to scrollHeight on every keystroke, so the
+   * scrollbar should never be needed. Hide it outright — without this,
+   * line-height rounding shows a 1–2px ghost scrollbar on multi-line
+   * descriptions. The modal itself already scrolls. */
+  overflow: hidden;
   border: 1px solid var(--rule-2);
   background: var(--paper);
   cursor: text;

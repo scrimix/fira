@@ -17,7 +17,7 @@ export interface User {
 }
 
 export type WorkspaceRole = 'owner' | 'member';
-export type ProjectRole = 'lead' | 'member';
+export type ProjectRole = 'owner' | 'lead' | 'member' | 'inactive';
 
 export interface WorkspaceMember {
   user_id: UUID;
