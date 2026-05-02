@@ -1151,7 +1151,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     };
     set((s) => ({
       tasks: [...s.tasks, newTask],
-      ...pushOp(s, { kind: 'task.create1', task: newTask }),
+      ...pushOp(s, { kind: 'task.create', task: newTask }),
     }));
     return newTask.id;
   },
