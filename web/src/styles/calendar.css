@@ -438,6 +438,13 @@
   z-index: 2;
 }
 .tblock:hover .tb-actions { opacity: 1; }
+/* Touch devices have no hover. Reveal the actions when the block is
+ * the last-tapped one ([data-active="true"] is set on pointerdown).
+ * Tap once → actions appear, tap an action to act, tap elsewhere to
+ * dismiss. */
+@media (hover: none) {
+  .tblock[data-active="true"] .tb-actions { opacity: 1; }
+}
 .tb-action {
   width: 16px; height: 16px;
   display: grid; place-items: center;
@@ -772,6 +779,13 @@
   gap: 8px;
   cursor: pointer;
   position: relative;
+  /* Touch path for rail → calendar scheduling: pointer events on this
+   * element drive the drag, and we don't want the rail itself to scroll
+   * while the finger is on a task. */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 .rail-task:hover { background: var(--paper-3); }
 .rail-task[data-status="done"] { background: var(--paper-2); }

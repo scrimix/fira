@@ -196,6 +196,12 @@
   padding: 6px 8px 6px 0;
   cursor: pointer;
   position: relative;
+  /* The row is click-to-open; there's no useful text selection here.
+   * On touch, dragging the grip would otherwise trigger iOS's long-
+   * press text selection on whatever the finger passes over. */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 .task-row:hover {
   background: linear-gradient(to right, transparent, var(--paper-3) 30px, var(--paper-3));
@@ -386,7 +392,15 @@
   font-size: var(--fs-sm);
   color: var(--ink-2);
   padding: 2px 0;
+  /* Subtask rows toggle into edit mode on click; outside edit mode
+   * there's no selection use case, and touch grip-drag passing over
+   * these triggers iOS long-press selection without this. The edit
+   * input restores text selection inside itself via its own type. */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
+.subtask input { user-select: text; -webkit-user-select: text; }
 .subtask .sc {
   width: 14px; height: 14px;
   border: 1px solid var(--rule-3);
@@ -439,6 +453,19 @@
   grid-template-columns: 1fr 220px;
   flex: 1; min-height: 0;
 }
+/* Sidebar collapsible — burger toggle in the head pane swaps the
+ * grid to a single column and hides the side panel. Especially
+ * relevant on phones where 220 px would otherwise be most of the
+ * viewport. */
+.modal-body[data-side="closed"] {
+  grid-template-columns: 1fr;
+}
+.modal-body[data-side="closed"] .modal-side {
+  display: none;
+}
+.modal-body[data-side="closed"] .modal-main {
+  border-right: 0;
+}
 .modal-main {
   padding: 16px 22px 22px;
   overflow: auto;
@@ -448,6 +475,14 @@
   padding: 16px 18px;
   overflow: auto;
   background: var(--paper-2);
+}
+/* On phones the side panel keeps eating ~220 px even when collapsed
+ * later, and the time-block row's "COMPLETED" tag was clipping past
+ * the right edge. Shrink the main pane's horizontal padding to claw
+ * back the pixels — the content reads fine tighter to the edges. */
+@media (max-width: 700px) {
+  .modal-main { padding: 12px 10px 16px; }
+  .modal-side { padding: 12px 10px; }
 }
 .modal-side h5,
 .tm-section-h {
@@ -477,6 +512,66 @@
   margin-left: auto;
   align-self: center;
 }
+/* Time-block rows in the task modal. Wide: avatar | date | time | dur
+ * | state on one line. Narrow (≤ ~520px main pane): two lines, with
+ * the avatar spanning both rows so the row still reads top-down as a
+ * single record. The previous fixed grid (5 fixed columns + 1fr) ran
+ * out of room for "18:00 – 19:00" on phone widths and split each cell
+ * onto its own wrapped line. */
+.tm-block-row {
+  display: grid;
+  grid-template-columns: 20px auto 1fr auto auto;
+  grid-template-areas: "ava date time dur state";
+  column-gap: 10px;
+  row-gap: 2px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--rule);
+  align-items: center;
+}
+.tm-block-ava { grid-area: ava; }
+.tm-block-date {
+  grid-area: date;
+  color: var(--ink-2);
+  font-family: var(--font-mono);
+  font-size: calc(11px * var(--fs-scale));
+  white-space: nowrap;
+}
+.tm-block-time {
+  grid-area: time;
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: calc(11px * var(--fs-scale));
+  white-space: nowrap;
+}
+.tm-block-dur {
+  grid-area: dur;
+  color: var(--ink-2);
+  font-family: var(--font-mono);
+  font-size: calc(11px * var(--fs-scale));
+  text-align: right;
+  white-space: nowrap;
+}
+.tm-block-state {
+  grid-area: state;
+  font-family: var(--font-mono);
+  font-size: calc(9px * var(--fs-scale));
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-align: right;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  justify-content: flex-end;
+  color: var(--ink-4);
+  white-space: nowrap;
+}
+.tm-block-row[data-state="planned"] .tm-block-state { color: var(--accent); }
+.tm-block-row[data-state="completed"] .tm-block-state { color: var(--done); }
+.tm-block-warn {
+  color: var(--warn);
+  font-size: calc(11px * var(--fs-scale));
+}
+
 /* Mirror .desc-md[data-empty] so "No blocks yet." reads as a peer of
  * "No description. Click to edit." — same font family (inherit, sans),
  * same size, same ink, same vertical rhythm. */

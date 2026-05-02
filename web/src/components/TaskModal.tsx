@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Check, Copy, Pencil, Plus, Trash2, X } from 'lucide-react';
+import { Check, Copy, PanelRightClose, PanelRightOpen, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { useFira } from '../store';
 import { ConfirmDelete } from './ConfirmDelete';
 import {
@@ -34,6 +34,15 @@ export function TaskModal({ taskId }: Props) {
   const setTaskAssignee = useFira((s) => s.setTaskAssignee);
   const deleteTask = useFira((s) => s.deleteTask);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  // Sidebar collapsible — gives the description / subtasks / time-blocks
+  // pane the full modal width, which matters most on phones where the
+  // 220 px sidebar otherwise eats two-thirds of the viewport. Default
+  // closed on narrow viewports, open on desktop.
+  const [sideOpen, setSideOpen] = useState(() =>
+    typeof window === 'undefined'
+      ? true
+      : !window.matchMedia('(max-width: 700px)').matches,
+  );
 
   if (!task || !project) return null;
 
@@ -75,11 +84,22 @@ export function TaskModal({ taskId }: Props) {
           >
             <Trash2 size={15} strokeWidth={1.75} />
           </button>
+          <button
+            className="icon-btn"
+            onClick={() => setSideOpen((v) => !v)}
+            title={sideOpen ? 'Hide details' : 'Show details'}
+            aria-label={sideOpen ? 'Hide details' : 'Show details'}
+            aria-pressed={sideOpen}
+          >
+            {sideOpen
+              ? <PanelRightClose size={15} strokeWidth={1.75} />
+              : <PanelRightOpen size={15} strokeWidth={1.75} />}
+          </button>
           <button className="icon-btn" onClick={() => close(null)} title="Close (Esc)" aria-label="Close">
             <X size={15} strokeWidth={1.75} />
           </button>
         </div>
-        <div className="modal-body">
+        <div className="modal-body" data-side={sideOpen ? 'open' : 'closed'}>
           <div className="modal-main">
             <TitleEditor key={task.id} value={task.title}
                          onSave={(v) => setTaskTitle(task.id, v)} />
@@ -130,28 +150,18 @@ export function TaskModal({ taskId }: Props) {
                 const dateLabel = `${MONTH_ABBR[startDate.getMonth()]} ${startDate.getDate()}`;
                 const u = users.find((x) => x.id === b.user_id);
                 return (
-                  <div key={b.id} style={blockRow}>
-                    <span className="avatar" data-me={b.user_id === meId} title={u?.name ?? '?'}>
+                  <div key={b.id} className="tm-block-row" data-state={b.state}>
+                    <span className="avatar tm-block-ava" data-me={b.user_id === meId} title={u?.name ?? '?'}>
                       {u?.initials ?? '?'}
                     </span>
-                    <span style={{ color: 'var(--ink-2)', fontFamily: 'var(--font-mono)', fontSize: 'calc(11px * var(--fs-scale))' }}>
-                      {dateLabel}
-                    </span>
-                    <span style={{ color: 'var(--ink-3)', fontFamily: 'var(--font-mono)', fontSize: 'calc(11px * var(--fs-scale))' }}>
+                    <span className="tm-block-date">{dateLabel}</span>
+                    <span className="tm-block-time">
                       {fmtClockShort(start_min)} – {fmtClockShort(start_min + dur_min)}
                     </span>
-                    <span style={{ color: 'var(--ink-2)', fontFamily: 'var(--font-mono)', fontSize: 'calc(11px * var(--fs-scale))', textAlign: 'right' }}>
-                      {fmtMin(dur_min)}
-                    </span>
-                    <span style={{
-                      fontFamily: 'var(--font-mono)', fontSize: 'calc(9px * var(--fs-scale))', letterSpacing: '0.08em',
-                      textTransform: 'uppercase', textAlign: 'right',
-                      display: 'inline-flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end',
-                      color: b.state === 'completed' ? 'var(--done)' : b.state === 'planned' ? 'var(--accent)' : 'var(--ink-4)',
-                    }}>
+                    <span className="tm-block-dur">{fmtMin(dur_min)}</span>
+                    <span className="tm-block-state">
                       {stale && (
-                        <span title="Task is marked done, but this block is still planned."
-                              style={{ color: 'var(--warn)', fontSize: 'calc(11px * var(--fs-scale))' }}>⚠</span>
+                        <span className="tm-block-warn" title="Task is marked done, but this block is still planned.">⚠</span>
                       )}
                       {b.state}
                     </span>
@@ -251,14 +261,6 @@ function SectionHeading({ title, hint, trailing }: {
   );
 }
 
-const blockRow: React.CSSProperties = {
-  display: 'grid',
-  gridTemplateColumns: '20px 50px 1fr 60px 80px',
-  gap: 10,
-  padding: '4px 0',
-  borderBottom: '1px solid var(--rule)',
-  alignItems: 'center',
-};
 
 function TitleEditor({ value, onSave }: { value: string; onSave: (v: string) => void }) {
   const [editing, setEditing] = useState(false);
@@ -549,6 +551,79 @@ function SubtaskRow({
     setEditing(false);
   };
 
+  // Long-press-to-drag anywhere on the row. Same shape as the inbox
+  // version: pointer events drive pre-lock state, but once locked we
+  // attach a non-passive document touchmove listener — the only way
+  // iOS Safari lets us suppress scroll mid-gesture.
+  const rowTouchRef = useRef<{
+    startX: number; startY: number;
+    timer: number | null;
+    locked: boolean;
+    suppressClick: boolean;
+    cleanup: (() => void) | null;
+  } | null>(null);
+  const lockRowDrag = () => {
+    const t = rowTouchRef.current;
+    if (!t) return;
+    t.locked = true;
+    t.timer = null;
+    navigator.vibrate?.(8);
+    onGripTouchStart(id);
+    const onMove = (ev: TouchEvent) => {
+      const touch = ev.touches[0];
+      if (!touch) return;
+      ev.preventDefault();
+      onGripTouchMove(touch.clientX, touch.clientY);
+    };
+    const onEnd = () => {
+      const ref = rowTouchRef.current;
+      if (!ref) return;
+      ref.cleanup?.();
+      ref.cleanup = null;
+      onGripTouchEnd();
+      ref.suppressClick = true;
+      window.setTimeout(() => { rowTouchRef.current = null; }, 50);
+    };
+    document.addEventListener('touchmove', onMove, { passive: false });
+    document.addEventListener('touchend', onEnd);
+    document.addEventListener('touchcancel', onEnd);
+    t.cleanup = () => {
+      document.removeEventListener('touchmove', onMove);
+      document.removeEventListener('touchend', onEnd);
+      document.removeEventListener('touchcancel', onEnd);
+    };
+  };
+  const onRowPointerDown = (e: React.PointerEvent) => {
+    if (e.pointerType !== 'touch') return;
+    const targetEl = e.target as HTMLElement;
+    if (targetEl.closest('.sc, .subtask-grip, .subtask-del, input')) return;
+    if (editing) return;
+    rowTouchRef.current = {
+      startX: e.clientX, startY: e.clientY,
+      timer: null, locked: false, suppressClick: false, cleanup: null,
+    };
+    rowTouchRef.current.timer = window.setTimeout(lockRowDrag, 220);
+  };
+  const onRowPointerMove = (e: React.PointerEvent) => {
+    if (e.pointerType !== 'touch') return;
+    const t = rowTouchRef.current;
+    if (!t || t.locked) return;
+    const dx = Math.abs(e.clientX - t.startX);
+    const dy = Math.abs(e.clientY - t.startY);
+    if (dx > 8 || dy > 8) {
+      if (t.timer != null) window.clearTimeout(t.timer);
+      rowTouchRef.current = null;
+    }
+  };
+  const finishRowTouch = () => {
+    const t = rowTouchRef.current;
+    if (!t) return;
+    if (t.timer != null) window.clearTimeout(t.timer);
+    if (t.locked) return;
+    t.cleanup?.();
+    rowTouchRef.current = null;
+  };
+
   return (
     <div
       className="subtask subtask-edit"
@@ -571,6 +646,18 @@ function SubtaskRow({
       }}
       onDragLeave={onDragLeave}
       onDrop={(e) => { e.preventDefault(); onDrop(); }}
+      onPointerDown={onRowPointerDown}
+      onPointerMove={onRowPointerMove}
+      onPointerUp={(e) => { if (e.pointerType === 'touch') finishRowTouch(); }}
+      onPointerCancel={(e) => { if (e.pointerType === 'touch') finishRowTouch(); }}
+      onClickCapture={(e) => {
+        // After a drag, suppress the click that would otherwise switch
+        // the row into edit mode via .sname's onClick.
+        if (rowTouchRef.current?.suppressClick) {
+          e.stopPropagation();
+          e.preventDefault();
+        }
+      }}
     >
       <span
         className="subtask-grip"

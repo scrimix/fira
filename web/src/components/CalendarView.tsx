@@ -28,6 +28,8 @@ interface DragState {
   curDay: number;
   moved: boolean;
   pointerId: number;
+  pointerType: string;
+  wasActive: boolean;
 }
 
 interface PlacedBlock {
@@ -187,11 +189,8 @@ export function CalendarView() {
 
   const onBlockPointerDown = (e: React.PointerEvent, b: TimeBlock, taskId: UUID) => {
     if (e.button !== 0) return;
-    // Touch is disabled until we wire up a real long-press / handle-based
-    // gesture. Without this guard a tap on a block becomes a drag and
-    // taps inside the block (the X / tick / duplicate buttons) get
-    // hijacked by pointer-capture before their own click fires.
-    if (e.pointerType === 'touch') return;
+    // Inner buttons (X / tick / duplicate) stopPropagation on their own
+    // pointerdown so they don't reach this handler — see .tb-action.
     if ((e.target as HTMLElement).closest('.tb-action')) return;
     // Capture grid coordinates against the *visible* week so the drop's
     // gridToBlock(weekStart) round-trips to the same absolute time.
@@ -211,6 +210,8 @@ export function CalendarView() {
       moved: false,
       pointerId: e.pointerId,
       taskId,
+      pointerType: e.pointerType,
+      wasActive: lastBlockId === b.id,
     });
   };
 
@@ -270,6 +271,10 @@ export function CalendarView() {
           const { start_at, end_at } = gridToBlock(d.curDay, d.curStartMin, d.curDurMin, weekStart);
           updateBlock(d.blockId, { start_at, end_at });
         }
+      } else if (d.pointerType === 'touch' && !d.wasActive) {
+        // First tap on a touch device: just activate (the action
+        // buttons reveal via [data-active="true"]). Second tap, when
+        // the block is already active, opens the task.
       } else {
         openTask(d.taskId);
       }
@@ -454,6 +459,43 @@ export function CalendarView() {
     });
   };
 
+  // Touch-only path for rail-task → calendar scheduling. HTML5 drag-and-
+  // drop doesn't fire from touch, so the rail uses pointer events on
+  // touch and routes back here for hit-testing + commit. Phase 'move'
+  // updates the preview band, 'end' commits, 'cancel' clears the
+  // preview without writing.
+  const onTouchSchedule = (
+    taskId: UUID,
+    clientX: number,
+    clientY: number,
+    phase: 'move' | 'end' | 'cancel',
+  ) => {
+    if (phase === 'cancel') { setDropPreview(null); return; }
+    const el = document.elementFromPoint(clientX, clientY) as HTMLElement | null;
+    const dayEl = el?.closest('[data-day-idx]') as HTMLElement | null;
+    if (!dayEl) { setDropPreview(null); return; }
+    const day = Number(dayEl.dataset.dayIdx);
+    const rect = dayEl.getBoundingClientRect();
+    const y = clientY - rect.top;
+    const start_min = Math.max(0, Math.min(24 * 60 - SNAP_MIN, snap((y / HOUR_H) * 60)));
+    const dur = taskDurFor(taskId);
+    const dur_min = Math.min(dur, 24 * 60 - start_min);
+    if (phase === 'move') { setDropPreview({ day, start_min, dur_min }); return; }
+    setDropPreview(null);
+    const t = tasks.find((x) => x.id === taskId);
+    if (!t) return;
+    const userId = activePersonId ?? meId;
+    if (!userId) return;
+    const { start_at, end_at } = gridToBlock(day, start_min, dur_min, weekStart);
+    upsertBlock({
+      id: crypto.randomUUID(),
+      task_id: t.id,
+      user_id: userId,
+      start_at, end_at,
+      state: 'planned',
+    });
+  };
+
   return (
     <div className="calendar">
       <div className="cal-main">
@@ -552,6 +594,7 @@ export function CalendarView() {
               return (
                 <div key={dayIdx} className="cal-daycol"
                      data-today={isToday} data-weekend={isWeekend}
+                     data-day-idx={dayIdx}
                      data-drop-target={showPreview ? 'true' : undefined}
                      style={{ gridColumn: dayIdx + 2, gridRow: 2, height: 24 * HOUR_H, position: 'relative' }}
                      onPointerDown={(e) => onDayColPointerDown(e, dayIdx)}
@@ -716,6 +759,7 @@ export function CalendarView() {
       </div>
       <CalRail
         onDragTask={setDraggedTaskId}
+        onTouchSchedule={onTouchSchedule}
         allocByProject={allocByProject}
       />
     </div>
@@ -881,8 +925,9 @@ function UserPicker({ users, meId, selectedPersonIds, activePersonId, onAdd, onR
   );
 }
 
-function CalRail({ onDragTask, allocByProject }: {
+function CalRail({ onDragTask, onTouchSchedule, allocByProject }: {
   onDragTask: (id: UUID | null) => void;
+  onTouchSchedule: (taskId: UUID, clientX: number, clientY: number, phase: 'move' | 'end' | 'cancel') => void;
   allocByProject: Array<{ project: Project; mins: number; pct: number }>;
 }) {
   const tasks = useFira((s) => s.tasks);
@@ -1011,6 +1056,29 @@ function CalRail({ onDragTask, allocByProject }: {
                        onDragTask(t.id);
                      }}
                      onDragEnd={() => onDragTask(null)}
+                     onPointerDown={(e) => {
+                       if (e.pointerType !== 'touch') return;
+                       e.preventDefault();
+                       e.currentTarget.setPointerCapture(e.pointerId);
+                       (e.currentTarget as HTMLElement).dataset.touching = 'true';
+                     }}
+                     onPointerMove={(e) => {
+                       if (e.pointerType !== 'touch') return;
+                       if (!(e.currentTarget as HTMLElement).dataset.touching) return;
+                       onTouchSchedule(t.id, e.clientX, e.clientY, 'move');
+                     }}
+                     onPointerUp={(e) => {
+                       if (e.pointerType !== 'touch') return;
+                       const wasDragging = !!(e.currentTarget as HTMLElement).dataset.touching;
+                       delete (e.currentTarget as HTMLElement).dataset.touching;
+                       if (!wasDragging) return;
+                       onTouchSchedule(t.id, e.clientX, e.clientY, 'end');
+                     }}
+                     onPointerCancel={(e) => {
+                       if (e.pointerType !== 'touch') return;
+                       delete (e.currentTarget as HTMLElement).dataset.touching;
+                       onTouchSchedule(t.id, e.clientX, e.clientY, 'cancel');
+                     }}
                      onClick={() => openTask(t.id)}
                      title={blocker ? 'Silent blocker — no upcoming planned blocks' : 'Drag onto the calendar to schedule'}>
                   <div className="rail-task-body">

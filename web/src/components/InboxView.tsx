@@ -504,9 +504,16 @@ function InboxSubtaskRow({ title, done, onToggle, onSave, onDelete }: {
   };
 
   return (
-    <div className={editing ? 'subtask subtask-edit' : 'subtask'} data-done={done}
-         onClick={(e) => e.stopPropagation()}>
-      <span className="sc" onClick={onToggle} aria-label={done ? 'Mark not done' : 'Mark done'}>
+    // No stopPropagation: on inbox, the subtask body should behave as
+    // part of the parent row — tap opens the task, long-press drags
+    // the task. The checkbox (.sc) handles its own click and stops
+    // there, so toggling done doesn't also open the modal.
+    <div className={editing ? 'subtask subtask-edit' : 'subtask'} data-done={done}>
+      <span
+        className="sc"
+        onClick={(e) => { e.stopPropagation(); onToggle(); }}
+        aria-label={done ? 'Mark not done' : 'Mark done'}
+      >
         {done && <Check size={11} strokeWidth={3} />}
       </span>
       {editing ? (
@@ -524,7 +531,11 @@ function InboxSubtaskRow({ title, done, onToggle, onSave, onDelete }: {
           }}
         />
       ) : (
-        <span className="sname" onClick={() => setEditing(true)} style={{ cursor: 'text', flex: 1 }}>
+        // Edit-on-click disabled in the inbox: too easy to hit while
+        // aiming for the parent task row, and the resulting edit input
+        // looks like a click miss. Subtasks are still editable from
+        // the task modal — open the parent to rename or delete.
+        <span className="sname" style={{ flex: 1 }}>
           {title}
         </span>
       )}
@@ -561,6 +572,94 @@ function TaskRow({
   const lowLeft = left != null && task.estimate_min != null && left < task.estimate_min * 0.2 && left > 0;
   const [dragOnHandle, setDragOnHandle] = useState(false);
 
+  // Long-press-to-drag for the whole row on touch. iOS pointer events
+  // can't preventDefault scroll (touch-action wins). So we keep the
+  // pre-lock state in pointer events (cheap, gives us clientX/Y), but
+  // once the long-press fires we attach a non-passive document
+  // touchmove listener — that's the only thing iOS Safari respects
+  // for blocking scroll mid-gesture. A quick tap falls through to
+  // onClick; a fast move within the hold window cancels the timer
+  // and lets iOS handle it as a scroll.
+  const rowTouchRef = useRef<{
+    startX: number; startY: number;
+    timer: number | null;
+    locked: boolean;
+    suppressClick: boolean;
+    cleanup: (() => void) | null;
+  } | null>(null);
+  const HOLD_MS = 220;
+  const SCROLL_CANCEL_PX = 8;
+
+  const lockRowDrag = () => {
+    const t = rowTouchRef.current;
+    if (!t) return;
+    t.locked = true;
+    t.timer = null;
+    navigator.vibrate?.(8);
+    onGripTouchStart(task.id);
+    const onMove = (ev: TouchEvent) => {
+      const touch = ev.touches[0];
+      if (!touch) return;
+      ev.preventDefault();
+      onGripTouchMove(touch.clientX, touch.clientY);
+    };
+    const onEnd = () => {
+      const ref = rowTouchRef.current;
+      if (!ref) return;
+      ref.cleanup?.();
+      ref.cleanup = null;
+      onGripTouchEnd();
+      ref.suppressClick = true;
+      window.setTimeout(() => { rowTouchRef.current = null; }, 50);
+    };
+    document.addEventListener('touchmove', onMove, { passive: false });
+    document.addEventListener('touchend', onEnd);
+    document.addEventListener('touchcancel', onEnd);
+    t.cleanup = () => {
+      document.removeEventListener('touchmove', onMove);
+      document.removeEventListener('touchend', onEnd);
+      document.removeEventListener('touchcancel', onEnd);
+    };
+  };
+
+  const onRowPointerDown = (e: React.PointerEvent) => {
+    if (e.pointerType !== 'touch') return;
+    const targetEl = e.target as HTMLElement;
+    // Subtask body falls through (long-press drags the parent task).
+    // Only the checkboxes (.task-check, .sc) and the explicit grip own
+    // their own behavior.
+    if (targetEl.closest('.task-check, .sc, .task-grip')) return;
+    rowTouchRef.current = {
+      startX: e.clientX, startY: e.clientY,
+      timer: null, locked: false, suppressClick: false, cleanup: null,
+    };
+    rowTouchRef.current.timer = window.setTimeout(lockRowDrag, HOLD_MS);
+  };
+  const onRowPointerMove = (e: React.PointerEvent) => {
+    if (e.pointerType !== 'touch') return;
+    const t = rowTouchRef.current;
+    if (!t || t.locked) return;
+    const dx = Math.abs(e.clientX - t.startX);
+    const dy = Math.abs(e.clientY - t.startY);
+    if (dx > SCROLL_CANCEL_PX || dy > SCROLL_CANCEL_PX) {
+      if (t.timer != null) window.clearTimeout(t.timer);
+      rowTouchRef.current = null;
+    }
+  };
+  const finishRowTouch = () => {
+    const t = rowTouchRef.current;
+    if (!t) return;
+    if (t.timer != null) window.clearTimeout(t.timer);
+    if (t.locked) {
+      // Locked path is cleaned up by document touchend listener; nothing
+      // to do here — pointerup may fire before or after, depending on
+      // whether the row stays in the DOM.
+      return;
+    }
+    t.cleanup?.();
+    rowTouchRef.current = null;
+  };
+
   return (
     <div className="task-row"
          data-status={task.status}
@@ -572,9 +671,16 @@ function TaskRow({
          onDragOver={(e) => onRowDragOver(e, task)}
          onDragLeave={onRowDragLeave}
          onDrop={(e) => onRowDrop(e, task)}
+         onPointerDown={onRowPointerDown}
+         onPointerMove={onRowPointerMove}
+         onPointerUp={(e) => { if (e.pointerType === 'touch') finishRowTouch(); }}
+         onPointerCancel={(e) => { if (e.pointerType === 'touch') finishRowTouch(); }}
          onClick={(e) => {
+           if (rowTouchRef.current?.suppressClick) return;
            const el = e.target as HTMLElement;
-           if (el.closest('.task-check, .subtask, .task-grip')) return;
+           // Subtask body taps fall through to open the task — only the
+           // two checkboxes and the grip suppress the open.
+           if (el.closest('.task-check, .sc, .task-grip')) return;
            onOpen(task.id);
          }}>
       <div className="task-grip"
