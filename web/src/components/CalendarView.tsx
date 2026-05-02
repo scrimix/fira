@@ -368,14 +368,12 @@ export function CalendarView() {
     const y = e.clientY - rect.top;
     return Math.max(0, Math.min(24 * 60 - SNAP_MIN, snap((y / HOUR_H) * 60)));
   };
-  const taskDurFor = (taskId: UUID | null): number => {
-    const fallback = 60;
-    if (!taskId) return fallback;
-    const t = tasks.find((x) => x.id === taskId);
-    if (!t) return fallback;
-    const left = taskTimeLeft(t, blocks);
-    return snap(Math.min(120, Math.max(SNAP_MIN, left || fallback)));
-  };
+  // Default to 1h regardless of time-left. The previous "use what's left,
+  // clamped to [SNAP_MIN, 120]" behavior produced ugly thin slivers for
+  // tasks already overtime (left ≤ 0 → SNAP_MIN). 1h is the right unit-of-
+  // intent for "I'm dropping a task on the calendar"; resize handles cover
+  // the cases where the user wants something different.
+  const taskDurFor = (_taskId: UUID | null): number => 60;
   const onDayDragOver = (e: React.DragEvent, day: number) => {
     if (!e.dataTransfer.types.includes('application/x-fira-task')) return;
     e.preventDefault();
