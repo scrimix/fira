@@ -358,6 +358,13 @@
   color: var(--ink);
   padding: 0;
 }
+/* Match the muted "No description." / "No blocks yet" empty-state look —
+ * same family + size, same `--ink-4` tint, no browser-default placeholder
+ * dimming on top of it. */
+.subtask-add-input::placeholder {
+  color: var(--ink-4);
+  opacity: 1;
+}
 
 .subtasks {
   grid-column: 2 / -1;
