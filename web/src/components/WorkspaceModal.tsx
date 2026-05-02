@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Plus } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
 import { useFira } from '../store';
 import { api } from '../api';
 import type { User, UUID, Workspace, WorkspaceRole } from '../types';
 import { Select } from './Select';
+import { ConfirmDelete } from './ConfirmDelete';
 
 // Two modes:
 //   - { kind: 'new' }  — title-only create. Caller becomes owner.
@@ -22,8 +23,17 @@ export function WorkspaceModal({ workspace }: Props) {
   const createWorkspace = useFira((s) => s.createWorkspace);
   const renameWorkspace = useFira((s) => s.renameWorkspace);
   const setWorkspaceMembers = useFira((s) => s.setWorkspaceMembers);
+  const deleteWorkspace = useFira((s) => s.deleteWorkspace);
+  const showToast = useFira((s) => s.showToast);
   const meId = useFira((s) => s.meId);
   const allUsers = useFira((s) => s.users);
+  // Owner-only and never personal — backend enforces both, the UI hides
+  // the affordance when the caller can't act on it.
+  const myRole = useMemo(
+    () => workspace?.members.find((m) => m.user_id === meId)?.role ?? null,
+    [workspace, meId],
+  );
+  const canDelete = isEdit && !workspace!.is_personal && myRole === 'owner';
 
   const [title, setTitle] = useState(workspace?.title ?? '');
   const [members, setMembers] = useState<{ user_id: UUID; role: WorkspaceRole }[]>(
@@ -34,6 +44,7 @@ export function WorkspaceModal({ workspace }: Props) {
   const [armedRemove, setArmedRemove] = useState<UUID | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   // Pull the directory once for this workspace so the picker has more than
   // just the existing members. We pull from the API directly rather than
   // through the store loader because the workspace might not be the active
@@ -90,7 +101,9 @@ export function WorkspaceModal({ workspace }: Props) {
         close();
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to save workspace');
+      const msg = e instanceof Error ? e.message : 'Failed to save workspace';
+      setError(msg);
+      showToast(msg);
       setSubmitting(false);
     }
   };
@@ -106,6 +119,16 @@ export function WorkspaceModal({ workspace }: Props) {
             {trimmed || (isEdit ? workspace!.title : 'New workspace')}
           </span>
           <span className="grow" />
+          {canDelete && (
+            <button
+              className="icon-btn modal-head-danger"
+              onClick={() => setConfirmingDelete(true)}
+              title="Delete workspace"
+              disabled={submitting}
+            >
+              <Trash2 size={15} strokeWidth={1.75} />
+            </button>
+          )}
           <button className="icon-btn" onClick={close} title="Close (Esc)">×</button>
         </div>
         <div className="np-body">
@@ -170,6 +193,34 @@ export function WorkspaceModal({ workspace }: Props) {
             </button>
           </div>
         </div>
+        {confirmingDelete && workspace && (
+          <ConfirmDelete
+            title="Delete workspace?"
+            confirmName={workspace.title}
+            confirmLabel="Delete workspace"
+            body={
+              <p>
+                <strong>{workspace.title}</strong> will be deleted along with every project,
+                task, subtask, time block, and member assignment inside it. This can't be undone.
+              </p>
+            }
+            onCancel={() => setConfirmingDelete(false)}
+            onConfirm={async () => {
+              setConfirmingDelete(false);
+              setSubmitting(true);
+              setError(null);
+              try {
+                await deleteWorkspace(workspace.id);
+                close();
+              } catch (e) {
+                const msg = e instanceof Error ? e.message : 'Failed to delete workspace';
+                setError(msg);
+                showToast(msg);
+                setSubmitting(false);
+              }
+            }}
+          />
+        )}
       </div>
     </div>
   );

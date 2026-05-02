@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Check, Copy, Pencil, Plus, X } from 'lucide-react';
+import { Check, Copy, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { useFira } from '../store';
+import { ConfirmDelete } from './ConfirmDelete';
 import {
   fmtMin, fmtClockShort, parseEstimate,
   taskCompletedMin, taskPlannedMin, taskTimeLeft,
@@ -31,6 +32,8 @@ export function TaskModal({ taskId }: Props) {
   const setTaskExternalId = useFira((s) => s.setTaskExternalId);
   const setTaskExternalUrl = useFira((s) => s.setTaskExternalUrl);
   const setTaskAssignee = useFira((s) => s.setTaskAssignee);
+  const deleteTask = useFira((s) => s.deleteTask);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   if (!task || !project) return null;
 
@@ -65,6 +68,13 @@ export function TaskModal({ taskId }: Props) {
           <span style={{ width: 10, height: 10, background: project.color, display: 'inline-block' }} />
           <span className="ext">{project.title}</span>
           <span className="grow" />
+          <button
+            className="icon-btn modal-head-danger"
+            onClick={() => setConfirmingDelete(true)}
+            title="Delete task"
+          >
+            <Trash2 size={15} strokeWidth={1.75} />
+          </button>
           <button className="icon-btn" onClick={() => close(null)} title="Close (Esc)">×</button>
         </div>
         <div className="modal-body">
@@ -209,6 +219,22 @@ export function TaskModal({ taskId }: Props) {
             <Field label="Section" mono value={task.section} />
           </div>
         </div>
+        {confirmingDelete && (
+          <ConfirmDelete
+            title="Delete task?"
+            body={
+              <p>
+                <strong>{task.title}</strong> and all its subtasks and time blocks will be removed. This can't be undone.
+              </p>
+            }
+            onCancel={() => setConfirmingDelete(false)}
+            onConfirm={() => {
+              setConfirmingDelete(false);
+              deleteTask(task.id);
+              close(null);
+            }}
+          />
+        )}
       </div>
     </div>
   );
@@ -424,7 +450,7 @@ function SubtaskList({
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
       {task.subtasks.map((s) => (
         <SubtaskRow
           key={s.id}
@@ -921,3 +947,4 @@ function Field({ label, value, mono }: { label: string; value: React.ReactNode; 
     </div>
   );
 }
+

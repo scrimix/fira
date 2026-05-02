@@ -7,8 +7,8 @@ import type { Bootstrap, User, Workspace, WorkspaceRole } from './types';
 const BASE = '/api';
 
 export class HttpError extends Error {
-  constructor(public status: number, public path: string) {
-    super(`${path} -> ${status}`);
+  constructor(public status: number, public path: string, body?: string) {
+    super(body && body.length > 0 ? body : `${path} -> ${status}`);
   }
 }
 
@@ -30,7 +30,22 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
     headers,
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
-  if (!res.ok) throw new HttpError(res.status, path);
+  if (!res.ok) {
+    // Server error envelope is `{ "error": "..." }`. Fall back to the raw
+    // text if it's not JSON, so dev/proxy errors aren't swallowed silently.
+    let msg: string | undefined;
+    try {
+      const body = await res.text();
+      try {
+        const parsed = JSON.parse(body) as { error?: unknown };
+        if (parsed && typeof parsed.error === 'string') msg = parsed.error;
+        else if (body.length > 0) msg = body;
+      } catch {
+        if (body.length > 0) msg = body;
+      }
+    } catch { /* body read failed; fall through to default message */ }
+    throw new HttpError(res.status, path, msg);
+  }
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
 }
@@ -75,6 +90,7 @@ export const api = {
     id: string,
     members: { user_id: string; role: import('./types').ProjectRole }[],
   ) => req<import('./types').Project>('PUT', `/projects/${id}/members`, { members }),
+  deleteProject: (id: string) => req<void>('DELETE', `/projects/${id}`),
   listMyWorkspaces: () => req<Workspace[]>('GET', '/workspaces'),
   createWorkspace: (title: string) =>
     req<Workspace>('POST', '/workspaces', { title }),
@@ -86,6 +102,7 @@ export const api = {
   ) => req<Workspace>('PUT', `/workspaces/${id}/members`, { members }),
   setWorkspaceMemberRole: (id: string, userId: string, role: WorkspaceRole) =>
     req<Workspace>('PATCH', `/workspaces/${id}/members/${userId}`, { role }),
+  deleteWorkspace: (id: string) => req<void>('DELETE', `/workspaces/${id}`),
   listWorkspaceUsers: (id: string) =>
     req<User[]>('GET', `/workspaces/${id}/users`),
   /// Owner-only: every user in the system, including ones not yet in any

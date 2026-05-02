@@ -197,6 +197,40 @@ struct MemberSpec {
 // (`project.set_members`) — separate from visual edits — so clients can
 // apply the two concerns independently and ex-members can drop the project
 // from local state on receiving the removal op.
+/// Workspace-owner-only: hard-delete a project and everything under it.
+/// Project leads can edit but not delete — destruction stays with the
+/// workspace owner so a single rogue lead can't wipe data.
+async fn delete_project(
+    State(s): State<AppState>,
+    ctx: AuthCtx,
+    Path(id): Path<uuid::Uuid>,
+) -> Result<StatusCode, error::ApiError> {
+    let info = db::project_owner_and_workspace(&s.pool, id)
+        .await?
+        .ok_or(error::ApiError::NotFound)?;
+    if info.0 != ctx.workspace_id {
+        return Err(error::ApiError::NotFound);
+    }
+    if !ctx.is_owner() {
+        return Err(error::ApiError::BadRequest(
+            "only workspace owners can delete projects".into(),
+        ));
+    }
+    let mut tx = s.pool.begin().await?;
+    let deleted = db::delete_project_tx(&mut tx, id).await?;
+    if !deleted {
+        return Err(error::ApiError::NotFound);
+    }
+    // record_workspace_op (project_id = NULL) so the op routes to every
+    // workspace member, not just members of a project that no longer
+    // exists. Migration 0010 made processed_ops durable, so this row
+    // survives the cascade triggered by the project delete above.
+    let payload = serde_json::json!({ "kind": "project.delete", "project_id": id });
+    ops::record_workspace_op(&mut tx, ctx.user.id, "project.delete", payload, ctx.workspace_id).await?;
+    tx.commit().await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 async fn set_project_members(
     State(s): State<AppState>,
     ctx: AuthCtx,
@@ -351,17 +385,18 @@ async fn main() -> anyhow::Result<()> {
         .route("/auth/logout", post(auth::logout))
         .route("/bootstrap", get(bootstrap))
         .route("/projects", get(projects).post(create_project))
-        .route("/projects/:id", patch(update_project))
+        .route("/projects/:id", patch(update_project).delete(delete_project))
         .route("/projects/:id/members", put(set_project_members))
         .route("/workspaces", get(workspaces::list_my).post(workspaces::create))
-        .route("/workspaces/:id", patch(workspaces::rename))
+        .route("/workspaces/:id", patch(workspaces::rename).delete(workspaces::delete))
         .route("/workspaces/:id/members", put(workspaces::set_members))
         .route("/workspaces/:id/members/:user_id", patch(workspaces::set_member_role))
         .route("/workspaces/:id/users", get(workspaces::list_users))
         .route("/workspaces/:id/all-users", get(workspaces::list_all_users))
         .route("/ops", post(ops::post_ops))
         .route("/changes", get(ops::get_changes))
-        .route("/ws", get(ws::ws_handler));
+        .route("/ws", get(ws::ws_handler))
+        .route("/ws/user", get(ws::user_ws_handler));
 
     #[cfg(feature = "dev_auth")]
     let api = api

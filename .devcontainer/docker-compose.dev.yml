@@ -13,7 +13,7 @@ services:
     # so the editor session and shells run as the unprivileged user.
     entrypoint: /workspace/.devcontainer/entrypoint.sh
     ports:
-      - "5174:5173"
+      - "5173:5173"
     volumes:
       - ./:/workspace:cached
       - dev-cargo-cache:/home/vscode/.cargo/registry

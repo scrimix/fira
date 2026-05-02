@@ -61,6 +61,8 @@ pub enum Op {
     TaskSetExternalUrl { task_id: Uuid, external_url: Option<String> },
     #[serde(rename = "task.reorder")]
     TaskReorder { project_id: Uuid, ordered: Vec<Uuid> },
+    #[serde(rename = "task.delete")]
+    TaskDelete { task_id: Uuid },
     #[serde(rename = "subtask.create")]
     SubtaskCreate { subtask: SubtaskInput },
     #[serde(rename = "subtask.tick")]
@@ -93,6 +95,7 @@ impl Op {
             Op::TaskSetExternalId { .. } => "task.set_external_id",
             Op::TaskSetExternalUrl { .. } => "task.set_external_url",
             Op::TaskReorder { .. } => "task.reorder",
+            Op::TaskDelete { .. } => "task.delete",
             Op::SubtaskCreate { .. } => "subtask.create",
             Op::SubtaskTick { .. } => "subtask.tick",
             Op::SubtaskSetTitle { .. } => "subtask.set_title",
@@ -364,6 +367,12 @@ async fn apply_payload(
                 .bind(task_id).bind(&sort_key).bind(project_id)
                 .execute(&mut **tx).await?;
             }
+        }
+        Op::TaskDelete { task_id } => {
+            *out_project_id = Some(ensure_task_in_scope(tx, user_id, workspace_id, task_id).await?);
+            // subtasks + time_blocks cascade via FK ON DELETE CASCADE.
+            sqlx::query("DELETE FROM tasks WHERE id = $1")
+                .bind(task_id).execute(&mut **tx).await?;
         }
         Op::SubtaskCreate { subtask } => {
             *out_project_id = Some(ensure_task_in_scope(tx, user_id, workspace_id, subtask.task_id).await?);

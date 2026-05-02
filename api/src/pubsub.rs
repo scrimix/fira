@@ -21,12 +21,21 @@ use std::time::Duration;
 use tokio::sync::broadcast;
 use uuid::Uuid;
 
-const CHANNEL: &str = "ops_changes";
+// Two independent channels:
+//   - ops_changes: workspace-scoped change-feed nudges (carries new seq).
+//     Subscribers are gated by workspace membership.
+//   - user_changes: user-scoped opaque "your workspace surface changed"
+//     nudges. Subscribers are gated by session only — used for membership /
+//     role / workspace-list events that themselves *decide* membership and
+//     therefore can't ride the workspace-scoped feed (chicken/egg).
+const OPS_CHANNEL: &str = "ops_changes";
+const USER_CHANNEL: &str = "user_changes";
 const BUFFER: usize = 64;
 
 #[derive(Default)]
 pub struct Hub {
     chans: Mutex<HashMap<Uuid, broadcast::Sender<i64>>>,
+    users: Mutex<HashMap<Uuid, broadcast::Sender<()>>>,
 }
 
 impl Hub {
@@ -44,8 +53,19 @@ impl Hub {
             .clone()
     }
 
+    fn user_sender(&self, user_id: Uuid) -> broadcast::Sender<()> {
+        let mut g = self.users.lock().unwrap();
+        g.entry(user_id)
+            .or_insert_with(|| broadcast::channel(BUFFER).0)
+            .clone()
+    }
+
     pub fn subscribe(&self, ws: Uuid) -> broadcast::Receiver<i64> {
         self.sender(ws).subscribe()
+    }
+
+    pub fn subscribe_user(&self, user_id: Uuid) -> broadcast::Receiver<()> {
+        self.user_sender(user_id).subscribe()
     }
 
     /// Local fan-out. Called from the listener task; never call this from the
@@ -54,6 +74,23 @@ impl Hub {
         // send() Err only when no receivers — that's normal (no clients
         // connected for this workspace right now), drop silently.
         let _ = self.sender(ws).send(seq);
+    }
+
+    fn dispatch_user(&self, user_id: Uuid) {
+        let _ = self.user_sender(user_id).send(());
+    }
+
+    /// Cross-instance user nudge. Emit this from any handler that mutates a
+    /// user's workspace surface (membership added/removed, role changed,
+    /// workspace renamed/deleted). The opaque signal tells the client to
+    /// refetch listMyWorkspaces and reconcile.
+    pub async fn notify_user(&self, pool: &PgPool, user_id: Uuid) -> sqlx::Result<()> {
+        sqlx::query("SELECT pg_notify($1, $2)")
+            .bind(USER_CHANNEL)
+            .bind(user_id.to_string())
+            .execute(pool)
+            .await?;
+        Ok(())
     }
 }
 
@@ -76,26 +113,33 @@ pub fn start_listener_task(pool: PgPool, hub: Arc<Hub>) {
 
 async fn listen_loop(pool: &PgPool, hub: &Hub) -> anyhow::Result<()> {
     let mut listener = PgListener::connect_with(pool).await?;
-    listener.listen(CHANNEL).await?;
-    tracing::info!("pg listener subscribed to {CHANNEL}");
+    listener.listen(OPS_CHANNEL).await?;
+    listener.listen(USER_CHANNEL).await?;
+    tracing::info!("pg listener subscribed to {OPS_CHANNEL}, {USER_CHANNEL}");
     loop {
         let n = listener.recv().await?;
-        let payload = n.payload();
-        match parse_payload(payload) {
-            Some((ws, seq)) => hub.dispatch(ws, seq),
-            None => tracing::warn!("malformed ops_changes payload: {payload:?}"),
+        match n.channel() {
+            OPS_CHANNEL => match parse_ops_payload(n.payload()) {
+                Some((ws, seq)) => hub.dispatch(ws, seq),
+                None => tracing::warn!("malformed ops_changes payload: {:?}", n.payload()),
+            },
+            USER_CHANNEL => match Uuid::parse_str(n.payload()) {
+                Ok(uid) => hub.dispatch_user(uid),
+                Err(_) => tracing::warn!("malformed user_changes payload: {:?}", n.payload()),
+            },
+            other => tracing::warn!("unexpected listen channel {other}"),
         }
     }
 }
 
-fn parse_payload(s: &str) -> Option<(Uuid, i64)> {
+fn parse_ops_payload(s: &str) -> Option<(Uuid, i64)> {
     let (ws_str, seq_str) = s.split_once(':')?;
     let ws = Uuid::parse_str(ws_str).ok()?;
     let seq = seq_str.parse::<i64>().ok()?;
     Some((ws, seq))
 }
 
-/// Build the payload format the listener expects. Kept here so the write
+/// Build the payload format the ops listener expects. Kept here so the write
 /// path and the parser stay in lockstep.
 pub fn format_payload(ws: Uuid, seq: i64) -> String {
     format!("{ws}:{seq}")

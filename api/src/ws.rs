@@ -34,6 +34,63 @@ struct Nudge {
     new_cursor: i64,
 }
 
+#[derive(Debug, Serialize)]
+struct UserNudge {
+    user_changed: bool,
+}
+
+/// User-channel socket. One per signed-in user, regardless of which
+/// workspace they're viewing — carries opaque "your workspace surface
+/// changed" nudges so the client refetches listMyWorkspaces and reconciles.
+/// Auth is session-only (no workspace gate); without this, membership
+/// changes that *grant* access would have nowhere to be delivered to a
+/// not-yet-member.
+pub async fn user_ws_handler(
+    State(s): State<AppState>,
+    jar: CookieJar,
+    upgrade: WebSocketUpgrade,
+) -> axum::response::Response {
+    let sid = match jar.get("sid") {
+        Some(c) => c.value().to_string(),
+        None => return axum::http::StatusCode::UNAUTHORIZED.into_response(),
+    };
+    let user = match load_session_user(&s.pool, &sid).await {
+        Ok(Some(u)) => u,
+        _ => return axum::http::StatusCode::UNAUTHORIZED.into_response(),
+    };
+    let rx = s.hub.subscribe_user(user.id);
+    upgrade.on_upgrade(move |socket| pump_user(socket, rx))
+}
+
+async fn pump_user(socket: WebSocket, mut rx: tokio::sync::broadcast::Receiver<()>) {
+    let (mut tx, mut rx_socket) = socket.split();
+    let mut ping_interval = tokio::time::interval(Duration::from_secs(30));
+    loop {
+        tokio::select! {
+            res = rx.recv() => {
+                match res {
+                    Ok(()) => {
+                        let body = serde_json::to_string(&UserNudge { user_changed: true }).unwrap();
+                        if tx.send(Message::Text(body)).await.is_err() { break; }
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                }
+            }
+            _ = ping_interval.tick() => {
+                if tx.send(Message::Ping(Vec::new())).await.is_err() { break; }
+            }
+            msg = rx_socket.next() => {
+                match msg {
+                    Some(Ok(Message::Close(_))) | None => break,
+                    Some(Err(_)) => break,
+                    _ => {}
+                }
+            }
+        }
+    }
+}
+
 pub async fn ws_handler(
     State(s): State<AppState>,
     Query(q): Query<WsQuery>,

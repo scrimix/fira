@@ -24,6 +24,7 @@ export type OpKind =
   | { kind: 'task.set_description'; task_id: string; description_md: string }
   | { kind: 'task.set_external_id'; task_id: string; external_id: string | null }
   | { kind: 'task.set_external_url'; task_id: string; external_url: string | null }
+  | { kind: 'task.delete'; task_id: string }
   | { kind: 'subtask.create'; subtask: import('../types').Subtask }
   | { kind: 'subtask.tick'; subtask_id: string; done: boolean }
   | { kind: 'subtask.set_title'; subtask_id: string; title: string }
@@ -38,7 +39,8 @@ export type OpKind =
 export type RemoteOnlyOpKind =
   | { kind: 'project.create'; project: import('../types').Project }
   | { kind: 'project.update'; project: import('../types').Project }
-  | { kind: 'project.set_members'; project_id: string; members: import('../types').ProjectMember[] };
+  | { kind: 'project.set_members'; project_id: string; members: import('../types').ProjectMember[] }
+  | { kind: 'project.delete'; project_id: string };
 
 export type AnyOpKind = OpKind | RemoteOnlyOpKind;
 
@@ -56,13 +58,19 @@ export interface Op {
   created_at: string;
   status: 'queued' | 'syncing' | 'synced' | 'error';
   payload: OpKind;
+  // Ordered list of ops that, when applied via applyOpToState, undo the
+  // local effect of `payload`. Computed at push time from pre-mutation
+  // state so each op carries its own snapshot. Discard applies these in
+  // order so local state stays consistent with what the server has.
+  inverse?: OpKind[];
 }
 
-export function newOp(payload: OpKind): Op {
+export function newOp(payload: OpKind, inverse?: OpKind[]): Op {
   return {
     op_id: crypto.randomUUID(),
     created_at: new Date().toISOString(),
     status: 'queued',
     payload,
+    inverse,
   };
 }

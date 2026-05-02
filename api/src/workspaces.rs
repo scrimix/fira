@@ -50,6 +50,9 @@ pub async fn create(
     let mut tx = s.pool.begin().await?;
     let ws = db::create_workspace_tx(&mut tx, user.id, title, false).await?;
     tx.commit().await?;
+    // Nudge the creator's other devices/sockets so their workspace list
+    // shows the new workspace immediately.
+    let _ = s.hub.notify_user(&s.pool, user.id).await;
     Ok((StatusCode::CREATED, Json(ws)))
 }
 
@@ -78,7 +81,64 @@ pub async fn rename(
     let payload = serde_json::json!({ "kind": "workspace.update", "workspace": &ws });
     ops::record_workspace_op(&mut tx, ctx.user.id, "workspace.update", payload, id).await?;
     tx.commit().await?;
+    // Title appears in every member's workspace list — fan out a refetch.
+    for uid in active_member_ids(&s.pool, id).await.unwrap_or_default() {
+        let _ = s.hub.notify_user(&s.pool, uid).await;
+    }
     Ok(Json(ws))
+}
+
+/// Owner-only hard delete. Personal workspaces are off-limits — the
+/// `is_personal` row is the user's permanent home for unsynced work.
+///
+/// Cascade handles the entity tree. There is no synthesized
+/// `workspace.delete` op on the workspace's change feed: that feed scopes
+/// by `workspace_role`, which is gone the instant the cascade fires. We
+/// notify (former) members via the per-user channel (pubsub::Hub::notify_user)
+/// so their clients refetch listMyWorkspaces and reconcile.
+pub async fn delete(
+    State(s): State<AppState>,
+    ctx: AuthCtx,
+    Path(id): Path<Uuid>,
+) -> Result<StatusCode, ApiError> {
+    if ctx.workspace_id != id || !ctx.is_owner() {
+        return Err(ApiError::BadRequest("only workspace owners can delete".into()));
+    }
+    let row: Option<(bool,)> = sqlx::query_as("SELECT is_personal FROM workspaces WHERE id = $1")
+        .bind(id)
+        .fetch_optional(&s.pool)
+        .await?;
+    let (is_personal,) = row.ok_or(ApiError::NotFound)?;
+    if is_personal {
+        return Err(ApiError::BadRequest(
+            "personal workspaces can't be deleted".into(),
+        ));
+    }
+    let member_ids = active_member_ids(&s.pool, id).await?;
+    let mut tx = s.pool.begin().await?;
+    let deleted = db::delete_workspace_tx(&mut tx, id).await?;
+    if !deleted {
+        return Err(ApiError::NotFound);
+    }
+    tx.commit().await?;
+    for uid in member_ids {
+        let _ = s.hub.notify_user(&s.pool, uid).await;
+    }
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn active_member_ids(
+    pool: &sqlx::PgPool,
+    workspace_id: Uuid,
+) -> sqlx::Result<Vec<Uuid>> {
+    let rows: Vec<(Uuid,)> = sqlx::query_as(
+        "SELECT user_id FROM workspace_members
+         WHERE workspace_id = $1 AND removed_at IS NULL",
+    )
+    .bind(workspace_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(|(u,)| u).collect())
 }
 
 #[derive(Deserialize)]
@@ -105,6 +165,8 @@ pub async fn set_members(
         validate_role(&m.role)?;
     }
     let desired: Vec<(Uuid, String)> = body.members.iter().map(|m| (m.user_id, m.role.clone())).collect();
+    // Snapshot pre-mutation membership so removed users still get nudged.
+    let pre = active_member_ids(&s.pool, id).await.unwrap_or_default();
     let mut tx = s.pool.begin().await?;
     let ws = db::set_workspace_members_tx(&mut tx, id, ctx.user.id, &desired)
         .await?
@@ -116,6 +178,14 @@ pub async fn set_members(
     });
     ops::record_workspace_op(&mut tx, ctx.user.id, "workspace.set_members", payload, id).await?;
     tx.commit().await?;
+    // pre ∪ post: covers added (post-only), removed (pre-only), and
+    // retained (both) — all need a refetch because someone's row in the
+    // member list changed.
+    let mut targets: std::collections::BTreeSet<Uuid> = pre.into_iter().collect();
+    for m in &ws.members { targets.insert(m.user_id); }
+    for uid in targets {
+        let _ = s.hub.notify_user(&s.pool, uid).await;
+    }
     Ok(Json(ws))
 }
 
@@ -146,6 +216,10 @@ pub async fn set_member_role(
     });
     ops::record_workspace_op(&mut tx, ctx.user.id, "workspace.set_member_role", payload, id).await?;
     tx.commit().await?;
+    // Role appears in every member's view of the member list.
+    for uid in active_member_ids(&s.pool, id).await.unwrap_or_default() {
+        let _ = s.hub.notify_user(&s.pool, uid).await;
+    }
     Ok(Json(ws))
 }
 

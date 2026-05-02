@@ -903,3 +903,60 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
 .select-option:disabled { color: var(--ink-4); cursor: not-allowed; }
 .select-option-label { font-size: calc(12px * var(--fs-scale)); }
 .select-option-hint { font-size: calc(10px * var(--fs-scale)); color: var(--ink-4); }
+
+.toasts {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 100;
+  pointer-events: none;
+}
+.toast {
+  pointer-events: auto;
+  max-width: 360px;
+  padding: 10px 8px 10px 14px;
+  font-size: var(--fs-sm);
+  line-height: 1.4;
+  border: 1px solid var(--rule-2);
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: 0 4px 12px rgba(24, 24, 27, 0.12);
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.toast[data-kind="error"] {
+  border-color: var(--danger);
+  color: var(--danger);
+  background: color-mix(in oklab, var(--paper) 92%, var(--danger));
+}
+.toast-msg {
+  flex: 1;
+  min-width: 0;
+  word-break: break-word;
+}
+.toast-x {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  color: inherit;
+  opacity: 0.65;
+  padding: 0;
+  margin-top: -1px;
+}
+.toast-x:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.08);
+}
+.toast[data-kind="error"] .toast-x:hover {
+  background: color-mix(in oklab, var(--danger) 18%, transparent);
+}

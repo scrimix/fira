@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useFira } from './store';
-import { openNudgeSocket } from './ws';
+import { openNudgeSocket, openUserSocket } from './ws';
 import { Sidebar } from './components/Sidebar';
 import { TopBar } from './components/TopBar';
 import { CalendarView } from './components/CalendarView';
@@ -10,6 +10,7 @@ import { TaskModalDraft } from './components/TaskModalDraft';
 import { ProjectModal } from './components/ProjectModal';
 import { WorkspaceModal } from './components/WorkspaceModal';
 import { Login } from './components/Login';
+import { Toasts } from './components/Toasts';
 
 export default function App() {
   const authChecked = useFira((s) => s.authChecked);
@@ -23,6 +24,7 @@ export default function App() {
   const workspaceModal = useFira((s) => s.workspaceModal);
   const syncOutbox = useFira((s) => s.syncOutbox);
   const pollChanges = useFira((s) => s.pollChanges);
+  const reloadWorkspaces = useFira((s) => s.reloadWorkspaces);
   const editingProject = useFira((s) => {
     const m = s.projectModal;
     return m?.kind === 'edit' ? s.projects.find((p) => p.id === m.id) ?? null : null;
@@ -74,6 +76,15 @@ export default function App() {
     });
     return () => handle.close();
   }, [activeWorkspaceId, syncOutbox, pollChanges, playgroundMode]);
+
+  // User-channel socket: opaque "your workspace surface changed" nudges.
+  // Independent of which workspace is active, because the events that
+  // *grant* membership can't ride the workspace-scoped feed (chicken/egg).
+  useEffect(() => {
+    if (!meId || playgroundMode) return;
+    const handle = openUserSocket(() => { void reloadWorkspaces(); });
+    return () => handle.close();
+  }, [meId, playgroundMode, reloadWorkspaces]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -141,6 +152,7 @@ export default function App() {
       {workspaceModal?.kind === 'edit' && editingWorkspace && (
         <WorkspaceModal key={editingWorkspace.id} workspace={editingWorkspace} />
       )}
+      <Toasts />
     </div>
   );
 }

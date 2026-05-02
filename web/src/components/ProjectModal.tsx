@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Plus } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
 import { useFira } from '../store';
 import { PROJECT_ICONS, DEFAULT_ICON, ProjectIcon } from './ProjectIcon';
 import { Select } from './Select';
+import { ConfirmDelete } from './ConfirmDelete';
 import type { Project, ProjectMember, ProjectRole, UUID } from '../types';
 
 // Editorial-utilitarian palette. All Tailwind ~700 shades so each chip sits
@@ -30,6 +31,8 @@ export function ProjectModal({ project }: Props) {
   const addProject = useFira((s) => s.addProject);
   const updateProject = useFira((s) => s.updateProject);
   const setProjectMembers = useFira((s) => s.setProjectMembers);
+  const deleteProject = useFira((s) => s.deleteProject);
+  const showToast = useFira((s) => s.showToast);
   const loadAllUsers = useFira((s) => s.loadAllUsers);
   const allUsers = useFira((s) => s.users);
   const meId = useFira((s) => s.meId);
@@ -54,6 +57,9 @@ export function ProjectModal({ project }: Props) {
   const [armedRemove, setArmedRemove] = useState<UUID | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  // Workspace owners only — leads can edit, but deletion is owner-gated.
+  const canDelete = isEdit && canEditRoles;
 
   useEffect(() => {
     if (isEdit) loadAllUsers().catch(() => { /* non-fatal */ });
@@ -109,7 +115,9 @@ export function ProjectModal({ project }: Props) {
         await addProject({ title: trimmed, icon, color });
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to save project');
+      const msg = e instanceof Error ? e.message : 'Failed to save project';
+      setError(msg);
+      showToast(msg);
       setSubmitting(false);
     }
   };
@@ -123,6 +131,16 @@ export function ProjectModal({ project }: Props) {
           </span>
           <span className="ext">{trimmed || (isEdit ? project!.title : 'New project')}</span>
           <span className="grow" />
+          {canDelete && (
+            <button
+              className="icon-btn modal-head-danger"
+              onClick={() => setConfirmingDelete(true)}
+              title="Delete project"
+              disabled={submitting}
+            >
+              <Trash2 size={15} strokeWidth={1.75} />
+            </button>
+          )}
           <button className="icon-btn" onClick={close} title="Close (Esc)">×</button>
         </div>
         <div className="np-body">
@@ -236,6 +254,34 @@ export function ProjectModal({ project }: Props) {
             </button>
           </div>
         </div>
+        {confirmingDelete && project && (
+          <ConfirmDelete
+            title="Delete project?"
+            confirmName={project.title}
+            confirmLabel="Delete project"
+            body={
+              <p>
+                <strong>{project.title}</strong> will be deleted along with every task, subtask,
+                epic, sprint, and time block it contains. This can't be undone.
+              </p>
+            }
+            onCancel={() => setConfirmingDelete(false)}
+            onConfirm={async () => {
+              setConfirmingDelete(false);
+              setSubmitting(true);
+              setError(null);
+              try {
+                await deleteProject(project.id);
+                close();
+              } catch (e) {
+                const msg = e instanceof Error ? e.message : 'Failed to delete project';
+                setError(msg);
+                showToast(msg);
+                setSubmitting(false);
+              }
+            }}
+          />
+        )}
       </div>
     </div>
   );

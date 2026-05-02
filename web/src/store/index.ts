@@ -40,6 +40,13 @@ interface InboxFilter {
   assignee_id: UUID | 'all' | null;
 }
 
+export type ToastKind = 'error' | 'info';
+export interface Toast {
+  id: string;
+  kind: ToastKind;
+  message: string;
+}
+
 interface FiraState {
   // Tri-state: null = haven't checked yet, false = anonymous, true = authed.
   // The login screen renders only when this is exactly false.
@@ -94,11 +101,18 @@ interface FiraState {
   creatingDraft: { project_id: UUID | null; section: 'now' | 'later'; assignee_id: UUID | null } | null;
   // Discriminated union — one modal serves both create and edit. null = closed.
   projectModal: { kind: 'new' } | { kind: 'edit'; id: UUID } | null;
+  // Transient notifications. Auto-dismissed after a few seconds; the user
+  // can also click to dismiss. Mostly used for surfacing API errors that
+  // happen outside the request flow of an open modal.
+  toasts: Toast[];
 
   hydrate: () => Promise<void>;
   enterPlayground: () => void;
   logout: () => Promise<void>;
   switchWorkspace: (id: UUID) => Promise<void>;
+  // Pull listMyWorkspaces and reconcile against local state. Called on a
+  // user-channel WS nudge after any membership/role/title/delete change.
+  reloadWorkspaces: () => Promise<void>;
   createWorkspace: (title: string) => Promise<Workspace>;
   renameWorkspace: (id: UUID, title: string) => Promise<Workspace>;
   setWorkspaceMembers: (
@@ -106,6 +120,7 @@ interface FiraState {
     members: { user_id: UUID; role: WorkspaceRole }[],
   ) => Promise<Workspace>;
   setWorkspaceMemberRole: (id: UUID, userId: UUID, role: WorkspaceRole) => Promise<Workspace>;
+  deleteWorkspace: (id: UUID) => Promise<void>;
   loadWorkspaceUsers: (id: UUID) => Promise<void>;
   openCreateWorkspace: () => void;
   openEditWorkspace: (id: UUID) => void;
@@ -143,6 +158,8 @@ interface FiraState {
   openCreateProject: () => void;
   openEditProject: (id: UUID) => void;
   closeProjectModal: () => void;
+  showToast: (message: string, kind?: ToastKind) => void;
+  dismissToast: (id: string) => void;
   addProject: (input: { title: string; icon: string; color: string }) => Promise<Project>;
   updateProject: (
     id: UUID,
@@ -160,6 +177,7 @@ interface FiraState {
     id: UUID,
     members: { user_id: UUID; role: import('../types').ProjectRole }[],
   ) => Promise<Project>;
+  deleteProject: (id: UUID) => Promise<void>;
   // Pulls the active workspace's directory and merges into `users` so the
   // project editor's Members picker can offer teammates the caller hasn't
   // worked with yet (bootstrap only includes workspace + project members).
@@ -177,6 +195,7 @@ interface FiraState {
   setTaskEstimate: (taskId: UUID, estimate_min: number | null) => void;
   setTaskExternalId: (taskId: UUID, external_id: string | null) => void;
   setTaskExternalUrl: (taskId: UUID, external_url: string | null) => void;
+  deleteTask: (taskId: UUID) => void;
   addSubtask: (taskId: UUID, title: string) => UUID | null;
   tickSubtask: (taskId: UUID, subId: UUID) => void;
   setSubtaskTitle: (taskId: UUID, subId: UUID, title: string) => void;
@@ -198,6 +217,17 @@ function pushOp(s: FiraState, payload: OpKind): {
   const next = new Map(s.appliedOpIds);
   next.set(op.op_id, Date.now());
   return { outbox: [...s.outbox, op], appliedOpIds: next };
+}
+
+// Called after the user resolves a failed op (discard / retry-success). If
+// the outbox is now empty, re-bootstrap so the local state matches what's
+// actually on the server. Discards leave behind local mutations the server
+// never saw — phantom tasks/edits — and a fresh /bootstrap is the cheapest
+// way to reset to ground truth.
+function resyncIfDrained(get: () => FiraState) {
+  if (get().outbox.length === 0) {
+    void get().hydrate();
+  }
 }
 
 // Older than this and we drop the entry — the change feed will have
@@ -246,6 +276,13 @@ function applyOpToState(s: FiraState, op: AnyOpKind): Partial<FiraState> {
           const k = newKeyById.get(t.id);
           return k != null ? { ...t, sort_key: k } : t;
         }),
+      };
+    }
+    case 'task.delete': {
+      return {
+        tasks: s.tasks.filter((t) => t.id !== op.task_id),
+        blocks: s.blocks.filter((b) => b.task_id !== op.task_id),
+        openTaskId: s.openTaskId === op.task_id ? null : s.openTaskId,
       };
     }
     case 'subtask.create': {
@@ -364,6 +401,31 @@ function applyOpToState(s: FiraState, op: AnyOpKind): Partial<FiraState> {
         ),
       };
     }
+    case 'project.delete': {
+      const droppedTaskIds = new Set(
+        s.tasks.filter((t) => t.project_id === op.project_id).map((t) => t.id),
+      );
+      const { [op.project_id]: _drop, ...remainingFilter } = s.projectFilter;
+      const nextProjects = s.projects.filter((p) => p.id !== op.project_id);
+      const inboxFilter = s.inboxFilter.project_id === op.project_id
+        ? { ...s.inboxFilter, project_id: nextProjects[0]?.id ?? null }
+        : s.inboxFilter;
+      return {
+        projects: nextProjects,
+        tasks: s.tasks.filter((t) => t.project_id !== op.project_id),
+        epics: s.epics.filter((e) => e.project_id !== op.project_id),
+        sprints: s.sprints.filter((sp) => sp.project_id !== op.project_id),
+        blocks: s.blocks.filter((b) => !droppedTaskIds.has(b.task_id)),
+        projectFilter: remainingFilter,
+        inboxFilter,
+        openTaskId: s.openTaskId && droppedTaskIds.has(s.openTaskId)
+          ? null
+          : s.openTaskId,
+        projectModal: s.projectModal && s.projectModal.kind === 'edit' && s.projectModal.id === op.project_id
+          ? null
+          : s.projectModal,
+      };
+    }
     default:
       return {};
   }
@@ -464,6 +526,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
   weekOffset: 0,
   creatingDraft: null,
   projectModal: null,
+  toasts: [],
   projectFilter: {},
   inboxFilter: {
     project_id: null,
@@ -607,6 +670,32 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     }));
   },
 
+  reloadWorkspaces: async () => {
+    if (get().playgroundMode) return;
+    const fresh = await api.listMyWorkspaces();
+    const meId = get().meId;
+    const activeId = get().activeWorkspaceId;
+    const stillActive = activeId != null && fresh.some((w) => w.id === activeId);
+    if (activeId != null && !stillActive) {
+      // The active workspace is no longer in our list (deleted or we got
+      // removed). Bounce to a fallback before any further reads fail.
+      const fallback = fresh.find((w) => w.is_personal) ?? fresh[0];
+      if (fallback) {
+        // Pre-set workspaces so switchWorkspace can find the fallback row.
+        set({ workspaces: fresh });
+        await get().switchWorkspace(fallback.id);
+        return;
+      }
+    }
+    set((s) => {
+      const active = stillActive ? fresh.find((w) => w.id === activeId) ?? null : null;
+      const role: WorkspaceRole | null = active && meId
+        ? ((active.members.find((m) => m.user_id === meId)?.role ?? 'member') as WorkspaceRole)
+        : s.myWorkspaceRole;
+      return { workspaces: fresh, myWorkspaceRole: role };
+    });
+  },
+
   createWorkspace: async (title) => {
     const playground = get().playgroundMode;
     const meId = get().meId;
@@ -647,6 +736,40 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
         : s.myWorkspaceRole,
     }));
     return ws;
+  },
+
+  deleteWorkspace: async (id) => {
+    const { playgroundMode, workspaces, activeWorkspaceId } = get();
+    const target = workspaces.find((w) => w.id === id);
+    if (!target) return;
+    if (target.is_personal) {
+      throw new Error("Personal workspaces can't be deleted.");
+    }
+    // Pick the fallback up front so we know we have somewhere to land, but
+    // do NOT switch yet — switchWorkspace flips the x-workspace-id header,
+    // and the server's delete handler requires that header to match the
+    // workspace being deleted (owner-of-this-workspace check).
+    const needsSwitch = activeWorkspaceId === id;
+    const fallback = needsSwitch
+      ? (workspaces.find((w) => w.id !== id && w.is_personal)
+        ?? workspaces.find((w) => w.id !== id))
+      : null;
+    if (needsSwitch && !fallback) {
+      throw new Error('No other workspace to switch to.');
+    }
+    if (!playgroundMode) await api.deleteWorkspace(id);
+    if (needsSwitch && fallback) {
+      await get().switchWorkspace(fallback.id);
+    }
+    // Local cleanup. Other clients learn about this through the user-channel
+    // WS nudge (see workspaces::delete on the server) and reconcile via
+    // reloadWorkspaces — there is no workspace-scoped op for this event.
+    set((s) => ({
+      workspaces: s.workspaces.filter((w) => w.id !== id),
+      workspaceModal: s.workspaceModal && s.workspaceModal.kind === 'edit' && s.workspaceModal.id === id
+        ? null
+        : s.workspaceModal,
+    }));
   },
 
   setWorkspaceMemberRole: async (id, userId, role) => {
@@ -708,9 +831,11 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
       }
       return;
     }
-    // Take the first batch of queued ops. Errored ops also re-enter this
-    // pool — the user (or the next interval tick) gets to retry them.
-    const batch = outbox.filter((o) => o.status !== 'syncing').slice(0, SYNC_BATCH_SIZE);
+    // Server-rejected ops block the queue: auto-sync stops until the user
+    // resolves them via the SyncPill (Retry / Discard). Network failures
+    // are different — that path puts ops back to 'queued' and keeps trying.
+    if (outbox.some((o) => o.status === 'error')) return;
+    const batch = outbox.filter((o) => o.status === 'queued').slice(0, SYNC_BATCH_SIZE);
     if (batch.length === 0) return;
 
     const batchIds = new Set(batch.map((o) => o.op_id));
@@ -742,8 +867,18 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
         set({
           syncStatus: { kind: 'error', message: firstError ?? 'sync error', failedOpIds: errored },
         });
+        // Surface the actual server message — the SyncPill counter alone
+        // doesn't tell the user *why* the op was rejected.
+        const fe: string = firstError ?? 'sync error';
+        const summary = errored.length > 1
+          ? `${errored.length} ops failed: ${fe}`
+          : `Sync failed: ${fe}`;
+        get().showToast(summary);
       } else {
         set({ syncStatus: { kind: 'idle' }, lastSyncedAt: Date.now() });
+        // If the user retried failed ops and they just succeeded, the
+        // queue is finally clean — same drain trigger as the discard path.
+        if (syncStatus.kind === 'error') resyncIfDrained(get);
       }
     } catch (e) {
       // Network / 5xx — put the batch back to 'queued' for the next tick.
@@ -772,28 +907,34 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     };
   }),
 
-  discardOp: (op_id) => set((s) => {
-    const remaining = s.outbox.filter((o) => o.op_id !== op_id);
-    const stillFailed = (s.syncStatus.kind === 'error'
-      ? s.syncStatus.failedOpIds.filter((x) => x !== op_id)
-      : []);
-    return {
-      outbox: remaining,
-      syncStatus: stillFailed.length > 0
-        ? { ...s.syncStatus as Extract<SyncStatus, { kind: 'error' }>, failedOpIds: stillFailed }
-        : { kind: 'idle' as const },
-    };
-  }),
+  discardOp: (op_id) => {
+    set((s) => {
+      const remaining = s.outbox.filter((o) => o.op_id !== op_id);
+      const stillFailed = (s.syncStatus.kind === 'error'
+        ? s.syncStatus.failedOpIds.filter((x) => x !== op_id)
+        : []);
+      return {
+        outbox: remaining,
+        syncStatus: stillFailed.length > 0
+          ? { ...s.syncStatus as Extract<SyncStatus, { kind: 'error' }>, failedOpIds: stillFailed }
+          : { kind: 'idle' as const },
+      };
+    });
+    resyncIfDrained(get);
+  },
 
   retryAllFailed: () => set((s) => ({
     outbox: s.outbox.map((o) => o.status === 'error' ? { ...o, status: 'queued' as const } : o),
     syncStatus: { kind: 'idle' as const },
   })),
 
-  discardAllFailed: () => set((s) => ({
-    outbox: s.outbox.filter((o) => o.status !== 'error'),
-    syncStatus: { kind: 'idle' as const },
-  })),
+  discardAllFailed: () => {
+    set((s) => ({
+      outbox: s.outbox.filter((o) => o.status !== 'error'),
+      syncStatus: { kind: 'idle' as const },
+    }));
+    resyncIfDrained(get);
+  },
 
   pollChanges: async () => {
     if (get().playgroundMode) return;
@@ -884,6 +1025,18 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
   openEditProject: (id) => set({ projectModal: { kind: 'edit', id } }),
   closeProjectModal: () => set({ projectModal: null }),
 
+  showToast: (message, kind = 'error') => {
+    const id = crypto.randomUUID();
+    set((s) => ({ toasts: [...s.toasts, { id, kind, message }] }));
+    // Auto-dismiss errors after 6s, info after 3s. Keep them clickable for
+    // immediate dismissal in the meantime (handled by the Toasts component).
+    const ttl = kind === 'error' ? 6000 : 3000;
+    window.setTimeout(() => {
+      set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }));
+    }, ttl);
+  },
+  dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
+
   addProject: async (input) => {
     // Project create is rare and deliberate — a synchronous round-trip is
     // fine and avoids the "appears in sidebar then vanishes on error" jank
@@ -948,6 +1101,14 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     return updated;
   },
 
+  deleteProject: async (id) => {
+    if (!get().playgroundMode) await api.deleteProject(id);
+    // applyOpToState handles the local cleanup symmetrically with the
+    // change-feed echo; we share the path so a remote delete does the
+    // same thing. projectModal close is handled in there too.
+    set((s) => applyOpToState(s, { kind: 'project.delete', project_id: id }));
+  },
+
   loadAllUsers: async () => {
     if (get().playgroundMode) return; // user list is fixed by the seed
     const ws = get().activeWorkspaceId;
@@ -990,7 +1151,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     };
     set((s) => ({
       tasks: [...s.tasks, newTask],
-      ...pushOp(s, { kind: 'task.create', task: newTask }),
+      ...pushOp(s, { kind: 'task.create1', task: newTask }),
     }));
     return newTask.id;
   },
@@ -1070,6 +1231,13 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
       ...pushOp(s, { kind: 'task.set_external_url', task_id: taskId, external_url: next }),
     }));
   },
+
+  deleteTask: (taskId) => set((s) => ({
+    tasks: s.tasks.filter((t) => t.id !== taskId),
+    blocks: s.blocks.filter((b) => b.task_id !== taskId),
+    openTaskId: s.openTaskId === taskId ? null : s.openTaskId,
+    ...pushOp(s, { kind: 'task.delete', task_id: taskId }),
+  })),
 
   addSubtask: (taskId, title) => {
     const trimmed = title.trim();

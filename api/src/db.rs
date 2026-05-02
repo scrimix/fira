@@ -185,6 +185,22 @@ pub async fn ensure_personal_workspace(
     Ok(ws.id)
 }
 
+/// Hard-delete a workspace. Cascades through projects → tasks/subtasks/
+/// blocks/epics/sprints/project_members and through workspace_members.
+/// processed_ops is decoupled by migration 0010; the per-user nudge channel
+/// (pubsub::Hub::notify_user) is what tells (former) members to refetch
+/// their workspace list, since the change-feed scope is now gone.
+pub async fn delete_workspace_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    workspace_id: Uuid,
+) -> sqlx::Result<bool> {
+    let res = sqlx::query("DELETE FROM workspaces WHERE id = $1")
+        .bind(workspace_id)
+        .execute(&mut **tx)
+        .await?;
+    Ok(res.rows_affected() > 0)
+}
+
 pub async fn rename_workspace_tx(
     tx: &mut Transaction<'_, Postgres>,
     workspace_id: Uuid,
@@ -570,6 +586,21 @@ pub async fn update_project_tx(
         external_url_template,
         members: members_rows.into_iter().map(|(u, r)| ProjectMember { user_id: u, role: r }).collect(),
     }))
+}
+
+/// Hard-delete a project. Tasks, subtasks, time_blocks, epics, sprints, and
+/// project_members all have ON DELETE CASCADE pointing at projects, so a
+/// single DELETE handles the entity tree. processed_ops is decoupled from
+/// the cascade by migration 0010 — log rows survive entity deletion.
+pub async fn delete_project_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    project_id: Uuid,
+) -> sqlx::Result<bool> {
+    let res = sqlx::query("DELETE FROM projects WHERE id = $1")
+        .bind(project_id)
+        .execute(&mut **tx)
+        .await?;
+    Ok(res.rows_affected() > 0)
 }
 
 /// Look up a project's workspace and its owner — used by handlers to
