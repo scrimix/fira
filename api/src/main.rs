@@ -334,7 +334,25 @@ async fn main() -> anyhow::Result<()> {
     // Combined with the background migration loop below, this lets /health
     // come up immediately so Fly's healthcheck succeeds even if Postgres is
     // briefly unreachable (cold start, restart, network blip).
-    let pool = PgPoolOptions::new().connect_lazy(&database_url)?;
+    //
+    // Resilience knobs are deliberate: stale connections silently dropped
+    // by the server or by a NAT/firewall on idle TCP surface as
+    // `expected to read N bytes, got 0 bytes at EOF` errors when sqlx
+    // tries to reuse them. test_before_acquire pings each connection
+    // before handing it out, max_lifetime recycles even healthy ones so
+    // we don't accumulate long-lived sockets, idle_timeout reaps unused
+    // connections aggressively (Postgres / Fly proxies tend to kill
+    // anything idle past 10 min), and acquire_timeout caps how long a
+    // request will wait for a connection before returning a clean
+    // error rather than hanging.
+    let pool = PgPoolOptions::new()
+        .max_connections(10)
+        .min_connections(1)
+        .max_lifetime(Duration::from_secs(30 * 60))
+        .idle_timeout(Duration::from_secs(5 * 60))
+        .acquire_timeout(Duration::from_secs(10))
+        .test_before_acquire(true)
+        .connect_lazy(&database_url)?;
     {
         let pool = pool.clone();
         tokio::spawn(async move {

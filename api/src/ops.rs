@@ -185,12 +185,42 @@ pub async fn post_ops(
         results.push(match res {
             Ok((op_id, _outcome)) => OpResult { op_id, status: "ok", error: None },
             Err((op_id, e)) => {
+                // Transient DB errors (stale pool connection killed by
+                // the server, pool timeout, network blip) used to surface
+                // as a per-op `status: "error"`, which the frontend
+                // treats as a permanent rejection — the user sees
+                // `block.update rejected` and has to manually retry.
+                // Bail out of the whole batch with 503 instead so the
+                // outbox catch path re-queues for the next tick. The
+                // partial work is safe to redo: the per-op idempotency
+                // check (`already_applied`) drops duplicates server-
+                // side. Genuine validation errors (BadRequest, etc.)
+                // still flow through as per-op status: "error".
+                if is_transient_db_error(&e) {
+                    tracing::warn!("op {op_id} transient DB error, returning 503: {e:#}");
+                    return Err(StatusCode::SERVICE_UNAVAILABLE);
+                }
                 tracing::warn!("op {op_id} failed: {e:#}");
                 OpResult { op_id, status: "error", error: Some(e.to_string()) }
             }
         });
     }
     Ok((StatusCode::OK, Json(OpsResponse { results })))
+}
+
+/// `true` for errors that mean "try again later, the data layer
+/// hiccuped" — connection-was-closed (`Io`), pool exhaustion, pool
+/// shutting down. Genuine business-logic / constraint-violation errors
+/// from `sqlx::Error::Database` are *not* transient — those should
+/// surface as per-op rejections so the user can resolve them.
+fn is_transient_db_error(e: &anyhow::Error) -> bool {
+    if let Some(sqlx_err) = e.downcast_ref::<sqlx::Error>() {
+        return matches!(
+            sqlx_err,
+            sqlx::Error::Io(_) | sqlx::Error::PoolTimedOut | sqlx::Error::PoolClosed,
+        );
+    }
+    false
 }
 
 enum ApplyOutcome {
