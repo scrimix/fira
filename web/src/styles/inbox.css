@@ -467,6 +467,13 @@
   margin-left: -6px;
   border-radius: 2px;
 }
+.modal-subtasks {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 6px;
+  margin-left: -6px;
+}
 .desc-md:hover { background: var(--paper-2); }
 .desc-md[data-empty="true"] { color: var(--ink-4); }
 .desc-md.desc-md-edit {
@@ -632,7 +639,7 @@
   user-select: none;
   flex-shrink: 0;
   padding: 0;
-  opacity: 0;
+  opacity: 0.5;
   transition: opacity 80ms ease;
 }
 .subtask:hover .subtask-grip { opacity: 1; }

@@ -450,7 +450,7 @@ function SubtaskList({
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+    <div className="modal-subtasks">
       {task.subtasks.map((s) => (
         <SubtaskRow
           key={s.id}
@@ -469,7 +469,10 @@ function SubtaskList({
           dropMark={dropAt?.id === s.id ? dropAt.pos : null}
         />
       ))}
-      <AddSubtaskRow onAdd={(title) => addSubtask(task.id, title)} />
+      <AddSubtaskRow
+        onAdd={(title) => addSubtask(task.id, title)}
+        bare={task.subtasks.length === 0}
+      />
     </div>
   );
 }
@@ -564,7 +567,7 @@ function SubtaskRow({
   );
 }
 
-function AddSubtaskRow({ onAdd }: { onAdd: (title: string) => void }) {
+function AddSubtaskRow({ onAdd, bare }: { onAdd: (title: string) => void; bare: boolean }) {
   const [value, setValue] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -576,12 +579,16 @@ function AddSubtaskRow({ onAdd }: { onAdd: (title: string) => void }) {
   };
 
   return (
-    <div className="subtask-add" data-editing="true"
+    <div className="subtask-add" data-editing="true" data-bare={bare || undefined}
          onClick={() => inputRef.current?.focus()}>
-      <span className="grip-spacer" aria-hidden="true" />
-      <span className="sc-spacer" aria-hidden="true">
-        <Plus size={11} strokeWidth={2} />
-      </span>
+      {!bare && (
+        <>
+          <span className="grip-spacer" aria-hidden="true" />
+          <span className="sc-spacer" aria-hidden="true">
+            <Plus size={11} strokeWidth={2} />
+          </span>
+        </>
+      )}
       <input
         ref={inputRef}
         className="subtask-add-input"
