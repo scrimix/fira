@@ -65,8 +65,15 @@ export function LinkAccountModal() {
         </p>
         <p className="np-hint">
           Linking lets each of you see the other's tasks and time blocks on the
-          calendar (read-only). You can unlink any time.
+          calendar (read-only).
         </p>
+        <div className="np-warn">
+          <span className="np-warn-tag">Privacy</span>
+          If you accept, the titles of every task you've scheduled time on
+          — across <strong>every workspace</strong>, not just the one
+          you're in now — become visible to {partner?.name ?? 'them'}.
+          They can read but not edit. You can unlink at any time.
+        </div>
         <div className="np-actions">
           <button
             className="btn"
@@ -172,10 +179,17 @@ function EmailInviteView({ submitting, onSend }: EmailInviteViewProps) {
   return (
     <form className="np-body" onSubmit={submit}>
       <p className="link-headline" style={{ marginTop: 0 }}>
-        Pair this account with another one of yours.
+        Pair this account with another one.
       </p>
-      <p className="np-hint" style={{ marginBottom: 12 }}>
-        Type the email of your other account. Once they accept, both of you
+      <div className="np-warn">
+        <span className="np-warn-tag">Privacy</span>
+        Linking shares the titles of every task you've scheduled time on,
+        across <strong>every workspace</strong> — not just this one. The
+        other side can read them but can't edit anything. Either of you
+        can unlink at any time.
+      </div>
+      <p className="np-hint" style={{ marginBottom: 10 }}>
+        Type the email of another account. Once they accept, both of you
         will see each other's tasks and time blocks on the calendar
         (read-only).
       </p>

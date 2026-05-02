@@ -445,6 +445,31 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   font-family: var(--font-mono);
 }
 
+/* Inline privacy callout for the link-account modal. Soft amber so it
+ * reads as "heads up", not "error". The label tag gives it a glanceable
+ * leading anchor. */
+.np-warn {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border: 1px solid #E5D2A8;
+  background: #FAF3DF;
+  color: #6B5A2B;
+  font-size: var(--fs-sm);
+  font-family: var(--font-mono);
+  line-height: 1.45;
+}
+.np-warn-tag {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 0 5px;
+  background: #6B5A2B;
+  color: #FAF3DF;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-size: calc(9px * var(--fs-scale));
+}
+
 /* Members editor: stacked rows with an inline "Add member" trigger that
  * opens a popover beneath. Removal is intentionally two-step (× arms a
  * "Remove" confirm button) — losing access to a project's tasks is a heavier

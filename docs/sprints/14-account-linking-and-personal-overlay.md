@@ -123,6 +123,14 @@ card always renders first if multiple coexist.
   the database row, not any client state.
 - **accepted** → "Linked with <Name>" + Unlink.
 
+A soft-amber `Privacy` callout sits on both the email-invite view
+(sender's understanding) and the received-pending view (receiver's
+informed consent before clicking Accept). Both spell out that the
+overlay surfaces task titles across **every workspace**, not just
+the current one, and reaffirm that the relationship is read-only and
+revocable. The amber tone reads as "heads up", not "error" — same
+shape, calmer color than the existing `np-error` envelope.
+
 ### TopBar — paired identity chip
 
 When a link is accepted, the trailing slot of the topbar swaps from
