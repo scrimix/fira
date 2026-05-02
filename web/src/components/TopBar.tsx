@@ -1,3 +1,4 @@
+import { Link2 } from 'lucide-react';
 import { useFira } from '../store';
 import { weekStartFor, fmtWeekRange } from '../time';
 import { ProjectIcon } from './ProjectIcon';
@@ -13,10 +14,34 @@ export function TopBar() {
   const logout = useFira((s) => s.logout);
   const me = useFira((s) => s.users.find((u) => u.id === s.meId) ?? null);
   const playgroundMode = useFira((s) => s.playgroundMode);
+  // Pick the most "actionable" link to drive the icon's state. Order:
+  // received (call to action) > sent (waiting) > accepted (settled) > none.
+  const linkState = useFira((s) => {
+    const received = s.links.find((l) => l.direction === 'received' && l.status === 'pending');
+    if (received) return { kind: 'received' as const, link: received };
+    const sent = s.links.find((l) => l.direction === 'sent' && l.status === 'pending');
+    if (sent) return { kind: 'sent' as const, link: sent };
+    const accepted = s.links.find((l) => l.status === 'accepted');
+    if (accepted) return { kind: 'accepted' as const, link: accepted };
+    return { kind: 'none' as const };
+  });
+  const partner = useFira((s) => {
+    const accepted = s.links.find((l) => l.status === 'accepted');
+    return accepted ? s.users.find((u) => u.id === accepted.partner_id) ?? null : null;
+  });
+  const openLinkModal = useFira((s) => s.openLinkModal);
 
   const title = view === 'calendar'
     ? `Week of ${fmtWeekRange(weekStartFor(weekOffset))}`
     : project?.title ?? 'Inbox';
+
+  const linkTitle = linkState.kind === 'received'
+    ? 'Someone wants to link calendars with you'
+    : linkState.kind === 'sent'
+      ? 'Waiting for the other account to accept'
+      : linkState.kind === 'accepted'
+        ? `Linked${partner ? ` with ${partner.name}` : ''}`
+        : 'Link another account';
 
   return (
     <div className="topbar">
@@ -43,6 +68,18 @@ export function TopBar() {
         </span>
       )}
       <SyncPill />
+      <button
+        className="link-btn"
+        data-state={linkState.kind}
+        onClick={() => openLinkModal()}
+        title={linkTitle}
+        aria-label={linkTitle}
+      >
+        <Link2 size={13} strokeWidth={1.75} />
+        {linkState.kind === 'accepted' && partner && (
+          <span className="link-btn-initials">{partner.initials}</span>
+        )}
+      </button>
       <button className="logout-btn" onClick={() => logout()} title="Sign out">
         Log out
       </button>

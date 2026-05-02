@@ -581,6 +581,74 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   border-color: var(--rule-3);
 }
 
+/* Account-link icon button. Same chip dimensions as the sync pill /
+ * logout button so the trailing trio reads as one set. State drives
+ * just the foreground color: muted by default, accent-tinted when
+ * something needs attention. */
+.topbar .link-btn {
+  display: inline-flex; align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 7px;
+  margin-right: 8px;
+  color: var(--ink-3);
+  border: 1px solid var(--rule-2);
+  background: var(--paper);
+  cursor: pointer;
+}
+.topbar .link-btn:hover {
+  color: var(--ink);
+  border-color: var(--rule-3);
+}
+.topbar .link-btn[data-state="received"] {
+  color: var(--accent-fg);
+  background: color-mix(in oklab, var(--accent) 18%, var(--paper));
+  border-color: var(--accent);
+}
+.topbar .link-btn[data-state="sent"] {
+  color: var(--ink-2);
+  border-style: dashed;
+}
+.topbar .link-btn[data-state="accepted"] {
+  color: var(--ink);
+  border-color: var(--rule-3);
+}
+.topbar .link-btn-initials {
+  font-family: var(--font-mono);
+  font-size: calc(9px * var(--fs-scale));
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* Link-modal state cards (accept / cancel / unlink). */
+.link-state-card .link-headline {
+  margin: 0 0 8px;
+  font-size: calc(13px * var(--fs-scale));
+  color: var(--ink);
+}
+.link-headline strong { font-weight: 500; }
+.link-candidates {
+  /* Same shape as np-members-candidates — gives the picker a bounded,
+   * scrollable area instead of letting it push the modal taller as the
+   * directory grows. */
+  max-height: 240px;
+  overflow-y: auto;
+}
+.link-candidates .user-row { position: relative; }
+.link-row-send {
+  margin-left: auto;
+  color: var(--ink-3);
+}
+.link-candidates .user-row:hover .link-row-send { color: var(--accent-fg); }
+.np-danger {
+  color: var(--danger);
+  border-color: color-mix(in oklab, var(--danger) 60%, var(--rule-2));
+}
+.np-danger:hover {
+  background: color-mix(in oklab, var(--danger) 8%, var(--paper));
+  border-color: var(--danger);
+}
+
 /* Outbox sync status. Tone-based colors mirror the rest of the app:
  * `ok` is the muted ink-3 (success is calm), pending uses the accent cyan,
  * error uses the danger ink, offline uses the warn amber.

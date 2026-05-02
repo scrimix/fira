@@ -1,4 +1,4 @@
-import type { Bootstrap, User, Workspace, WorkspaceRole } from './types';
+import type { Bootstrap, LinkedCalendar, User, UserLink, Workspace, WorkspaceRole } from './types';
 
 // Always go through the Vite dev proxy at /api. The proxy target is
 // configured server-side in vite.config.ts (env: VITE_API_PROXY_TARGET),
@@ -113,6 +113,13 @@ export const api = {
     req<{ results: OpResult[] }>('POST', '/ops', { ops }),
   getChanges: (since: number) =>
     req<ChangesResponse>('GET', `/changes?since=${since}`),
+  listLinks: () => req<UserLink[]>('GET', '/links'),
+  createLink: (target_user_id: string) =>
+    req<UserLink>('POST', '/links', { target_user_id }),
+  acceptLink: (id: string) =>
+    req<UserLink>('POST', `/links/${id}/accept`),
+  deleteLink: (id: string) => req<void>('DELETE', `/links/${id}`),
+  linkedCalendar: () => req<LinkedCalendar>('GET', '/linked/calendar'),
 };
 
 // Server-driven; the browser navigates here so cookies and the OAuth redirect

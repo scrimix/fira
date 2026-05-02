@@ -1,4 +1,5 @@
 use crate::models::*;
+use chrono::{DateTime, Utc};
 use sqlx::{PgPool, Postgres, Transaction};
 use std::collections::HashMap;
 use uuid::Uuid;
@@ -758,4 +759,163 @@ pub async fn list_gcal_for_user(pool: &PgPool, user_id: Uuid) -> sqlx::Result<Ve
     .bind(user_id)
     .fetch_all(pool)
     .await
+}
+
+// --- account links ---
+
+/// All links involving the caller (pending sent + received + accepted),
+/// projected from the caller's perspective.
+pub async fn list_user_links(pool: &PgPool, user_id: Uuid) -> sqlx::Result<Vec<UserLink>> {
+    let rows: Vec<(Uuid, Uuid, Uuid, Uuid, String, DateTime<Utc>, Option<DateTime<Utc>>)> =
+        sqlx::query_as(
+            "SELECT id, user_a_id, user_b_id, requested_by, status, created_at, accepted_at
+             FROM user_links
+             WHERE user_a_id = $1 OR user_b_id = $1
+             ORDER BY created_at DESC",
+        )
+        .bind(user_id)
+        .fetch_all(pool)
+        .await?;
+    Ok(rows
+        .into_iter()
+        .map(|(id, a, b, req, status, created_at, accepted_at)| {
+            let partner_id = if a == user_id { b } else { a };
+            let direction = if status == "accepted" {
+                "accepted".to_string()
+            } else if req == user_id {
+                "sent".to_string()
+            } else {
+                "received".to_string()
+            };
+            UserLink { id, partner_id, status, direction, created_at, accepted_at }
+        })
+        .collect())
+}
+
+/// Look up a link row and the two user_ids on it. Used by accept/cancel
+/// to authorize the actor and find the partner for nudges.
+pub async fn get_link_parties(
+    pool: &PgPool,
+    link_id: Uuid,
+) -> sqlx::Result<Option<(Uuid, Uuid, Uuid, String)>> {
+    let row: Option<(Uuid, Uuid, Uuid, String)> = sqlx::query_as(
+        "SELECT user_a_id, user_b_id, requested_by, status FROM user_links WHERE id = $1",
+    )
+    .bind(link_id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row)
+}
+
+pub async fn create_link_request_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    requester_id: Uuid,
+    target_id: Uuid,
+) -> sqlx::Result<Option<Uuid>> {
+    let (a, b) = if requester_id < target_id {
+        (requester_id, target_id)
+    } else {
+        (target_id, requester_id)
+    };
+    let row: Option<(Uuid,)> = sqlx::query_as(
+        "INSERT INTO user_links (user_a_id, user_b_id, requested_by, status)
+         VALUES ($1, $2, $3, 'pending')
+         ON CONFLICT (user_a_id, user_b_id) DO NOTHING
+         RETURNING id",
+    )
+    .bind(a)
+    .bind(b)
+    .bind(requester_id)
+    .fetch_optional(&mut **tx)
+    .await?;
+    Ok(row.map(|(id,)| id))
+}
+
+pub async fn accept_link_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    link_id: Uuid,
+) -> sqlx::Result<bool> {
+    let res = sqlx::query(
+        "UPDATE user_links SET status = 'accepted', accepted_at = now()
+         WHERE id = $1 AND status = 'pending'",
+    )
+    .bind(link_id)
+    .execute(&mut **tx)
+    .await?;
+    Ok(res.rows_affected() > 0)
+}
+
+pub async fn delete_link_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    link_id: Uuid,
+) -> sqlx::Result<bool> {
+    let res = sqlx::query("DELETE FROM user_links WHERE id = $1")
+        .bind(link_id)
+        .execute(&mut **tx)
+        .await?;
+    Ok(res.rows_affected() > 0)
+}
+
+/// The user_id of the caller's accepted partner, if any.
+pub async fn accepted_partner_id(pool: &PgPool, user_id: Uuid) -> sqlx::Result<Option<Uuid>> {
+    let row: Option<(Uuid, Uuid)> = sqlx::query_as(
+        "SELECT user_a_id, user_b_id FROM user_links
+         WHERE status = 'accepted' AND (user_a_id = $1 OR user_b_id = $1)
+         LIMIT 1",
+    )
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(|(a, b)| if a == user_id { b } else { a }))
+}
+
+/// Linked partner's blocks across **every** workspace they belong to.
+/// Linking is mutual consent to share the calendar — the workspace
+/// scope rule that gates everything else doesn't apply here.
+pub async fn list_blocks_for_user(
+    pool: &PgPool,
+    user_id: Uuid,
+) -> sqlx::Result<Vec<TimeBlock>> {
+    sqlx::query_as(
+        "SELECT id, task_id, user_id, start_at, end_at, state
+         FROM time_blocks WHERE user_id = $1 ORDER BY start_at",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await
+}
+
+/// Minimal task projection for the partner's blocks. We only need
+/// title + status (for done-state styling) + the project color so the
+/// overlay can match the existing block visual language.
+pub async fn list_linked_tasks_for_blocks(
+    pool: &PgPool,
+    block_owner: Uuid,
+) -> sqlx::Result<Vec<LinkedTask>> {
+    sqlx::query_as(
+        "SELECT DISTINCT t.id, t.title, t.status, p.color AS project_color
+         FROM tasks t
+         JOIN projects p ON p.id = t.project_id
+         JOIN time_blocks b ON b.task_id = t.id
+         WHERE b.user_id = $1",
+    )
+    .bind(block_owner)
+    .fetch_all(pool)
+    .await
+}
+
+/// Whether two users are mutually accepted-linked. Used for ad-hoc
+/// authorization checks (e.g. /api/linked/calendar) to make sure the
+/// caller still has the link before exposing the partner's data.
+pub async fn are_linked(pool: &PgPool, a: Uuid, b: Uuid) -> sqlx::Result<bool> {
+    let (lo, hi) = if a < b { (a, b) } else { (b, a) };
+    let row: Option<(i32,)> = sqlx::query_as(
+        "SELECT 1 FROM user_links
+         WHERE user_a_id = $1 AND user_b_id = $2 AND status = 'accepted'",
+    )
+    .bind(lo)
+    .bind(hi)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.is_some())
 }

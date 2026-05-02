@@ -113,6 +113,34 @@ export interface GcalEvent {
   end_at: string;
 }
 
+export type LinkStatus = 'pending' | 'accepted';
+export type LinkDirection = 'sent' | 'received' | 'accepted';
+
+export interface UserLink {
+  id: UUID;
+  partner_id: UUID;
+  status: LinkStatus;
+  direction: LinkDirection;
+  created_at: string;
+  accepted_at: string | null;
+}
+
+/// Linked partner's task projection — minimal fields needed to render
+/// their blocks on the calendar overlay. Read-only.
+export interface LinkedTask {
+  id: UUID;
+  title: string;
+  status: Status;
+  project_color: string;
+}
+
+export interface LinkedCalendar {
+  partner_id: UUID;
+  blocks: TimeBlock[];
+  tasks: LinkedTask[];
+  gcal: GcalEvent[];
+}
+
 export interface Bootstrap {
   users: User[];
   projects: Project[];
@@ -121,6 +149,7 @@ export interface Bootstrap {
   tasks: Task[];
   blocks: TimeBlock[];
   gcal: GcalEvent[];
+  links: UserLink[];
   /// Initial change-feed cursor — start polling /changes from here.
   cursor: number;
 }
