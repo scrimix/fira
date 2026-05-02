@@ -446,7 +446,6 @@ export function CalendarView() {
                              left: fullWidth ? '1px' : `calc(${(lane / lanes) * 100}% + 1px)`,
                              width: fullWidth ? 'calc(100% - 2px)' : `calc(${100 / lanes}% - 2px)`,
                            }}
-                           onPointerEnter={() => setLastBlockId(b.id)}
                            onPointerDown={(e) => { setLastBlockId(b.id); onBlockPointerDown(e, b, t.id); }}
                            title={t.status === 'done' && b.state === 'planned'
                              ? `${t.title} · ${fmtMin(dMin)}\n\n⚠ Task is marked done, but this block is still planned. Delete the block or reopen the task.`

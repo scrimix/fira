@@ -343,6 +343,7 @@
   border: 1px solid var(--proj-color, var(--ink));
   background: color-mix(in oklab, var(--proj-color, var(--ink)) 14%, var(--paper));
   border-left: 3px solid var(--proj-color, var(--ink));
+  border-radius: 3px;
   padding: 4px 6px 4px 7px;
   font-size: var(--fs-xs);
   color: var(--ink);
@@ -356,7 +357,7 @@
   -webkit-user-select: none;
   touch-action: none;
 }
-.tblock:hover { box-shadow: 0 0 0 1px var(--proj-color, var(--ink)); z-index: 3; }
+.tblock:hover { box-shadow: 0 0 0 1px var(--proj-color, var(--ink)); z-index: 3; border-radius: 3px; }
 .tblock[data-state="completed"] {
   background: color-mix(in oklab, var(--proj-color, var(--ink)) 22%, var(--paper));
 }
@@ -524,7 +525,12 @@
   font-family: var(--font-mono);
   font-size: calc(10px * var(--fs-scale));
   color: var(--ink-3);
-  z-index: 1;
+  /* Above .tblock (z:2 / hover z:3) but below an in-flight drag (z:10).
+   * The hatch background is transparent + the text/border are muted, so
+   * an underlying time block reads through and the overlap is obvious. */
+  z-index: 4;
+  opacity: 0.85;
+  pointer-events: none;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
