@@ -335,22 +335,34 @@ async fn main() -> anyhow::Result<()> {
     // come up immediately so Fly's healthcheck succeeds even if Postgres is
     // briefly unreachable (cold start, restart, network blip).
     //
-    // Resilience knobs are deliberate: stale connections silently dropped
-    // by the server or by a NAT/firewall on idle TCP surface as
-    // `expected to read N bytes, got 0 bytes at EOF` errors when sqlx
-    // tries to reuse them. test_before_acquire pings each connection
-    // before handing it out, max_lifetime recycles even healthy ones so
-    // we don't accumulate long-lived sockets, idle_timeout reaps unused
-    // connections aggressively (Postgres / Fly proxies tend to kill
-    // anything idle past 10 min), and acquire_timeout caps how long a
-    // request will wait for a connection before returning a clean
-    // error rather than hanging.
+    // Resilience knobs tuned for Fly's smallest managed Postgres tier
+    // (shared-1x, max_connections ≈ 20, auto-stop on idle, TCP idle
+    // killed by the 6PN proxy). The combination is hostile to
+    // long-lived pooled connections — they go stale silently and surface
+    // as `expected to read N bytes, got 0 bytes at EOF` mid-query.
+    //
+    //   max_connections(5):    leaves headroom on a 20-cap PG even with
+    //                          two API instances + an admin shell.
+    //   min_connections(0):    don't pin the PG awake — let it
+    //                          auto-stop when nobody's using it. Cold-
+    //                          start latency hits the next request, but
+    //                          that's the trade for the small tier.
+    //   max_lifetime(15 min):  recycle even healthy connections before
+    //                          the proxy or PG decides to.
+    //   idle_timeout(60 s):    aggressive — connections that sit unused
+    //                          for a minute get reaped, well below any
+    //                          proxy idle threshold.
+    //   acquire_timeout(15 s): cover the auto-stop wake (typically
+    //                          5–10s) without hanging requests forever.
+    //   test_before_acquire:   ping before handing out; cheap and
+    //                          catches the most common dead-connection
+    //                          case.
     let pool = PgPoolOptions::new()
-        .max_connections(10)
-        .min_connections(1)
-        .max_lifetime(Duration::from_secs(30 * 60))
-        .idle_timeout(Duration::from_secs(5 * 60))
-        .acquire_timeout(Duration::from_secs(10))
+        .max_connections(5)
+        .min_connections(0)
+        .max_lifetime(Duration::from_secs(15 * 60))
+        .idle_timeout(Duration::from_secs(60))
+        .acquire_timeout(Duration::from_secs(15))
         .test_before_acquire(true)
         .connect_lazy(&database_url)?;
     {
