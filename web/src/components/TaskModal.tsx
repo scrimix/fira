@@ -141,7 +141,10 @@ export function TaskModal({ taskId }: Props) {
               addSubtask={addSubtask}
             />
 
-            <SectionHeading title="Time blocks" hint={String(taskBlocks.length)} />
+            <SectionHeading
+              title="Time blocks"
+              hint={taskBlocks.length > 0 ? String(taskBlocks.length) : undefined}
+            />
             {taskBlocks.length === 0 ? (
               <div className="tm-section-empty">No blocks yet.</div>
             ) : taskBlocks.map(({ b, start_min, dur_min }) => {

@@ -210,23 +210,44 @@
   font-size: calc(10px * var(--fs-scale));
   color: var(--ink-4);
 }
-.cal-toolbar .totals {
-  margin-left: auto;
+/* Shared totals styling — render in three places: the calendar
+ * toolbar (legacy/none now), the rail head (desktop), and a
+ * mobile-only strip above the calendar grid. The position-specific
+ * rules below tweak alignment/visibility per slot. */
+.totals {
   display: flex;
   gap: 14px;
   color: var(--ink-3);
   font-size: var(--fs-xs);
   white-space: nowrap;
+  font-family: var(--font-mono);
 }
-.cal-toolbar .totals span { white-space: nowrap; }
-.cal-toolbar .totals strong {
+.totals span { white-space: nowrap; }
+.totals strong {
   font-weight: 500;
   font-variant-numeric: tabular-nums;
   margin-right: 2px;
 }
-.cal-toolbar .totals .totals-done strong   { color: var(--done); }
-.cal-toolbar .totals .totals-planned strong { color: var(--accent); }
-.cal-toolbar .totals .totals-total strong   { color: var(--ink); }
+.totals .totals-done strong    { color: var(--done); }
+.totals .totals-planned strong { color: var(--accent); }
+.totals .totals-total strong   { color: var(--ink); }
+
+.rail-totals {
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--rule);
+}
+/* Mobile-only strip sits above the toolbar; hidden on desktop where
+ * the rail's totals carry the same data. */
+.cal-totals-mobile {
+  display: none;
+}
+@media (max-width: 1000px) {
+  .cal-totals-mobile {
+    display: flex;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--rule);
+  }
+}
 
 .cal-grid-wrap {
   flex: 1;

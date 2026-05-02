@@ -50,13 +50,20 @@ function addDaysLocal(ms: number, days: number): Date {
 }
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-export function fmtWeekRange(weekStart: number): string {
+export function fmtWeekRange(weekStart: number, opts?: { compact?: boolean }): string {
   const start = new Date(weekStart);
   const end = addDaysLocal(weekStart, 6);
   const sameMonth = start.getMonth() === end.getMonth();
   const sameYear = start.getFullYear() === end.getFullYear();
   const sm = MONTHS[start.getMonth()];
   const em = MONTHS[end.getMonth()];
+  // Compact: drop the year — that's the part most likely to push the
+  // title to a second line on phones, and it's rarely the disambiguating
+  // info in normal use.
+  if (opts?.compact) {
+    if (sameMonth) return `${sm} ${start.getDate()} – ${end.getDate()}`;
+    return `${sm} ${start.getDate()} – ${em} ${end.getDate()}`;
+  }
   if (sameMonth) {
     return `${sm} ${start.getDate()} – ${end.getDate()}, ${start.getFullYear()}`;
   }

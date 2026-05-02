@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { Link } from 'lucide-react';
 import { useFira } from '../store';
 import { weekStartFor, fmtWeekRange } from '../time';
@@ -35,8 +36,23 @@ export function TopBar() {
     : null;
   const openLinkModal = useFira((s) => s.openLinkModal);
 
+  // On phones, drop "Week of" + the year so the title fits one line in
+  // the topbar between the breadcrumb and the action cluster.
+  const [compact, setCompact] = useState(() =>
+    typeof window !== 'undefined' && window.matchMedia('(max-width: 700px)').matches,
+  );
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mq = window.matchMedia('(max-width: 700px)');
+    const onChange = () => setCompact(mq.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+
   const title = view === 'calendar'
-    ? `Week of ${fmtWeekRange(weekStartFor(weekOffset))}`
+    ? compact
+      ? fmtWeekRange(weekStartFor(weekOffset), { compact: true })
+      : `Week of ${fmtWeekRange(weekStartFor(weekOffset))}`
     : project?.title ?? 'Inbox';
 
   const linkTitle = linkState.kind === 'received'
