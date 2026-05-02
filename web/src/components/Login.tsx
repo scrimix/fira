@@ -19,6 +19,7 @@ const SUBTITLES = [
   'Stop scheduling "deep work." Schedule the work.',
   'The last 20% is another 80%.',
   'Scope hides until the deadline shows up.',
+  'One task, many sessions. Like real work.'
 ];
 
 export function Login() {
