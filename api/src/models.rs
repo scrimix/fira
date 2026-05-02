@@ -116,3 +116,30 @@ pub struct GcalEvent {
     pub start_at: DateTime<Utc>,
     pub end_at: DateTime<Utc>,
 }
+
+/// A link between two user accounts. Returned to the caller from their
+/// own perspective: `partner_id` is the other side, `direction` says who
+/// initiated relative to the caller.
+#[derive(Debug, Serialize)]
+pub struct UserLink {
+    pub id: Uuid,
+    pub partner_id: Uuid,
+    /// `pending` (awaiting accept) or `accepted` (mutual visibility on).
+    pub status: String,
+    /// `sent` — caller is the requester, awaiting partner accept.
+    /// `received` — partner requested, caller can accept.
+    /// `accepted` — mutual, no direction matters.
+    pub direction: String,
+    pub created_at: DateTime<Utc>,
+    pub accepted_at: Option<DateTime<Utc>>,
+}
+
+/// Minimal projection of a linked partner's task — what the calendar
+/// overlay needs to render their blocks. Cross-workspace, read-only.
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct LinkedTask {
+    pub id: Uuid,
+    pub title: String,
+    pub status: String,
+    pub project_color: String,
+}

@@ -536,6 +536,79 @@
   text-overflow: ellipsis;
 }
 
+/* Linked partner's gcal events — same hatch but a fainter ink so it
+ * reads as "their busy time" not yours. */
+.gcal-evt-linked {
+  opacity: 0.55;
+  border-style: dotted;
+}
+
+/* Linked partner's time blocks — read-only overlay. Full column width
+ * (no lane logic), behind personal blocks (lower z-index), with a
+ * desaturated palette so it's visually distinct from your own work. */
+.tblock-linked {
+  left: 1px !important;
+  width: calc(100% - 2px) !important;
+  z-index: 1;
+  opacity: 0.55;
+  cursor: default;
+  background: color-mix(in oklab, var(--proj-color, var(--ink-3)) 14%, var(--paper));
+  border: 1px dashed color-mix(in oklab, var(--proj-color, var(--ink-3)) 50%, var(--rule-3));
+  /* Override the colored left stripe the regular .tblock gets — keep
+   * the project hint subtle so personal blocks dominate the eye. */
+}
+.tblock-linked .tb-title { color: var(--ink-2); }
+.tblock-linked .tb-meta { color: var(--ink-3); }
+.tblock-linked:hover {
+  /* Slightly less faded on hover so the title is fully readable, but no
+   * box-shadow elevation — it's not interactive. */
+  opacity: 0.75;
+  z-index: 1;
+}
+
+/* Personal-workspace overlay — caller's own blocks from a different
+ * workspace. Read-only like the linked overlay, but visually distinct:
+ * left accent stripe instead of dashed border, slightly less faded.
+ * Shape mirrors .tblock-linked so the layout treats them the same. */
+.tblock-personal {
+  left: 1px !important;
+  width: calc(100% - 2px) !important;
+  z-index: 1;
+  opacity: 0.7;
+  cursor: default;
+  background: color-mix(in oklab, var(--proj-color, var(--ink-3)) 10%, var(--paper));
+  border: 1px solid color-mix(in oklab, var(--proj-color, var(--ink-3)) 35%, var(--rule-2));
+  border-left: 3px solid color-mix(in oklab, var(--proj-color, var(--ink-3)) 65%, var(--rule-3));
+}
+.tblock-personal .tb-title { color: var(--ink-2); }
+.tblock-personal .tb-meta { color: var(--ink-3); }
+.tblock-personal:hover { opacity: 0.9; z-index: 1; }
+
+/* Toolbar toggle for showing the linked partner's calendar. Same
+ * baseline as the rail "Mine/All" button. */
+.link-toggle {
+  display: inline-flex; align-items: center;
+  height: 22px;
+  padding: 0 10px;
+  margin-left: 4px;
+  font-family: var(--font-mono);
+  font-size: calc(10px * var(--fs-scale));
+  letter-spacing: 0.04em;
+  color: var(--ink-3);
+  border: 1px solid var(--rule-2);
+  background: var(--paper);
+  cursor: pointer;
+}
+.link-toggle:hover {
+  color: var(--ink);
+  border-color: var(--rule-3);
+}
+.link-toggle[data-active="true"] {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+}
+
 .cal-rail {
   border-left: 1px solid var(--rule);
   display: flex;

@@ -10,6 +10,7 @@
 pub mod auth;
 pub mod db;
 pub mod error;
+pub mod links;
 pub mod models;
 pub mod ops;
 pub mod pubsub;
@@ -41,6 +42,10 @@ pub struct Bootstrap {
     pub tasks: Vec<models::Task>,
     pub blocks: Vec<models::TimeBlock>,
     pub gcal: Vec<models::GcalEvent>,
+    /// All links involving the caller (pending sent / received +
+    /// accepted). Bootstrapping with this means the link icon in the
+    /// topbar can render the right state on first paint.
+    pub links: Vec<models::UserLink>,
     /// Initial cursor for the change feed. Clients should poll
     /// `/changes?since=cursor` from this watermark forward.
     pub cursor: i64,
@@ -54,7 +59,7 @@ pub async fn load_bootstrap(
     user_id: uuid::Uuid,
 ) -> anyhow::Result<Bootstrap> {
     let scope = db::project_scope(pool, user_id, workspace_id).await?;
-    let (users, projects, epics, sprints, tasks, blocks, gcal, cursor) = tokio::try_join!(
+    let (users, projects, epics, sprints, tasks, blocks, gcal, links, cursor) = tokio::try_join!(
         db::list_users_in_scope(pool, workspace_id, user_id),
         db::list_projects_in_scope(pool, &scope),
         db::list_epics_in_scope(pool, &scope),
@@ -62,7 +67,8 @@ pub async fn load_bootstrap(
         db::list_tasks_in_scope(pool, &scope),
         db::list_blocks_in_scope(pool, &scope),
         db::list_gcal_for_user(pool, user_id),
+        db::list_user_links(pool, user_id),
         ops::current_cursor(pool),
     )?;
-    Ok(Bootstrap { users, projects, epics, sprints, tasks, blocks, gcal, cursor })
+    Ok(Bootstrap { users, projects, epics, sprints, tasks, blocks, gcal, links, cursor })
 }

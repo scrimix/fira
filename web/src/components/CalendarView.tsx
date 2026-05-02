@@ -111,6 +111,22 @@ export function CalendarView() {
   const blocks = useFira((s) => s.blocks);
   const gcal = useFira((s) => s.gcal);
   const projects = useFira((s) => s.projects);
+  const linkedBlocks = useFira((s) => s.linkedBlocks);
+  const linkedTasks = useFira((s) => s.linkedTasks);
+  const linkedGcal = useFira((s) => s.linkedGcal);
+  const showLinked = useFira((s) => s.showLinked);
+  const setShowLinked = useFira((s) => s.setShowLinked);
+  const acceptedLink = useFira((s) =>
+    s.links.find((l) => l.status === 'accepted') ?? null,
+  );
+  const personalBlocks = useFira((s) => s.personalBlocks);
+  const personalTasks = useFira((s) => s.personalTasks);
+  const showPersonal = useFira((s) => s.showPersonal);
+  const setShowPersonal = useFira((s) => s.setShowPersonal);
+  const inTeamWorkspace = useFira((s) => {
+    const ws = s.workspaces.find((w) => w.id === s.activeWorkspaceId);
+    return ws ? !ws.is_personal : false;
+  });
   const projectFilter = useFira((s) => s.projectFilter);
   const selectedPersonIds = useFira((s) => s.selectedPersonIds);
   const activePersonId = useFira((s) => s.activePersonId);
@@ -357,6 +373,25 @@ export function CalendarView() {
   });
 
   const myGcal = gcal.filter((g) => g.user_id === activePersonId);
+  // Partner overlay only shows on my own calendar tab — switching to a
+  // teammate's view drops it. Joined to linkedTasks so we can render the
+  // title + project color without polluting global `tasks`.
+  const overlayActive = showLinked && acceptedLink && activePersonId === meId;
+  const linkedTaskById = useMemo(
+    () => new Map(linkedTasks.map((t) => [t.id, t])),
+    [linkedTasks],
+  );
+  const visibleLinkedBlocks = overlayActive ? linkedBlocks : [];
+  const visibleLinkedGcal = overlayActive ? linkedGcal : [];
+
+  // Personal-workspace overlay — same posture as linked: only on my own
+  // tab, only in a team workspace, only when the user opted in.
+  const personalOverlayActive = showPersonal && inTeamWorkspace && activePersonId === meId;
+  const personalTaskById = useMemo(
+    () => new Map(personalTasks.map((t) => [t.id, t])),
+    [personalTasks],
+  );
+  const visiblePersonalBlocks = personalOverlayActive ? personalBlocks : [];
 
   const tickBlock = (b: TimeBlock) => {
     updateBlock(b.id, { state: b.state === 'completed' ? 'planned' : 'completed' });
@@ -434,6 +469,28 @@ export function CalendarView() {
             onRemove={removePerson}
             onSetActive={setActivePerson}
           />
+          {acceptedLink && activePersonId === meId && (
+            <button
+              className="link-toggle"
+              data-active={showLinked || undefined}
+              onClick={() => setShowLinked(!showLinked)}
+              title={showLinked ? 'Hide linked calendar' : 'Show linked calendar (read-only)'}
+            >
+              {showLinked ? 'Hide linked' : 'Show linked'}
+            </button>
+          )}
+          {inTeamWorkspace && activePersonId === meId && (
+            <button
+              className="link-toggle"
+              data-active={showPersonal || undefined}
+              onClick={() => setShowPersonal(!showPersonal)}
+              title={showPersonal
+                ? 'Hide personal-workspace blocks'
+                : 'Show personal-workspace blocks (read-only)'}
+            >
+              {showPersonal ? 'Hide personal' : 'Show personal'}
+            </button>
+          )}
           <div className="totals">
             <span className="totals-done"><strong>{fmtMin(completedMin)}</strong> done</span>
             <span className="totals-planned"><strong>{fmtMin(plannedMin)}</strong> planned</span>
@@ -466,6 +523,21 @@ export function CalendarView() {
                 return p.day === dayIdx;
               });
               const dayGcal = myGcal.filter((g) => blockToGrid(g.start_at, g.end_at, weekStart).day === dayIdx);
+              const dayLinkedBlocks = visibleLinkedBlocks
+                .map((b) => {
+                  const grid = blockToGrid(b.start_at, b.end_at, weekStart);
+                  return grid.day === dayIdx ? { block: b, ...grid } : null;
+                })
+                .filter((x): x is NonNullable<typeof x> => x !== null);
+              const dayLinkedGcal = visibleLinkedGcal.filter(
+                (g) => blockToGrid(g.start_at, g.end_at, weekStart).day === dayIdx,
+              );
+              const dayPersonalBlocks = visiblePersonalBlocks
+                .map((b) => {
+                  const grid = blockToGrid(b.start_at, b.end_at, weekStart);
+                  return grid.day === dayIdx ? { block: b, ...grid } : null;
+                })
+                .filter((x): x is NonNullable<typeof x> => x !== null);
               const isToday = isCurrentWeek && dayIdx === todayIndex;
               const isWeekend = dayIdx >= 5;
               const showPreview = dropPreview?.day === dayIdx;
@@ -505,6 +577,61 @@ export function CalendarView() {
                         height: (dur_min / 60) * HOUR_H,
                       }}>
                         {g.title} · {fmtClockShort(start_min)}
+                      </div>
+                    );
+                  })}
+                  {dayLinkedGcal.map((g) => {
+                    const { start_min, dur_min } = blockToGrid(g.start_at, g.end_at, weekStart);
+                    return (
+                      <div key={`l-g-${g.id}`} className="gcal-evt gcal-evt-linked" style={{
+                        top: (start_min / 60) * HOUR_H,
+                        height: (dur_min / 60) * HOUR_H,
+                      }}>
+                        {g.title} · {fmtClockShort(start_min)}
+                      </div>
+                    );
+                  })}
+                  {dayLinkedBlocks.map(({ block: b, start_min, dur_min }) => {
+                    const lt = linkedTaskById.get(b.task_id);
+                    return (
+                      <div key={`l-b-${b.id}`} className="tblock tblock-linked"
+                           data-state={b.state}
+                           data-task-done={lt?.status === 'done' ? 'true' : undefined}
+                           data-short={dur_min < 60 ? 'true' : undefined}
+                           style={{
+                             top: (start_min / 60) * HOUR_H,
+                             height: (dur_min / 60) * HOUR_H - 2,
+                             ['--proj-color' as string]: lt?.project_color ?? 'var(--ink-3)',
+                           }}
+                           title={`${lt?.title ?? 'Linked task'} · ${fmtMin(dur_min)} (linked, read-only)`}>
+                        <div className="tb-title">{lt?.title ?? 'Linked task'}</div>
+                        <div className="tb-meta">
+                          <span>{fmtClockShort(start_min)}</span>
+                          <span className="dot" />
+                          <span>{fmtMin(dur_min)}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {dayPersonalBlocks.map(({ block: b, start_min, dur_min }) => {
+                    const pt = personalTaskById.get(b.task_id);
+                    return (
+                      <div key={`p-b-${b.id}`} className="tblock tblock-personal"
+                           data-state={b.state}
+                           data-task-done={pt?.status === 'done' ? 'true' : undefined}
+                           data-short={dur_min < 60 ? 'true' : undefined}
+                           style={{
+                             top: (start_min / 60) * HOUR_H,
+                             height: (dur_min / 60) * HOUR_H - 2,
+                             ['--proj-color' as string]: pt?.project_color ?? 'var(--ink-3)',
+                           }}
+                           title={`${pt?.title ?? 'Personal task'} · ${fmtMin(dur_min)} (personal, read-only)`}>
+                        <div className="tb-title">{pt?.title ?? 'Personal task'}</div>
+                        <div className="tb-meta">
+                          <span>{fmtClockShort(start_min)}</span>
+                          <span className="dot" />
+                          <span>{fmtMin(dur_min)}</span>
+                        </div>
                       </div>
                     );
                   })}

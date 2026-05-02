@@ -8,7 +8,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type {
   Bootstrap, Project, User, Epic, Sprint, Task, TimeBlock, GcalEvent, UUID, Section, Subtask, Status,
-  Workspace, WorkspaceRole,
+  Workspace, WorkspaceRole, UserLink, LinkedTask,
 } from '../types';
 import { api, HttpError, setActiveWorkspaceId } from '../api';
 import { newOp, type Op, type OpKind, type AnyOpKind, type ChangeEntry } from './outbox';
@@ -107,6 +107,24 @@ interface FiraState {
     // creates neither (the drag rendered a ghost only).
     block?: { start_at: string; end_at: string; user_id: UUID } | null;
   } | null;
+  // Account-link state. `links` holds every link involving me (pending
+  // sent / received / accepted). The overlay (linkedBlocks/Tasks/Gcal)
+  // is the partner's read-only calendar projection — fetched separately
+  // because it crosses workspace boundaries that bootstrap doesn't.
+  links: UserLink[];
+  linkedBlocks: TimeBlock[];
+  linkedTasks: LinkedTask[];
+  linkedGcal: GcalEvent[];
+  // Calendar toggle: render the partner's blocks alongside mine. Off by
+  // default — the user opts in once they've linked.
+  showLinked: boolean;
+  // Personal-workspace overlay — caller's own blocks from their personal
+  // workspace, projected read-only when the active workspace is a team
+  // one. Same toggle/loader pattern as linked.
+  personalBlocks: TimeBlock[];
+  personalTasks: LinkedTask[];
+  showPersonal: boolean;
+  linkModalOpen: boolean;
   // Discriminated union — one modal serves both create and edit. null = closed.
   projectModal: { kind: 'new' } | { kind: 'edit'; id: UUID } | null;
   // Transient notifications. Auto-dismissed after a few seconds; the user
@@ -172,6 +190,16 @@ interface FiraState {
   openEditProject: (id: UUID) => void;
   closeProjectModal: () => void;
   showToast: (message: string, kind?: ToastKind) => void;
+  reloadLinks: () => Promise<void>;
+  requestLink: (email: string) => Promise<void>;
+  acceptLink: (id: UUID) => Promise<void>;
+  cancelLink: (id: UUID) => Promise<void>;
+  loadLinkedCalendar: () => Promise<void>;
+  setShowLinked: (v: boolean) => void;
+  loadPersonalCalendar: () => Promise<void>;
+  setShowPersonal: (v: boolean) => void;
+  openLinkModal: () => void;
+  closeLinkModal: () => void;
   dismissToast: (id: string) => void;
   addProject: (input: { title: string; icon: string; color: string }) => Promise<Project>;
   updateProject: (
@@ -486,6 +514,7 @@ function applyBootstrap(
     tasks: data.tasks,
     blocks: data.blocks,
     gcal: data.gcal,
+    links: data.links ?? [],
     cursor: data.cursor ?? 0,
     appliedOpIds: new Map(),
     outbox: [],
@@ -533,6 +562,15 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
   activeWorkspaceId: null,
   myWorkspaceRole: null,
   workspaceModal: null,
+  links: [],
+  linkedBlocks: [],
+  linkedTasks: [],
+  linkedGcal: [],
+  showLinked: false,
+  personalBlocks: [],
+  personalTasks: [],
+  showPersonal: false,
+  linkModalOpen: false,
   view: 'calendar',
   selectedPersonIds: [],
   activePersonId: null,
@@ -652,6 +690,17 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
       cursor: 0,
       outbox: [],
       appliedOpIds: new Map(),
+      // Linked overlay is per-session, not per-workspace — but we drop
+      // the cached blocks on switch so the App-level effect refetches
+      // them after the new bootstrap lands.
+      linkedBlocks: [],
+      linkedTasks: [],
+      linkedGcal: [],
+      // Personal overlay is workspace-specific (it only renders in team
+      // workspaces). Drop on switch so a stale projection doesn't leak.
+      personalBlocks: [],
+      personalTasks: [],
+      showPersonal: false,
     });
     const data = await api.bootstrap();
     const projectFilter: Record<UUID, boolean> = {};
@@ -668,6 +717,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
       tasks: data.tasks,
       blocks: data.blocks,
       gcal: data.gcal,
+      links: data.links ?? [],
       cursor: data.cursor ?? 0,
       myWorkspaceRole: (myMember?.role ?? 'member') as WorkspaceRole,
       projectFilter,
@@ -1051,6 +1101,80 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
   },
   dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
 
+  reloadLinks: async () => {
+    if (get().playgroundMode) return;
+    try {
+      const fresh = await api.listLinks();
+      const accepted = fresh.find((l) => l.status === 'accepted');
+      const hadAccepted = get().links.some((l) => l.status === 'accepted');
+      set({ links: fresh });
+      // Refresh the partner overlay if we became linked or stayed
+      // linked. If the link disappeared, drop the cached overlay so a
+      // stale partner snapshot can't leak after unlink.
+      if (accepted) {
+        await get().loadLinkedCalendar();
+      } else if (hadAccepted) {
+        set({ linkedBlocks: [], linkedTasks: [], linkedGcal: [], showLinked: false });
+      }
+    } catch {
+      // Silent — same posture as pollChanges. The next user-channel
+      // nudge or a manual modal-open will retry.
+    }
+  },
+
+  requestLink: async (email) => {
+    const link = await api.createLink(email);
+    set((s) => ({ links: [...s.links.filter((l) => l.id !== link.id), link] }));
+  },
+
+  acceptLink: async (id) => {
+    const link = await api.acceptLink(id);
+    set((s) => ({ links: s.links.map((l) => l.id === id ? link : l) }));
+    await get().loadLinkedCalendar();
+  },
+
+  cancelLink: async (id) => {
+    await api.deleteLink(id);
+    set((s) => ({
+      links: s.links.filter((l) => l.id !== id),
+      linkedBlocks: [],
+      linkedTasks: [],
+      linkedGcal: [],
+      showLinked: false,
+    }));
+  },
+
+  loadLinkedCalendar: async () => {
+    if (get().playgroundMode) return;
+    try {
+      const data = await api.linkedCalendar();
+      set({
+        linkedBlocks: data.blocks,
+        linkedTasks: data.tasks,
+        linkedGcal: data.gcal,
+      });
+    } catch {
+      // No-op — most likely "no accepted link", which can happen if a
+      // partner unlinked between our state read and the request. The
+      // overlay gets cleared when reloadLinks notices the change.
+    }
+  },
+
+  setShowLinked: (v) => set({ showLinked: v }),
+
+  loadPersonalCalendar: async () => {
+    if (get().playgroundMode) return;
+    try {
+      const data = await api.personalCalendar();
+      set({ personalBlocks: data.blocks, personalTasks: data.tasks });
+    } catch {
+      // Silent — same posture as loadLinkedCalendar.
+    }
+  },
+  setShowPersonal: (v) => set({ showPersonal: v }),
+  openLinkModal: () => set({ linkModalOpen: true }),
+  closeLinkModal: () => set({ linkModalOpen: false }),
+
   addProject: async (input) => {
     // Project create is rare and deliberate — a synchronous round-trip is
     // fine and avoids the "appears in sidebar then vanishes on error" jank
@@ -1394,6 +1518,9 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     selectedPersonIds: s.selectedPersonIds,
     activePersonId: s.activePersonId,
     playgroundMode: s.playgroundMode,
+    links: s.links,
+    showLinked: s.showLinked,
+    showPersonal: s.showPersonal,
   // partialize is loosely typed — zustand expects S but we're returning a
   // subset of fields. Cast through unknown is the canonical workaround.
   }) as unknown as FiraState,

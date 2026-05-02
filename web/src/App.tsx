@@ -9,6 +9,7 @@ import { TaskModal } from './components/TaskModal';
 import { TaskModalDraft } from './components/TaskModalDraft';
 import { ProjectModal } from './components/ProjectModal';
 import { WorkspaceModal } from './components/WorkspaceModal';
+import { LinkAccountModal } from './components/LinkAccountModal';
 import { Login } from './components/Login';
 import { Toasts } from './components/Toasts';
 
@@ -22,9 +23,26 @@ export default function App() {
   const creatingDraft = useFira((s) => s.creatingDraft);
   const projectModal = useFira((s) => s.projectModal);
   const workspaceModal = useFira((s) => s.workspaceModal);
+  const linkModalOpen = useFira((s) => s.linkModalOpen);
   const syncOutbox = useFira((s) => s.syncOutbox);
   const pollChanges = useFira((s) => s.pollChanges);
   const reloadWorkspaces = useFira((s) => s.reloadWorkspaces);
+  const reloadLinks = useFira((s) => s.reloadLinks);
+  const loadLinkedCalendar = useFira((s) => s.loadLinkedCalendar);
+  const loadPersonalCalendar = useFira((s) => s.loadPersonalCalendar);
+  const inTeamWorkspace = useFira((s) => {
+    const ws = s.workspaces.find((w) => w.id === s.activeWorkspaceId);
+    return ws ? !ws.is_personal : false;
+  });
+  const hasAcceptedLink = useFira((s) =>
+    s.links.some((l) => l.status === 'accepted'),
+  );
+  // A pending received request forces the modal open. The link row is
+  // server-persisted, so it survives refresh / shows on every tab — and
+  // the only way to dismiss is Accept or Decline (both clear the row).
+  const hasPendingReceived = useFira((s) =>
+    s.links.some((l) => l.direction === 'received' && l.status === 'pending'),
+  );
   const editingProject = useFira((s) => {
     const m = s.projectModal;
     return m?.kind === 'edit' ? s.projects.find((p) => p.id === m.id) ?? null : null;
@@ -80,11 +98,34 @@ export default function App() {
   // User-channel socket: opaque "your workspace surface changed" nudges.
   // Independent of which workspace is active, because the events that
   // *grant* membership can't ride the workspace-scoped feed (chicken/egg).
+  // Account links share the same channel — a link request / accept /
+  // cancel needs to reach a partner who may be looking at a different
+  // workspace, so the per-user transport is the only one that fits.
   useEffect(() => {
     if (!meId || playgroundMode) return;
-    const handle = openUserSocket(() => { void reloadWorkspaces(); });
+    const handle = openUserSocket(() => {
+      void reloadWorkspaces();
+      void reloadLinks();
+    });
     return () => handle.close();
-  }, [meId, playgroundMode, reloadWorkspaces]);
+  }, [meId, playgroundMode, reloadWorkspaces, reloadLinks]);
+
+  // Bootstrap may include an already-accepted link — pull the partner's
+  // calendar overlay once so the toggle has data to show as soon as the
+  // user flips it on. Re-runs on workspace switch (the active workspace
+  // shapes which one of the partner's tabs the user is checking against).
+  useEffect(() => {
+    if (!hasAcceptedLink || playgroundMode) return;
+    void loadLinkedCalendar();
+  }, [hasAcceptedLink, activeWorkspaceId, playgroundMode, loadLinkedCalendar]);
+
+  // Personal-workspace overlay: only meaningful in a team workspace.
+  // Reload on workspace switch so the projection always matches the
+  // currently-active team context.
+  useEffect(() => {
+    if (!inTeamWorkspace || playgroundMode) return;
+    void loadPersonalCalendar();
+  }, [inTeamWorkspace, activeWorkspaceId, playgroundMode, loadPersonalCalendar]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -95,6 +136,11 @@ export default function App() {
         useFira.getState().closeCreate();
         useFira.getState().closeProjectModal();
         useFira.getState().closeWorkspaceModal();
+        // Received pending link is sticky — only Accept/Decline can clear it.
+        const sticky = useFira
+          .getState()
+          .links.some((l) => l.direction === 'received' && l.status === 'pending');
+        if (!sticky) useFira.getState().closeLinkModal();
       }
       if (e.key === 'g') useFira.getState().setView('calendar');
       if (e.key === 'i') useFira.getState().setView('inbox');
@@ -152,6 +198,7 @@ export default function App() {
       {workspaceModal?.kind === 'edit' && editingWorkspace && (
         <WorkspaceModal key={editingWorkspace.id} workspace={editingWorkspace} />
       )}
+      {(linkModalOpen || hasPendingReceived) && <LinkAccountModal />}
       <Toasts />
     </div>
   );

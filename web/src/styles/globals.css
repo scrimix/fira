@@ -445,6 +445,31 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   font-family: var(--font-mono);
 }
 
+/* Inline privacy callout for the link-account modal. Soft amber so it
+ * reads as "heads up", not "error". The label tag gives it a glanceable
+ * leading anchor. */
+.np-warn {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border: 1px solid #E5D2A8;
+  background: #FAF3DF;
+  color: #6B5A2B;
+  font-size: var(--fs-sm);
+  font-family: var(--font-mono);
+  line-height: 1.45;
+}
+.np-warn-tag {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 0 5px;
+  background: #6B5A2B;
+  color: #FAF3DF;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-size: calc(9px * var(--fs-scale));
+}
+
 /* Members editor: stacked rows with an inline "Add member" trigger that
  * opens a popover beneath. Removal is intentionally two-step (× arms a
  * "Remove" confirm button) — losing access to a project's tasks is a heavier
@@ -579,6 +604,76 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
 .topbar .logout-btn:hover {
   color: var(--ink);
   border-color: var(--rule-3);
+}
+
+/* Account-link icon button. Same chip dimensions as the sync pill /
+ * logout button so the trailing trio reads as one set. State drives
+ * just the foreground color: muted by default, accent-tinted when
+ * something needs attention. */
+/* Borderless icon-only by default — sits next to Log out / topbar-me as
+ * a quiet glyph. State just nudges the foreground color so it can call
+ * for attention (received) without becoming a chip. When accepted the
+ * button widens to host the paired identity chips ([me] <> [partner])
+ * and the standalone topbar-me is folded in to avoid duplicating "me". */
+.topbar .link-btn {
+  display: inline-flex; align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 4px;
+  margin-right: 6px;
+  color: var(--ink-3);
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+.topbar .link-btn:hover { color: var(--ink); }
+.topbar .link-btn[data-state="received"] { color: var(--accent); }
+.topbar .link-btn[data-state="sent"] { color: var(--ink-3); opacity: 0.7; }
+.topbar .link-btn[data-state="accepted"] { color: var(--ink-3); }
+.topbar .link-btn[data-state="accepted"]:hover { color: var(--ink); }
+/* Paired identity chip in the rightmost slot when a link is accepted —
+ * replaces the standalone topbar-me. Two topbar-me boxes (me + partner)
+ * with a lucide link glyph between them. Borderless wrapper; the chips
+ * keep their existing styling. */
+.topbar .link-pair {
+  display: inline-flex; align-items: center;
+  gap: 5px;
+  margin-left: 4px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+.topbar .link-pair-icon { color: var(--ink-3); }
+.topbar .link-pair:hover .link-pair-icon { color: var(--ink); }
+
+/* Link-modal state cards (accept / cancel / unlink). */
+.link-state-card .link-headline {
+  margin: 0 0 8px;
+  font-size: calc(13px * var(--fs-scale));
+  color: var(--ink);
+}
+.link-headline strong { font-weight: 500; }
+.link-candidates {
+  /* Same shape as np-members-candidates — gives the picker a bounded,
+   * scrollable area instead of letting it push the modal taller as the
+   * directory grows. */
+  max-height: 240px;
+  overflow-y: auto;
+}
+.link-candidates .user-row { position: relative; }
+.link-row-send {
+  margin-left: auto;
+  color: var(--ink-3);
+}
+.link-candidates .user-row:hover .link-row-send { color: var(--accent-fg); }
+.np-danger {
+  color: var(--danger);
+  border-color: color-mix(in oklab, var(--danger) 60%, var(--rule-2));
+}
+.np-danger:hover {
+  background: color-mix(in oklab, var(--danger) 8%, var(--paper));
+  border-color: var(--danger);
 }
 
 /* Outbox sync status. Tone-based colors mirror the rest of the app:

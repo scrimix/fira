@@ -2,7 +2,7 @@ use axum::{
     extract::{Path, State},
     http::StatusCode,
     response::Json,
-    routing::{get, patch, post, put},
+    routing::{delete, get, patch, post, put},
     Router,
 };
 use serde::Deserialize;
@@ -15,6 +15,7 @@ use fira_api::{
     auth::{self, AuthConfig, AuthCtx},
     db, error,
     error::ApiResult,
+    links,
     load_bootstrap,
     models::*,
     ops, pubsub,
@@ -393,6 +394,11 @@ async fn main() -> anyhow::Result<()> {
         .route("/workspaces/:id/members/:user_id", patch(workspaces::set_member_role))
         .route("/workspaces/:id/users", get(workspaces::list_users))
         .route("/workspaces/:id/all-users", get(workspaces::list_all_users))
+        .route("/links", get(links::list_my).post(links::create))
+        .route("/links/:id", delete(links::delete))
+        .route("/links/:id/accept", post(links::accept))
+        .route("/linked/calendar", get(links::linked_calendar))
+        .route("/personal/calendar", get(links::personal_calendar))
         .route("/ops", post(ops::post_ops))
         .route("/changes", get(ops::get_changes))
         .route("/ws", get(ws::ws_handler))
