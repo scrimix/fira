@@ -4,6 +4,15 @@
   height: calc(100vh - 44px);
   overflow: hidden;
 }
+/* Mobile: hide the task rail. HTML5 drag-and-drop doesn't fire from
+ * touch anyway, so the rail is a static list users can't act on — and
+ * it eats two-thirds of the viewport. Collapse the grid to a single
+ * column so the calendar gets the whole width. The inbox is still
+ * reachable via the sidebar for task editing. */
+@media (max-width: 1000px) {
+  .calendar { grid-template-columns: 1fr; }
+  .cal-rail { display: none; }
+}
 
 .cal-main {
   display: flex;

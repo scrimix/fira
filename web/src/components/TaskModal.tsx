@@ -425,26 +425,56 @@ function SubtaskList({
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dropAt, setDropAt] = useState<{ id: string; pos: 'before' | 'after' } | null>(null);
 
-  const commitReorder = () => {
-    if (!draggedId || !dropAt || draggedId === dropAt.id) {
-      setDraggedId(null);
-      setDropAt(null);
-      return;
-    }
+  const reorderTo = (draggedSubId: string, dropAtVal: { id: string; pos: 'before' | 'after' }) => {
+    if (!draggedSubId || draggedSubId === dropAtVal.id) return;
     const ids = task.subtasks.map((s) => s.id);
-    const from = ids.indexOf(draggedId);
-    const targetIdx = ids.indexOf(dropAt.id);
-    if (from === -1 || targetIdx === -1) {
-      setDraggedId(null);
-      setDropAt(null);
-      return;
-    }
+    const from = ids.indexOf(draggedSubId);
+    const targetIdx = ids.indexOf(dropAtVal.id);
+    if (from === -1 || targetIdx === -1) return;
     ids.splice(from, 1);
     let insertAt = targetIdx;
     if (from < targetIdx) insertAt -= 1;
-    if (dropAt.pos === 'after') insertAt += 1;
-    ids.splice(insertAt, 0, draggedId);
+    if (dropAtVal.pos === 'after') insertAt += 1;
+    ids.splice(insertAt, 0, draggedSubId);
     reorderSubtasks(task.id, ids);
+  };
+
+  const commitReorder = () => {
+    if (draggedId && dropAt) reorderTo(draggedId, dropAt);
+    setDraggedId(null);
+    setDropAt(null);
+  };
+
+  // Touch-only pointer-events flow on the grip — same shape as the
+  // inbox task-grip drag. setPointerCapture so subsequent moves come
+  // back to the grip even when the finger leaves the row.
+  const touchDraggedRef = useRef<string | null>(null);
+  const touchDropAtRef = useRef<{ id: string; pos: 'before' | 'after' } | null>(null);
+  const onGripTouchStart = (subId: string) => {
+    touchDraggedRef.current = subId;
+    touchDropAtRef.current = null;
+    setDraggedId(subId);
+    setDropAt(null);
+  };
+  const onGripTouchMove = (clientX: number, clientY: number) => {
+    const dragged = touchDraggedRef.current;
+    if (!dragged) return;
+    const el = document.elementFromPoint(clientX, clientY) as HTMLElement | null;
+    const rowEl = el?.closest('[data-subtask-id]') as HTMLElement | null;
+    if (rowEl && rowEl.dataset.subtaskId && rowEl.dataset.subtaskId !== dragged) {
+      const rect = rowEl.getBoundingClientRect();
+      const pos: 'before' | 'after' = clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+      const next = { id: rowEl.dataset.subtaskId, pos };
+      touchDropAtRef.current = next;
+      setDropAt(next);
+    }
+  };
+  const onGripTouchEnd = () => {
+    const dragged = touchDraggedRef.current;
+    const dropAtVal = touchDropAtRef.current;
+    touchDraggedRef.current = null;
+    touchDropAtRef.current = null;
+    if (dragged && dropAtVal) reorderTo(dragged, dropAtVal);
     setDraggedId(null);
     setDropAt(null);
   };
@@ -466,6 +496,9 @@ function SubtaskList({
           )}
           onDragLeave={() => { /* keep last marker until pointer enters another row */ }}
           onDrop={commitReorder}
+          onGripTouchStart={onGripTouchStart}
+          onGripTouchMove={onGripTouchMove}
+          onGripTouchEnd={onGripTouchEnd}
           dropMark={dropAt?.id === s.id ? dropAt.pos : null}
         />
       ))}
@@ -479,7 +512,9 @@ function SubtaskList({
 
 function SubtaskRow({
   id, title, done, onToggle, onSave, onDelete,
-  onDragStart, onDragOver, onDragLeave, onDrop, dropMark,
+  onDragStart, onDragOver, onDragLeave, onDrop,
+  onGripTouchStart, onGripTouchMove, onGripTouchEnd,
+  dropMark,
 }: {
   id: string;
   title: string;
@@ -491,6 +526,9 @@ function SubtaskRow({
   onDragOver: (id: string, pos: 'before' | 'after') => void;
   onDragLeave: () => void;
   onDrop: () => void;
+  onGripTouchStart: (id: string) => void;
+  onGripTouchMove: (clientX: number, clientY: number) => void;
+  onGripTouchEnd: () => void;
   dropMark: 'before' | 'after' | null;
 }) {
   const [editing, setEditing] = useState(false);
@@ -516,6 +554,7 @@ function SubtaskRow({
       className="subtask subtask-edit"
       data-done={done}
       data-drop-mark={dropMark ?? undefined}
+      data-subtask-id={id}
       draggable={dragOnHandle}
       onDragStart={(e) => {
         e.dataTransfer.effectAllowed = 'move';
@@ -538,6 +577,25 @@ function SubtaskRow({
         title="Drag to reorder"
         onMouseDown={() => setDragOnHandle(true)}
         onMouseUp={() => setDragOnHandle(false)}
+        onPointerDown={(e) => {
+          if (e.pointerType !== 'touch') return;
+          e.preventDefault();
+          e.stopPropagation();
+          e.currentTarget.setPointerCapture(e.pointerId);
+          onGripTouchStart(id);
+        }}
+        onPointerMove={(e) => {
+          if (e.pointerType !== 'touch') return;
+          onGripTouchMove(e.clientX, e.clientY);
+        }}
+        onPointerUp={(e) => {
+          if (e.pointerType !== 'touch') return;
+          onGripTouchEnd();
+        }}
+        onPointerCancel={(e) => {
+          if (e.pointerType !== 'touch') return;
+          onGripTouchEnd();
+        }}
       >::</span>
       <span className="sc" onClick={onToggle} aria-label={done ? 'Mark not done' : 'Mark done'}>
         {done && <Check size={11} strokeWidth={3} />}

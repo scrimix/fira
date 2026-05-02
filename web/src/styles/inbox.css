@@ -224,10 +224,20 @@
   opacity: 0;
   transition: opacity 0.08s;
   user-select: none;
+  /* Pointer events handle touch reorder. touch-action: none stops the
+   * browser from claiming the gesture as a scroll before we can. */
+  touch-action: none;
+  -webkit-touch-callout: none;
 }
 .task-grip:active { cursor: grabbing; }
 .task-row:hover .task-grip { opacity: 1; }
 .task-grip:hover { color: var(--ink-2); }
+/* On touch (no hover), keep the grip permanently visible so it's
+ * findable. The desktop fade-in is just polish; on mobile it's a
+ * dead end. */
+@media (hover: none) {
+  .task-grip { opacity: 0.5; }
+}
 .task-row[data-status="done"] .task-title {
   text-decoration: line-through;
   color: var(--ink-4);
@@ -684,6 +694,10 @@
   padding: 0;
   opacity: 0.5;
   transition: opacity 80ms ease;
+  /* See .task-grip — pointer-events touch reorder needs touch-action
+   * none so the browser doesn't intercept as a scroll. */
+  touch-action: none;
+  -webkit-touch-callout: none;
 }
 .subtask:hover .subtask-grip { opacity: 1; }
 .subtask .subtask-grip:active { cursor: grabbing; }

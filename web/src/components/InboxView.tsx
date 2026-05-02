@@ -98,6 +98,30 @@ export function InboxView() {
 
   const userById = (id: string | null) => users.find((u) => u.id === id);
 
+  const applyTaskMove = (draggedId: UUID, target: Task, insertBefore: boolean) => {
+    if (!draggedId || draggedId === target.id) return;
+    const dragged = tasks.find((t) => t.id === draggedId);
+    if (!dragged || dragged.project_id !== target.project_id) return;
+    if (dragged.section !== target.section) {
+      setTaskSection(draggedId, target.section);
+    }
+    if (
+      target.section === 'now' &&
+      target.assignee_id != null &&
+      dragged.assignee_id !== target.assignee_id
+    ) {
+      setTaskAssignee(draggedId, target.assignee_id);
+    }
+    const sectionList = projectTasks
+      .filter((t) => t.section === target.section && t.id !== draggedId)
+      .sort(byKey)
+      .map((t) => t.id);
+    const targetIdx = sectionList.indexOf(target.id);
+    const insertIdx = insertBefore ? targetIdx : targetIdx + 1;
+    sectionList.splice(insertIdx, 0, draggedId);
+    reorderTasks(target.project_id, target.section, sectionList);
+  };
+
   const onRowDragStart = (e: React.DragEvent, taskId: string) => {
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', taskId);
@@ -118,34 +142,9 @@ export function InboxView() {
     setDropTarget(null);
     setAssigneeDropTarget(null);
     const draggedId = e.dataTransfer.getData('text/plain');
-    if (!draggedId || draggedId === target.id) return;
-    const dragged = tasks.find((t) => t.id === draggedId);
-    if (!dragged || dragged.project_id !== target.project_id) return;
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const insertBefore = e.clientY < rect.top + rect.height / 2;
-
-    // Cross-section: switch section first, then reorder within target section.
-    if (dragged.section !== target.section) {
-      setTaskSection(draggedId, target.section);
-    }
-    // Cross-assignee: dropping onto a row owned by a different person within
-    // the Now section reassigns the task to that person.
-    if (
-      target.section === 'now' &&
-      target.assignee_id != null &&
-      dragged.assignee_id !== target.assignee_id
-    ) {
-      setTaskAssignee(draggedId, target.assignee_id);
-    }
-
-    const sectionList = projectTasks
-      .filter((t) => t.section === target.section && t.id !== draggedId)
-      .sort(byKey)
-      .map((t) => t.id);
-    const targetIdx = sectionList.indexOf(target.id);
-    const insertIdx = insertBefore ? targetIdx : targetIdx + 1;
-    sectionList.splice(insertIdx, 0, draggedId);
-    reorderTasks(target.project_id, target.section, sectionList);
+    applyTaskMove(draggedId, target, insertBefore);
   };
   const onSectionDrop = (e: React.DragEvent, section: Section) => {
     e.preventDefault();
@@ -153,6 +152,100 @@ export function InboxView() {
     if (id) setTaskSection(id, section);
     setDropTarget(null);
     setRowDropAt(null);
+  };
+
+  // Touch-based drag for the grip column. HTML5 drag-and-drop doesn't
+  // fire from touch, so we run a parallel pointer-events flow that
+  // resolves to the same applyTaskMove / setTaskSection logic on
+  // release. The grip uses setPointerCapture so subsequent moves come
+  // back to it even when the finger leaves the row.
+  const touchDraggedRef = useRef<UUID | null>(null);
+  const touchDropAtRef = useRef<{ id: UUID; pos: 'before' | 'after' } | null>(null);
+  const touchSectionRef = useRef<Section | null>(null);
+  const touchAssigneeRef = useRef<UUID | null>(null);
+  const onGripTouchStart = (taskId: UUID) => {
+    touchDraggedRef.current = taskId;
+    touchDropAtRef.current = null;
+    touchSectionRef.current = null;
+    touchAssigneeRef.current = null;
+    setRowDropAt(null);
+    setDropTarget(null);
+    setAssigneeDropTarget(null);
+  };
+  const onGripTouchMove = (clientX: number, clientY: number) => {
+    const dragged = touchDraggedRef.current;
+    if (!dragged) return;
+    const el = document.elementFromPoint(clientX, clientY) as HTMLElement | null;
+    const rowEl = el?.closest('[data-task-id]') as HTMLElement | null;
+    if (rowEl && rowEl.dataset.taskId && rowEl.dataset.taskId !== dragged) {
+      const rect = rowEl.getBoundingClientRect();
+      const pos: 'before' | 'after' = clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+      const next = { id: rowEl.dataset.taskId as UUID, pos };
+      touchDropAtRef.current = next;
+      touchSectionRef.current = null;
+      touchAssigneeRef.current = null;
+      setRowDropAt(next);
+      setDropTarget(null);
+      setAssigneeDropTarget(null);
+      return;
+    }
+    // Empty (or interior, but row case already handled above) assignee
+    // group — reassigns + moves to Now on release. Highlights with the
+    // cyan band, mirroring the HTML5 onDragOver path.
+    const assigneeEl = el?.closest('[data-assignee-id]') as HTMLElement | null;
+    const aid = assigneeEl?.dataset.assigneeId as UUID | undefined;
+    if (aid) {
+      touchAssigneeRef.current = aid;
+      touchDropAtRef.current = null;
+      touchSectionRef.current = null;
+      setAssigneeDropTarget(aid);
+      setRowDropAt(null);
+      setDropTarget(null);
+      return;
+    }
+    const sectionEl = el?.closest('.section') as HTMLElement | null;
+    const sec = sectionEl?.getAttribute('data-section') as Section | null;
+    if (sec) {
+      touchSectionRef.current = sec;
+      touchDropAtRef.current = null;
+      touchAssigneeRef.current = null;
+      setDropTarget(sec);
+      setRowDropAt(null);
+      setAssigneeDropTarget(null);
+      return;
+    }
+    touchDropAtRef.current = null;
+    touchSectionRef.current = null;
+    touchAssigneeRef.current = null;
+    setRowDropAt(null);
+    setDropTarget(null);
+    setAssigneeDropTarget(null);
+  };
+  const onGripTouchEnd = () => {
+    const dragged = touchDraggedRef.current;
+    const dropAt = touchDropAtRef.current;
+    const section = touchSectionRef.current;
+    const assignee = touchAssigneeRef.current;
+    touchDraggedRef.current = null;
+    touchDropAtRef.current = null;
+    touchSectionRef.current = null;
+    touchAssigneeRef.current = null;
+    setRowDropAt(null);
+    setDropTarget(null);
+    setAssigneeDropTarget(null);
+    if (!dragged) return;
+    if (dropAt) {
+      const target = tasks.find((t) => t.id === dropAt.id);
+      if (target) applyTaskMove(dragged, target, dropAt.pos === 'before');
+    } else if (assignee) {
+      const draggedTask = tasks.find((t) => t.id === dragged);
+      if (draggedTask) {
+        if (draggedTask.assignee_id !== assignee) setTaskAssignee(dragged, assignee);
+        if (draggedTask.section !== 'now') setTaskSection(dragged, 'now');
+      }
+    } else if (section) {
+      setTaskSection(dragged, section);
+    }
   };
 
   const renderRow = (t: Task, showSubs: boolean) => (
@@ -166,6 +259,9 @@ export function InboxView() {
              onRowDragOver={onRowDragOver}
              onRowDrop={onRowDrop}
              onRowDragLeave={() => setRowDropAt(null)}
+             onGripTouchStart={onGripTouchStart}
+             onGripTouchMove={onGripTouchMove}
+             onGripTouchEnd={onGripTouchEnd}
              dropMark={rowDropAt?.id === t.id ? rowDropAt.pos : null}
              showSubs={showSubs} />
   );
@@ -228,6 +324,7 @@ export function InboxView() {
                 return (
                   <div key={aid}
                        data-assignee-drop={isAssigneeDrop ? 'true' : undefined}
+                       data-assignee-id={aid}
                        className="assignee-group"
                        onDragOver={(e) => {
                          e.preventDefault();
@@ -447,13 +544,18 @@ interface RowProps {
   onRowDragOver: (e: React.DragEvent, target: Task) => void;
   onRowDrop: (e: React.DragEvent, target: Task) => void;
   onRowDragLeave: () => void;
+  onGripTouchStart: (taskId: UUID) => void;
+  onGripTouchMove: (clientX: number, clientY: number) => void;
+  onGripTouchEnd: () => void;
   dropMark: 'before' | 'after' | null;
   showSubs: boolean;
 }
 
 function TaskRow({
   task, blocks, onTick, onSubTick, onSubSave, onSubDelete, onOpen,
-  onDragStart, onRowDragOver, onRowDrop, onRowDragLeave, dropMark, showSubs,
+  onDragStart, onRowDragOver, onRowDrop, onRowDragLeave,
+  onGripTouchStart, onGripTouchMove, onGripTouchEnd,
+  dropMark, showSubs,
 }: RowProps) {
   const left = taskTimeLeft(task, blocks);
   const lowLeft = left != null && task.estimate_min != null && left < task.estimate_min * 0.2 && left > 0;
@@ -463,6 +565,7 @@ function TaskRow({
     <div className="task-row"
          data-status={task.status}
          data-drop-mark={dropMark ?? undefined}
+         data-task-id={task.id}
          draggable={dragOnHandle}
          onDragStart={(e) => onDragStart(e, task.id)}
          onDragEnd={() => setDragOnHandle(false)}
@@ -478,6 +581,25 @@ function TaskRow({
            title="Drag to reorder"
            onMouseDown={() => setDragOnHandle(true)}
            onMouseUp={() => setDragOnHandle(false)}
+           onPointerDown={(e) => {
+             if (e.pointerType !== 'touch') return;
+             e.preventDefault();
+             e.stopPropagation();
+             e.currentTarget.setPointerCapture(e.pointerId);
+             onGripTouchStart(task.id);
+           }}
+           onPointerMove={(e) => {
+             if (e.pointerType !== 'touch') return;
+             onGripTouchMove(e.clientX, e.clientY);
+           }}
+           onPointerUp={(e) => {
+             if (e.pointerType !== 'touch') return;
+             onGripTouchEnd();
+           }}
+           onPointerCancel={(e) => {
+             if (e.pointerType !== 'touch') return;
+             onGripTouchEnd();
+           }}
            onClick={(e) => e.stopPropagation()}>
         <span>::</span>
       </div>
