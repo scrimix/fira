@@ -358,9 +358,11 @@ pub async fn list_all_users(pool: &PgPool) -> sqlx::Result<Vec<User>> {
         .await
 }
 
-// Users surfaced to the client = the caller plus the active workspace's
-// members. Bootstrap returns this so calendar views, member pickers, and
-// "(you)" lookups have everyone they need.
+// Users surfaced to the client = the caller, the active workspace's
+// members, and every link partner the caller has (pending sent / received
+// / accepted). Linked accounts can live in any workspace — the topbar /
+// modal still need their name + initials, so we include them in the
+// bootstrap user list regardless of workspace membership.
 pub async fn list_users_in_scope(
     pool: &PgPool,
     workspace_id: Uuid,
@@ -372,6 +374,11 @@ pub async fn list_users_in_scope(
          WHERE u.id = $1
             OR u.id IN (SELECT user_id FROM workspace_members
                         WHERE workspace_id = $2 AND removed_at IS NULL)
+            OR u.id IN (
+                SELECT CASE WHEN user_a_id = $1 THEN user_b_id ELSE user_a_id END
+                FROM user_links
+                WHERE user_a_id = $1 OR user_b_id = $1
+            )
          ORDER BY u.name",
     )
     .bind(me)

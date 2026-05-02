@@ -585,40 +585,42 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
  * logout button so the trailing trio reads as one set. State drives
  * just the foreground color: muted by default, accent-tinted when
  * something needs attention. */
+/* Borderless icon-only by default — sits next to Log out / topbar-me as
+ * a quiet glyph. State just nudges the foreground color so it can call
+ * for attention (received) without becoming a chip. When accepted the
+ * button widens to host the paired identity chips ([me] <> [partner])
+ * and the standalone topbar-me is folded in to avoid duplicating "me". */
 .topbar .link-btn {
   display: inline-flex; align-items: center;
-  gap: 4px;
+  gap: 5px;
   height: 22px;
-  padding: 0 7px;
-  margin-right: 8px;
+  padding: 0 4px;
+  margin-right: 6px;
   color: var(--ink-3);
-  border: 1px solid var(--rule-2);
-  background: var(--paper);
+  border: none;
+  background: transparent;
   cursor: pointer;
 }
-.topbar .link-btn:hover {
-  color: var(--ink);
-  border-color: var(--rule-3);
+.topbar .link-btn:hover { color: var(--ink); }
+.topbar .link-btn[data-state="received"] { color: var(--accent); }
+.topbar .link-btn[data-state="sent"] { color: var(--ink-3); opacity: 0.7; }
+.topbar .link-btn[data-state="accepted"] { color: var(--ink-3); }
+.topbar .link-btn[data-state="accepted"]:hover { color: var(--ink); }
+/* Paired identity chip in the rightmost slot when a link is accepted —
+ * replaces the standalone topbar-me. Two topbar-me boxes (me + partner)
+ * with a lucide link glyph between them. Borderless wrapper; the chips
+ * keep their existing styling. */
+.topbar .link-pair {
+  display: inline-flex; align-items: center;
+  gap: 5px;
+  margin-left: 4px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
 }
-.topbar .link-btn[data-state="received"] {
-  color: var(--accent-fg);
-  background: color-mix(in oklab, var(--accent) 18%, var(--paper));
-  border-color: var(--accent);
-}
-.topbar .link-btn[data-state="sent"] {
-  color: var(--ink-2);
-  border-style: dashed;
-}
-.topbar .link-btn[data-state="accepted"] {
-  color: var(--ink);
-  border-color: var(--rule-3);
-}
-.topbar .link-btn-initials {
-  font-family: var(--font-mono);
-  font-size: calc(9px * var(--fs-scale));
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
+.topbar .link-pair-icon { color: var(--ink-3); }
+.topbar .link-pair:hover .link-pair-icon { color: var(--ink); }
 
 /* Link-modal state cards (accept / cancel / unlink). */
 .link-state-card .link-headline {

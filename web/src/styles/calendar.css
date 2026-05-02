@@ -586,9 +586,9 @@
   border-color: var(--rule-3);
 }
 .link-toggle[data-active="true"] {
-  color: var(--accent-fg);
-  background: color-mix(in oklab, var(--accent) 12%, var(--paper));
-  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
 }
 
 .cal-rail {

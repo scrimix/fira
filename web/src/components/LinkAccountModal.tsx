@@ -1,10 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Plus } from 'lucide-react';
+import { useMemo, useState } from 'react';
 import { useFira } from '../store';
-import type { User, UUID } from '../types';
 
 // One modal serves four states, picked from `links`:
-//   - none           → workspace member picker + "Send invite"
+//   - none           → email input + "Send invite"
 //   - sent (pending) → "Waiting for <Name>" + Cancel
 //   - received (pending) → "<Name> wants to link" + Accept / Decline
 //   - accepted       → "Linked with <Name>" + Unlink
@@ -15,15 +13,11 @@ import type { User, UUID } from '../types';
 export function LinkAccountModal() {
   const close = useFira((s) => s.closeLinkModal);
   const links = useFira((s) => s.links);
-  const meId = useFira((s) => s.meId);
   const users = useFira((s) => s.users);
   const requestLink = useFira((s) => s.requestLink);
   const acceptLink = useFira((s) => s.acceptLink);
   const cancelLink = useFira((s) => s.cancelLink);
   const showToast = useFira((s) => s.showToast);
-  const activeWorkspace = useFira((s) =>
-    s.workspaces.find((w) => w.id === s.activeWorkspaceId) ?? null,
-  );
 
   // Same priority order as the topbar icon — show the most actionable
   // card first if multiple coexist.
@@ -56,17 +50,10 @@ export function LinkAccountModal() {
   let body: React.ReactNode;
   if (!link) {
     body = (
-      <PickerView
-        users={users}
-        meId={meId}
-        workspaceMemberIds={
-          activeWorkspace
-            ? new Set(activeWorkspace.members.map((m) => m.user_id))
-            : new Set()
-        }
+      <EmailInviteView
         submitting={submitting}
-        onPick={(uid) => guarded(async () => {
-          await requestLink(uid);
+        onSend={(email) => guarded(async () => {
+          await requestLink(email);
         })}
       />
     );
@@ -144,13 +131,20 @@ export function LinkAccountModal() {
     );
   }
 
+  // A pending received request is sticky — the modal pops on every tab /
+  // refresh until the user accepts or declines, mirroring the server-side
+  // row. Disable the dismiss affordances so neither X, Esc, nor the
+  // backdrop can sweep it away.
+  const sticky = link?.direction === 'received' && link.status === 'pending';
   return (
-    <div className="modal-backdrop" onClick={close}>
+    <div className="modal-backdrop" onClick={sticky ? undefined : close}>
       <div className="modal np-modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <span className="ext">Link account</span>
           <span className="grow" />
-          <button className="icon-btn" onClick={close} title="Close (Esc)">×</button>
+          {!sticky && (
+            <button className="icon-btn" onClick={close} title="Close (Esc)">×</button>
+          )}
         </div>
         {body}
         {error && <div className="np-error" style={{ margin: '0 16px 12px' }}>{error}</div>}
@@ -159,72 +153,50 @@ export function LinkAccountModal() {
   );
 }
 
-interface PickerViewProps {
-  users: User[];
-  meId: UUID | null;
-  workspaceMemberIds: Set<UUID>;
+interface EmailInviteViewProps {
   submitting: boolean;
-  onPick: (id: UUID) => Promise<void> | void;
+  onSend: (email: string) => Promise<void> | void;
 }
 
-function PickerView({ users, meId, workspaceMemberIds, submitting, onPick }: PickerViewProps) {
-  const [query, setQuery] = useState('');
-  const inputRef = useRef<HTMLInputElement>(null);
-  useEffect(() => {
-    requestAnimationFrame(() => inputRef.current?.focus());
-  }, []);
+function EmailInviteView({ submitting, onSend }: EmailInviteViewProps) {
+  const [email, setEmail] = useState('');
+  const trimmed = email.trim();
+  const canSend = trimmed.length > 0 && !submitting;
 
-  // Picker is scoped to the active workspace's members. Email invites
-  // land in a future sprint — for now, the workspace owner adds the
-  // "personal" account first, then the user requests a link from there.
-  const candidates = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return users.filter((u) => {
-      if (u.id === meId) return false;
-      if (!workspaceMemberIds.has(u.id)) return false;
-      if (!q) return true;
-      return u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q);
-    });
-  }, [users, meId, workspaceMemberIds, query]);
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!canSend) return;
+    void onSend(trimmed);
+  };
 
   return (
-    <div className="np-body">
+    <form className="np-body" onSubmit={submit}>
       <p className="link-headline" style={{ marginTop: 0 }}>
         Pair this account with another one of yours.
       </p>
       <p className="np-hint" style={{ marginBottom: 12 }}>
-        Pick someone in this workspace. Once they accept, both of you will see
-        the other's tasks and time blocks on the calendar (read-only).
+        Type the email of your other account. Once they accept, both of you
+        will see each other's tasks and time blocks on the calendar
+        (read-only).
       </p>
       <input
-        ref={inputRef}
         className="user-search"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        placeholder="Search workspace members…"
+        type="email"
+        autoFocus
+        autoComplete="email"
+        spellCheck={false}
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        placeholder="name@example.com"
       />
-      <div className="np-members-candidates link-candidates">
-        {candidates.length === 0 ? (
-          <div className="user-empty">
-            {workspaceMemberIds.size <= 1
-              ? "You're the only one here. Ask the workspace owner to add the other account."
-              : 'No matches.'}
-          </div>
-        ) : candidates.map((u) => (
-          <button
-            key={u.id}
-            type="button"
-            className="user-row"
-            onClick={() => { void onPick(u.id); }}
-            disabled={submitting}
-          >
-            <span className="avatar">{u.initials}</span>
-            <span className="user-row-name">{u.name}</span>
-            <span className="user-row-email">{u.email}</span>
-            <Plus size={13} strokeWidth={1.75} className="link-row-send" />
-          </button>
-        ))}
+      <div className="np-actions" style={{ marginTop: 12 }}>
+        <button type="button" className="btn" onClick={() => setEmail('')} disabled={submitting || !email}>
+          Clear
+        </button>
+        <button type="submit" className="btn np-create" disabled={!canSend}>
+          Send invite
+        </button>
       </div>
-    </div>
+    </form>
   );
 }

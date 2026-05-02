@@ -185,7 +185,7 @@ interface FiraState {
   closeProjectModal: () => void;
   showToast: (message: string, kind?: ToastKind) => void;
   reloadLinks: () => Promise<void>;
-  requestLink: (target_user_id: UUID) => Promise<void>;
+  requestLink: (email: string) => Promise<void>;
   acceptLink: (id: UUID) => Promise<void>;
   cancelLink: (id: UUID) => Promise<void>;
   loadLinkedCalendar: () => Promise<void>;
@@ -1106,8 +1106,8 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     }
   },
 
-  requestLink: async (target_user_id) => {
-    const link = await api.createLink(target_user_id);
+  requestLink: async (email) => {
+    const link = await api.createLink(email);
     set((s) => ({ links: [...s.links.filter((l) => l.id !== link.id), link] }));
   },
 

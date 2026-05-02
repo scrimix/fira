@@ -32,6 +32,12 @@ export default function App() {
   const hasAcceptedLink = useFira((s) =>
     s.links.some((l) => l.status === 'accepted'),
   );
+  // A pending received request forces the modal open. The link row is
+  // server-persisted, so it survives refresh / shows on every tab — and
+  // the only way to dismiss is Accept or Decline (both clear the row).
+  const hasPendingReceived = useFira((s) =>
+    s.links.some((l) => l.direction === 'received' && l.status === 'pending'),
+  );
   const editingProject = useFira((s) => {
     const m = s.projectModal;
     return m?.kind === 'edit' ? s.projects.find((p) => p.id === m.id) ?? null : null;
@@ -117,7 +123,11 @@ export default function App() {
         useFira.getState().closeCreate();
         useFira.getState().closeProjectModal();
         useFira.getState().closeWorkspaceModal();
-        useFira.getState().closeLinkModal();
+        // Received pending link is sticky — only Accept/Decline can clear it.
+        const sticky = useFira
+          .getState()
+          .links.some((l) => l.direction === 'received' && l.status === 'pending');
+        if (!sticky) useFira.getState().closeLinkModal();
       }
       if (e.key === 'g') useFira.getState().setView('calendar');
       if (e.key === 'i') useFira.getState().setView('inbox');
@@ -175,7 +185,7 @@ export default function App() {
       {workspaceModal?.kind === 'edit' && editingWorkspace && (
         <WorkspaceModal key={editingWorkspace.id} workspace={editingWorkspace} />
       )}
-      {linkModalOpen && <LinkAccountModal />}
+      {(linkModalOpen || hasPendingReceived) && <LinkAccountModal />}
       <Toasts />
     </div>
   );

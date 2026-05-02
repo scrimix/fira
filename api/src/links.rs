@@ -13,10 +13,10 @@
 // workspace-scoped op for link.* — same model as workspace.delete.
 //
 // Authorization:
-//   - Create a request: caller picks a target_user_id who must be a
-//     member of the caller's *current* workspace. Email invites land in
-//     a future sprint; until then the workspace member list is the only
-//     way to find someone to link with.
+//   - Create a request: caller types the partner's email; server looks
+//     up the user. No workspace co-membership required — linking is
+//     consent between two account owners regardless of which workspaces
+//     they share, if any.
 //   - Accept: only the non-requester side of a pending link.
 //   - Cancel / unlink: either party (mirrors how workspace member
 //     removals work — both ends can sever).
@@ -36,7 +36,7 @@ use crate::AppState;
 
 #[derive(Deserialize)]
 pub struct CreateLink {
-    pub target_user_id: Uuid,
+    pub email: String,
 }
 
 pub async fn list_my(
@@ -51,25 +51,25 @@ pub async fn create(
     ctx: AuthCtx,
     Json(body): Json<CreateLink>,
 ) -> Result<(StatusCode, Json<crate::models::UserLink>), ApiError> {
-    if body.target_user_id == ctx.user.id {
-        return Err(ApiError::BadRequest("can't link to yourself".into()));
+    let email = body.email.trim().to_lowercase();
+    if email.is_empty() {
+        return Err(ApiError::BadRequest("email is required".into()));
     }
-    // Target must be a member of the caller's current workspace. This is
-    // the "select from accounts in workspace" rule from the brief — keeps
-    // the picker scoped to people the caller already collaborates with
-    // until email invites are a thing.
-    let target_in_workspace: Option<(i32,)> = sqlx::query_as(
-        "SELECT 1 FROM workspace_members
-         WHERE workspace_id = $1 AND user_id = $2 AND removed_at IS NULL",
+    // Look up the partner by email. We don't pre-validate the format —
+    // if it isn't a real account, the lookup just misses.
+    let target: Option<(Uuid,)> = sqlx::query_as(
+        "SELECT id FROM users WHERE lower(email) = $1",
     )
-    .bind(ctx.workspace_id)
-    .bind(body.target_user_id)
+    .bind(&email)
     .fetch_optional(&s.pool)
     .await?;
-    if target_in_workspace.is_none() {
+    let Some((target_user_id,)) = target else {
         return Err(ApiError::BadRequest(
-            "target must be a member of the current workspace".into(),
+            "no Fira account found for that email".into(),
         ));
+    };
+    if target_user_id == ctx.user.id {
+        return Err(ApiError::BadRequest("can't link to yourself".into()));
     }
 
     // One link per user — reject if either side already has one in any
@@ -80,21 +80,21 @@ pub async fn create(
             "you already have a link or pending request".into(),
         ));
     }
-    if has_any_link(&s.pool, body.target_user_id).await? {
+    if has_any_link(&s.pool, target_user_id).await? {
         return Err(ApiError::BadRequest(
             "the other account already has a link or pending request".into(),
         ));
     }
 
     let mut tx = s.pool.begin().await?;
-    let id = db::create_link_request_tx(&mut tx, ctx.user.id, body.target_user_id)
+    let id = db::create_link_request_tx(&mut tx, ctx.user.id, target_user_id)
         .await?
         .ok_or_else(|| ApiError::BadRequest("link already exists".into()))?;
     tx.commit().await?;
     // Both parties refresh: requester sees the pending-sent state, target
     // sees the pending-received call to action.
     let _ = s.hub.notify_user(&s.pool, ctx.user.id).await;
-    let _ = s.hub.notify_user(&s.pool, body.target_user_id).await;
+    let _ = s.hub.notify_user(&s.pool, target_user_id).await;
     let link = link_for(&s.pool, ctx.user.id, id).await?;
     Ok((StatusCode::CREATED, Json(link)))
 }

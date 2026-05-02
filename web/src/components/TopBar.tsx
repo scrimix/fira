@@ -1,4 +1,4 @@
-import { Link2 } from 'lucide-react';
+import { Link } from 'lucide-react';
 import { useFira } from '../store';
 import { weekStartFor, fmtWeekRange } from '../time';
 import { ProjectIcon } from './ProjectIcon';
@@ -16,19 +16,23 @@ export function TopBar() {
   const playgroundMode = useFira((s) => s.playgroundMode);
   // Pick the most "actionable" link to drive the icon's state. Order:
   // received (call to action) > sent (waiting) > accepted (settled) > none.
-  const linkState = useFira((s) => {
-    const received = s.links.find((l) => l.direction === 'received' && l.status === 'pending');
+  // Derived outside the selector so the result identity is stable across
+  // unrelated store updates — useSyncExternalStore otherwise treats a fresh
+  // object literal as a store change and infinite-loops.
+  const links = useFira((s) => s.links);
+  const users = useFira((s) => s.users);
+  const linkState = (() => {
+    const received = links.find((l) => l.direction === 'received' && l.status === 'pending');
     if (received) return { kind: 'received' as const, link: received };
-    const sent = s.links.find((l) => l.direction === 'sent' && l.status === 'pending');
+    const sent = links.find((l) => l.direction === 'sent' && l.status === 'pending');
     if (sent) return { kind: 'sent' as const, link: sent };
-    const accepted = s.links.find((l) => l.status === 'accepted');
+    const accepted = links.find((l) => l.status === 'accepted');
     if (accepted) return { kind: 'accepted' as const, link: accepted };
     return { kind: 'none' as const };
-  });
-  const partner = useFira((s) => {
-    const accepted = s.links.find((l) => l.status === 'accepted');
-    return accepted ? s.users.find((u) => u.id === accepted.partner_id) ?? null : null;
-  });
+  })();
+  const partner = linkState.kind === 'accepted'
+    ? users.find((u) => u.id === linkState.link.partner_id) ?? null
+    : null;
   const openLinkModal = useFira((s) => s.openLinkModal);
 
   const title = view === 'calendar'
@@ -68,22 +72,22 @@ export function TopBar() {
         </span>
       )}
       <SyncPill />
-      <button
-        className="link-btn"
-        data-state={linkState.kind}
-        onClick={() => openLinkModal()}
-        title={linkTitle}
-        aria-label={linkTitle}
-      >
-        <Link2 size={13} strokeWidth={1.75} />
-        {linkState.kind === 'accepted' && partner && (
-          <span className="link-btn-initials">{partner.initials}</span>
-        )}
-      </button>
       <button className="logout-btn" onClick={() => logout()} title="Sign out">
         Log out
       </button>
-      <div className="topbar-me" title={me?.name ?? ''}>{me?.initials ?? '?'}</div>
+
+      {linkState.kind === 'accepted' && partner ?
+        (<span className="topbar-me" title={partner.name}>{partner.initials}</span>) : null
+      }
+      <button
+          className="link-pair"
+          onClick={() => openLinkModal()}
+          title={linkTitle}
+          aria-label={linkTitle}
+        >
+          <Link size={12} strokeWidth={1.75} className="link-pair-icon" />
+      </button>
+      <span className="topbar-me" title={me?.name ?? ''}>{me?.initials ?? '?'}</span>
     </div>
   );
 }

@@ -114,8 +114,8 @@ export const api = {
   getChanges: (since: number) =>
     req<ChangesResponse>('GET', `/changes?since=${since}`),
   listLinks: () => req<UserLink[]>('GET', '/links'),
-  createLink: (target_user_id: string) =>
-    req<UserLink>('POST', '/links', { target_user_id }),
+  createLink: (email: string) =>
+    req<UserLink>('POST', '/links', { email }),
   acceptLink: (id: string) =>
     req<UserLink>('POST', `/links/${id}/accept`),
   deleteLink: (id: string) => req<void>('DELETE', `/links/${id}`),
