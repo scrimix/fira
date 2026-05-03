@@ -300,6 +300,237 @@ flow is rare on phones and tapping the field works fine.
   looks "hovered" until the user taps somewhere else. Cheap to
   apply; pays back tenfold in feel.
 
+## Post-deploy fixes (production iteration)
+
+The "real-world testing" pass took several iterations beyond what was
+written above. Capturing the deltas here so the file reflects what
+actually shipped, not what we *first* shipped.
+
+### 12. PWA install / iOS home-screen icon
+
+Two problems with the home-screen flow:
+
+- **Safari tab favicon showed a white halo.** The original
+  `favicon.svg` had `rx=14` rounded corners; Safari's tab background
+  showed through the transparent corner pixels as a halo. Squared
+  the icon (full-bleed dark `#18181B` rect, no rounded corners) and
+  reordered the icon links so PNG variants come first — Safari
+  prefers PNG for tab favicons and renders SVG with extra background
+  framing on some builds.
+- **Add-to-home-screen showed a plain "F".** iOS Safari ignores SVG
+  favicons for the home-screen icon; it needs an `apple-touch-icon`
+  PNG. Added 32 / 180 / 192 / 512 PNGs (generated via `rsvg-convert`)
+  plus a `manifest.webmanifest` with name / theme color / icon set,
+  the `apple-mobile-web-app-*` meta tags so the launched PWA is
+  standalone with the right title and translucent status bar, and a
+  `mask-icon` for Safari pinned tabs.
+
+### 13. iOS notch / status-bar overlap in standalone
+
+`apple-mobile-web-app-status-bar-style=black-translucent` makes the
+status bar overlay our content; the topbar landed under the notch
+with the iOS clock printed on top of it. The viewport already had
+`viewport-fit=cover` so `env(safe-area-inset-*)` is exposed; added:
+
+```css
+.app {
+  padding-top: env(safe-area-inset-top);
+  padding-right: env(safe-area-inset-right);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+  background: var(--paper);
+}
+```
+
+With `box-sizing: border-box` and `height: 100dvh` already in place,
+the grid content area shrinks below the notch and above the home
+indicator. Browser-tab mode reports zero insets — no-op there. The
+mobile slide-over `.sidebar` is `position: fixed` so it doesn't
+inherit the parent padding; it got its own
+`padding-top: calc(14px + env(safe-area-inset-top))` etc.
+
+### 14. Long-press, take three: the inbox saga
+
+Sprint 18's first cut had inbox rows using a hand-rolled long-press
+(rowTouchRef + setTimeout). It worked sometimes; mostly it didn't.
+Three rounds of debugging:
+
+- **Round 1.** `:hover` was sticky on iOS, leaving a grey
+  "background trail" behind whichever row the finger had grazed
+  during a scroll. Wrapped `.task-row:hover` (and `.task-grip:hover`,
+  `.task-row:hover .task-grip`) in `@media (hover: hover)`. Same
+  treatment we already had for `.tb-action`.
+- **Round 2.** Drag-on-lock fired immediately, and iOS jitter
+  touchmoves at lock time hit-tested to the row's *own* assignee
+  group, lighting up the cyan accent before the user moved at all.
+  Rewrote `lockRowDrag`: at lock, only set the press-visual + arm a
+  document `touchmove` listener; only call `onGripTouchStart` once
+  the finger has travelled ≥ 4 px from the lock origin. Held still →
+  row enlarges, no group accent. Move → drag engages.
+- **Round 3, the real cause.** The visual still didn't show — the
+  user reported "nothing changes" even though the CSS rule
+  (`.task-row[data-pressing="true"]`) was in place. We hardcoded
+  `data-pressing="true"` on every row and confirmed the CSS *did*
+  paint, which meant the React state setter wasn't reaching the
+  DOM. The root cause turned out to be the **task grip's parallel
+  drag path** — `.task-grip` had its own pointer handlers
+  (`onPointerDown`, `onPointerMove`, `onPointerUp`, `onPointerCancel`)
+  that called `onGripTouchStart` directly, bypassing the long-press
+  hook entirely. Touches that landed on the grip went down the
+  grip's path and never set `isPressing`; the user thought they were
+  testing the row hook but were actually exercising a different code
+  path.
+
+  The fix was structural: collapse to **two** drag paths total,
+  split by *input type*, not by which child element the user
+  touched:
+
+  - **Desktop drag** = HTML5 drag-and-drop, armed by `mousedown` on
+    the grip (still useful — grip is a visible drag handle).
+  - **Mobile drag** = `useLongPress` on the row body, single path,
+    grip included as just visual.
+
+  Stripped the grip's touch handlers entirely. Removed
+  `.task-grip` from the long-press exclusion list. The grip on
+  mobile is now a pure visual cue; long-press on the grip drags the
+  row exactly like long-press on the title.
+
+  While we were rewriting, we extracted a proper
+  [`useLongPress`](../../web/src/useLongPress.ts) hook —
+  `holdMs` + `cancelPx` options, returns
+  `{ isPressing, bind, shouldSuppressClick }`. The TaskRow's
+  long-press section dropped from ~80 lines of `setTimeout` /
+  `clearTimeout` / refs to a single hook call. Calendar's long-press
+  for time blocks could move to it later; left as-is for now since
+  the calendar wasn't broken.
+
+### 15. Touch drop on assignee groups: top/bottom resolution
+
+Touch-dragging into an assignee group's empty area was committing
+to "wherever the finger last hovered over a row" — usually the row
+the user dragged *past* on the way in. Rewrote the assignee branch
+in `onGripTouchMove`:
+
+- Read the `assignee-group` element's bounding rect.
+- If the finger is in the upper half of the group, point the drop
+  to **before** the group's first task; lower half points to
+  **after** the group's last task.
+- Show the cyan target line on the resolved row (so the user sees
+  exactly where the drop lands).
+- Empty group: fall back to the assignee-only branch (group accent,
+  reassign + section-flip on release).
+
+Same convention `onRowDragOver` uses for individual rows, just
+scoped to the whole group's box.
+
+### 16. Time block: visual at lock, click-outside-clears-active,
+two-tap grace for action buttons
+
+Three blocks of fixes for the calendar that mirror the inbox work:
+
+- **Visual flash on quick taps.** Original press-visual fired on a
+  100 ms pre-lock timer. Quick taps flashed the scaled-up frame on
+  their way to opening / activating; cancelled holds (movement past
+  8 px before 220 ms) flashed the visual and then shrank, looking
+  like the system rejected a gesture the user thought registered.
+  Removed the pre-lock timer. `setPressingBlockId` fires *only*
+  inside the 220 ms hold-timer's callback, on the same line as
+  `vibrate` and `setDrag`. No flash, ever. Press visual rides the
+  drag and clears in the global drag-`onUp`.
+- **Click anywhere clears active.** Block stayed in
+  `[data-active="true"]` after the user moved on (scrolled, tapped
+  elsewhere). Added a document-level `pointerdown` listener: if the
+  press isn't on `.tblock` or `.tb-action`, `setLastBlockId(null)`.
+  Mouse and touch alike.
+- **Action buttons firing on the first tap.** When a tap activates
+  a block, the buttons render mid-gesture and the trailing click
+  hits one of them. Tried CSS-only fixes (`pointer-events: none`
+  until active) — didn't help, because the click target is
+  determined at `pointerup`, by which time React has already
+  rendered the buttons. Final fix: a one-shot grace ref. On a touch
+  pointerdown that transitions a block from inactive → active,
+  `recentTouchActivationRef` records `{ blockId, at: now() }`. Each
+  action button's onClick calls `consumeRecentTouchActivation(b.id)`
+  first; if a fresh activation exists (≤ 500 ms, same block), the
+  click is swallowed and the ref is cleared. Mouse hover never
+  writes to the ref so single-click works normally on desktop.
+
+### 17. Smaller in-flight tweaks
+
+- **Inbox topbar title hidden on mobile, even for inbox view.** The
+  project name was duplicated (topbar breadcrumb + page header
+  below) and pushed Log out off-screen on narrow widths. Title is
+  now `''` whenever `isMobile`, regardless of view; the
+  `.title-icon` ProjectIcon next to it is also gated on `!isMobile`.
+- **Own-user avatar back on mobile.** The `topbar-me` chip moved
+  out of the `!isMobile` block so it always renders. The link
+  button + partner avatar stay desktop-only — user said the slot is
+  earmarked for a settings menu later.
+- **Totals strip centered on mobile.** `.cal-totals-strip` got
+  `justify-content: center` inside the phone media query so the
+  `Xh done · Xh planned · Xh total` row reads as a banner under
+  the toolbar.
+- **Show linked / Show personal restored on mobile.** Sprint 18's
+  first cut hid `.link-toggle` along with `.user-picker`. Only the
+  user-picker should be hidden; the link toggles got compressed
+  padding + smaller font to fit the narrow row.
+- **Subtask multi-row in modal.** `.subtask` and `.subtask-edit`
+  switched to `align-items: flex-start`; `.sname` got `flex: 1;
+  min-width: 0; word-break: break-word`; `.subtask .sc` got
+  `margin-top: 2px` so the checkbox aligns with the first line of
+  a wrapped title.
+- **Project modal stops grabbing focus on edit.** `autoFocus`
+  removed from the name input — tapping a project icon to edit no
+  longer pops the iOS keyboard.
+- **`10 tasks · 3 members` hidden on phone widths.** The Archive
+  button was wrapping below the title.
+- **Inbox-doc padding.** `padding: 16px 8px 80px` on phones so
+  titles run near the viewport edges.
+- **`100dvh`** on `.app`, `.inbox`, `.calendar`, `.modal`'s
+  `max-height`. Inbox can finally scroll past Safari's bottom
+  toolbar; modal fits with both toolbars visible.
+- **Viewport reverted to `initial-scale=1, viewport-fit=cover`.**
+  Sprint 18's first cut had `user-scalable=no, maximum-scale=1` to
+  defeat iOS focus-zoom. That broke trackpad two-finger scroll in
+  Chrome DevTools' mobile emulation (some browsers treat the
+  combination as "block all gestures"). Removed both directives;
+  the user opted to live with whatever zoom remains rather than the
+  16-px input rule that made fonts ugly. Final `<meta name="viewport"
+  content="width=device-width, initial-scale=1, maximum-scale=1">`
+  is the user's choice during testing.
+
+## Decisions worth remembering (added)
+
+- **One drag path per input type.** When two child elements (row vs
+  grip) had their own touch handlers running in parallel, debugging
+  was hopeless — the user thought they were testing the row's
+  long-press but the grip's path silently won every time. The right
+  split is by *input type* (Desktop = HTML5 drag, Mobile = touch
+  long-press), not by *which element* the touch landed on. Make
+  the grip a visual cue with no mobile handlers and let the row's
+  long-press cover everything.
+- **Custom hooks for cross-surface gestures.** Sprint 16 / 17 / 18
+  shipped three different long-press implementations across the
+  inbox row, the rail task, and the time block — same pattern,
+  three slightly different bugs. The
+  [`useLongPress`](../../web/src/useLongPress.ts) hook
+  consolidates one of them; the calendar versions are next when we
+  touch them. Long-press is *the* reusable touch primitive; treat
+  it as such.
+- **Don't trust "the React state isn't updating" — check
+  whether the handler is even called.** We chased a phantom
+  React-batching bug for two rounds because the visual wasn't
+  showing. The actual cause was that the grip's parallel pointer
+  handlers were intercepting every touch, so the row's hook never
+  saw a pointerdown. Hardcoding the styled state confirmed the CSS
+  was fine, which then pointed the finger at the JS path, which
+  pointed at the parallel handlers.
+- **iOS PWA standalone needs `env(safe-area-inset-*)` padding.**
+  Browser-tab mode hides this entirely; you only see the broken
+  layout once the app is installed to the home screen. Add the
+  padding even if you're not testing standalone yet — it's a
+  no-op everywhere else.
+
 ## What we noticed but didn't fix
 
 - **Right-click menu on slow long-press in some Chrome configs.** The
@@ -320,3 +551,7 @@ flow is rare on phones and tapping the field works fine.
 - **Body scroll lock when the slide-over sidebar is open.** Still
   not implemented. Low priority since the menu auto-closes on
   selection.
+- **Calendar long-press not yet on `useLongPress`.** Time blocks
+  and rail tasks still use bespoke long-press code from sprint 18
+  rounds 1–2. Migrating them to the hook is a small, mechanical
+  refactor — left for the next time someone touches that file.
