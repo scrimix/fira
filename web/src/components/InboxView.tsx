@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Check, Pencil } from 'lucide-react';
 import { useFira } from '../store';
+import { useLongPress } from '../useLongPress';
 import { ProjectIcon } from './ProjectIcon';
 import type { Task, TimeBlock, Section, UUID } from '../types';
 
@@ -188,18 +189,47 @@ export function InboxView() {
       setAssigneeDropTarget(null);
       return;
     }
-    // Empty (or interior, but row case already handled above) assignee
-    // group — reassigns + moves to Now on release. Highlights with the
-    // cyan band, mirroring the HTML5 onDragOver path.
+    // Inside an assignee group but not on a row. Resolve to "before the
+    // first task" or "after the last task" based on which half of the
+    // group the finger is in — same convention `onRowDragOver` uses for
+    // a single row, just scoped to the whole group's bounding box. The
+    // user sees the cyan target line on a real row, and the commit
+    // lands at top or bottom of that group with a reassign if needed.
+    // Empty group: fall back to the assignee-only path; the cyan group
+    // accent carries the drop indication when no row exists to mark.
     const assigneeEl = el?.closest('[data-assignee-id]') as HTMLElement | null;
     const aid = assigneeEl?.dataset.assigneeId as UUID | undefined;
-    if (aid) {
-      touchAssigneeRef.current = aid;
-      touchDropAtRef.current = null;
-      touchSectionRef.current = null;
-      setAssigneeDropTarget(aid);
-      setRowDropAt(null);
-      setDropTarget(null);
+    if (aid && assigneeEl) {
+      const draggedTask = tasks.find((t) => t.id === dragged);
+      const groupTasks = projectTasks
+        .filter((t) =>
+          t.section === 'now' &&
+          t.assignee_id === aid &&
+          t.id !== dragged,
+        )
+        .sort(byKey);
+      if (groupTasks.length > 0 && draggedTask) {
+        const rect = assigneeEl.getBoundingClientRect();
+        const upperHalf = clientY < rect.top + rect.height / 2;
+        const target = upperHalf ? groupTasks[0] : groupTasks[groupTasks.length - 1];
+        const next = {
+          id: target.id as UUID,
+          pos: (upperHalf ? 'before' : 'after') as 'before' | 'after',
+        };
+        touchDropAtRef.current = next;
+        touchSectionRef.current = null;
+        touchAssigneeRef.current = null;
+        setRowDropAt(next);
+        setDropTarget(null);
+        setAssigneeDropTarget(null);
+      } else {
+        touchAssigneeRef.current = aid;
+        touchDropAtRef.current = null;
+        touchSectionRef.current = null;
+        setAssigneeDropTarget(aid);
+        setRowDropAt(null);
+        setDropTarget(null);
+      }
       return;
     }
     const sectionEl = el?.closest('.section') as HTMLElement | null;
@@ -584,152 +614,97 @@ function TaskRow({
 }: RowProps) {
   const [dragOnHandle, setDragOnHandle] = useState(false);
 
-  // Long-press-to-drag for the whole row on touch. iOS pointer events
-  // can't preventDefault scroll (touch-action wins). So we keep the
-  // pre-lock state in pointer events (cheap, gives us clientX/Y), but
-  // once the long-press fires we attach a non-passive document
-  // touchmove listener — that's the only thing iOS Safari respects
-  // for blocking scroll mid-gesture. A quick tap falls through to
-  // onClick; a fast move within the hold window cancels the timer
-  // and lets iOS handle it as a scroll.
-  const rowTouchRef = useRef<{
-    startX: number; startY: number;
-    timer: number | null;
-    locked: boolean;
-    suppressClick: boolean;
-    cleanup: (() => void) | null;
-  } | null>(null);
-  const HOLD_MS = 220;
-  const SCROLL_CANCEL_PX = 8;
-
-  const lockRowDrag = () => {
-    const t = rowTouchRef.current;
-    if (!t) return;
-    t.locked = true;
-    t.timer = null;
+  // Long-press → drag for the whole row on touch. The hook drives
+  // `isPressing` (renders as `data-pressing="true"` for the CSS visual)
+  // and gives us the moment-of-lock callback in which we hand the
+  // gesture off to the drag pipeline. Tap (release before holdMs) and
+  // scroll-cancel (>8 px movement) just don't fire onLongPress — the
+  // row's normal onClick handles the tap path.
+  const docCleanupRef = useRef<(() => void) | null>(null);
+  const onLongPress = (e: React.PointerEvent) => {
+    // Skip only the children that own their own click action (checkboxes
+    // toggle done; we don't want a long-press on those to drag instead).
+    // The grip is *not* excluded — it's a pure visual hint on touch, so
+    // long-pressing on it should drag the row exactly like long-pressing
+    // anywhere else. The split is cleanly Desktop (HTML5 drag, grip
+    // mouse-down) vs Mobile (long-press, single path).
+    const target = e.target as HTMLElement;
+    if (target.closest('.task-check, .sc')) return;
     navigator.vibrate?.(8);
     onGripTouchStart(task.id);
-    const onMove = (ev: TouchEvent) => {
-      const touch = ev.touches[0];
-      if (!touch) return;
+    // Once locked, attach a non-passive document touchmove so iOS can't
+    // scroll the page during the drag. Pointer events from React stop
+    // firing when iOS reroutes the gesture to its own scroller, so we
+    // route through document touch events for the move/end phase.
+    let started = false;
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const ENGAGE_PX = 4;
+    const onTouchMove = (ev: TouchEvent) => {
+      const t0 = ev.touches[0];
+      if (!t0) return;
       ev.preventDefault();
-      onGripTouchMove(touch.clientX, touch.clientY);
+      if (!started) {
+        if (Math.abs(t0.clientX - startX) < ENGAGE_PX
+          && Math.abs(t0.clientY - startY) < ENGAGE_PX) return;
+        started = true;
+      }
+      onGripTouchMove(t0.clientX, t0.clientY);
     };
-    const onEnd = () => {
-      const ref = rowTouchRef.current;
-      if (!ref) return;
-      ref.cleanup?.();
-      ref.cleanup = null;
-      onGripTouchEnd();
-      ref.suppressClick = true;
-      window.setTimeout(() => { rowTouchRef.current = null; }, 50);
+    const detach = () => {
+      document.removeEventListener('touchmove', onTouchMove);
+      document.removeEventListener('touchend', onTouchEnd);
+      document.removeEventListener('touchcancel', onTouchCancel);
+      docCleanupRef.current = null;
     };
-    document.addEventListener('touchmove', onMove, { passive: false });
-    document.addEventListener('touchend', onEnd);
-    document.addEventListener('touchcancel', onEnd);
-    t.cleanup = () => {
-      document.removeEventListener('touchmove', onMove);
-      document.removeEventListener('touchend', onEnd);
-      document.removeEventListener('touchcancel', onEnd);
-    };
+    const onTouchEnd = () => { detach(); onGripTouchEnd(); };
+    const onTouchCancel = () => { detach(); onGripTouchEnd(); };
+    document.addEventListener('touchmove', onTouchMove, { passive: false });
+    document.addEventListener('touchend', onTouchEnd);
+    document.addEventListener('touchcancel', onTouchCancel);
+    docCleanupRef.current = detach;
   };
 
-  const onRowPointerDown = (e: React.PointerEvent) => {
-    if (e.pointerType !== 'touch') return;
-    const targetEl = e.target as HTMLElement;
-    // Subtask body falls through (long-press drags the parent task).
-    // Only the checkboxes (.task-check, .sc) and the explicit grip own
-    // their own behavior.
-    if (targetEl.closest('.task-check, .sc, .task-grip')) return;
-    rowTouchRef.current = {
-      startX: e.clientX, startY: e.clientY,
-      timer: null, locked: false, suppressClick: false, cleanup: null,
-    };
-    rowTouchRef.current.timer = window.setTimeout(lockRowDrag, HOLD_MS);
-  };
-  const onRowPointerMove = (e: React.PointerEvent) => {
-    if (e.pointerType !== 'touch') return;
-    const t = rowTouchRef.current;
-    if (!t || t.locked) return;
-    const dx = Math.abs(e.clientX - t.startX);
-    const dy = Math.abs(e.clientY - t.startY);
-    if (dx > SCROLL_CANCEL_PX || dy > SCROLL_CANCEL_PX) {
-      if (t.timer != null) window.clearTimeout(t.timer);
-      // Mark the row as "user was scrolling" so the synthetic click that
-      // iOS dispatches on pointerup (when the gesture started here) is
-      // swallowed and doesn't open the task modal mid-scroll. The ref
-      // stays alive until pointerup so the click handler can read this
-      // flag — finishRowTouch clears it on a small delay.
-      t.suppressClick = true;
-      t.timer = null;
-    }
-  };
-  const finishRowTouch = () => {
-    const t = rowTouchRef.current;
-    if (!t) return;
-    if (t.timer != null) window.clearTimeout(t.timer);
-    if (t.locked) {
-      // Locked path is cleaned up by document touchend listener; nothing
-      // to do here — pointerup may fire before or after, depending on
-      // whether the row stays in the DOM.
-      return;
-    }
-    t.cleanup?.();
-    // Keep the suppression flag readable for the synthetic onClick that
-    // iOS dispatches right after pointerup, then clear on the next tick.
-    if (t.suppressClick) {
-      window.setTimeout(() => { rowTouchRef.current = null; }, 50);
-    } else {
-      rowTouchRef.current = null;
-    }
-  };
+  // If the component unmounts mid-drag, drop the document listeners.
+  useEffect(() => () => { docCleanupRef.current?.(); }, []);
+
+  const longPress = useLongPress(onLongPress, { holdMs: 220, cancelPx: 8 });
 
   return (
     <div className="task-row"
          data-status={task.status}
          data-drop-mark={dropMark ?? undefined}
          data-task-id={task.id}
+         data-pressing={longPress.isPressing ? 'true' : undefined}
          draggable={dragOnHandle}
          onDragStart={(e) => onDragStart(e, task.id)}
          onDragEnd={() => setDragOnHandle(false)}
          onDragOver={(e) => onRowDragOver(e, task)}
          onDragLeave={onRowDragLeave}
          onDrop={(e) => onRowDrop(e, task)}
-         onPointerDown={onRowPointerDown}
-         onPointerMove={onRowPointerMove}
-         onPointerUp={(e) => { if (e.pointerType === 'touch') finishRowTouch(); }}
-         onPointerCancel={(e) => { if (e.pointerType === 'touch') finishRowTouch(); }}
+         {...longPress.bind}
          onClick={(e) => {
-           if (rowTouchRef.current?.suppressClick) return;
+           if (longPress.shouldSuppressClick()) return;
            const el = e.target as HTMLElement;
            // Subtask body taps fall through to open the task — only the
            // two checkboxes and the grip suppress the open.
            if (el.closest('.task-check, .sc, .task-grip')) return;
            onOpen(task.id);
          }}>
+      {/* Two drag paths, split by input type:
+       *   - Desktop: HTML5 drag-and-drop. The grip's mouse-down arms
+       *     `draggable={dragOnHandle}` on the row so a normal click
+       *     anywhere else on the row doesn't accidentally enter drag.
+       *   - Mobile: long-press anywhere on the row (the useLongPress
+       *     hook on the row itself). The grip is a pure visual hint;
+       *     it does not own its own touch handler. Touching the grip
+       *     bubbles to the row, the long-press timer arms, and the
+       *     same code path runs as if the user had pressed the title.
+       */}
       <div className="task-grip"
            title="Drag to reorder"
            onMouseDown={() => setDragOnHandle(true)}
            onMouseUp={() => setDragOnHandle(false)}
-           onPointerDown={(e) => {
-             if (e.pointerType !== 'touch') return;
-             e.preventDefault();
-             e.stopPropagation();
-             e.currentTarget.setPointerCapture(e.pointerId);
-             onGripTouchStart(task.id);
-           }}
-           onPointerMove={(e) => {
-             if (e.pointerType !== 'touch') return;
-             onGripTouchMove(e.clientX, e.clientY);
-           }}
-           onPointerUp={(e) => {
-             if (e.pointerType !== 'touch') return;
-             onGripTouchEnd();
-           }}
-           onPointerCancel={(e) => {
-             if (e.pointerType !== 'touch') return;
-             onGripTouchEnd();
-           }}
            onClick={(e) => e.stopPropagation()}>
         <span>::</span>
       </div>

@@ -221,8 +221,35 @@
   -webkit-user-select: none;
   -webkit-touch-callout: none;
 }
-.task-row:hover {
-  background: linear-gradient(to right, transparent, var(--paper-3) 30px, var(--paper-3));
+/* Hover only on real pointer devices. Without this guard, iOS keeps
+ * `:hover` sticky after a tap and leaves a grey background trailing
+ * behind whichever row the user last touched — which during a scroll
+ * looks like the highlight is "jumping" between rows. */
+@media (hover: hover) {
+  .task-row:hover {
+    background: linear-gradient(to right, transparent, var(--paper-3) 30px, var(--paper-3));
+  }
+  .task-row:hover .task-grip { opacity: 1; }
+  .task-grip:hover { color: var(--ink-2); }
+}
+/* Long-press feedback: scale + accent outline + glow when the row's
+ * hold timer fires, mirroring `.tblock[data-pressing]` so the lock
+ * signal is consistent across surfaces. Cleared on touchend / cancel.
+ * The row is `position: relative` (set above) so transform-origin
+ * defaults to the row's own center. `!important` because the row
+ * has a `:hover` background gradient defined inside `(hover: hover)`
+ * which loses on touch but preempts otherwise — and because the
+ * `.task-row[data-status="done"]` rule below is more specific by
+ * attribute count and would otherwise win on done tasks. */
+.task-row[data-pressing="true"] {
+  background: var(--accent-soft) !important;
+  transform: scale(1.05) !important;
+  box-shadow: 0 8px 22px rgba(8, 145, 178, 0.32) !important;
+  border-radius: 6px;
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+  z-index: 10;
+  transition: transform 120ms ease-out, box-shadow 120ms ease-out, background 120ms ease-out;
 }
 .task-row[data-drop-mark="before"]::before {
   content: ''; position: absolute; left: 22px; right: 0; top: -1px;
@@ -254,8 +281,6 @@
   -webkit-touch-callout: none;
 }
 .task-grip:active { cursor: grabbing; }
-.task-row:hover .task-grip { opacity: 1; }
-.task-grip:hover { color: var(--ink-2); }
 /* On touch (no hover), keep the grip permanently visible so it's
  * findable. The desktop fade-in is just polish; on mobile it's a
  * dead end. */
