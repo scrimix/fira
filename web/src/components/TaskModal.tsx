@@ -294,6 +294,11 @@ function TitleEditor({ value, onSave }: { value: string; onSave: (v: string) => 
       value={draft}
       onChange={(e) => setDraft(e.target.value)}
       onBlur={commit}
+      type="search"
+      autoComplete="off"
+      autoCorrect="off"
+      autoCapitalize="sentences"
+      spellCheck={false}
       onKeyDown={(e) => {
         if (e.key === 'Enter') { e.preventDefault(); commit(); }
         else if (e.key === 'Escape') { setDraft(value); setEditing(false); }
@@ -697,6 +702,11 @@ function SubtaskRow({
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onBlur={commit}
+          type="search"
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="sentences"
+          spellCheck={false}
           onKeyDown={(e) => {
             if (e.key === 'Enter') { e.preventDefault(); commit(); }
             else if (e.key === 'Escape') { setDraft(title); setEditing(false); }
@@ -752,6 +762,11 @@ function AddSubtaskRow({ onAdd, bare }: { onAdd: (title: string) => void; bare: 
           else if (e.key === 'Escape') { setValue(''); inputRef.current?.blur(); }
         }}
         placeholder="Add subtask…"
+        type="search"
+        autoComplete="off"
+        autoCorrect="off"
+        autoCapitalize="sentences"
+        spellCheck={false}
       />
     </div>
   );

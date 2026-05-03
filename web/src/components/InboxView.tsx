@@ -504,11 +504,12 @@ function AddTaskRow({ onAdd, placeholder = 'Add task…' }: {
           else if (e.key === 'Escape') { setValue(''); inputRef.current?.blur(); }
         }}
         placeholder={placeholder}
-        // iOS Safari otherwise pops "Hide My Email" / iCloud password
-        // suggestions on a generic text input. Naming the field + opting
-        // out of every autofill heuristic suppresses the keyboard chip.
+        // iOS Safari pops "Hide My Email" / iCloud password chips on
+        // any generic text input regardless of autocomplete hints. Using
+        // type="search" routes around the heuristic; the search-specific
+        // chrome (magnifier, cancel button) is suppressed in CSS.
         name="task_title"
-        type="text"
+        type="search"
         autoComplete="off"
         autoCorrect="off"
         autoCapitalize="sentences"
@@ -568,7 +569,7 @@ function InboxSubtaskRow({ title, done, onToggle, onSave, onDelete }: {
             else if (e.key === 'Backspace' && !draft) { e.preventDefault(); onDelete(); }
           }}
           name="subtask_title"
-          type="text"
+          type="search"
           autoComplete="off"
           autoCorrect="off"
           autoCapitalize="sentences"

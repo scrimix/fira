@@ -425,6 +425,7 @@ where applicable, project membership.
 | `/api/links/:id/accept`                | POST   | accept (only the non-requester)                       |
 | `/api/linked/calendar`                 | GET    | partner's blocks + `LinkedTask` projection            |
 | `/api/personal/calendar`               | GET    | personal workspace blocks + `LinkedTask` projection (empty when active workspace already is personal) |
+| `/api/work/calendar`                   | GET    | aggregated work-workspace blocks + `LinkedTask` projection (empty unless active workspace is the caller's personal one) |
 | `/api/ops`                             | POST   | push a batch of outbox ops, idempotent on `op_id`     |
 | `/api/changes?since=N`                 | GET    | pull the change feed (≤ 500 ops, scope-filtered)      |
 | `/api/ws?workspace_id=…`               | WS     | nudge socket for the workspace's change feed          |

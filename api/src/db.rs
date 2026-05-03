@@ -989,6 +989,58 @@ pub async fn list_linked_tasks_in_workspace_for_user(
     .await
 }
 
+/// Caller's own blocks across every non-personal workspace they're an
+/// active member of. Used by the work-workspace overlay (the inverse of
+/// `list_blocks_in_workspace_for_user`): when the active workspace is
+/// personal, this projects the user's team-workspace blocks onto the
+/// calendar read-only.
+pub async fn list_blocks_in_work_workspaces_for_user(
+    pool: &PgPool,
+    user_id: Uuid,
+) -> sqlx::Result<Vec<TimeBlock>> {
+    sqlx::query_as(
+        "SELECT b.id, b.task_id, b.user_id, b.start_at, b.end_at, b.state
+         FROM time_blocks b
+         JOIN tasks t ON t.id = b.task_id
+         JOIN projects p ON p.id = t.project_id
+         JOIN workspaces w ON w.id = p.workspace_id
+         JOIN workspace_members wm
+           ON wm.workspace_id = w.id AND wm.user_id = b.user_id
+         WHERE b.user_id = $1
+           AND w.is_personal = false
+           AND wm.removed_at IS NULL
+         ORDER BY b.start_at",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await
+}
+
+/// Minimal task projection for the caller's work-workspace blocks.
+/// Mirrors `list_linked_tasks_in_workspace_for_user` but unscoped to a
+/// single workspace — covers every non-personal workspace the caller is
+/// an active member of.
+pub async fn list_linked_tasks_in_work_workspaces_for_user(
+    pool: &PgPool,
+    user_id: Uuid,
+) -> sqlx::Result<Vec<LinkedTask>> {
+    sqlx::query_as(
+        "SELECT DISTINCT t.id, t.title, t.status, p.color AS project_color
+         FROM tasks t
+         JOIN projects p ON p.id = t.project_id
+         JOIN workspaces w ON w.id = p.workspace_id
+         JOIN workspace_members wm
+           ON wm.workspace_id = w.id AND wm.user_id = $1
+         JOIN time_blocks b ON b.task_id = t.id
+         WHERE b.user_id = $1
+           AND w.is_personal = false
+           AND wm.removed_at IS NULL",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await
+}
+
 /// Whether two users are mutually accepted-linked. Used for ad-hoc
 /// authorization checks (e.g. /api/linked/calendar) to make sure the
 /// caller still has the link before exposing the partner's data.

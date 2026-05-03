@@ -149,6 +149,15 @@ export interface PersonalCalendar {
   tasks: LinkedTask[];
 }
 
+/// Caller's work-workspace overlay — the inverse of PersonalCalendar.
+/// Aggregates the user's own blocks across every non-personal workspace
+/// they belong to, projected read-only when the active workspace is
+/// personal.
+export interface WorkCalendar {
+  blocks: TimeBlock[];
+  tasks: LinkedTask[];
+}
+
 export interface Bootstrap {
   users: User[];
   projects: Project[];

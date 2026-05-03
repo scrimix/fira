@@ -131,6 +131,12 @@ interface FiraState {
   personalBlocks: TimeBlock[];
   personalTasks: LinkedTask[];
   showPersonal: boolean;
+  // Work-workspace overlay — caller's own blocks aggregated across every
+  // non-personal workspace they belong to, projected read-only when the
+  // active workspace is the personal one. Inverse of the personal overlay.
+  workBlocks: TimeBlock[];
+  workTasks: LinkedTask[];
+  showWork: boolean;
   linkModalOpen: boolean;
   // Discriminated union — one modal serves both create and edit. null = closed.
   projectModal: { kind: 'new' } | { kind: 'edit'; id: UUID } | null;
@@ -207,6 +213,8 @@ interface FiraState {
   setShowLinked: (v: boolean) => void;
   loadPersonalCalendar: () => Promise<void>;
   setShowPersonal: (v: boolean) => void;
+  loadWorkCalendar: () => Promise<void>;
+  setShowWork: (v: boolean) => void;
   openLinkModal: () => void;
   closeLinkModal: () => void;
   dismissToast: (id: string) => void;
@@ -579,6 +587,9 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
   personalBlocks: [],
   personalTasks: [],
   showPersonal: false,
+  workBlocks: [],
+  workTasks: [],
+  showWork: false,
   linkModalOpen: false,
   view: 'calendar',
   selectedPersonIds: [],
@@ -712,6 +723,11 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
       personalBlocks: [],
       personalTasks: [],
       showPersonal: false,
+      // Work overlay is the inverse — only renders in the personal
+      // workspace. Same drop-on-switch posture.
+      workBlocks: [],
+      workTasks: [],
+      showWork: false,
     });
     const data = await api.bootstrap();
     const projectFilter: Record<UUID, boolean> = {};
@@ -1189,6 +1205,17 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     }
   },
   setShowPersonal: (v) => set({ showPersonal: v }),
+
+  loadWorkCalendar: async () => {
+    if (get().playgroundMode) return;
+    try {
+      const data = await api.workCalendar();
+      set({ workBlocks: data.blocks, workTasks: data.tasks });
+    } catch {
+      // Silent — same posture as loadPersonalCalendar.
+    }
+  },
+  setShowWork: (v) => set({ showWork: v }),
   openLinkModal: () => set({ linkModalOpen: true }),
   closeLinkModal: () => set({ linkModalOpen: false }),
 
@@ -1549,6 +1576,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     links: s.links,
     showLinked: s.showLinked,
     showPersonal: s.showPersonal,
+    showWork: s.showWork,
   // partialize is loosely typed — zustand expects S but we're returning a
   // subset of fields. Cast through unknown is the canonical workaround.
   }) as unknown as FiraState,

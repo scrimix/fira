@@ -384,6 +384,37 @@
   line-height: 1.45;
 }
 
+/* Task-title-style inputs use type="search" to dodge iOS Safari's
+ * "Hide My Email" / iCloud autofill chip on generic text inputs. The
+ * cost is search-specific chrome (rounded shape, magnifier glyph,
+ * cancel "x") which we suppress here so the inputs stay visually plain. */
+.task-add-input,
+.task-title-input,
+.subtask-add-input,
+.subtask-edit-input {
+  -webkit-appearance: none;
+  appearance: none;
+}
+.task-add-input::-webkit-search-decoration,
+.task-add-input::-webkit-search-cancel-button,
+.task-add-input::-webkit-search-results-button,
+.task-add-input::-webkit-search-results-decoration,
+.task-title-input::-webkit-search-decoration,
+.task-title-input::-webkit-search-cancel-button,
+.task-title-input::-webkit-search-results-button,
+.task-title-input::-webkit-search-results-decoration,
+.subtask-add-input::-webkit-search-decoration,
+.subtask-add-input::-webkit-search-cancel-button,
+.subtask-add-input::-webkit-search-results-button,
+.subtask-add-input::-webkit-search-results-decoration,
+.subtask-edit-input::-webkit-search-decoration,
+.subtask-edit-input::-webkit-search-cancel-button,
+.subtask-edit-input::-webkit-search-results-button,
+.subtask-edit-input::-webkit-search-results-decoration {
+  display: none;
+  -webkit-appearance: none;
+}
+
 .subtask-add {
   display: flex; align-items: center; gap: 8px;
   font-size: var(--fs-sm);

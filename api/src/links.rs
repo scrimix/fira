@@ -211,6 +211,33 @@ pub async fn personal_calendar(
     Ok(Json(PersonalCalendarResponse { blocks, tasks }))
 }
 
+#[derive(serde::Serialize)]
+pub struct WorkCalendarResponse {
+    pub blocks: Vec<crate::models::TimeBlock>,
+    pub tasks: Vec<crate::models::LinkedTask>,
+}
+
+/// Caller's work-workspace blocks + task projection — the inverse of
+/// `personal_calendar`. When the active workspace is the caller's
+/// personal one, this projects every non-personal workspace's blocks
+/// the caller owns, read-only. Returns empty when the active workspace
+/// is itself non-personal (those blocks are already in bootstrap).
+pub async fn work_calendar(
+    State(s): State<AppState>,
+    ctx: AuthCtx,
+) -> ApiResult<Json<WorkCalendarResponse>> {
+    let personal_ws = db::personal_workspace_id(&s.pool, ctx.user.id).await?;
+    let Some(ws_id) = personal_ws else {
+        return Ok(Json(WorkCalendarResponse { blocks: vec![], tasks: vec![] }));
+    };
+    if ws_id != ctx.workspace_id {
+        return Ok(Json(WorkCalendarResponse { blocks: vec![], tasks: vec![] }));
+    }
+    let blocks = db::list_blocks_in_work_workspaces_for_user(&s.pool, ctx.user.id).await?;
+    let tasks = db::list_linked_tasks_in_work_workspaces_for_user(&s.pool, ctx.user.id).await?;
+    Ok(Json(WorkCalendarResponse { blocks, tasks }))
+}
+
 async fn has_any_link(pool: &sqlx::PgPool, user_id: Uuid) -> sqlx::Result<bool> {
     let row: Option<(i32,)> = sqlx::query_as(
         "SELECT 1 FROM user_links WHERE user_a_id = $1 OR user_b_id = $1",

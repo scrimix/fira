@@ -127,6 +127,10 @@ export function CalendarView() {
   const personalTasks = useFira((s) => s.personalTasks);
   const showPersonal = useFira((s) => s.showPersonal);
   const setShowPersonal = useFira((s) => s.setShowPersonal);
+  const workBlocks = useFira((s) => s.workBlocks);
+  const workTasks = useFira((s) => s.workTasks);
+  const showWork = useFira((s) => s.showWork);
+  const setShowWork = useFira((s) => s.setShowWork);
   const inTeamWorkspace = useFira((s) => {
     const ws = s.workspaces.find((w) => w.id === s.activeWorkspaceId);
     return ws ? !ws.is_personal : false;
@@ -574,6 +578,15 @@ export function CalendarView() {
   );
   const visiblePersonalBlocks = personalOverlayActive ? personalBlocks : [];
 
+  // Work-workspace overlay — inverse of personal: only on my own tab,
+  // only when the active workspace IS personal, only when opted in.
+  const workOverlayActive = showWork && !inTeamWorkspace && activePersonId === meId;
+  const workTaskById = useMemo(
+    () => new Map(workTasks.map((t) => [t.id, t])),
+    [workTasks],
+  );
+  const visibleWorkBlocks = workOverlayActive ? workBlocks : [];
+
   const tickBlock = (b: TimeBlock) => {
     updateBlock(b.id, { state: b.state === 'completed' ? 'planned' : 'completed' });
   };
@@ -709,6 +722,18 @@ export function CalendarView() {
               {showPersonal ? 'Hide personal' : 'Show personal'}
             </button>
           )}
+          {!inTeamWorkspace && activePersonId === meId && (
+            <button
+              className="link-toggle"
+              data-active={showWork || undefined}
+              onClick={() => setShowWork(!showWork)}
+              title={showWork
+                ? 'Hide work-workspace blocks'
+                : 'Show work-workspace blocks (read-only)'}
+            >
+              {showWork ? 'Hide work' : 'Show work'}
+            </button>
+          )}
           {/* Desktop: inline at the right end of the toolbar, sharing
            * the line with Today / user picker / link toggles. CSS
            * hides this copy on phone widths in favor of the strip
@@ -762,6 +787,12 @@ export function CalendarView() {
                 (g) => blockToGrid(g.start_at, g.end_at, gridAnchor).day === dayIdx,
               );
               const dayPersonalBlocks = visiblePersonalBlocks
+                .map((b) => {
+                  const grid = blockToGrid(b.start_at, b.end_at, gridAnchor);
+                  return grid.day === dayIdx ? { block: b, ...grid } : null;
+                })
+                .filter((x): x is NonNullable<typeof x> => x !== null);
+              const dayWorkBlocks = visibleWorkBlocks
                 .map((b) => {
                   const grid = blockToGrid(b.start_at, b.end_at, gridAnchor);
                   return grid.day === dayIdx ? { block: b, ...grid } : null;
@@ -857,6 +888,28 @@ export function CalendarView() {
                            }}
                            title={`${pt?.title ?? 'Personal task'} · ${fmtMin(dur_min)} (personal, read-only)`}>
                         <div className="tb-title">{pt?.title ?? 'Personal task'}</div>
+                        <div className="tb-meta">
+                          <span>{fmtClockShort(start_min)}</span>
+                          <span className="dot" />
+                          <span>{fmtMin(dur_min)}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {dayWorkBlocks.map(({ block: b, start_min, dur_min }) => {
+                    const wt = workTaskById.get(b.task_id);
+                    return (
+                      <div key={`w-b-${b.id}`} className="tblock tblock-work"
+                           data-state={b.state}
+                           data-task-done={wt?.status === 'done' ? 'true' : undefined}
+                           data-short={dur_min < 60 ? 'true' : undefined}
+                           style={{
+                             top: (start_min / 60) * HOUR_H,
+                             height: (dur_min / 60) * HOUR_H - 2,
+                             ['--proj-color' as string]: wt?.project_color ?? 'var(--ink-3)',
+                           }}
+                           title={`${wt?.title ?? 'Work task'} · ${fmtMin(dur_min)} (work, read-only)`}>
+                        <div className="tb-title">{wt?.title ?? 'Work task'}</div>
                         <div className="tb-meta">
                           <span>{fmtClockShort(start_min)}</span>
                           <span className="dot" />

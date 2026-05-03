@@ -30,6 +30,7 @@ export default function App() {
   const reloadLinks = useFira((s) => s.reloadLinks);
   const loadLinkedCalendar = useFira((s) => s.loadLinkedCalendar);
   const loadPersonalCalendar = useFira((s) => s.loadPersonalCalendar);
+  const loadWorkCalendar = useFira((s) => s.loadWorkCalendar);
   const inTeamWorkspace = useFira((s) => {
     const ws = s.workspaces.find((w) => w.id === s.activeWorkspaceId);
     return ws ? !ws.is_personal : false;
@@ -126,6 +127,14 @@ export default function App() {
     if (!inTeamWorkspace || playgroundMode) return;
     void loadPersonalCalendar();
   }, [inTeamWorkspace, activeWorkspaceId, playgroundMode, loadPersonalCalendar]);
+
+  // Work-workspace overlay: the inverse — only meaningful when the active
+  // workspace is the personal one. Aggregates blocks across every team
+  // workspace the user belongs to.
+  useEffect(() => {
+    if (inTeamWorkspace || playgroundMode) return;
+    void loadWorkCalendar();
+  }, [inTeamWorkspace, activeWorkspaceId, playgroundMode, loadWorkCalendar]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
