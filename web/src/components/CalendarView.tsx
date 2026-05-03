@@ -6,7 +6,9 @@ import {
   HOURS, DAY_LABELS, todayDayIndex, nowTimeMin, weekStartMs,
   blockToGrid, gridToBlock, fmtClockShort, fmtMin, taskCompletedMin, taskPlannedMin, taskTimeLeft,
   weekStartFor, dayOfMonthFor,
+  dayAnchorFor, dayOfWeekLabelFor,
 } from '../time';
+import { useIsMobile } from '../hooks';
 import type { Project, Task, TimeBlock, GcalEvent, UUID } from '../types';
 
 const HOUR_H = 56;
@@ -146,9 +148,28 @@ export function CalendarView() {
   const setActivePerson = useFira((s) => s.setActivePerson);
   const weekOffset = useFira((s) => s.weekOffset);
   const setWeekOffset = useFira((s) => s.setWeekOffset);
-  const weekStart = weekStartFor(weekOffset);
-  const isCurrentWeek = weekOffset === 0;
-  const todayIndex = todayDayIndex();
+  const dayOffset = useFira((s) => s.dayOffset);
+  const setDayOffset = useFira((s) => s.setDayOffset);
+  const isMobile = useIsMobile();
+  // Mobile shows a 3-day window centered on today+dayOffset; desktop shows
+  // the standard 7-day week. Both modes feed a common `gridAnchor` (column
+  // 0's local-midnight ms) into blockToGrid/gridToBlock — those functions
+  // don't care whether the anchor is a Monday or an arbitrary day.
+  const dayCount = isMobile ? 3 : 7;
+  const gridAnchor = isMobile ? dayAnchorFor(dayOffset) : weekStartFor(weekOffset);
+  const dayLabels = isMobile
+    ? Array.from({ length: 3 }, (_, i) => dayOfWeekLabelFor(gridAnchor, i))
+    : DAY_LABELS;
+  // Index of "today" within the visible grid, or -1 if today is off-screen.
+  // On mobile dayOffset=0 puts today in column 1 (yesterday=0, today=1,
+  // tomorrow=2). On desktop today only appears in the current week.
+  const todayCol = isMobile
+    ? (dayOffset === 0 ? 1 : -1)
+    : (weekOffset === 0 ? todayDayIndex() : -1);
+  const isCurrentRange = isMobile ? dayOffset === 0 : weekOffset === 0;
+  const stepBack = () => isMobile ? setDayOffset(dayOffset - 1) : setWeekOffset(weekOffset - 1);
+  const stepForward = () => isMobile ? setDayOffset(dayOffset + 1) : setWeekOffset(weekOffset + 1);
+  const stepToday = () => isMobile ? setDayOffset(0) : setWeekOffset(0);
   const nowMin = nowTimeMin();
   const gridRef = useRef<HTMLDivElement>(null);
   const innerGridRef = useRef<HTMLDivElement>(null);
@@ -184,7 +205,7 @@ export function CalendarView() {
     if (!g) return null;
     const rect = g.getBoundingClientRect();
     const gutter = 56;
-    return { left: rect.left + gutter, top: rect.top + 44, width: (rect.width - gutter) / 7 };
+    return { left: rect.left + gutter, top: rect.top + 44, width: (rect.width - gutter) / dayCount };
   };
 
   const onBlockPointerDown = (e: React.PointerEvent, b: TimeBlock, taskId: UUID) => {
@@ -193,8 +214,8 @@ export function CalendarView() {
     // pointerdown so they don't reach this handler — see .tb-action.
     if ((e.target as HTMLElement).closest('.tb-action')) return;
     // Capture grid coordinates against the *visible* week so the drop's
-    // gridToBlock(weekStart) round-trips to the same absolute time.
-    const { day, start_min, dur_min } = blockToGrid(b.start_at, b.end_at, weekStart);
+    // gridToBlock(gridAnchor) round-trips to the same absolute time.
+    const { day, start_min, dur_min } = blockToGrid(b.start_at, b.end_at, gridAnchor);
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const offsetY = e.clientY - rect.top;
     const offsetFromBottom = rect.bottom - e.clientY;
@@ -240,7 +261,7 @@ export function CalendarView() {
         const geom = colGeometry();
         if (geom && geom.width > 0) {
           const dayShift = Math.round((e.clientX - d.startX) / geom.width);
-          curDay = Math.max(0, Math.min(6, d.origDay + dayShift));
+          curDay = Math.max(0, Math.min(dayCount - 1, d.origDay + dayShift));
         }
       } else if (d.mode === 'resize-bottom') {
         curDurMin = Math.max(SNAP_MIN, Math.min(24 * 60 - d.origStartMin, snap(d.origDurMin + dMin)));
@@ -268,7 +289,7 @@ export function CalendarView() {
           d.curDurMin !== d.origDurMin ||
           d.curDay !== d.origDay
         ) {
-          const { start_at, end_at } = gridToBlock(d.curDay, d.curStartMin, d.curDurMin, weekStart);
+          const { start_at, end_at } = gridToBlock(d.curDay, d.curStartMin, d.curDurMin, gridAnchor);
           updateBlock(d.blockId, { start_at, end_at });
         }
       } else if (d.pointerType === 'touch' && !d.wasActive) {
@@ -317,7 +338,7 @@ export function CalendarView() {
       const durMin = Math.max(SNAP_MIN, endMin - startMin);
       const userId = activePersonId ?? meId;
       if (!userId) return;
-      const { start_at, end_at } = gridToBlock(d.day, startMin, durMin, weekStart);
+      const { start_at, end_at } = gridToBlock(d.day, startMin, durMin, gridAnchor);
       // Open the draft modal seeded with the dragged time range.
       // Submit creates the task + block; cancel discards both.
       openCreate({ block: { start_at, end_at, user_id: userId } });
@@ -331,7 +352,7 @@ export function CalendarView() {
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
     };
-  }, [createDrag?.pointerId, activePersonId, meId, weekStart, openCreate]);
+  }, [createDrag?.pointerId, activePersonId, meId, gridAnchor, openCreate]);
 
   const onDayColPointerDown = (e: React.PointerEvent, day: number) => {
     if (e.button !== 0) return;
@@ -370,8 +391,8 @@ export function CalendarView() {
     });
   }, [myBlocks, tasks, projectFilter]);
   const placed = useMemo(
-    () => placeBlocks(visibleBlocks, tasks, projects, weekStart),
-    [visibleBlocks, tasks, projects, weekStart],
+    () => placeBlocks(visibleBlocks, tasks, projects, gridAnchor),
+    [visibleBlocks, tasks, projects, gridAnchor],
   );
 
   const totalMin = myBlocks.reduce((s, b) => s + dur(b), 0);
@@ -448,7 +469,7 @@ export function CalendarView() {
     const dur = taskDurFor(taskId);
     const start_min = dayDropStartMin(e);
     const dur_min = Math.min(dur, 24 * 60 - start_min);
-    const { start_at, end_at } = gridToBlock(day, start_min, dur_min, weekStart);
+    const { start_at, end_at } = gridToBlock(day, start_min, dur_min, gridAnchor);
     upsertBlock({
       id: crypto.randomUUID(),
       task_id: t.id,
@@ -486,7 +507,7 @@ export function CalendarView() {
     if (!t) return;
     const userId = activePersonId ?? meId;
     if (!userId) return;
-    const { start_at, end_at } = gridToBlock(day, start_min, dur_min, weekStart);
+    const { start_at, end_at } = gridToBlock(day, start_min, dur_min, gridAnchor);
     upsertBlock({
       id: crypto.randomUUID(),
       task_id: t.id,
@@ -501,14 +522,14 @@ export function CalendarView() {
       <div className="cal-main">
         <div className="cal-toolbar">
           <div className="week-nav">
-            <button className="week-nav-btn" onClick={() => setWeekOffset(weekOffset - 1)}
-                    title="Previous week">‹</button>
+            <button className="week-nav-btn" onClick={stepBack}
+                    title={isMobile ? 'Previous day' : 'Previous week'}>‹</button>
             <button className="week-nav-btn week-nav-today"
-                    onClick={() => setWeekOffset(0)}
-                    data-active={isCurrentWeek}
-                    title="Jump to current week">Today</button>
-            <button className="week-nav-btn" onClick={() => setWeekOffset(weekOffset + 1)}
-                    title="Next week">›</button>
+                    onClick={stepToday}
+                    data-active={isCurrentRange}
+                    title={isMobile ? 'Jump to today' : 'Jump to current week'}>Today</button>
+            <button className="week-nav-btn" onClick={stepForward}
+                    title={isMobile ? 'Next day' : 'Next week'}>›</button>
           </div>
           <UserPicker
             users={users}
@@ -562,12 +583,12 @@ export function CalendarView() {
              data-dragging={drag?.moved ? 'true' : undefined}>
           <div className="cal-grid" ref={innerGridRef} style={{ height: 24 * HOUR_H + 44 }}>
             <div className="cal-headcorner" />
-            {DAY_LABELS.map((lbl, i) => (
+            {dayLabels.map((lbl, i) => (
               <div key={i} className="cal-dayhead"
-                   data-today={isCurrentWeek && i === todayIndex}
-                   data-weekend={i >= 5}>
+                   data-today={i === todayCol}
+                   data-weekend={lbl === 'SAT' || lbl === 'SUN'}>
                 <span className="dow">{lbl}</span>
-                <span className="dnum">{dayOfMonthFor(weekStart, i)}</span>
+                <span className="dnum">{dayOfMonthFor(gridAnchor, i)}</span>
               </div>
             ))}
 
@@ -578,29 +599,29 @@ export function CalendarView() {
               ))}
             </div>
 
-            {DAY_LABELS.map((_, dayIdx) => {
+            {dayLabels.map((dayLbl, dayIdx) => {
               const dayPlaced = placed.filter((p) => {
                 if (drag?.blockId === p.block.id) return drag.curDay === dayIdx;
                 return p.day === dayIdx;
               });
-              const dayGcal = myGcal.filter((g) => blockToGrid(g.start_at, g.end_at, weekStart).day === dayIdx);
+              const dayGcal = myGcal.filter((g) => blockToGrid(g.start_at, g.end_at, gridAnchor).day === dayIdx);
               const dayLinkedBlocks = visibleLinkedBlocks
                 .map((b) => {
-                  const grid = blockToGrid(b.start_at, b.end_at, weekStart);
+                  const grid = blockToGrid(b.start_at, b.end_at, gridAnchor);
                   return grid.day === dayIdx ? { block: b, ...grid } : null;
                 })
                 .filter((x): x is NonNullable<typeof x> => x !== null);
               const dayLinkedGcal = visibleLinkedGcal.filter(
-                (g) => blockToGrid(g.start_at, g.end_at, weekStart).day === dayIdx,
+                (g) => blockToGrid(g.start_at, g.end_at, gridAnchor).day === dayIdx,
               );
               const dayPersonalBlocks = visiblePersonalBlocks
                 .map((b) => {
-                  const grid = blockToGrid(b.start_at, b.end_at, weekStart);
+                  const grid = blockToGrid(b.start_at, b.end_at, gridAnchor);
                   return grid.day === dayIdx ? { block: b, ...grid } : null;
                 })
                 .filter((x): x is NonNullable<typeof x> => x !== null);
-              const isToday = isCurrentWeek && dayIdx === todayIndex;
-              const isWeekend = dayIdx >= 5;
+              const isToday = dayIdx === todayCol;
+              const isWeekend = dayLbl === 'SAT' || dayLbl === 'SUN';
               const showPreview = dropPreview?.day === dayIdx;
               return (
                 <div key={dayIdx} className="cal-daycol"
@@ -632,7 +653,7 @@ export function CalendarView() {
                     }} />
                   )}
                   {dayGcal.map((g) => {
-                    const { start_min, dur_min } = blockToGrid(g.start_at, g.end_at, weekStart);
+                    const { start_min, dur_min } = blockToGrid(g.start_at, g.end_at, gridAnchor);
                     return (
                       <div key={g.id} className="gcal-evt" style={{
                         top: (start_min / 60) * HOUR_H,
@@ -643,7 +664,7 @@ export function CalendarView() {
                     );
                   })}
                   {dayLinkedGcal.map((g) => {
-                    const { start_min, dur_min } = blockToGrid(g.start_at, g.end_at, weekStart);
+                    const { start_min, dur_min } = blockToGrid(g.start_at, g.end_at, gridAnchor);
                     return (
                       <div key={`l-g-${g.id}`} className="gcal-evt gcal-evt-linked" style={{
                         top: (start_min / 60) * HOUR_H,
@@ -959,6 +980,102 @@ function CalRail({ onDragTask, onTouchSchedule, allocByProject }: {
   const [titleQuery, setTitleQuery] = useState('');
   const q = titleQuery.trim().toLowerCase();
 
+  // Long-press → drag flow for the rail on touch. Mirrors the inbox
+  // pattern: a 220ms hold locks the row; a fast move within the hold
+  // window cancels and lets the rail pan as a normal scroll. Once
+  // locked, a non-passive document touchmove preventDefaults the page
+  // scroll (the only thing iOS Safari respects mid-gesture) and routes
+  // the coordinates back to the calendar's onTouchSchedule. A click
+  // suppression flag on the row swallows the synthetic onClick that
+  // fires after a successful drag end so it doesn't open the modal.
+  const HOLD_MS = 220;
+  const SCROLL_CANCEL_PX = 8;
+  const railTouchRef = useRef<{
+    taskId: UUID;
+    startX: number;
+    startY: number;
+    timer: number | null;
+    locked: boolean;
+    cleanup: (() => void) | null;
+  } | null>(null);
+  const suppressClickRef = useRef(false);
+
+  const lockRailDrag = () => {
+    const ref = railTouchRef.current;
+    if (!ref) return;
+    ref.locked = true;
+    ref.timer = null;
+    navigator.vibrate?.(8);
+    onTouchSchedule(ref.taskId, ref.startX, ref.startY, 'move');
+    const onMove = (ev: TouchEvent) => {
+      const touch = ev.touches[0];
+      if (!touch) return;
+      ev.preventDefault();
+      onTouchSchedule(ref.taskId, touch.clientX, touch.clientY, 'move');
+    };
+    const onEnd = (ev: TouchEvent) => {
+      const r = railTouchRef.current;
+      if (!r) return;
+      const last = ev.changedTouches[0];
+      const cx = last?.clientX ?? r.startX;
+      const cy = last?.clientY ?? r.startY;
+      r.cleanup?.();
+      r.cleanup = null;
+      onTouchSchedule(r.taskId, cx, cy, 'end');
+      // Suppress the synthetic onClick that follows the drag end so the
+      // user doesn't open the task modal they just scheduled.
+      suppressClickRef.current = true;
+      window.setTimeout(() => { suppressClickRef.current = false; }, 350);
+      railTouchRef.current = null;
+    };
+    const onCancel = () => {
+      const r = railTouchRef.current;
+      if (!r) return;
+      r.cleanup?.();
+      r.cleanup = null;
+      onTouchSchedule(r.taskId, r.startX, r.startY, 'cancel');
+      railTouchRef.current = null;
+    };
+    document.addEventListener('touchmove', onMove, { passive: false });
+    document.addEventListener('touchend', onEnd);
+    document.addEventListener('touchcancel', onCancel);
+    ref.cleanup = () => {
+      document.removeEventListener('touchmove', onMove);
+      document.removeEventListener('touchend', onEnd);
+      document.removeEventListener('touchcancel', onCancel);
+    };
+  };
+
+  const startRailLongPress = (taskId: UUID, clientX: number, clientY: number) => {
+    railTouchRef.current = {
+      taskId, startX: clientX, startY: clientY,
+      timer: null, locked: false, cleanup: null,
+    };
+    railTouchRef.current.timer = window.setTimeout(lockRailDrag, HOLD_MS);
+  };
+  const moveRailLongPress = (clientX: number, clientY: number) => {
+    const ref = railTouchRef.current;
+    if (!ref || ref.locked) return;
+    const dx = Math.abs(clientX - ref.startX);
+    const dy = Math.abs(clientY - ref.startY);
+    if (dx > SCROLL_CANCEL_PX || dy > SCROLL_CANCEL_PX) {
+      if (ref.timer != null) window.clearTimeout(ref.timer);
+      railTouchRef.current = null;
+    }
+  };
+  const endRailLongPress = (cancelled: boolean) => {
+    const ref = railTouchRef.current;
+    if (!ref) return;
+    if (ref.timer != null) window.clearTimeout(ref.timer);
+    if (ref.locked) {
+      // Document-level touchend already drove the commit/cancel; nothing
+      // more to do here.
+      return;
+    }
+    if (cancelled) onTouchSchedule(ref.taskId, ref.startX, ref.startY, 'cancel');
+    railTouchRef.current = null;
+  };
+
   const groups: Array<{ project: Project; tasks: Task[] }> = projects
     .filter((p) => projectFilter[p.id] !== false)
     .map((p) => ({
@@ -1067,30 +1184,22 @@ function CalRail({ onDragTask, onTouchSchedule, allocByProject }: {
                        onDragTask(t.id);
                      }}
                      onDragEnd={() => onDragTask(null)}
-                     onPointerDown={(e) => {
-                       if (e.pointerType !== 'touch') return;
-                       e.preventDefault();
-                       e.currentTarget.setPointerCapture(e.pointerId);
-                       (e.currentTarget as HTMLElement).dataset.touching = 'true';
+                     onTouchStart={(e) => {
+                       const touch = e.touches[0];
+                       if (!touch) return;
+                       startRailLongPress(t.id, touch.clientX, touch.clientY);
                      }}
-                     onPointerMove={(e) => {
-                       if (e.pointerType !== 'touch') return;
-                       if (!(e.currentTarget as HTMLElement).dataset.touching) return;
-                       onTouchSchedule(t.id, e.clientX, e.clientY, 'move');
+                     onTouchMove={(e) => {
+                       const touch = e.touches[0];
+                       if (!touch) return;
+                       moveRailLongPress(touch.clientX, touch.clientY);
                      }}
-                     onPointerUp={(e) => {
-                       if (e.pointerType !== 'touch') return;
-                       const wasDragging = !!(e.currentTarget as HTMLElement).dataset.touching;
-                       delete (e.currentTarget as HTMLElement).dataset.touching;
-                       if (!wasDragging) return;
-                       onTouchSchedule(t.id, e.clientX, e.clientY, 'end');
+                     onTouchEnd={() => endRailLongPress(false)}
+                     onTouchCancel={() => endRailLongPress(true)}
+                     onClick={() => {
+                       if (suppressClickRef.current) return;
+                       openTask(t.id);
                      }}
-                     onPointerCancel={(e) => {
-                       if (e.pointerType !== 'touch') return;
-                       delete (e.currentTarget as HTMLElement).dataset.touching;
-                       onTouchSchedule(t.id, e.clientX, e.clientY, 'cancel');
-                     }}
-                     onClick={() => openTask(t.id)}
                      title={blocker ? 'Silent blocker — no upcoming planned blocks' : 'Drag onto the calendar to schedule'}>
                   <div className="rail-task-body">
                     <div className="rail-task-title">{t.title}</div>

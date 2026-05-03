@@ -4,15 +4,17 @@
   height: calc(100vh - 44px);
   overflow: hidden;
 }
-/* Mobile: hide the task rail. HTML5 drag-and-drop doesn't fire from
- * touch anyway, so the rail is a static list users can't act on — and
- * it eats two-thirds of the viewport. Collapse the grid to a single
- * column so the calendar gets the whole width. The inbox is still
- * reachable via the sidebar for task editing. */
+/* Tablet portrait: collapse the rail's fixed column to give the calendar
+ * the whole width. Phone widths re-introduce the rail as a stacked panel
+ * below the grid (see the next breakpoint). */
 @media (max-width: 1000px) {
   .calendar { grid-template-columns: 1fr; }
   .cal-rail { display: none; }
 }
+/* Phone overrides for the calendar live at the end of this file —
+ * several base rules (notably `.cal-grid { min-width: 700px }`) are
+ * declared further down, so a top-of-file @media block loses the
+ * cascade. See the "Phone overrides" section near the bottom. */
 
 .cal-main {
   display: flex;
@@ -253,6 +255,13 @@
   flex: 1;
   overflow: auto;
   position: relative;
+  /* Calendar surface should never be text-selectable: long-press on touch
+   * was selecting hour labels / day headers, and click-drag on desktop
+   * was selecting the empty space between blocks. Time blocks already
+   * opt out individually, but the rest of the grid (gutter, headers,
+   * empty columns) lives on this wrapper. */
+  user-select: none;
+  -webkit-user-select: none;
 }
 .cal-grid {
   display: grid;
@@ -800,10 +809,11 @@
   gap: 8px;
   cursor: pointer;
   position: relative;
-  /* Touch path for rail → calendar scheduling: pointer events on this
-   * element drive the drag, and we don't want the rail itself to scroll
-   * while the finger is on a task. */
-  touch-action: none;
+  /* Default touch-action: auto — the rail body's overflow handles scroll.
+   * The long-press handler in CalendarView attaches a non-passive document
+   * touchmove listener once the press fires and preventDefaults from there
+   * (iOS Safari only respects non-passive listeners for blocking scroll
+   * mid-gesture). Same pattern as the inbox row long-press. */
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
@@ -878,4 +888,38 @@
   width: 1px;
   background: var(--ink-2);
   pointer-events: none;
+}
+
+/* ── Phone overrides ────────────────────────────────────────────────────
+ * Stack the rail below the calendar so touch-drag scheduling stays
+ * reachable, and drop the grid's min-width so 3 columns + the 56px gutter
+ * actually fit a 360px-wide screen. Lives at end-of-file so the cascade
+ * beats the base `.cal-grid { min-width: 700px }` rule above. */
+@media (max-width: 700px) {
+  .calendar {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 1fr) minmax(160px, 38vh);
+  }
+  .cal-rail {
+    display: flex;
+    border-left: 0;
+    border-top: 1px solid var(--rule);
+  }
+  .cal-grid {
+    min-width: 0;
+    grid-template-columns: 56px repeat(3, 1fr);
+  }
+  /* Hide the user picker and link toggles on phones — leaves the toolbar
+   * with prev/today/next + totals only, which fits a 360px-wide row.
+   * Linked-calendar / personal-overlay toggles are still reachable on
+   * desktop where horizontal room exists. */
+  .cal-toolbar .user-picker,
+  .cal-toolbar .link-toggle { display: none; }
+  /* Smaller spacing inside the toolbar so prev/today/next + totals fit
+   * without horizontal scroll. */
+  .cal-toolbar { gap: 4px; padding: 0 8px; }
+  /* Tighter rail head on phones so the new button + scope toggle + search
+   * fit one row at 360px. */
+  .rail-head { padding: 0 6px; gap: 4px; }
+  .rail-search { font-size: var(--fs-md); }
 }

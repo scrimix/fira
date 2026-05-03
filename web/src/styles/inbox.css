@@ -7,6 +7,14 @@
   margin: 0 auto;
   padding: 24px 48px 80px;
 }
+/* Phone: drop the editorial side margins and run the document near the
+ * viewport edges so the title column is the widest part of the row. The
+ * task / subtask grid still keeps a small gutter on the right via the
+ * trailing `auto` column, but the left only loses a few pixels for the
+ * grip + check (which together total ~32px). */
+@media (max-width: 700px) {
+  .inbox-doc { padding: 16px 8px 80px; }
+}
 .inbox-empty {
   min-height: calc(100vh - 44px - 24px);
   display: flex;
@@ -195,10 +203,10 @@
 
 .task-row {
   display: grid;
-  grid-template-columns: 14px 18px 1fr auto;
+  grid-template-columns: 14px 18px 1fr;
   align-items: start;
   gap: 8px;
-  padding: 6px 8px 6px 0;
+  padding: 6px 0;
   cursor: pointer;
   position: relative;
   /* The row is click-to-open; there's no useful text selection here.
@@ -314,10 +322,10 @@
  * the input cursor lands at the same x as a task title. */
 .task-add {
   display: grid;
-  grid-template-columns: 14px 18px 1fr auto;
+  grid-template-columns: 14px 18px 1fr;
   align-items: start;
   gap: 8px;
-  padding: 6px 8px 6px 0;
+  padding: 6px 0;
   font-size: var(--fs-md);
   color: var(--ink-4);
   cursor: text;

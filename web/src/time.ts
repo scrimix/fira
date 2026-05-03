@@ -77,6 +77,22 @@ export function dayOfMonthFor(weekStart: number, dayIdx: number): number {
   return addDaysLocal(weekStart, dayIdx).getDate();
 }
 
+// Mobile 3-day grid anchor: the local-midnight ms of "yesterday relative to
+// today + dayOffset". Column 0 of the 3-day grid is anchored to this date,
+// so dayOffset=0 → [yesterday, today, tomorrow]. Used in place of weekStart
+// for blockToGrid / gridToBlock when in mobile mode.
+export function dayAnchorFor(dayOffset: number): number {
+  const n = now();
+  return new Date(n.getFullYear(), n.getMonth(), n.getDate() + dayOffset - 1).getTime();
+}
+
+// Day-of-week label for a specific date (used by the mobile day headers).
+const DOW_LABELS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+export function dayOfWeekLabelFor(anchorMs: number, dayIdx: number): string {
+  const d = addDaysLocal(anchorMs, dayIdx);
+  return DOW_LABELS[d.getDay()];
+}
+
 export function blockToGrid(start_at: string, end_at: string, weekStart: number = weekStartMs()): {
   day: number; start_min: number; dur_min: number;
 } {

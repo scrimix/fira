@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
-import { Link } from 'lucide-react';
+import { Link, Menu } from 'lucide-react';
 import { useFira } from '../store';
 import { weekStartFor, fmtWeekRange } from '../time';
+import { useIsMobile } from '../hooks';
 import { ProjectIcon } from './ProjectIcon';
 import { SyncPill } from './SyncPill';
 import { WorkspaceSwitcher } from './WorkspaceSwitcher';
@@ -35,23 +35,18 @@ export function TopBar() {
     ? users.find((u) => u.id === linkState.link.partner_id) ?? null
     : null;
   const openLinkModal = useFira((s) => s.openLinkModal);
+  const setSidebarOpen = useFira((s) => s.setSidebarOpen);
+  const sidebarOpen = useFira((s) => s.sidebarOpen);
 
-  // On phones, drop "Week of" + the year so the title fits one line in
-  // the topbar between the breadcrumb and the action cluster.
-  const [compact, setCompact] = useState(() =>
-    typeof window !== 'undefined' && window.matchMedia('(max-width: 700px)').matches,
-  );
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const mq = window.matchMedia('(max-width: 700px)');
-    const onChange = () => setCompact(mq.matches);
-    mq.addEventListener('change', onChange);
-    return () => mq.removeEventListener('change', onChange);
-  }, []);
+  const isMobile = useIsMobile();
 
+  // The calendar's own toolbar (prev / today / next + day-of-month numbers)
+  // already tells the user what range they're looking at. On phones we
+  // suppress the topbar week title to claw back horizontal room — only the
+  // inbox title still appears.
   const title = view === 'calendar'
-    ? compact
-      ? fmtWeekRange(weekStartFor(weekOffset), { compact: true })
+    ? isMobile
+      ? ''
       : `Week of ${fmtWeekRange(weekStartFor(weekOffset))}`
     : project?.title ?? 'Inbox';
 
@@ -65,8 +60,21 @@ export function TopBar() {
 
   return (
     <div className="topbar">
-      <span className="crumb">Fira</span>
-      <span className="crumb-sep">/</span>
+      {isMobile ? (
+        <button
+          className="topbar-menu"
+          onClick={() => setSidebarOpen(!sidebarOpen)}
+          title="Menu"
+          aria-label="Menu"
+        >
+          <Menu size={18} strokeWidth={1.75} />
+        </button>
+      ) : (
+        <>
+          <span className="crumb">Fira</span>
+          <span className="crumb-sep">/</span>
+        </>
+      )}
       <WorkspaceSwitcher />
       <span className="crumb-sep">/</span>
       {view === 'inbox' && project && (
@@ -77,9 +85,9 @@ export function TopBar() {
           className="title-icon"
         />
       )}
-      <span className="title">{title}</span>
+      {title && <span className="title">{title}</span>}
       <div className="grow" />
-      {playgroundMode && (
+      {playgroundMode && !isMobile && (
         <span
           className="playground-pill"
           title="Playground mode — changes saved only in this browser"
@@ -92,18 +100,22 @@ export function TopBar() {
         Log out
       </button>
 
-      {linkState.kind === 'accepted' && partner ?
-        (<span className="topbar-me" title={partner.name}>{partner.initials}</span>) : null
-      }
-      <button
-          className="link-pair"
-          onClick={() => openLinkModal()}
-          title={linkTitle}
-          aria-label={linkTitle}
-        >
-          <Link size={12} strokeWidth={1.75} className="link-pair-icon" />
-      </button>
-      <span className="topbar-me" title={me?.name ?? ''}>{me?.initials ?? '?'}</span>
+      {!isMobile && (
+        <>
+          {linkState.kind === 'accepted' && partner ?
+            (<span className="topbar-me" title={partner.name}>{partner.initials}</span>) : null
+          }
+          <button
+              className="link-pair"
+              onClick={() => openLinkModal()}
+              title={linkTitle}
+              aria-label={linkTitle}
+            >
+              <Link size={12} strokeWidth={1.75} className="link-pair-icon" />
+          </button>
+          <span className="topbar-me" title={me?.name ?? ''}>{me?.initials ?? '?'}</span>
+        </>
+      )}
     </div>
   );
 }

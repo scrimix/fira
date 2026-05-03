@@ -163,6 +163,26 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   border: 1px solid var(--ink);
   margin-left: 4px;
 }
+/* Mobile menu trigger — replaces the Fira/wordmark crumb on phones and
+ * toggles the sidebar slide-over. Sized to be a comfortable touch target
+ * (36px square) without dominating the topbar. */
+.topbar-menu {
+  width: 32px; height: 32px;
+  display: grid; place-items: center;
+  color: var(--ink-2);
+  margin-left: -4px;
+  flex: none;
+}
+.topbar-menu:hover { color: var(--ink); background: var(--paper-3); }
+
+/* Sidebar slide-over scrim. Phone-only — desktop never renders this
+ * element. Click anywhere outside the sidebar dismisses it. */
+.sidebar-scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(24, 24, 27, 0.32);
+  z-index: 49;
+}
 
 .kbd {
   display: inline-grid; place-items: center;
@@ -1063,4 +1083,46 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
 }
 .toast[data-kind="error"] .toast-x:hover {
   background: color-mix(in oklab, var(--danger) 18%, transparent);
+}
+
+/* ── Mobile (phone) layout overrides ───────────────────────────────────
+ * Goal: keep the desktop layout intact and only patch what breaks at
+ * <=700px. Two structural changes happen here:
+ *   1. The sidebar leaves the grid and becomes a slide-over so the
+ *      content gets the whole viewport width.
+ *   2. Inputs honor a 16px minimum so iOS Safari doesn't auto-zoom
+ *      on focus (the viewport meta is locked at scale=1, but iOS
+ *      still zooms text inputs that fall below 16px).
+ * Calendar-specific phone rules live in calendar.css; topbar/menu
+ * tweaks are colocated with the components above. */
+@media (max-width: 700px) {
+  .app {
+    grid-template-columns: 1fr;
+  }
+  .sidebar {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 56px;
+    z-index: 50;
+    transform: translateX(-100%);
+    transition: transform 160ms ease-out;
+    box-shadow: 2px 0 12px rgba(24, 24, 27, 0.18);
+  }
+  .sidebar[data-open="true"] {
+    transform: translateX(0);
+  }
+  .topbar { padding: 0 10px; gap: 8px; }
+  .topbar .crumb-sep { display: none; }
+
+  /* iOS auto-zooms any input <16px on focus. The viewport already locks
+   * scale, but Safari still zooms the input itself — only an effective
+   * 16px+ font-size suppresses it. Use a max() so desktop sizing (which
+   * is set via --fs-* tokens) still wins on bigger screens. */
+  input,
+  textarea,
+  [contenteditable="true"] {
+    font-size: max(16px, var(--fs-md));
+  }
 }

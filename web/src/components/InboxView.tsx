@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Check, Pencil } from 'lucide-react';
 import { useFira } from '../store';
-import { fmtMin, taskTimeLeft } from '../time';
 import { ProjectIcon } from './ProjectIcon';
 import type { Task, TimeBlock, Section, UUID } from '../types';
 
@@ -475,6 +474,15 @@ function AddTaskRow({ onAdd, placeholder = 'Add task…' }: {
           else if (e.key === 'Escape') { setValue(''); inputRef.current?.blur(); }
         }}
         placeholder={placeholder}
+        // iOS Safari otherwise pops "Hide My Email" / iCloud password
+        // suggestions on a generic text input. Naming the field + opting
+        // out of every autofill heuristic suppresses the keyboard chip.
+        name="task_title"
+        type="text"
+        autoComplete="off"
+        autoCorrect="off"
+        autoCapitalize="sentences"
+        spellCheck={false}
       />
     </div>
   );
@@ -529,6 +537,12 @@ function InboxSubtaskRow({ title, done, onToggle, onSave, onDelete }: {
             else if (e.key === 'Escape') { setDraft(title); setEditing(false); }
             else if (e.key === 'Backspace' && !draft) { e.preventDefault(); onDelete(); }
           }}
+          name="subtask_title"
+          type="text"
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="sentences"
+          spellCheck={false}
         />
       ) : (
         // Edit-on-click disabled in the inbox: too easy to hit while
@@ -568,8 +582,6 @@ function TaskRow({
   onGripTouchStart, onGripTouchMove, onGripTouchEnd,
   dropMark, showSubs,
 }: RowProps) {
-  const left = taskTimeLeft(task, blocks);
-  const lowLeft = left != null && task.estimate_min != null && left < task.estimate_min * 0.2 && left > 0;
   const [dragOnHandle, setDragOnHandle] = useState(false);
 
   // Long-press-to-drag for the whole row on touch. iOS pointer events
@@ -717,7 +729,6 @@ function TaskRow({
       <div className="task-title-wrap">
         <div>
           <span className="task-title">{task.title}</span>
-          {task.external_id && <span className="ext-id">{task.external_id}</span>}
         </div>
         {showSubs && task.subtasks.length > 0 && (
           <div className="subtasks">
@@ -732,20 +743,6 @@ function TaskRow({
               />
             ))}
           </div>
-        )}
-      </div>
-      <div className="task-trail">
-        {task.tags.slice(0, 1).map((tg) => (
-          <span key={tg} className="chip" style={{ height: 16, fontSize: 'calc(9px * var(--fs-scale))' }}>{tg}</span>
-        ))}
-        {task.estimate_min != null && left != null ? (
-          left < 0 ? (
-            <span className="left-est" data-over="true">{fmtMin(-left)} over</span>
-          ) : (
-            <span className="left-est" data-low={lowLeft}>{fmtMin(left)} left</span>
-          )
-        ) : (
-          <span style={{ color: 'var(--ink-4)' }}>no est</span>
         )}
       </div>
     </div>

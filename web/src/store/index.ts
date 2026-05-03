@@ -95,6 +95,13 @@ interface FiraState {
   activePersonId: UUID | null;
   // Offset in weeks from the seeded anchor week (0 = the seeded "this week").
   weekOffset: number;
+  // Mobile (3-day view) offset in days from today (0 = today is centered).
+  // Independent from weekOffset so rotating between desktop and mobile
+  // doesn't fight: each layout owns its own time cursor.
+  dayOffset: number;
+  // Mobile sidebar slide-over open/closed. Desktop sidebar is always visible
+  // and ignores this flag.
+  sidebarOpen: boolean;
   projectFilter: Record<UUID, boolean>;
   inboxFilter: InboxFilter;
   openTaskId: UUID | null;
@@ -176,6 +183,8 @@ interface FiraState {
   removePerson: (id: UUID) => void;
   setActivePerson: (id: UUID) => void;
   setWeekOffset: (offset: number) => void;
+  setDayOffset: (offset: number) => void;
+  setSidebarOpen: (open: boolean) => void;
   toggleProjectFilter: (id: UUID) => void;
   setInboxFilter: (patch: Partial<InboxFilter>) => void;
   openTask: (id: UUID | null) => void;
@@ -575,6 +584,8 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
   selectedPersonIds: [],
   activePersonId: null,
   weekOffset: 0,
+  dayOffset: 0,
+  sidebarOpen: false,
   creatingDraft: null,
   projectModal: null,
   toasts: [],
@@ -1070,6 +1081,8 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
       : [...s.selectedPersonIds, id],
   })),
   setWeekOffset: (offset) => set({ weekOffset: offset }),
+  setDayOffset: (offset) => set({ dayOffset: offset }),
+  setSidebarOpen: (open) => set({ sidebarOpen: open }),
   toggleProjectFilter: (id) => set((s) => ({
     projectFilter: { ...s.projectFilter, [id]: !(s.projectFilter[id] !== false) },
   })),
