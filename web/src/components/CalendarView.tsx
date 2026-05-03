@@ -546,12 +546,31 @@ export function CalendarView() {
     [visibleBlocks, tasks, projects, gridAnchor],
   );
 
-  const totalMin = myBlocks.reduce((s, b) => s + dur(b), 0);
-  const completedMin = myBlocks.filter((b) => b.state === 'completed').reduce((s, b) => s + dur(b), 0);
-  const plannedMin = myBlocks.filter((b) => b.state === 'planned').reduce((s, b) => s + dur(b), 0);
+  // Totals reflect what the user actually sees: blocks that pass the
+  // project filter AND fall inside the currently visible day range
+  // (3-day mobile window or 7-day desktop week). Hiding a project or
+  // paging away from a week shrinks the numbers accordingly.
+  const inVisibleRange = (b: TimeBlock) => {
+    const { day } = blockToGrid(b.start_at, b.end_at, gridAnchor);
+    return day >= 0 && day < dayCount;
+  };
+  const totalsBlocks = useMemo(
+    () => visibleBlocks.filter(inVisibleRange),
+    [visibleBlocks, gridAnchor, dayCount],
+  );
+  const totalMin = totalsBlocks.reduce((s, b) => s + dur(b), 0);
+  const completedMin = totalsBlocks.filter((b) => b.state === 'completed').reduce((s, b) => s + dur(b), 0);
+  const plannedMin = totalsBlocks.filter((b) => b.state === 'planned').reduce((s, b) => s + dur(b), 0);
 
+  // Per-project rail counts also use the visible day range so they
+  // sum to the totals above, but ignore the project-visibility filter
+  // so a hidden project still shows how many hours it has scheduled.
+  const myBlocksInRange = useMemo(
+    () => myBlocks.filter(inVisibleRange),
+    [myBlocks, gridAnchor, dayCount],
+  );
   const allocByProject = projects.map((p) => {
-    const mins = myBlocks
+    const mins = myBlocksInRange
       .filter((b) => tasks.find((t) => t.id === b.task_id)?.project_id === p.id)
       .reduce((s, b) => s + dur(b), 0);
     return { project: p, mins, pct: totalMin ? (mins / totalMin) * 100 : 0 };
