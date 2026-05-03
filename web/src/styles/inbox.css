@@ -14,6 +14,10 @@
  * grip + check (which together total ~32px). */
 @media (max-width: 700px) {
   .inbox-doc { padding: 16px 8px 80px; }
+  /* Project header runs out of horizontal room with tasks/members count
+   * + Archive button on a 360px screen — drop the count, the action is
+   * what the user came here for. */
+  .inbox-proj-head .meta { display: none; }
 }
 .inbox-empty {
   min-height: calc(100vh - 44px - 24px);

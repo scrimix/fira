@@ -154,7 +154,6 @@ export function ProjectModal({ project }: Props) {
         <div className="np-body">
           <label className="np-label">Name</label>
           <input
-            autoFocus
             className="np-title"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
