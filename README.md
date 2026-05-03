@@ -126,6 +126,50 @@ A composite FK `(workspace_id, user_id) → workspace_members` on
 `project_members` makes it structurally impossible to add a project
 member who isn't already in the workspace.
 
+### Email-based workspace invites (sprint 19)
+
+Workspace membership is invite-only — no global user picker, no
+"add anyone in the system" button. The owner enters an email in
+the workspace's edit modal and clicks Send invite. The server
+canonicalizes the email (lower + trim), creates a
+`workspace_invites` row with `status='pending'`, and pushes a
+nudge to the recipient's per-user WS channel. A partial unique
+index `(workspace_id, email) WHERE status='pending'` makes the
+call idempotent: re-sending the same invite returns the existing
+row.
+
+The recipient sees a sticky modal — same UX as account-link's
+"received pending" — with the inviter's name, the workspace
+title, and Accept / Decline buttons. Accept inserts into
+`workspace_members` (`ON CONFLICT DO UPDATE SET role =
+EXCLUDED.role, removed_at = NULL` so re-inviting a previously-
+removed user un-soft-deletes their row), records a
+`workspace.set_members` op on the workspace's change feed so
+existing members' lists refresh, and switches the recipient
+straight into the just-joined workspace.
+
+Member edits are now one-mutation-per-click — no staged-state +
+bulk-save:
+
+- **Add a member** — invite-by-email only.
+- **Change a role** — the per-row Select calls
+  `setWorkspaceMemberRole` immediately.
+- **Remove a member** — click X (arms) → click Remove → typed-
+  email confirm (same `ConfirmDelete` paranoia as project /
+  workspace delete) → `DELETE
+  /api/workspaces/:id/members/:user_id`. The handler soft-deletes
+  the `workspace_members` row and cascades the soft-delete into
+  `project_members` for that user across this workspace's
+  projects (the FK has `ON DELETE CASCADE` but
+  `workspace_members` is *soft*-deleted, so the cascade doesn't
+  fire on its own). Tasks and time blocks owned by ex-members
+  stay as historical record — they did do that work.
+- **Save Changes** is title-only.
+
+Invites for not-yet-registered emails sit in pending until
+someone signs in under that email; `/api/bootstrap` surfaces
+their pending invites on first paint.
+
 ### Account linking + personal overlay (sprint 14)
 
 A person owns one timeline. Two opt-in, read-only overlays expose
@@ -499,8 +543,12 @@ playground feeds into the store.
   current rates, will need archival eventually. Migration 0010
   intentionally lets log rows linger past their entities; a periodic
   GC is the obvious follow-up.
-- **Email invites** for non-Fira accounts. Linking and workspace adds
-  both require the partner to have signed in first.
+- **Email-delivered invites** (SMTP / SES). Workspace invites land in
+  the recipient's in-app modal — the row sits in
+  `workspace_invites` with `status='pending'` and is keyed by
+  email, so a not-yet-registered recipient picks the modal up via
+  `/api/bootstrap` on first sign-in — but no email actually goes
+  out yet. Account linking has the same shape and the same gap.
 - **Multiple accepted links per user.** Hard-cap'd to one via partial
   unique indexes; "one person, two accounts, one timeline" is the
   product premise.

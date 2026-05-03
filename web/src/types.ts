@@ -125,6 +125,25 @@ export interface UserLink {
   accepted_at: string | null;
 }
 
+/// Workspace invite — email-based membership grant. Bootstrap only
+/// returns `pending` rows; resolved (accepted/declined/cancelled)
+/// invites disappear from the client.
+export type InviteStatus = 'pending' | 'accepted' | 'declined' | 'cancelled';
+export type InviteDirection = 'sent' | 'received';
+export interface WorkspaceInvite {
+  id: UUID;
+  workspace_id: UUID;
+  workspace_title: string;
+  email: string;
+  role: WorkspaceRole;
+  status: InviteStatus;
+  direction: InviteDirection;
+  invited_by: UUID;
+  invited_by_name: string;
+  invited_by_email: string;
+  created_at: string;
+}
+
 /// Linked partner's task projection — minimal fields needed to render
 /// their blocks on the calendar overlay. Read-only.
 export interface LinkedTask {
@@ -167,6 +186,7 @@ export interface Bootstrap {
   blocks: TimeBlock[];
   gcal: GcalEvent[];
   links: UserLink[];
+  workspace_invites: WorkspaceInvite[];
   /// Initial change-feed cursor — start polling /changes from here.
   cursor: number;
 }

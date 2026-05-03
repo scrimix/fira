@@ -298,6 +298,103 @@ pub async fn set_workspace_members_tx(
     }))
 }
 
+/// Soft-delete every project_members row in this workspace that
+/// belongs to one of the removed users. The FK to workspace_members
+/// has ON DELETE CASCADE, but workspace_members itself is *soft*-
+/// deleted (sets `removed_at`), so the cascade never fires. Without
+/// this call, an ex-workspace-member would still appear as a project
+/// member in every project they were on. Mirrors the soft-delete
+/// pattern used elsewhere — `removed_at IS NOT NULL` excludes the row
+/// from scope queries; re-inviting the user later can re-clear it.
+pub async fn soft_remove_project_members_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    workspace_id: Uuid,
+    removed_user_ids: &[Uuid],
+) -> sqlx::Result<Vec<Uuid>> {
+    if removed_user_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    // Postgres' RETURNING clause doesn't accept DISTINCT, so dedupe in
+    // Rust. Per-(user, project) project_members rows mean a user is on
+    // a project once at most, but a single removed_user_ids array can
+    // contain multiple users sharing a project — collapse to a unique
+    // list of affected project ids before returning.
+    let rows: Vec<(Uuid,)> = sqlx::query_as(
+        "UPDATE project_members
+         SET removed_at = now()
+         WHERE removed_at IS NULL
+           AND user_id = ANY($1)
+           AND project_id IN (SELECT id FROM projects WHERE workspace_id = $2)
+         RETURNING project_id",
+    )
+    .bind(removed_user_ids)
+    .bind(workspace_id)
+    .fetch_all(&mut **tx)
+    .await?;
+    let mut seen: std::collections::BTreeSet<Uuid> = std::collections::BTreeSet::new();
+    for (id,) in rows {
+        seen.insert(id);
+    }
+    Ok(seen.into_iter().collect())
+}
+
+/// Read the active member set of a project. Used after a member-set
+/// mutation when the caller needs to ship the new list back via a
+/// `project.set_members` op for the change feed.
+pub async fn list_project_members_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    project_id: Uuid,
+) -> sqlx::Result<Vec<crate::models::ProjectMember>> {
+    let rows: Vec<(Uuid, String)> = sqlx::query_as(
+        "SELECT user_id, role FROM project_members
+         WHERE project_id = $1 AND removed_at IS NULL
+         ORDER BY role",
+    )
+    .bind(project_id)
+    .fetch_all(&mut **tx)
+    .await?;
+    Ok(rows.into_iter()
+        .map(|(user_id, role)| crate::models::ProjectMember { user_id, role })
+        .collect())
+}
+
+/// Soft-delete a single workspace member. Mirrors the bulk path's
+/// removed-row semantics: `removed_at = now()` on workspace_members,
+/// then on every project_members row in this workspace owned by that
+/// user. Returns the updated workspace (members list refreshed) so
+/// the caller can ship the new state back. Returns None when the
+/// workspace doesn't exist.
+pub async fn remove_workspace_member_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    workspace_id: Uuid,
+    user_id: Uuid,
+) -> sqlx::Result<Option<(Workspace, Vec<Uuid>)>> {
+    let row: Option<(Uuid, String, bool)> = sqlx::query_as(
+        "SELECT id, title, is_personal FROM workspaces WHERE id = $1",
+    )
+    .bind(workspace_id)
+    .fetch_optional(&mut **tx)
+    .await?;
+    let Some((id, title, is_personal)) = row else { return Ok(None); };
+    sqlx::query(
+        "UPDATE workspace_members
+         SET removed_at = now()
+         WHERE workspace_id = $1 AND user_id = $2 AND removed_at IS NULL",
+    )
+    .bind(id)
+    .bind(user_id)
+    .execute(&mut **tx)
+    .await?;
+    let affected_projects = soft_remove_project_members_tx(tx, id, &[user_id]).await?;
+    Ok(Some((
+        Workspace {
+            id, title, is_personal,
+            members: list_workspace_members_tx(tx, id).await?,
+        },
+        affected_projects,
+    )))
+}
+
 /// Update one member's role.
 pub async fn set_workspace_member_role_tx(
     tx: &mut Transaction<'_, Postgres>,
@@ -882,6 +979,242 @@ pub async fn delete_link_tx(
         .await?;
     Ok(res.rows_affected() > 0)
 }
+
+// ── workspace invites ──────────────────────────────────────────────────
+
+/// Lowercase-and-trim email for storage / lookup. Same convention every
+/// other email-keyed lookup in the codebase uses.
+pub fn canonical_email(email: &str) -> String {
+    email.trim().to_lowercase()
+}
+
+/// Pending invites visible to the caller — invites they sent (any
+/// workspace they own) plus invites addressed to their email. The shape
+/// mirrors `list_user_links`: one row per invite, `direction` says which
+/// side the caller is on. Bootstrap calls this; the user channel WS
+/// reload calls it on every nudge.
+pub async fn list_workspace_invites(
+    pool: &PgPool,
+    user_id: Uuid,
+    user_email: &str,
+) -> sqlx::Result<Vec<crate::models::WorkspaceInvite>> {
+    let canon = canonical_email(user_email);
+    let rows: Vec<(Uuid, Uuid, String, String, String, String, Uuid, String, String, DateTime<Utc>)> =
+        sqlx::query_as(
+            "SELECT i.id, i.workspace_id, w.title, i.email, i.role, i.status,
+                    i.invited_by, u.name, u.email, i.created_at
+             FROM workspace_invites i
+             JOIN workspaces w ON w.id = i.workspace_id
+             JOIN users u ON u.id = i.invited_by
+             WHERE i.status = 'pending'
+               AND (i.invited_by = $1 OR i.email = $2)
+             ORDER BY i.created_at DESC",
+        )
+        .bind(user_id)
+        .bind(&canon)
+        .fetch_all(pool)
+        .await?;
+    Ok(rows
+        .into_iter()
+        .map(|(id, workspace_id, workspace_title, email, role, status, invited_by, invited_by_name, invited_by_email, created_at)| {
+            let direction = if invited_by == user_id { "sent" } else { "received" };
+            crate::models::WorkspaceInvite {
+                id,
+                workspace_id,
+                workspace_title,
+                email,
+                role,
+                status,
+                direction: direction.to_string(),
+                invited_by,
+                invited_by_name,
+                invited_by_email,
+                created_at,
+            }
+        })
+        .collect())
+}
+
+/// Look up an invite + its current state for authorization checks.
+/// Returns (workspace_id, email, status, invited_by, role).
+pub async fn get_invite_for_action(
+    pool: &PgPool,
+    invite_id: Uuid,
+) -> sqlx::Result<Option<(Uuid, String, String, Uuid, String)>> {
+    sqlx::query_as(
+        "SELECT workspace_id, email, status, invited_by, role
+         FROM workspace_invites WHERE id = $1",
+    )
+    .bind(invite_id)
+    .fetch_optional(pool)
+    .await
+}
+
+/// Create a new pending invite. If a pending row already exists for
+/// (workspace, email), returns its id without re-inserting (idempotent
+/// re-send). Returns the id and a flag indicating whether it was newly
+/// created (true) or already existed (false).
+pub async fn create_workspace_invite_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    workspace_id: Uuid,
+    email: &str,
+    role: &str,
+    invited_by: Uuid,
+) -> sqlx::Result<(Uuid, bool)> {
+    let canon = canonical_email(email);
+    let existing: Option<(Uuid,)> = sqlx::query_as(
+        "SELECT id FROM workspace_invites
+         WHERE workspace_id = $1 AND email = $2 AND status = 'pending'",
+    )
+    .bind(workspace_id)
+    .bind(&canon)
+    .fetch_optional(&mut **tx)
+    .await?;
+    if let Some((id,)) = existing {
+        return Ok((id, false));
+    }
+    let row: (Uuid,) = sqlx::query_as(
+        "INSERT INTO workspace_invites (workspace_id, email, role, status, invited_by)
+         VALUES ($1, $2, $3, 'pending', $4)
+         RETURNING id",
+    )
+    .bind(workspace_id)
+    .bind(&canon)
+    .bind(role)
+    .bind(invited_by)
+    .fetch_one(&mut **tx)
+    .await?;
+    Ok((row.0, true))
+}
+
+/// Returns true if the email is already a workspace member (so the
+/// caller can return a friendly "already a member" error instead of
+/// creating a no-op invite that will never be acted on).
+pub async fn email_is_workspace_member(
+    pool: &PgPool,
+    workspace_id: Uuid,
+    email: &str,
+) -> sqlx::Result<bool> {
+    // `removed_at IS NULL` filters out soft-deleted memberships —
+    // without it, re-inviting an email that was just removed from this
+    // workspace would falsely report "already a member" because the
+    // soft-deleted row is still there.
+    let canon = canonical_email(email);
+    let row: Option<(i32,)> = sqlx::query_as(
+        "SELECT 1 FROM workspace_members m
+         JOIN users u ON u.id = m.user_id
+         WHERE m.workspace_id = $1
+           AND m.removed_at IS NULL
+           AND lower(u.email) = $2
+         LIMIT 1",
+    )
+    .bind(workspace_id)
+    .bind(&canon)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.is_some())
+}
+
+/// Mark an invite cancelled. Only valid from `pending`. Used by the
+/// sender (or workspace owner) to retract before acceptance.
+pub async fn cancel_workspace_invite_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    invite_id: Uuid,
+) -> sqlx::Result<bool> {
+    let res = sqlx::query(
+        "UPDATE workspace_invites
+         SET status = 'cancelled', resolved_at = now()
+         WHERE id = $1 AND status = 'pending'",
+    )
+    .bind(invite_id)
+    .execute(&mut **tx)
+    .await?;
+    Ok(res.rows_affected() > 0)
+}
+
+/// Mark an invite declined. Recipient-only.
+pub async fn decline_workspace_invite_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    invite_id: Uuid,
+) -> sqlx::Result<bool> {
+    let res = sqlx::query(
+        "UPDATE workspace_invites
+         SET status = 'declined', resolved_at = now()
+         WHERE id = $1 AND status = 'pending'",
+    )
+    .bind(invite_id)
+    .execute(&mut **tx)
+    .await?;
+    Ok(res.rows_affected() > 0)
+}
+
+/// Accept an invite: flip status, insert into workspace_members. Caller
+/// is responsible for verifying the actor's email matches the invite.
+/// Returns false if the invite is no longer pending (raced with cancel
+/// or another tab's accept).
+pub async fn accept_workspace_invite_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    invite_id: Uuid,
+    accepting_user_id: Uuid,
+) -> sqlx::Result<bool> {
+    let res = sqlx::query(
+        "UPDATE workspace_invites
+         SET status = 'accepted', resolved_at = now()
+         WHERE id = $1 AND status = 'pending'",
+    )
+    .bind(invite_id)
+    .execute(&mut **tx)
+    .await?;
+    if res.rows_affected() == 0 {
+        return Ok(false);
+    }
+    // Pull workspace + role from the row we just updated, then insert
+    // into workspace_members. ON CONFLICT covers the rare case where the
+    // user was added through some other path between create and accept.
+    let row: (Uuid, String) = sqlx::query_as(
+        "SELECT workspace_id, role FROM workspace_invites WHERE id = $1",
+    )
+    .bind(invite_id)
+    .fetch_one(&mut **tx)
+    .await?;
+    // ON CONFLICT path covers two cases: (a) the user was added through
+    // some other route between invite-create and accept, and (b) — the
+    // common one — they were a member previously, got removed (which
+    // soft-deletes the row), and are now being re-invited. In (b) the
+    // existing row's `removed_at` must be cleared and the role applied
+    // from the invite, otherwise the user stays effectively soft-
+    // deleted despite an "accepted" invite.
+    sqlx::query(
+        "INSERT INTO workspace_members (workspace_id, user_id, role, removed_at)
+         VALUES ($1, $2, $3, NULL)
+         ON CONFLICT (workspace_id, user_id) DO UPDATE
+             SET role = EXCLUDED.role, removed_at = NULL",
+    )
+    .bind(row.0)
+    .bind(accepting_user_id)
+    .bind(&row.1)
+    .execute(&mut **tx)
+    .await?;
+    Ok(true)
+}
+
+/// Returns the user_ids of every member in the given workspace. Used by
+/// the accept handler to fan out a user-channel nudge to each existing
+/// member so their member list refreshes without a manual reload.
+pub async fn list_workspace_member_ids(
+    pool: &PgPool,
+    workspace_id: Uuid,
+) -> sqlx::Result<Vec<Uuid>> {
+    let rows: Vec<(Uuid,)> = sqlx::query_as(
+        "SELECT user_id FROM workspace_members WHERE workspace_id = $1",
+    )
+    .bind(workspace_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(|(id,)| id).collect())
+}
+
+// ───────────────────────────────────────────────────────────────────────
 
 /// The user_id of the caller's accepted partner, if any.
 pub async fn accepted_partner_id(pool: &PgPool, user_id: Uuid) -> sqlx::Result<Option<Uuid>> {

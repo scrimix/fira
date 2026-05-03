@@ -392,6 +392,18 @@
   color: var(--ink);
   padding: 0;
   line-height: 1.45;
+  /* Render the textarea as a single-line input. `resize: none` kills
+   * the corner grabber; explicit single-row height keeps it from
+   * springing to a multi-line height when the textarea's UA default
+   * tries to fit `rows=1` plus padding. The user can still
+   * Shift+Enter to insert newlines and the height grows naturally. */
+  resize: none;
+  overflow-y: hidden;
+  min-height: calc(1.45em);
+  font-family: inherit;
+  width: 100%;
+  display: block;
+  vertical-align: top;
 }
 
 .subtask-add {

@@ -40,7 +40,9 @@ export type RemoteOnlyOpKind =
   | { kind: 'project.create'; project: import('../types').Project }
   | { kind: 'project.update'; project: import('../types').Project }
   | { kind: 'project.set_members'; project_id: string; members: import('../types').ProjectMember[] }
-  | { kind: 'project.delete'; project_id: string };
+  | { kind: 'project.delete'; project_id: string }
+  | { kind: 'workspace.set_members'; workspace_id: string; members: import('../types').WorkspaceMember[] }
+  | { kind: 'workspace.set_member_role'; workspace_id: string; user_id: string; role: import('../types').WorkspaceRole };
 
 export type AnyOpKind = OpKind | RemoteOnlyOpKind;
 

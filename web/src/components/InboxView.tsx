@@ -525,7 +525,7 @@ function AddTaskRow({ onAdd, placeholder = 'Add task…' }: {
   placeholder?: string;
 }) {
   const [value, setValue] = useState('');
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const commit = () => {
     const v = value.trim();
@@ -536,25 +536,27 @@ function AddTaskRow({ onAdd, placeholder = 'Add task…' }: {
   return (
     <div className="task-add" data-editing="true" onClick={() => inputRef.current?.focus()}>
       <span className="task-add-plus">+</span>
-      <input
+      {/* `<textarea rows={1}>` instead of `<input>` because Safari /
+       * iCloud's "Hide My Email" QuickType chip is keyed off `<input>`
+       * elements specifically — it doesn't fire on textareas. We size
+       * it as a single line via CSS (`resize: none`, line-height match)
+       * so the user-visible affordance is identical to an input. Enter
+       * commits, Shift+Enter inserts a newline (rare; tasks are
+       * typically single-line). */}
+      <textarea
         ref={inputRef}
         className="task-add-input"
+        rows={1}
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onBlur={commit}
         onKeyDown={(e) => {
-          if (e.key === 'Enter') { e.preventDefault(); commit(); }
+          if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); commit(); }
           else if (e.key === 'Escape') { setValue(''); inputRef.current?.blur(); }
         }}
         placeholder={placeholder}
-        // iOS Safari otherwise pops "Hide My Email" / iCloud password
-        // chips on generic text inputs. autoComplete="one-time-code"
-        // tells Safari this is an OTP field, which is exclusive of
-        // email/password autofill — the QuickType bar may briefly
-        // suggest SMS codes but never the Hide My Email chip.
         name="task_title"
-        type="text"
-        autoComplete="one-time-code"
+        autoComplete="off"
         autoCorrect="off"
         autoCapitalize="sentences"
         spellCheck={false}

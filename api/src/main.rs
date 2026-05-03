@@ -15,7 +15,7 @@ use fira_api::{
     auth::{self, AuthConfig, AuthCtx},
     db, error,
     error::ApiResult,
-    links,
+    invites, links,
     load_bootstrap,
     models::*,
     ops, pubsub,
@@ -418,7 +418,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/workspaces", get(workspaces::list_my).post(workspaces::create))
         .route("/workspaces/:id", patch(workspaces::rename).delete(workspaces::delete))
         .route("/workspaces/:id/members", put(workspaces::set_members))
-        .route("/workspaces/:id/members/:user_id", patch(workspaces::set_member_role))
+        .route("/workspaces/:id/members/:user_id", patch(workspaces::set_member_role).delete(workspaces::remove_member))
         .route("/workspaces/:id/users", get(workspaces::list_users))
         .route("/workspaces/:id/all-users", get(workspaces::list_all_users))
         .route("/links", get(links::list_my).post(links::create))
@@ -427,6 +427,10 @@ async fn main() -> anyhow::Result<()> {
         .route("/linked/calendar", get(links::linked_calendar))
         .route("/personal/calendar", get(links::personal_calendar))
         .route("/work/calendar", get(links::work_calendar))
+        .route("/invites", get(invites::list_my).post(invites::create))
+        .route("/invites/:id", delete(invites::cancel))
+        .route("/invites/:id/accept", post(invites::accept))
+        .route("/invites/:id/decline", post(invites::decline))
         .route("/ops", post(ops::post_ops))
         .route("/changes", get(ops::get_changes))
         .route("/ws", get(ws::ws_handler))

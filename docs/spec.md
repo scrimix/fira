@@ -95,6 +95,7 @@ applied in order on boot via `sqlx::migrate!`).
 | `time_blocks`      | start_at, end_at, state (`planned`/`completed`/`skipped`), `user_id` (whose calendar the block lives on, independent of `task.assignee_id`). |
 | `processed_ops`    | accepted-op log: `op_id` PK (idempotency) + `seq BIGSERIAL` (the global change-feed cursor) + `payload JSONB` (verbatim wire op) + `project_id` (nullable, for project-scope filtering) + `workspace_id` (nullable, for workspace-scope filtering). FKs to projects/workspaces were dropped in migration 0010 so log rows survive entity deletion. |
 | `user_links`       | account-pair table; `(user_a, user_b)` canonicalized so `a < b`, `requested_by` distinguishes initiator, `status in ('pending','accepted')`. Two partial unique indexes (one per side, scoped to `status='accepted'`) cap each user to one accepted link. |
+| `workspace_invites`| email-based pending invites for joining a workspace. `(workspace_id, email, role, status, invited_by, created_at, resolved_at)`. `email` is canonicalized lower+trim. `status in ('pending','accepted','declined','cancelled')`. Partial unique index `(workspace_id, email) WHERE status = 'pending'` makes invite-create idempotent — re-sending returns the existing pending row. |
 | `gcal_events`      | placeholder table — no GCal sync yet, no UI rendering. |
 
 **Two role axes** (sprints 08, 12, 15) gate authorization:
@@ -115,6 +116,20 @@ applied in order on boot via `sqlx::migrate!`).
 where `is_personal = true` and they are the sole owner. Created on
 signup and on the dev fixture. Cannot be deleted, cannot have other
 members added.
+
+**Workspace membership comes via invites only.** A workspace owner
+can't add members directly anymore (sprint 19 removed the global
+user-search picker — it was an onboarding wall for any user not yet
+in the system). The only paths into a workspace's `workspace_members`
+table are: the workspace's own creator at create time, and the
+`accept_workspace_invite_tx` insert that runs when a recipient
+accepts a pending invite. Removal is a single-user soft-delete
+through the `DELETE /api/workspaces/:id/members/:user_id` endpoint
+which also cascades the soft-delete into `project_members` rows for
+that user in this workspace's projects (the FK has `ON DELETE
+CASCADE` but `workspace_members` is soft-deleted, so the cascade
+doesn't fire on its own). Tasks and time blocks owned by ex-members
+stay as historical record.
 
 **Things in the design doc that are NOT in the schema yet:**
 - `recurring` section + `task_type` (`regular`/`recurring`/`instance`)
@@ -151,8 +166,9 @@ membership and, where applicable, project membership.
 | `/api/workspaces`                      | POST   | create a non-personal workspace; caller becomes owner |
 | `/api/workspaces/:id`                  | PATCH  | rename (workspace owner only)                         |
 | `/api/workspaces/:id`                  | DELETE | delete (owner only; personal workspaces rejected)     |
-| `/api/workspaces/:id/members`          | PUT    | replace member set + roles (owner only)               |
+| `/api/workspaces/:id/members`          | PUT    | replace member set + roles (owner only) — kept for completeness, no longer used by the web UI |
 | `/api/workspaces/:id/members/:user_id` | PATCH  | change a single member's role (owner only)            |
+| `/api/workspaces/:id/members/:user_id` | DELETE | remove one member from the workspace + cascade project memberships (owner only; can't remove self) |
 | `/api/workspaces/:id/users`            | GET    | directory listing scoped to one workspace             |
 | `/api/workspaces/:id/all-users`        | GET    | every user in the system (owner only) — for adding a Google user not yet in any workspace |
 | `/api/projects`                        | POST   | create a project (workspace owner only)               |
@@ -163,6 +179,11 @@ membership and, where applicable, project membership.
 | `/api/links`                           | POST   | `{ email }` → create pending link                     |
 | `/api/links/:id`                       | DELETE | cancel sent / decline received / unlink               |
 | `/api/links/:id/accept`                | POST   | accept (only the non-requester)                       |
+| `/api/invites`                         | GET    | list pending workspace invites involving me (sent + received) |
+| `/api/invites`                         | POST   | `{ workspace_id, email, role? }` → create pending invite (workspace owner only; idempotent per (workspace, email) while pending) |
+| `/api/invites/:id`                     | DELETE | cancel a pending invite (sender or workspace owner)   |
+| `/api/invites/:id/accept`              | POST   | accept — recipient-only, matched on canonical email   |
+| `/api/invites/:id/decline`             | POST   | decline — recipient-only                              |
 | `/api/linked/calendar`                 | GET    | partner's blocks + `LinkedTask` projection (read-only overlay) |
 | `/api/personal/calendar`               | GET    | personal-workspace blocks + `LinkedTask` projection — empty when active workspace is already personal |
 | `/api/ops`                             | POST   | push outbox ops, idempotent per `op_id`, per-op tx    |
@@ -176,9 +197,13 @@ non-null):
 ```ts
 {
   me, users, projects, epics, sprints, tasks, blocks,
-  workspace, links, cursor
+  workspace, links, workspace_invites, cursor
 }
 ```
+
+`workspace_invites` is the caller's pending invites (both `sent` and
+`received` directions); resolved invites — accepted / declined /
+cancelled — are terminal and don't surface.
 
 `cursor` is the current `MAX(seq)` from `processed_ops`. Fresh clients
 start polling `/api/changes` from there, not from 0. The shape
@@ -200,7 +225,50 @@ Workspace, project, and link mutations write synthesized
 the same log so peer clients converge through one apply path. Account
 linking events ride the per-user channel only — there is no
 workspace-scoped `link.*` op (the partners might not share a
-workspace).
+workspace). Workspace invites do the same: `workspace_invite.*`
+events fire only on the per-user channel (the recipient may not be
+in *any* shared workspace yet), but the *acceptance side-effect* —
+inserting / un-soft-deleting `workspace_members` — surfaces as a
+`workspace.set_members` op on the workspace's change feed so existing
+members see the new colleague appear without a manual reload.
+
+### Workspace invites
+
+Sender (workspace owner) types an email and clicks Send invite. The
+server canonicalizes the email (lower + trim), checks it isn't
+already an active member of that workspace (`removed_at IS NULL`
+filter — re-inviting a previously-removed user is a happy path), and
+creates a `workspace_invites` row with `status = 'pending'`. The
+partial unique index `(workspace_id, email) WHERE status = 'pending'`
+makes the call idempotent: a second create with the same email
+returns the existing row instead of inserting a duplicate.
+
+The recipient is matched by *email*, not user_id — invites for
+not-yet-registered emails sit in pending until someone signs in
+under that email and `/api/bootstrap` surfaces it. Once visible to
+the recipient, a sticky modal pops (the only dismissals are Accept /
+Decline; same UX pattern as account-link's received-pending state).
+Accept inserts into `workspace_members` with
+`ON CONFLICT (workspace_id, user_id) DO UPDATE SET role = EXCLUDED.role,
+removed_at = NULL` so re-accepting after a prior removal cleanly
+un-soft-deletes the row instead of leaving it as a tombstone.
+
+Notification fan-out on each state change goes through the per-user
+WS channel (`Hub::notify_user`) and reaches:
+
+- **Create:** inviter (their pending list updates) and any user
+  whose registered email matches the invitee.
+- **Cancel:** inviter and recipient (recipient's modal disappears
+  in real time).
+- **Accept:** inviter, the accepting user, *and* every existing
+  member of the workspace — so workspace member lists everywhere
+  reflect the new colleague immediately.
+- **Decline:** inviter and the declining user.
+
+The accept handler also records a `workspace.set_members` op on the
+workspace's change feed (in the same transaction as the invite
+status flip), so the workspace WS path is a deterministic backstop
+for the user-channel reload.
 
 ## 5. Time anchoring
 

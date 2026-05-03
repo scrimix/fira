@@ -8,7 +8,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type {
   Bootstrap, Project, User, Epic, Sprint, Task, TimeBlock, GcalEvent, UUID, Section, Subtask, Status,
-  Workspace, WorkspaceRole, UserLink, LinkedTask,
+  Workspace, WorkspaceRole, UserLink, LinkedTask, WorkspaceInvite,
 } from '../types';
 import { api, HttpError, setActiveWorkspaceId } from '../api';
 import { newOp, type Op, type OpKind, type AnyOpKind, type ChangeEntry } from './outbox';
@@ -119,6 +119,11 @@ interface FiraState {
   // is the partner's read-only calendar projection — fetched separately
   // because it crosses workspace boundaries that bootstrap doesn't.
   links: UserLink[];
+  // Email-based workspace invites involving the caller. `direction`
+  // ('sent' | 'received') tells the UI which list each row belongs to.
+  // Only pending invites surface to the client; resolved ones are
+  // server-side terminal and disappear from this list.
+  workspaceInvites: WorkspaceInvite[];
   linkedBlocks: TimeBlock[];
   linkedTasks: LinkedTask[];
   linkedGcal: GcalEvent[];
@@ -159,6 +164,7 @@ interface FiraState {
     members: { user_id: UUID; role: WorkspaceRole }[],
   ) => Promise<Workspace>;
   setWorkspaceMemberRole: (id: UUID, userId: UUID, role: WorkspaceRole) => Promise<Workspace>;
+  removeWorkspaceMember: (id: UUID, userId: UUID) => Promise<Workspace>;
   deleteWorkspace: (id: UUID) => Promise<void>;
   loadWorkspaceUsers: (id: UUID) => Promise<void>;
   openCreateWorkspace: () => void;
@@ -209,6 +215,11 @@ interface FiraState {
   requestLink: (email: string) => Promise<void>;
   acceptLink: (id: UUID) => Promise<void>;
   cancelLink: (id: UUID) => Promise<void>;
+  reloadWorkspaceInvites: () => Promise<void>;
+  inviteToWorkspace: (workspace_id: UUID, email: string, role?: WorkspaceRole) => Promise<void>;
+  cancelWorkspaceInvite: (id: UUID) => Promise<void>;
+  acceptWorkspaceInvite: (id: UUID) => Promise<void>;
+  declineWorkspaceInvite: (id: UUID) => Promise<void>;
   loadLinkedCalendar: () => Promise<void>;
   setShowLinked: (v: boolean) => void;
   loadPersonalCalendar: () => Promise<void>;
@@ -452,7 +463,11 @@ function applyOpToState(s: FiraState, op: AnyOpKind): Partial<FiraState> {
             : s.openTaskId,
         };
       }
-      // Still a member — just sync the member list.
+      // Still a member — just sync the member list. Edge case: if the
+      // project isn't in our local state (we were just added and our
+      // bootstrap predates the project), the .map below is a no-op.
+      // The applyRemoteOp wrapper handles that case and schedules a
+      // hydrate after this returns.
       return {
         projects: s.projects.map((p) =>
           p.id === op.project_id ? { ...p, members: op.members } : p,
@@ -482,6 +497,33 @@ function applyOpToState(s: FiraState, op: AnyOpKind): Partial<FiraState> {
         projectModal: s.projectModal && s.projectModal.kind === 'edit' && s.projectModal.id === op.project_id
           ? null
           : s.projectModal,
+      };
+    }
+    case 'workspace.set_members': {
+      // Membership change arrived via the change feed. Patch the
+      // matching workspace's `members` in place so the editor modal
+      // (and anything else reading workspace.members) reflects the new
+      // set without a manual reload. The user-channel WS path also
+      // calls reloadWorkspaces, but the change-feed delivery is the
+      // more deterministic backstop.
+      const wid = op.workspace_id as string;
+      const next = (op.members as { user_id: string; role: WorkspaceRole }[]) ?? [];
+      return {
+        workspaces: s.workspaces.map((w) =>
+          w.id === wid ? { ...w, members: next } : w,
+        ),
+      };
+    }
+    case 'workspace.set_member_role': {
+      const wid = op.workspace_id as string;
+      const uid = op.user_id as string;
+      const role = op.role as WorkspaceRole;
+      return {
+        workspaces: s.workspaces.map((w) =>
+          w.id === wid
+            ? { ...w, members: w.members.map((m) => m.user_id === uid ? { ...m, role } : m) }
+            : w,
+        ),
       };
     }
     default:
@@ -532,6 +574,7 @@ function applyBootstrap(
     blocks: data.blocks,
     gcal: data.gcal,
     links: data.links ?? [],
+    workspaceInvites: data.workspace_invites ?? [],
     cursor: data.cursor ?? 0,
     appliedOpIds: new Map(),
     outbox: [],
@@ -580,6 +623,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
   myWorkspaceRole: null,
   workspaceModal: null,
   links: [],
+  workspaceInvites: [],
   linkedBlocks: [],
   linkedTasks: [],
   linkedGcal: [],
@@ -745,6 +789,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
       blocks: data.blocks,
       gcal: data.gcal,
       links: data.links ?? [],
+      workspaceInvites: data.workspace_invites ?? [],
       cursor: data.cursor ?? 0,
       myWorkspaceRole: (myMember?.role ?? 'member') as WorkspaceRole,
       projectFilter,
@@ -877,6 +922,21 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
       myWorkspaceRole: id === s.activeWorkspaceId && userId === meId
         ? role
         : s.myWorkspaceRole,
+    }));
+    return ws;
+  },
+
+  removeWorkspaceMember: async (id, userId) => {
+    const playground = get().playgroundMode;
+    const existing = get().workspaces.find((w) => w.id === id);
+    const ws: Workspace = playground && existing
+      ? {
+          ...existing,
+          members: existing.members.filter((m) => m.user_id !== userId),
+        }
+      : await api.removeWorkspaceMember(id, userId);
+    set((s) => ({
+      workspaces: s.workspaces.map((w) => w.id === id ? ws : w),
     }));
     return ws;
   },
@@ -1059,14 +1119,27 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     // Dispatch on payload kind. Create kinds upsert (no-op if id exists),
     // update kinds patch in place, delete kinds tolerate the row being gone.
     const op = entry.payload as AnyOpKind;
+    // "Newly added to a project I don't have" — detect before the
+    // patch (so we can compare against pre-state) and schedule a
+    // hydrate after. The patch itself is a no-op for an unknown
+    // project; without the hydrate the new project never appears.
+    let needHydrate = false;
+    if (op.kind === 'project.set_members') {
+      const meId = get().meId;
+      const haveProject = get().projects.some((p) => p.id === op.project_id);
+      if (!haveProject && meId != null && op.members.some((m) => m.user_id === meId)) {
+        needHydrate = true;
+      }
+    }
     set((s) => applyOpToState(s, op));
-    // Track that we now know about this op so a duplicate poll doesn't
-    // re-apply it. (The outbox path already adds; this covers remote-origin.)
     set((s) => {
       const next = new Map(s.appliedOpIds);
       next.set(entry.op_id, Date.now());
       return { appliedOpIds: next };
     });
+    if (needHydrate) {
+      window.setTimeout(() => { void get().hydrate(); }, 0);
+    }
   },
 
   setView: (v, projectId) => set((s) => ({
@@ -1174,6 +1247,72 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
       linkedTasks: [],
       linkedGcal: [],
       showLinked: false,
+    }));
+  },
+
+  // ── workspace invites ─────────────────────────────────────────────
+  // Mirrors the link actions: a single fetch refreshes the full pending
+  // set; the WS user channel triggers reload on every state change so
+  // both ends stay in sync without polling. Resolved invites (accepted /
+  // declined / cancelled) drop out of the bootstrap query, so reload
+  // also clears stale rows.
+  reloadWorkspaceInvites: async () => {
+    if (get().playgroundMode) return;
+    try {
+      const fresh = await api.listInvites();
+      set({ workspaceInvites: fresh });
+    } catch {
+      // Silent — same posture as reloadLinks.
+    }
+  },
+
+  inviteToWorkspace: async (workspace_id, email, role) => {
+    const inv = await api.createInvite(workspace_id, email, role);
+    set((s) => ({
+      workspaceInvites: [
+        ...s.workspaceInvites.filter((i) => i.id !== inv.id),
+        inv,
+      ],
+    }));
+  },
+
+  cancelWorkspaceInvite: async (id) => {
+    await api.cancelInvite(id);
+    set((s) => ({
+      workspaceInvites: s.workspaceInvites.filter((i) => i.id !== id),
+    }));
+  },
+
+  acceptWorkspaceInvite: async (id) => {
+    // Capture the invite's workspace_id before it disappears from the
+    // local list — we need it to switch the user into the joined
+    // workspace once acceptance commits. Without this the user lands
+    // on their personal workspace and has to manually pick the new one
+    // from the switcher.
+    const invite = get().workspaceInvites.find((i) => i.id === id);
+    const targetWorkspaceId = invite?.workspace_id ?? null;
+    await api.acceptInvite(id);
+    set((s) => ({
+      workspaceInvites: s.workspaceInvites.filter((i) => i.id !== id),
+    }));
+    // Pull a fresh workspace list so the new workspace appears in the
+    // switcher, then jump into it. switchWorkspace handles the
+    // bootstrap re-load and active-workspace persistence.
+    await get().reloadWorkspaces();
+    if (targetWorkspaceId) {
+      try {
+        await get().switchWorkspace(targetWorkspaceId);
+      } catch {
+        // Switch failed — leave the user where they are; they can pick
+        // the new workspace from the switcher manually.
+      }
+    }
+  },
+
+  declineWorkspaceInvite: async (id) => {
+    await api.declineInvite(id);
+    set((s) => ({
+      workspaceInvites: s.workspaceInvites.filter((i) => i.id !== id),
     }));
   },
 
@@ -1574,6 +1713,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     activePersonId: s.activePersonId,
     playgroundMode: s.playgroundMode,
     links: s.links,
+    workspaceInvites: s.workspaceInvites,
     showLinked: s.showLinked,
     showPersonal: s.showPersonal,
     showWork: s.showWork,

@@ -597,6 +597,10 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   flex-direction: column;
   border-top: 1px solid var(--rule);
   background: var(--paper-2);
+  /* When `scrollIntoView({ block: 'end' })` aligns the picker to the
+   * bottom edge, this margin keeps a 24px cushion above the modal's
+   * Save / Cancel actions row instead of jamming flush. */
+  scroll-margin-bottom: 24px;
 }
 .np-members-picker .user-search {
   border: 0;
@@ -611,6 +615,78 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
 .np-members-candidates .user-row {
   grid-template-columns: 22px 1fr auto;
 }
+/* Email invite section in workspace settings. Replaces the old
+ * "search and pick" picker with an email input + send-pending list. */
+.np-invites {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.np-invite-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--rule-2);
+  background: var(--paper);
+  padding: 4px 6px 4px 10px;
+}
+.np-invite-icon { color: var(--ink-3); flex: none; }
+.np-invite-input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: var(--fs-md);
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ink);
+  padding: 6px 0;
+}
+.np-invite-send { flex: none; }
+.np-invites-pending {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 0 0;
+}
+.np-invites-head {
+  font-family: var(--font-mono);
+  font-size: calc(10px * var(--fs-scale));
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin-bottom: 4px;
+}
+.np-invite-item {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  font-size: var(--fs-sm);
+}
+.np-invite-item-email {
+  color: var(--ink);
+  word-break: break-all;
+}
+.np-invite-item-meta {
+  font-family: var(--font-mono);
+  font-size: calc(10px * var(--fs-scale));
+  color: var(--ink-4);
+  white-space: nowrap;
+}
+.np-invite-cancel {
+  width: 22px; height: 22px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid var(--rule-2);
+  background: var(--paper);
+  color: var(--ink-3);
+  cursor: pointer;
+}
+.np-invite-cancel:hover { color: var(--danger); border-color: var(--danger); }
+
 .np-actions {
   display: flex;
   justify-content: flex-end;

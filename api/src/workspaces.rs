@@ -171,6 +171,16 @@ pub async fn set_members(
     let ws = db::set_workspace_members_tx(&mut tx, id, ctx.user.id, &desired)
         .await?
         .ok_or(ApiError::NotFound)?;
+    // Tasks and time blocks stay — that's true history; the user did
+    // do that work, even if they're no longer in the workspace.
+    // Project memberships, on the other hand, would still show the
+    // ex-member as a project member because workspace_members is
+    // soft-deleted (so the FK ON DELETE CASCADE never fires). Soft-
+    // delete those rows here.
+    let post_ids: std::collections::BTreeSet<Uuid> =
+        ws.members.iter().map(|m| m.user_id).collect();
+    let removed: Vec<Uuid> = pre.iter().copied().filter(|u| !post_ids.contains(u)).collect();
+    db::soft_remove_project_members_tx(&mut tx, id, &removed).await?;
     let payload = serde_json::json!({
         "kind": "workspace.set_members",
         "workspace_id": id,
@@ -192,6 +202,59 @@ pub async fn set_members(
 #[derive(Deserialize)]
 pub struct SetRoleBody {
     pub role: String,
+}
+
+pub async fn remove_member(
+    State(s): State<AppState>,
+    ctx: AuthCtx,
+    Path((id, user_id)): Path<(Uuid, Uuid)>,
+) -> ApiResult<Json<crate::models::Workspace>> {
+    if ctx.workspace_id != id || !ctx.is_owner() {
+        return Err(ApiError::BadRequest(
+            "only workspace owners can remove members".into(),
+        ));
+    }
+    if user_id == ctx.user.id {
+        return Err(ApiError::BadRequest(
+            "owners can't remove themselves; transfer ownership first".into(),
+        ));
+    }
+    // Snapshot pre-state so the removed user gets a nudge too — they
+    // won't be in the post-set, and we want their workspace switcher
+    // to drop the workspace they no longer belong to.
+    let pre = active_member_ids(&s.pool, id).await.unwrap_or_default();
+    let mut tx = s.pool.begin().await?;
+    let (ws, affected_projects) = db::remove_workspace_member_tx(&mut tx, id, user_id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    let payload = serde_json::json!({
+        "kind": "workspace.set_members",
+        "workspace_id": id,
+        "members": &ws.members,
+    });
+    ops::record_workspace_op(&mut tx, ctx.user.id, "workspace.set_members", payload, id).await?;
+    // Each affected project also got its member set changed (the user
+    // was soft-removed from it). Emit a `project.set_members` op per
+    // project so workspace clients pick up the project-side change
+    // through the normal change feed.
+    for pid in affected_projects {
+        let members = db::list_project_members_tx(&mut tx, pid).await?;
+        let payload = serde_json::json!({
+            "kind": "project.set_members",
+            "project_id": pid,
+            "members": &members,
+        });
+        ops::record_synthesized_op(
+            &mut tx, ctx.user.id, id, "project.set_members", payload, Some(pid),
+        ).await?;
+    }
+    tx.commit().await?;
+    let mut targets: std::collections::BTreeSet<Uuid> = pre.into_iter().collect();
+    for m in &ws.members { targets.insert(m.user_id); }
+    for uid in targets {
+        let _ = s.hub.notify_user(&s.pool, uid).await;
+    }
+    Ok(Json(ws))
 }
 
 pub async fn set_member_role(

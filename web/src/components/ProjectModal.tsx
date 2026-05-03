@@ -314,6 +314,9 @@ function MembersEditor({
   const [query, setQuery] = useState('');
   const wrapRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  // Picker often renders below the modal's visible area when the
+  // member list is long. Scroll it into view as soon as it opens.
+  const pickerRef = useRef<HTMLDivElement>(null);
 
   const memberSet = useMemo(() => new Set(members.map((m) => m.user_id)), [members]);
   // When the caller can edit roles (workspace owner) they appear inline as
@@ -355,7 +358,18 @@ function MembersEditor({
   useEffect(() => {
     if (picking) {
       setQuery('');
-      requestAnimationFrame(() => inputRef.current?.focus());
+      requestAnimationFrame(() => {
+        inputRef.current?.focus();
+        // Single-shot, no animation: the browser figures out the
+        // nearest scroll container and aligns the picker's bottom
+        // edge with the viewport. `behavior: 'instant'` skips the
+        // smooth animation that read as jagged on long member lists
+        // (the picker rendering + focus shift + smooth scroll all
+        // racing). `scroll-margin-bottom` (set in CSS) gives the
+        // picker breathing room above the actions row so it doesn't
+        // sit flush against the bottom.
+        pickerRef.current?.scrollIntoView({ block: 'end', behavior: 'instant' });
+      });
     }
   }, [picking]);
 
@@ -425,7 +439,7 @@ function MembersEditor({
           <span>Add member</span>
         </button>
         {picking && (
-          <div className="np-members-picker">
+          <div className="np-members-picker" ref={pickerRef}>
             <input
               ref={inputRef}
               className="user-search"

@@ -1,4 +1,4 @@
-import type { Bootstrap, LinkedCalendar, PersonalCalendar, User, UserLink, WorkCalendar, Workspace, WorkspaceRole } from './types';
+import type { Bootstrap, LinkedCalendar, PersonalCalendar, User, UserLink, WorkCalendar, Workspace, WorkspaceInvite, WorkspaceRole } from './types';
 
 // Always go through the Vite dev proxy at /api. The proxy target is
 // configured server-side in vite.config.ts (env: VITE_API_PROXY_TARGET),
@@ -102,6 +102,8 @@ export const api = {
   ) => req<Workspace>('PUT', `/workspaces/${id}/members`, { members }),
   setWorkspaceMemberRole: (id: string, userId: string, role: WorkspaceRole) =>
     req<Workspace>('PATCH', `/workspaces/${id}/members/${userId}`, { role }),
+  removeWorkspaceMember: (id: string, userId: string) =>
+    req<Workspace>('DELETE', `/workspaces/${id}/members/${userId}`),
   deleteWorkspace: (id: string) => req<void>('DELETE', `/workspaces/${id}`),
   listWorkspaceUsers: (id: string) =>
     req<User[]>('GET', `/workspaces/${id}/users`),
@@ -122,6 +124,15 @@ export const api = {
   linkedCalendar: () => req<LinkedCalendar>('GET', '/linked/calendar'),
   personalCalendar: () => req<PersonalCalendar>('GET', '/personal/calendar'),
   workCalendar: () => req<WorkCalendar>('GET', '/work/calendar'),
+  listInvites: () => req<WorkspaceInvite[]>('GET', '/invites'),
+  createInvite: (workspace_id: string, email: string, role?: WorkspaceRole) =>
+    req<WorkspaceInvite>('POST', '/invites', { workspace_id, email, role }),
+  cancelInvite: (id: string) =>
+    req<WorkspaceInvite>('DELETE', `/invites/${id}`),
+  acceptInvite: (id: string) =>
+    req<WorkspaceInvite>('POST', `/invites/${id}/accept`),
+  declineInvite: (id: string) =>
+    req<WorkspaceInvite>('POST', `/invites/${id}/decline`),
 };
 
 // Server-driven; the browser navigates here so cookies and the OAuth redirect

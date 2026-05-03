@@ -10,6 +10,7 @@ import { TaskModalDraft } from './components/TaskModalDraft';
 import { ProjectModal } from './components/ProjectModal';
 import { WorkspaceModal } from './components/WorkspaceModal';
 import { LinkAccountModal } from './components/LinkAccountModal';
+import { WorkspaceInviteModal } from './components/WorkspaceInviteModal';
 import { Login } from './components/Login';
 import { Toasts } from './components/Toasts';
 
@@ -28,6 +29,7 @@ export default function App() {
   const pollChanges = useFira((s) => s.pollChanges);
   const reloadWorkspaces = useFira((s) => s.reloadWorkspaces);
   const reloadLinks = useFira((s) => s.reloadLinks);
+  const reloadWorkspaceInvites = useFira((s) => s.reloadWorkspaceInvites);
   const loadLinkedCalendar = useFira((s) => s.loadLinkedCalendar);
   const loadPersonalCalendar = useFira((s) => s.loadPersonalCalendar);
   const loadWorkCalendar = useFira((s) => s.loadWorkCalendar);
@@ -44,6 +46,17 @@ export default function App() {
   const hasPendingReceived = useFira((s) =>
     s.links.some((l) => l.direction === 'received' && l.status === 'pending'),
   );
+  // Workspace invite addressed to me. Sticky like account-link's
+  // received pending — the only dismissals are Accept / Decline. If
+  // multiple are pending, show the oldest first; the others wait their
+  // turn (selecting min by created_at).
+  const pendingWorkspaceInvite = useFira((s) => {
+    const received = s.workspaceInvites.filter(
+      (i) => i.direction === 'received' && i.status === 'pending',
+    );
+    if (received.length === 0) return null;
+    return received.reduce((a, b) => (a.created_at <= b.created_at ? a : b));
+  });
   const editingProject = useFira((s) => {
     const m = s.projectModal;
     return m?.kind === 'edit' ? s.projects.find((p) => p.id === m.id) ?? null : null;
@@ -107,9 +120,10 @@ export default function App() {
     const handle = openUserSocket(() => {
       void reloadWorkspaces();
       void reloadLinks();
+      void reloadWorkspaceInvites();
     });
     return () => handle.close();
-  }, [meId, playgroundMode, reloadWorkspaces, reloadLinks]);
+  }, [meId, playgroundMode, reloadWorkspaces, reloadLinks, reloadWorkspaceInvites]);
 
   // Bootstrap may include an already-accepted link — pull the partner's
   // calendar overlay once so the toggle has data to show as soon as the
@@ -208,6 +222,12 @@ export default function App() {
         <WorkspaceModal key={editingWorkspace.id} workspace={editingWorkspace} />
       )}
       {(linkModalOpen || hasPendingReceived) && <LinkAccountModal />}
+      {pendingWorkspaceInvite && (
+        <WorkspaceInviteModal
+          key={pendingWorkspaceInvite.id}
+          invite={pendingWorkspaceInvite}
+        />
+      )}
       <Toasts />
     </div>
   );

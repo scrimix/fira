@@ -10,6 +10,7 @@
 pub mod auth;
 pub mod db;
 pub mod error;
+pub mod invites;
 pub mod links;
 pub mod models;
 pub mod ops;
@@ -46,6 +47,10 @@ pub struct Bootstrap {
     /// accepted). Bootstrapping with this means the link icon in the
     /// topbar can render the right state on first paint.
     pub links: Vec<models::UserLink>,
+    /// Pending workspace invites involving the caller (sent or
+    /// addressed to caller's email). Drives the receive-side modal and
+    /// the sender's "pending invites" list.
+    pub workspace_invites: Vec<models::WorkspaceInvite>,
     /// Initial cursor for the change feed. Clients should poll
     /// `/changes?since=cursor` from this watermark forward.
     pub cursor: i64,
@@ -59,7 +64,15 @@ pub async fn load_bootstrap(
     user_id: uuid::Uuid,
 ) -> anyhow::Result<Bootstrap> {
     let scope = db::project_scope(pool, user_id, workspace_id).await?;
-    let (users, projects, epics, sprints, tasks, blocks, gcal, links, cursor) = tokio::try_join!(
+    // Fetch the caller's email for the invite query — invites are keyed
+    // by canonical email, not user_id, so the recipient side of a
+    // pending invite needs an email lookup.
+    let user_email: (String,) =
+        sqlx::query_as("SELECT email FROM users WHERE id = $1")
+            .bind(user_id)
+            .fetch_one(pool)
+            .await?;
+    let (users, projects, epics, sprints, tasks, blocks, gcal, links, workspace_invites, cursor) = tokio::try_join!(
         db::list_users_in_scope(pool, workspace_id, user_id),
         db::list_projects_in_scope(pool, &scope),
         db::list_epics_in_scope(pool, &scope),
@@ -68,7 +81,8 @@ pub async fn load_bootstrap(
         db::list_blocks_in_scope(pool, &scope),
         db::list_gcal_for_user(pool, user_id),
         db::list_user_links(pool, user_id),
+        db::list_workspace_invites(pool, user_id, &user_email.0),
         ops::current_cursor(pool),
     )?;
-    Ok(Bootstrap { users, projects, epics, sprints, tasks, blocks, gcal, links, cursor })
+    Ok(Bootstrap { users, projects, epics, sprints, tasks, blocks, gcal, links, workspace_invites, cursor })
 }

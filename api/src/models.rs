@@ -134,6 +134,34 @@ pub struct UserLink {
     pub accepted_at: Option<DateTime<Utc>>,
 }
 
+/// Workspace invite, returned to the caller from their own perspective.
+/// Mirrors `UserLink`'s shape: a single row represents one invite, the
+/// `direction` field tells the caller whether they sent it or received
+/// it. The recipient is matched by canonicalized email — there's no
+/// recipient user_id until/unless the invite is accepted.
+#[derive(Debug, Serialize)]
+pub struct WorkspaceInvite {
+    pub id: Uuid,
+    pub workspace_id: Uuid,
+    pub workspace_title: String,
+    pub email: String,
+    pub role: String,
+    /// `pending`, `accepted`, `declined`, or `cancelled`. Bootstrap
+    /// only returns `pending`; the others are terminal and the row is
+    /// invisible to the client after that.
+    pub status: String,
+    /// `sent` — caller is the inviter awaiting acceptance.
+    /// `received` — invite addressed to caller's email.
+    pub direction: String,
+    /// Inviter's display name and email so the receive-side modal can
+    /// say "Alice (alice@example.com) invited you to Atlas." Always
+    /// populated; the inviter is FK-required.
+    pub invited_by: Uuid,
+    pub invited_by_name: String,
+    pub invited_by_email: String,
+    pub created_at: DateTime<Utc>,
+}
+
 /// Minimal projection of a linked partner's task — what the calendar
 /// overlay needs to render their blocks. Cross-workspace, read-only.
 #[derive(Debug, Serialize, sqlx::FromRow)]
