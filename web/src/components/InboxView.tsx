@@ -504,13 +504,14 @@ function AddTaskRow({ onAdd, placeholder = 'Add task…' }: {
           else if (e.key === 'Escape') { setValue(''); inputRef.current?.blur(); }
         }}
         placeholder={placeholder}
-        // iOS Safari pops "Hide My Email" / iCloud password chips on
-        // any generic text input regardless of autocomplete hints. Using
-        // type="search" routes around the heuristic; the search-specific
-        // chrome (magnifier, cancel button) is suppressed in CSS.
+        // iOS Safari otherwise pops "Hide My Email" / iCloud password
+        // chips on generic text inputs. autoComplete="one-time-code"
+        // tells Safari this is an OTP field, which is exclusive of
+        // email/password autofill — the QuickType bar may briefly
+        // suggest SMS codes but never the Hide My Email chip.
         name="task_title"
-        type="search"
-        autoComplete="off"
+        type="text"
+        autoComplete="one-time-code"
         autoCorrect="off"
         autoCapitalize="sentences"
         spellCheck={false}
@@ -569,8 +570,8 @@ function InboxSubtaskRow({ title, done, onToggle, onSave, onDelete }: {
             else if (e.key === 'Backspace' && !draft) { e.preventDefault(); onDelete(); }
           }}
           name="subtask_title"
-          type="search"
-          autoComplete="off"
+          type="text"
+          autoComplete="one-time-code"
           autoCorrect="off"
           autoCapitalize="sentences"
           spellCheck={false}

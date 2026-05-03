@@ -113,8 +113,8 @@ export function TaskModalDraft({ draft }: Props) {
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="Task title"
-              type="search"
-              autoComplete="off"
+              type="text"
+              autoComplete="one-time-code"
               autoCorrect="off"
               autoCapitalize="sentences"
               spellCheck={false}
@@ -251,8 +251,8 @@ function DraftSubtaskRow({ value, done, onToggle, onChange, onDelete }: {
         className="subtask-edit-input"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        type="search"
-        autoComplete="off"
+        type="text"
+        autoComplete="one-time-code"
         autoCorrect="off"
         autoCapitalize="sentences"
         spellCheck={false}
@@ -280,8 +280,8 @@ function DraftAddSubtask({ onAdd }: { onAdd: (v: string) => void }) {
         value={v}
         onChange={(e) => setV(e.target.value)}
         placeholder="Add subtask…"
-        type="search"
-        autoComplete="off"
+        type="text"
+        autoComplete="one-time-code"
         autoCorrect="off"
         autoCapitalize="sentences"
         spellCheck={false}

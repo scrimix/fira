@@ -294,8 +294,8 @@ function TitleEditor({ value, onSave }: { value: string; onSave: (v: string) => 
       value={draft}
       onChange={(e) => setDraft(e.target.value)}
       onBlur={commit}
-      type="search"
-      autoComplete="off"
+      type="text"
+      autoComplete="one-time-code"
       autoCorrect="off"
       autoCapitalize="sentences"
       spellCheck={false}
@@ -702,8 +702,8 @@ function SubtaskRow({
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onBlur={commit}
-          type="search"
-          autoComplete="off"
+          type="text"
+          autoComplete="one-time-code"
           autoCorrect="off"
           autoCapitalize="sentences"
           spellCheck={false}
@@ -762,8 +762,8 @@ function AddSubtaskRow({ onAdd, bare }: { onAdd: (title: string) => void; bare: 
           else if (e.key === 'Escape') { setValue(''); inputRef.current?.blur(); }
         }}
         placeholder="Add subtask…"
-        type="search"
-        autoComplete="off"
+        type="text"
+        autoComplete="one-time-code"
         autoCorrect="off"
         autoCapitalize="sentences"
         spellCheck={false}
