@@ -1,5 +1,6 @@
 .inbox {
   height: calc(100vh - 44px);
+  height: calc(100dvh - 44px);
   overflow: auto;
 }
 .inbox-doc {
@@ -20,7 +21,7 @@
   .inbox-proj-head .meta { display: none; }
 }
 .inbox-empty {
-  min-height: calc(100vh - 44px - 24px);
+  min-height: calc(100dvh - 44px - 24px);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -405,7 +406,7 @@
   display: flex; flex-direction: column; gap: 2px;
 }
 .subtask {
-  display: flex; align-items: center; gap: 8px;
+  display: flex; align-items: flex-start; gap: 8px;
   font-size: var(--fs-sm);
   color: var(--ink-2);
   padding: 2px 0;
@@ -420,6 +421,7 @@
 .subtask input { user-select: text; -webkit-user-select: text; }
 .subtask .sc {
   width: 14px; height: 14px;
+  margin-top: 2px;
   border: 1px solid var(--rule-3);
   background: var(--paper);
   display: inline-flex; align-items: center; justify-content: center;
@@ -436,6 +438,17 @@
   text-decoration: line-through;
   color: var(--ink-4);
 }
+/* Subtask titles wrap to multiple lines when long. The row was
+ * `align-items: center` with no min-width on the title, which on
+ * narrow widths pushed the title onto a single line that overflowed
+ * the modal. flex-start + min-width:0 lets the line wrap and lines up
+ * the checkbox with the first line. */
+.subtask .sname {
+  flex: 1;
+  min-width: 0;
+  line-height: 1.4;
+  word-break: break-word;
+}
 
 .modal-backdrop {
   position: fixed;
@@ -448,10 +461,20 @@
 .modal {
   width: min(840px, 92vw);
   max-height: 88vh;
+  max-height: 88dvh;
   background: var(--paper);
   border: 1px solid var(--rule-3);
   display: flex; flex-direction: column;
   overflow: hidden;
+}
+/* On phones the modal needs to leave room for both Safari toolbars,
+ * not just take 88 % of the *layout* viewport (which is taller than
+ * what's visible). Cap it tighter and use the dynamic viewport unit. */
+@media (max-width: 700px) {
+  .modal {
+    width: 100vw;
+    max-height: calc(100dvh - 24px);
+  }
 }
 .modal-head {
   display: flex; align-items: center; gap: 10px;
@@ -762,12 +785,13 @@
 .modal-side .side-input[data-bad="true"] { border-color: var(--danger); }
 
 .subtask-edit {
-  display: flex; align-items: center; gap: 8px;
+  display: flex; align-items: flex-start; gap: 8px;
   padding: 2px 0;
   position: relative;
 }
 .subtask-edit .subtask-edit-input {
   flex: 1;
+  min-width: 0;
   font: inherit;
   font-size: var(--fs-sm);
   border: 0;

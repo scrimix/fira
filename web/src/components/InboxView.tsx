@@ -655,7 +655,13 @@ function TaskRow({
     const dy = Math.abs(e.clientY - t.startY);
     if (dx > SCROLL_CANCEL_PX || dy > SCROLL_CANCEL_PX) {
       if (t.timer != null) window.clearTimeout(t.timer);
-      rowTouchRef.current = null;
+      // Mark the row as "user was scrolling" so the synthetic click that
+      // iOS dispatches on pointerup (when the gesture started here) is
+      // swallowed and doesn't open the task modal mid-scroll. The ref
+      // stays alive until pointerup so the click handler can read this
+      // flag — finishRowTouch clears it on a small delay.
+      t.suppressClick = true;
+      t.timer = null;
     }
   };
   const finishRowTouch = () => {
@@ -669,7 +675,13 @@ function TaskRow({
       return;
     }
     t.cleanup?.();
-    rowTouchRef.current = null;
+    // Keep the suppression flag readable for the synthetic onClick that
+    // iOS dispatches right after pointerup, then clear on the next tick.
+    if (t.suppressClick) {
+      window.setTimeout(() => { rowTouchRef.current = null; }, 50);
+    } else {
+      rowTouchRef.current = null;
+    }
   };
 
   return (

@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Check, Copy, Trash2, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, Copy, Trash2, X } from 'lucide-react';
 import { useFira } from '../store';
 import { ProjectIcon } from './ProjectIcon';
 import {
@@ -181,6 +181,28 @@ export function CalendarView() {
   } | null>(null);
   const [draggedTaskId, setDraggedTaskId] = useState<UUID | null>(null);
   const [lastBlockId, setLastBlockId] = useState<UUID | null>(null);
+  // Visible "press" feedback while the long-press timer is armed on a
+  // touch block. Set when the timer starts, cleared the moment it fires
+  // (drag begins) or the press is cancelled (movement / release / etc).
+  const [pressingBlockId, setPressingBlockId] = useState<UUID | null>(null);
+  // When a *touch* tap promotes a block from inactive to active, the
+  // .tb-actions buttons render mid-gesture and the trailing click can
+  // hit one of them by accident (the user only meant to "wake" the
+  // block). We stash the activation timestamp + blockId here and the
+  // action buttons swallow their first click if it arrives within the
+  // grace window. Mouse users go through hover and never trip this
+  // path. Consumed (cleared) on first check so the *second* tap fires
+  // the action — that's the "tap to reveal, tap again to act"
+  // contract the user asked for.
+  const recentTouchActivationRef = useRef<{ blockId: UUID; at: number } | null>(null);
+  const ACTIVATION_GRACE_MS = 500;
+  const consumeRecentTouchActivation = (blockId: UUID): boolean => {
+    const r = recentTouchActivationRef.current;
+    if (!r || r.blockId !== blockId) return false;
+    const fresh = Date.now() - r.at < ACTIVATION_GRACE_MS;
+    recentTouchActivationRef.current = null;
+    return fresh;
+  };
   // Drag-to-create flow: pointer-down on an empty day column anchors at a
   // time, drag extends the range, pointer-up (only if the user actually
   // moved) opens the task draft modal with the time range pre-filled. A
@@ -200,12 +222,55 @@ export function CalendarView() {
     if (gridRef.current) gridRef.current.scrollTop = 7 * HOUR_H - 12;
   }, []);
 
+  // Click anywhere outside a time block (and outside its action buttons)
+  // clears the active highlight so the buttons don't linger after the
+  // user has moved on. Applies to mouse and touch alike — same gesture
+  // model both places. We use pointerdown so the deactivation feels
+  // immediate (before the click bubbles into other handlers).
+  useEffect(() => {
+    const onDocPointerDown = (e: PointerEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (!t) return;
+      // Block surface or one of its inner action buttons → leave the
+      // active state alone; the block's own handler manages it.
+      if (t.closest('.tblock') || t.closest('.tb-action')) return;
+      setLastBlockId(null);
+    };
+    document.addEventListener('pointerdown', onDocPointerDown);
+    return () => document.removeEventListener('pointerdown', onDocPointerDown);
+  }, []);
+
   const colGeometry = () => {
     const g = innerGridRef.current;
     if (!g) return null;
     const rect = g.getBoundingClientRect();
     const gutter = 56;
     return { left: rect.left + gutter, top: rect.top + 44, width: (rect.width - gutter) / dayCount };
+  };
+
+  // Long-press gating for touch — without it, any finger that lands on a
+  // block blocks calendar scroll (since the drag captures the gesture).
+  // 220 ms hold matches the inbox row pattern. A scroll-cancel threshold
+  // (8 px before the timer fires) lets vertical pans through to the
+  // calendar grid below.
+  const BLOCK_HOLD_MS = 220;
+  const BLOCK_SCROLL_CANCEL_PX = 8;
+  const blockHoldRef = useRef<{
+    blockId: UUID; taskId: UUID;
+    mode: DragState['mode'];
+    startX: number; startY: number;
+    day: number; start_min: number; dur_min: number;
+    pointerId: number;
+    timer: number | null;
+    cleanup: (() => void) | null;
+  } | null>(null);
+
+  const cancelBlockHold = () => {
+    const h = blockHoldRef.current;
+    if (!h) return;
+    if (h.timer != null) window.clearTimeout(h.timer);
+    h.cleanup?.();
+    blockHoldRef.current = null;
   };
 
   const onBlockPointerDown = (e: React.PointerEvent, b: TimeBlock, taskId: UUID) => {
@@ -222,6 +287,63 @@ export function CalendarView() {
     let mode: DragState['mode'] = 'move';
     if (offsetFromBottom <= RESIZE_EDGE_PX) mode = 'resize-bottom';
     else if (offsetY <= RESIZE_EDGE_PX) mode = 'resize-top';
+
+    if (e.pointerType === 'touch') {
+      // Pre-lock: tap → activate / open. Long-press → drag. We arm a
+      // timer and show the "pressing" visual immediately so the gesture
+      // feels acknowledged. Movement before the timer fires (or pointer
+      // release) cancels both. Resize edges go through the same path.
+      cancelBlockHold();
+      const wasActive = lastBlockId === b.id;
+      blockHoldRef.current = {
+        blockId: b.id, taskId, mode,
+        startX: e.clientX, startY: e.clientY,
+        day, start_min, dur_min,
+        pointerId: e.pointerId,
+        timer: null, cleanup: null,
+      };
+      const onPreMove = (ev: PointerEvent) => {
+        const h = blockHoldRef.current;
+        if (!h || ev.pointerId !== h.pointerId) return;
+        if (Math.abs(ev.clientX - h.startX) > BLOCK_SCROLL_CANCEL_PX
+          || Math.abs(ev.clientY - h.startY) > BLOCK_SCROLL_CANCEL_PX) {
+          cancelBlockHold();
+        }
+      };
+      const onPreUp = () => cancelBlockHold();
+      window.addEventListener('pointermove', onPreMove);
+      window.addEventListener('pointerup', onPreUp);
+      window.addEventListener('pointercancel', onPreUp);
+      blockHoldRef.current.cleanup = () => {
+        window.removeEventListener('pointermove', onPreMove);
+        window.removeEventListener('pointerup', onPreUp);
+        window.removeEventListener('pointercancel', onPreUp);
+      };
+      blockHoldRef.current.timer = window.setTimeout(() => {
+        const h = blockHoldRef.current;
+        if (!h) return;
+        h.cleanup?.();
+        blockHoldRef.current = null;
+        // Visual + drag both fire AT lock time — no pre-lock flash. The
+        // pressing visual rides the drag until pointerup clears it in
+        // the global onUp handler.
+        setPressingBlockId(h.blockId);
+        navigator.vibrate?.(8);
+        setDrag({
+          blockId: h.blockId, mode: h.mode,
+          startX: h.startX, startY: h.startY,
+          origStartMin: h.start_min, origDurMin: h.dur_min, origDay: h.day,
+          curStartMin: h.start_min, curDurMin: h.dur_min, curDay: h.day,
+          moved: false,
+          pointerId: h.pointerId,
+          taskId: h.taskId,
+          pointerType: 'touch',
+          wasActive,
+        });
+      }, BLOCK_HOLD_MS);
+      return;
+    }
+
     e.preventDefault();
     setDrag({
       blockId: b.id, mode,
@@ -292,6 +414,11 @@ export function CalendarView() {
           const { start_at, end_at } = gridToBlock(d.curDay, d.curStartMin, d.curDurMin, gridAnchor);
           updateBlock(d.blockId, { start_at, end_at });
         }
+        // Drag committed (or completed without geometric change). Clear
+        // the active highlight so the buttons don't linger over the
+        // block the user just moved — they hadn't asked to act on it,
+        // they asked to move it.
+        setLastBlockId(null);
       } else if (d.pointerType === 'touch' && !d.wasActive) {
         // First tap on a touch device: just activate (the action
         // buttons reveal via [data-active="true"]). Second tap, when
@@ -300,6 +427,11 @@ export function CalendarView() {
         openTask(d.taskId);
       }
       setDrag(null);
+      // The pressing visual rode through the locked drag (set 100 ms
+      // after pointerdown, deliberately not cleared when the lock fired)
+      // so the block stayed visibly "in-hand" the whole way. Clear it
+      // here on release.
+      setPressingBlockId(null);
     };
 
     window.addEventListener('pointermove', onMove);
@@ -733,6 +865,7 @@ export function CalendarView() {
                            data-dragging={isDragging && drag.moved ? 'true' : undefined}
                            data-short={dMin < 60 ? 'true' : undefined}
                            data-active={lastBlockId === b.id ? 'true' : undefined}
+                           data-pressing={pressingBlockId === b.id ? 'true' : undefined}
                            style={{
                              top: (sMin / 60) * HOUR_H,
                              height: (dMin / 60) * HOUR_H - 2,
@@ -740,7 +873,19 @@ export function CalendarView() {
                              left: fullWidth ? '1px' : `calc(${(lane / lanes) * 100}% + 1px)`,
                              width: fullWidth ? 'calc(100% - 2px)' : `calc(${100 / lanes}% - 2px)`,
                            }}
-                           onPointerDown={(e) => { setLastBlockId(b.id); onBlockPointerDown(e, b, t.id); }}
+                           onPointerDown={(e) => {
+                             // Touch activation grace: the very first tap on
+                             // an inactive block reveals the action buttons;
+                             // any click that lands on one of them within
+                             // ACTIVATION_GRACE_MS is suppressed so it can't
+                             // fire on the same gesture.
+                             if (e.pointerType === 'touch' && lastBlockId !== b.id) {
+                               recentTouchActivationRef.current = { blockId: b.id, at: Date.now() };
+                             }
+                             setLastBlockId(b.id);
+                             onBlockPointerDown(e, b, t.id);
+                           }}
+                           onContextMenu={(e) => e.preventDefault()}
                            title={t.status === 'done' && b.state === 'planned'
                              ? `${t.title} · ${fmtMin(dMin)}\n\n⚠ Task is marked done, but this block is still planned. Delete the block or reopen the task.`
                              : `${t.title} · ${fmtMin(dMin)}`}>
@@ -757,7 +902,11 @@ export function CalendarView() {
                           <button className="tb-action tb-tick"
                                   data-checked={b.state === 'completed'}
                                   onPointerDown={(e) => e.stopPropagation()}
-                                  onClick={(e) => { e.stopPropagation(); tickBlock(b); }}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (consumeRecentTouchActivation(b.id)) return;
+                                    tickBlock(b);
+                                  }}
                                   title={b.state === 'completed' ? 'Mark planned' : 'Mark complete'}>
                             <Check size={11} strokeWidth={2.25} />
                           </button>
@@ -765,6 +914,7 @@ export function CalendarView() {
                                   onPointerDown={(e) => e.stopPropagation()}
                                   onClick={(e) => {
                                     e.stopPropagation();
+                                    if (consumeRecentTouchActivation(b.id)) return;
                                     const newId = duplicateBlock(b.id);
                                     if (newId) setLastBlockId(newId);
                                   }}
@@ -773,7 +923,11 @@ export function CalendarView() {
                           </button>
                           <button className="tb-action tb-close"
                                   onPointerDown={(e) => e.stopPropagation()}
-                                  onClick={(e) => { e.stopPropagation(); deleteBlock(b.id); }}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (consumeRecentTouchActivation(b.id)) return;
+                                    deleteBlock(b.id);
+                                  }}
                                   title="Delete block">
                             <Trash2 size={11} strokeWidth={1.75} />
                           </button>
@@ -979,6 +1133,18 @@ function CalRail({ onDragTask, onTouchSchedule, allocByProject }: {
   const [showAll, setShowAll] = useState(false);
   const [titleQuery, setTitleQuery] = useState('');
   const q = titleQuery.trim().toLowerCase();
+  const railIsMobile = useIsMobile();
+  // Projects panel sits at the top of the rail. On phones the rail is
+  // already height-constrained (~38vh stacked under the calendar); the
+  // projects list eats most of that before any tasks become visible.
+  // Default to collapsed on phones, expanded on desktop. The user can
+  // still flip it.
+  const [projectsOpen, setProjectsOpen] = useState(!railIsMobile);
+  useEffect(() => { setProjectsOpen(!railIsMobile); }, [railIsMobile]);
+  // Long-press visual for rail tasks. Mirrors the time block's
+  // `pressingBlockId` — set when the lock fires, cleared on touchend
+  // / cancel. Drives `data-pressing="true"` on the rail-task.
+  const [pressingRailTaskId, setPressingRailTaskId] = useState<UUID | null>(null);
 
   // Long-press → drag flow for the rail on touch. Mirrors the inbox
   // pattern: a 220ms hold locks the row; a fast move within the hold
@@ -999,6 +1165,35 @@ function CalRail({ onDragTask, onTouchSchedule, allocByProject }: {
     cleanup: (() => void) | null;
   } | null>(null);
   const suppressClickRef = useRef(false);
+  // Reference to the scrollable rail body. The freeze flag is mutable so
+  // we can flip it from inside the lock callback without re-installing
+  // the listener. The listener itself is *always* present on the
+  // rail-body (mounted once via the ref-callback below). That matters
+  // because iOS commits to "this gesture is a scroll" the moment the
+  // first touchmove fires; if our preventDefault listener isn't already
+  // attached, a fast finger that moves before the long-press timer
+  // fires will scroll the rail and ignore any later-attached listener.
+  // Always-on + branch-on-flag avoids the race entirely.
+  const railBodyRef = useRef<HTMLDivElement | null>(null);
+  const railFrozenRef = useRef(false);
+  const freezeRailScroll = () => { railFrozenRef.current = true; };
+  const unfreezeRailScroll = () => { railFrozenRef.current = false; };
+  const setRailBodyEl = (el: HTMLDivElement | null) => {
+    const prev = railBodyRef.current;
+    if (prev === el) return;
+    if (prev) {
+      const handler = (prev as HTMLDivElement & { __freezeHandler?: (ev: TouchEvent) => void }).__freezeHandler;
+      if (handler) prev.removeEventListener('touchmove', handler);
+    }
+    railBodyRef.current = el;
+    if (el) {
+      const handler = (ev: TouchEvent) => {
+        if (railFrozenRef.current) ev.preventDefault();
+      };
+      el.addEventListener('touchmove', handler, { passive: false });
+      (el as HTMLDivElement & { __freezeHandler?: (ev: TouchEvent) => void }).__freezeHandler = handler;
+    }
+  };
 
   const lockRailDrag = () => {
     const ref = railTouchRef.current;
@@ -1006,6 +1201,8 @@ function CalRail({ onDragTask, onTouchSchedule, allocByProject }: {
     ref.locked = true;
     ref.timer = null;
     navigator.vibrate?.(8);
+    freezeRailScroll();
+    setPressingRailTaskId(ref.taskId);
     onTouchSchedule(ref.taskId, ref.startX, ref.startY, 'move');
     const onMove = (ev: TouchEvent) => {
       const touch = ev.touches[0];
@@ -1022,6 +1219,8 @@ function CalRail({ onDragTask, onTouchSchedule, allocByProject }: {
       r.cleanup?.();
       r.cleanup = null;
       onTouchSchedule(r.taskId, cx, cy, 'end');
+      unfreezeRailScroll();
+      setPressingRailTaskId(null);
       // Suppress the synthetic onClick that follows the drag end so the
       // user doesn't open the task modal they just scheduled.
       suppressClickRef.current = true;
@@ -1034,6 +1233,8 @@ function CalRail({ onDragTask, onTouchSchedule, allocByProject }: {
       r.cleanup?.();
       r.cleanup = null;
       onTouchSchedule(r.taskId, r.startX, r.startY, 'cancel');
+      unfreezeRailScroll();
+      setPressingRailTaskId(null);
       railTouchRef.current = null;
     };
     document.addEventListener('touchmove', onMove, { passive: false });
@@ -1124,29 +1325,40 @@ function CalRail({ onDragTask, onTouchSchedule, allocByProject }: {
           {showAll ? 'My' : 'All'}
         </button>
       </div>
-      <div className="rail-projects">
-        <div className="rail-projects-head">Projects</div>
-        {projects.map((p) => {
-          const dimmed = projectFilter[p.id] === false;
-          const alloc = allocByProject.find((a) => a.project.id === p.id);
-          return (
-            <div key={p.id} className="rail-proj-row" data-dimmed={dimmed}
-                 onClick={() => toggleProjectFilter(p.id)}
-                 title={dimmed ? `Show ${p.title} on calendar` : `Hide ${p.title} from calendar`}>
-              <ProjectIcon
-                name={p.icon}
-                color={dimmed ? 'var(--ink-4)' : p.color}
-                size={12}
-                strokeWidth={1.75}
-                className="rail-proj-icon"
-              />
-              <span className="rail-proj-name">{p.title}</span>
-              <span className="rail-proj-count">{fmtMin(alloc?.mins ?? 0)}</span>
-            </div>
-          );
-        })}
-      </div>
-      <div className="rail-body">
+      <div className="rail-body" ref={setRailBodyEl}>
+        <div className="rail-projects" data-open={projectsOpen}>
+          <button
+            type="button"
+            className="rail-projects-head"
+            onClick={() => setProjectsOpen((v) => !v)}
+            aria-expanded={projectsOpen}
+            title={projectsOpen ? 'Collapse projects filter' : 'Expand projects filter'}
+          >
+            {projectsOpen
+              ? <ChevronDown size={11} strokeWidth={1.75} />
+              : <ChevronRight size={11} strokeWidth={1.75} />}
+            <span>Projects</span>
+          </button>
+          {projectsOpen && projects.map((p) => {
+            const dimmed = projectFilter[p.id] === false;
+            const alloc = allocByProject.find((a) => a.project.id === p.id);
+            return (
+              <div key={p.id} className="rail-proj-row" data-dimmed={dimmed}
+                   onClick={() => toggleProjectFilter(p.id)}
+                   title={dimmed ? `Show ${p.title} on calendar` : `Hide ${p.title} from calendar`}>
+                <ProjectIcon
+                  name={p.icon}
+                  color={dimmed ? 'var(--ink-4)' : p.color}
+                  size={12}
+                  strokeWidth={1.75}
+                  className="rail-proj-icon"
+                />
+                <span className="rail-proj-name">{p.title}</span>
+                <span className="rail-proj-count">{fmtMin(alloc?.mins ?? 0)}</span>
+              </div>
+            );
+          })}
+        </div>
         {groups.map((g) => (
           <div key={g.project.id} className="rail-group">
             <div className="rail-group-head">
@@ -1176,6 +1388,7 @@ function CalRail({ onDragTask, onTouchSchedule, allocByProject }: {
                      data-status={t.status}
                      data-blocker={blocker}
                      data-others={others || undefined}
+                     data-pressing={pressingRailTaskId === t.id ? 'true' : undefined}
                      draggable
                      onDragStart={(e) => {
                        e.dataTransfer.effectAllowed = 'copy';
@@ -1196,6 +1409,7 @@ function CalRail({ onDragTask, onTouchSchedule, allocByProject }: {
                      }}
                      onTouchEnd={() => endRailLongPress(false)}
                      onTouchCancel={() => endRailLongPress(true)}
+                     onContextMenu={(e) => e.preventDefault()}
                      onClick={() => {
                        if (suppressClickRef.current) return;
                        openTask(t.id);

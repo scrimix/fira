@@ -2,6 +2,7 @@
   display: grid;
   grid-template-columns: 1fr 320px;
   height: calc(100vh - 44px);
+  height: calc(100dvh - 44px);
   overflow: hidden;
 }
 /* Tablet portrait: collapse the rail's fixed column to give the calendar
@@ -391,6 +392,13 @@
   z-index: 2;
   user-select: none;
   -webkit-user-select: none;
+  /* `touch-action: none` is necessary for the long-press to work on iOS:
+   * with pan-y, the browser commits to a vertical scroll on the first
+   * touchmove and won't honor a preventDefault from a listener attached
+   * later (when the 220 ms hold timer fires). The trade-off is that the
+   * calendar can't be scrolled by dragging on a block surface — users
+   * scroll via the gutter / empty space instead. Same constraint that
+   * `.task-row` has in the inbox, where the long-press works. */
   touch-action: none;
 }
 .tblock:hover { box-shadow: 0 0 0 1px var(--proj-color, var(--ink)); z-index: 3; border-radius: 3px; }
@@ -464,16 +472,32 @@
   display: flex;
   gap: 2px;
   opacity: 0;
+  /* Hide function with form: invisible buttons must not be tappable. The
+   * hover / active states below flip this to `auto`. Without this rule,
+   * touch users can hit the X / tick / duplicate without ever seeing
+   * them. */
+  pointer-events: none;
   transition: opacity 0.08s;
   z-index: 2;
 }
-.tblock:hover .tb-actions { opacity: 1; }
+.tblock:hover .tb-actions { opacity: 1; pointer-events: auto; }
 /* Touch devices have no hover. Reveal the actions when the block is
  * the last-tapped one ([data-active="true"] is set on pointerdown).
  * Tap once → actions appear, tap an action to act, tap elsewhere to
  * dismiss. */
 @media (hover: none) {
-  .tblock[data-active="true"] .tb-actions { opacity: 1; }
+  .tblock[data-active="true"] .tb-actions { opacity: 1; pointer-events: auto; }
+}
+/* Long-press feedback: while the hold timer is armed, scale the block
+ * up slightly with a soft shadow so the user feels the gesture register
+ * before the drag starts. Cleared as soon as the timer fires (drag
+ * begins) or the press is cancelled (movement / release / context
+ * menu). */
+.tblock[data-pressing="true"] {
+  transform: scale(1.04);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2), 0 0 0 1px var(--proj-color, var(--ink));
+  z-index: 6;
+  transition: transform 100ms ease-out, box-shadow 100ms ease-out;
 }
 .tb-action {
   width: 16px; height: 16px;
@@ -486,15 +510,20 @@
   color: var(--ink-3);
   cursor: pointer;
 }
-.tb-action:hover { color: var(--ink); border-color: var(--ink-3); background: var(--paper); }
 .tb-tick[data-checked="true"] {
   background: var(--done);
   border-color: var(--done);
   color: var(--paper);
 }
-.tb-tick[data-checked="true"]:hover { background: var(--done); color: var(--paper); opacity: 0.9; }
-.tb-dup:hover { color: var(--accent); border-color: var(--accent); }
-.tb-close:hover { color: var(--danger); border-color: var(--danger); }
+/* Hover styles only apply where hover is a real input (mouse/trackpad).
+ * On touch, `:hover` would stick after a tap and leave the button
+ * looking "hovered" indefinitely until the user taps elsewhere. */
+@media (hover: hover) {
+  .tb-action:hover { color: var(--ink); border-color: var(--ink-3); background: var(--paper); }
+  .tb-tick[data-checked="true"]:hover { background: var(--done); color: var(--paper); opacity: 0.9; }
+  .tb-dup:hover { color: var(--accent); border-color: var(--accent); }
+  .tb-close:hover { color: var(--danger); border-color: var(--danger); }
+}
 
 .tb-resize {
   position: absolute;
@@ -730,24 +759,35 @@
   font-family: var(--font-mono);
   font-size: calc(10px * var(--fs-scale));
 }
-/* Project filter — moved out of the deprecated left rail. Sits as a
- * secondary panel at the top of the rail (paper-2 background) so it reads
- * visually distinct from the task list (paper) below. The 2px divider plus
- * the background shift is what separates "filter chrome" from "tasks". */
+/* Project filter — sits as a foldable section at the top of the rail
+ * body. Now a sibling of the task groups (inside .rail-body) so the
+ * whole rail shares one scroll container — important on phones where
+ * the rail is height-constrained and needs the projects panel to
+ * either collapse out of the way or scroll along with the tasks. */
 .rail-projects {
   background: var(--paper-2);
   border-bottom: 2px solid var(--rule-2);
-  padding: 10px 12px 12px;
-  flex: none;
+  padding: 6px 12px 10px;
 }
+.rail-projects[data-open="false"] { padding: 6px 12px; }
 .rail-projects-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 0;
   font-family: var(--font-mono);
   font-size: calc(10px * var(--fs-scale));
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--ink-3);
-  margin-bottom: 8px;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  text-align: left;
 }
+.rail-projects[data-open="true"] .rail-projects-head { margin-bottom: 6px; }
+.rail-projects-head:hover { color: var(--ink-2); }
 .rail-proj-row {
   display: grid;
   grid-template-columns: 12px 1fr auto;
@@ -819,6 +859,16 @@
   -webkit-touch-callout: none;
 }
 .rail-task:hover { background: var(--paper-3); }
+/* Long-press feedback: matches the time block's pressing visual so the
+ * "yes, drag is locked" signal feels consistent across surfaces. Set
+ * by the lock callback in CalRail and cleared on touchend / cancel. */
+.rail-task[data-pressing="true"] {
+  background: var(--paper-3);
+  transform: scale(1.03);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+  z-index: 4;
+  transition: transform 100ms ease-out, box-shadow 100ms ease-out;
+}
 .rail-task[data-status="done"] { background: var(--paper-2); }
 .rail-task[data-status="done"] .rail-task-title {
   text-decoration: line-through;
@@ -909,12 +959,18 @@
     min-width: 0;
     grid-template-columns: 56px repeat(3, 1fr);
   }
-  /* Hide the user picker and link toggles on phones — leaves the toolbar
-   * with prev/today/next + totals only, which fits a 360px-wide row.
-   * Linked-calendar / personal-overlay toggles are still reachable on
-   * desktop where horizontal room exists. */
-  .cal-toolbar .user-picker,
-  .cal-toolbar .link-toggle { display: none; }
+  /* Hide the user picker on phones — the multi-person tab strip is too
+   * wide and the active person almost always equals "me" on a phone
+   * anyway. Link toggles stay (Show linked / Show personal) but get
+   * tightened up below. */
+  .cal-toolbar .user-picker { display: none; }
+  /* Compress link toggles so "Show linked" / "Show personal" still fit
+   * after the user picker is gone. Smaller padding, no left margin. */
+  .cal-toolbar .link-toggle {
+    padding: 0 6px;
+    margin-left: 2px;
+    font-size: calc(9px * var(--fs-scale));
+  }
   /* Smaller spacing inside the toolbar so prev/today/next + totals fit
    * without horizontal scroll. */
   .cal-toolbar { gap: 4px; padding: 0 8px; }

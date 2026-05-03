@@ -60,7 +60,12 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
 .app {
   display: grid;
   grid-template-columns: 56px 1fr;
+  /* `100dvh` tracks the *visible* viewport — on iOS Safari that means
+   * the layout size shrinks when the URL bar / bottom toolbar is
+   * showing, so the inbox/calendar bottom isn't permanently hidden
+   * under those toolbars. Fall back to `100vh` for older browsers. */
   height: 100vh;
+  height: 100dvh;
   width: 100vw;
 }
 
@@ -1118,11 +1123,14 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
 
   /* iOS auto-zooms any input <16px on focus. The viewport already locks
    * scale, but Safari still zooms the input itself — only an effective
-   * 16px+ font-size suppresses it. Use a max() so desktop sizing (which
-   * is set via --fs-* tokens) still wins on bigger screens. */
+   * 16px+ font-size suppresses it. `!important` because several inputs
+   * (rail-search, np-title, task-add-input, subtask inputs) declare
+   * their own font-size further down; without `!important` those win
+   * the cascade and Safari still zooms. We do not care about visual
+   * size variance on phones — preventing the zoom is the priority. */
   input,
   textarea,
   [contenteditable="true"] {
-    font-size: max(16px, var(--fs-md));
+    font-size: 16px !important;
   }
 }
