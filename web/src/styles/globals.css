@@ -1141,16 +1141,4 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   .topbar { padding: 0 10px; gap: 8px; }
   .topbar .crumb-sep { display: none; }
 
-  /* iOS auto-zooms any input <16px on focus. The viewport already locks
-   * scale, but Safari still zooms the input itself — only an effective
-   * 16px+ font-size suppresses it. `!important` because several inputs
-   * (rail-search, np-title, task-add-input, subtask inputs) declare
-   * their own font-size further down; without `!important` those win
-   * the cascade and Safari still zooms. We do not care about visual
-   * size variance on phones — preventing the zoom is the priority. */
-  input,
-  textarea,
-  [contenteditable="true"] {
-    font-size: 16px !important;
-  }
 }
