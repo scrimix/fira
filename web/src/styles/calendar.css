@@ -847,7 +847,9 @@
 }
 .rail-group-head {
   display: flex; align-items: center; gap: 6px;
+  width: 100%;
   padding: 8px 12px 6px;
+  font: inherit;
   font-family: var(--font-mono);
   font-size: calc(10px * var(--fs-scale));
   letter-spacing: 0.1em;
@@ -856,7 +858,16 @@
   position: sticky; top: 0;
   background: var(--paper);
   border-bottom: 1px solid var(--rule);
+  border-left: 0;
+  border-right: 0;
+  border-top: 0;
+  text-align: left;
+  cursor: pointer;
   z-index: 1;
+}
+.rail-group-head:hover { color: var(--ink-2); }
+.rail-group[data-collapsed="true"] {
+  border-bottom: 1px solid var(--rule);
 }
 .rail-group-head .swatch { width: 8px; height: 8px; }
 .rail-group-head .pname { color: var(--ink-2); font-weight: 500; }

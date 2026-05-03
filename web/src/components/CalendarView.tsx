@@ -1209,6 +1209,20 @@ function CalRail({ onDragTask, onTouchSchedule, allocByProject }: {
   // still flip it.
   const [projectsOpen, setProjectsOpen] = useState(!railIsMobile);
   useEffect(() => { setProjectsOpen(!railIsMobile); }, [railIsMobile]);
+  // Per-project rail-group collapse. Local-only because the calendar's
+  // own per-project visibility (`projectFilter`) hides BOTH the rail
+  // tasks AND the calendar blocks — too coarse when you just want the
+  // task list shorter without dimming the time blocks. Keys are
+  // project ids; absence = expanded (default).
+  const [collapsedRailGroups, setCollapsedRailGroups] = useState<Set<UUID>>(() => new Set());
+  const toggleRailGroup = (id: UUID) => {
+    setCollapsedRailGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
   // Long-press visual for rail tasks. Mirrors the time block's
   // `pressingBlockId` — set when the lock fires, cleared on touchend
   // / cancel. Drives `data-pressing="true"` on the rail-task.
@@ -1427,14 +1441,22 @@ function CalRail({ onDragTask, onTouchSchedule, allocByProject }: {
             );
           })}
         </div>
-        {groups.map((g) => (
-          <div key={g.project.id} className="rail-group">
-            <div className="rail-group-head">
+        {groups.map((g) => {
+          const collapsed = collapsedRailGroups.has(g.project.id);
+          return (
+          <div key={g.project.id} className="rail-group" data-collapsed={collapsed || undefined}>
+            <button type="button" className="rail-group-head"
+                    onClick={() => toggleRailGroup(g.project.id)}
+                    aria-expanded={!collapsed}
+                    title={collapsed ? `Show ${g.project.title} tasks` : `Hide ${g.project.title} tasks`}>
+              {collapsed
+                ? <ChevronRight size={11} strokeWidth={1.75} />
+                : <ChevronDown size={11} strokeWidth={1.75} />}
               <div className="swatch" style={{ background: g.project.color }} />
               <span className="pname">{g.project.title}</span>
               <span className="pcount">{g.tasks.length}</span>
-            </div>
-            {g.tasks.map((t) => {
+            </button>
+            {!collapsed && g.tasks.map((t) => {
               const left = taskTimeLeft(t, blocks);
               const completed = taskCompletedMin(t, blocks);
               const planned = taskPlannedMin(t, blocks);
@@ -1513,7 +1535,8 @@ function CalRail({ onDragTask, onTouchSchedule, allocByProject }: {
               );
             })}
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

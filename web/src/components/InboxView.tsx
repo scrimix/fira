@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { Check, Pencil } from 'lucide-react';
 import { useFira } from '../store';
 import { useLongPress } from '../useLongPress';
+import { useIsMobile } from '../hooks';
+import { fmtMin, taskTimeLeft } from '../time';
 import { ProjectIcon } from './ProjectIcon';
 import type { Task, TimeBlock, Section, UUID } from '../types';
 
@@ -122,10 +124,16 @@ export function InboxView() {
     reorderTasks(target.project_id, target.section, sectionList);
   };
 
+  // Desktop drag — kept around so `onDragOver` handlers can compute
+  // which row to target without reading dataTransfer (browsers block
+  // reads during dragover for security; data is only readable on drop).
+  const desktopDragIdRef = useRef<UUID | null>(null);
   const onRowDragStart = (e: React.DragEvent, taskId: string) => {
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', taskId);
+    desktopDragIdRef.current = taskId as UUID;
   };
+  const onRowDragEnd = () => { desktopDragIdRef.current = null; };
   const onRowDragOver = (e: React.DragEvent, target: Task) => {
     if (e.dataTransfer.types.includes('text/plain')) {
       e.preventDefault();
@@ -285,6 +293,7 @@ export function InboxView() {
              onSubDelete={deleteSubtask}
              onOpen={openTask}
              onDragStart={onRowDragStart}
+             onRowDragEnd={onRowDragEnd}
              onRowDragOver={onRowDragOver}
              onRowDrop={onRowDrop}
              onRowDragLeave={() => setRowDropAt(null)}
@@ -358,7 +367,27 @@ export function InboxView() {
                        onDragOver={(e) => {
                          e.preventDefault();
                          e.stopPropagation();
-                         setAssigneeDropTarget(aid);
+                         // Resolve to before-first / after-last based on
+                         // which half of the group the cursor is in —
+                         // same convention the touch path uses, so the
+                         // user sees the target line on a real row
+                         // instead of a vague group highlight.
+                         const draggedId = desktopDragIdRef.current;
+                         const groupTasks = draggedId
+                           ? projectTasks
+                               .filter((t) => t.section === 'now' && t.assignee_id === aid && t.id !== draggedId)
+                               .sort(byKey)
+                           : [];
+                         if (groupTasks.length === 0) {
+                           setAssigneeDropTarget(aid);
+                           setRowDropAt(null);
+                           return;
+                         }
+                         const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                         const upperHalf = e.clientY < rect.top + rect.height / 2;
+                         const target = upperHalf ? groupTasks[0] : groupTasks[groupTasks.length - 1];
+                         setRowDropAt({ id: target.id as UUID, pos: upperHalf ? 'before' : 'after' });
+                         setAssigneeDropTarget(null);
                        }}
                        onDragLeave={(e) => {
                          const next = e.relatedTarget as Node | null;
@@ -376,6 +405,20 @@ export function InboxView() {
                          if (!draggedId) return;
                          const dragged = tasks.find((t) => t.id === draggedId);
                          if (!dragged || dragged.project_id !== project.id) return;
+                         // Same top/bottom split on commit. With tasks
+                         // in the group: route through applyTaskMove so
+                         // both reorder and reassign happen atomically.
+                         // Empty group: just reassign + flip to Now.
+                         const groupTasks = projectTasks
+                           .filter((t) => t.section === 'now' && t.assignee_id === aid && t.id !== draggedId)
+                           .sort(byKey);
+                         if (groupTasks.length > 0) {
+                           const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                           const upperHalf = e.clientY < rect.top + rect.height / 2;
+                           const target = upperHalf ? groupTasks[0] : groupTasks[groupTasks.length - 1];
+                           applyTaskMove(draggedId, target, upperHalf);
+                           return;
+                         }
                          if (dragged.assignee_id !== aid) setTaskAssignee(draggedId, aid);
                          if (dragged.section !== 'now') setTaskSection(draggedId, 'now');
                        }}>
@@ -598,6 +641,7 @@ interface RowProps {
   onSubDelete: (taskId: UUID, subId: UUID) => void;
   onOpen: (id: string) => void;
   onDragStart: (e: React.DragEvent, id: string) => void;
+  onRowDragEnd: () => void;
   onRowDragOver: (e: React.DragEvent, target: Task) => void;
   onRowDrop: (e: React.DragEvent, target: Task) => void;
   onRowDragLeave: () => void;
@@ -610,11 +654,14 @@ interface RowProps {
 
 function TaskRow({
   task, blocks, onTick, onSubTick, onSubSave, onSubDelete, onOpen,
-  onDragStart, onRowDragOver, onRowDrop, onRowDragLeave,
+  onDragStart, onRowDragEnd, onRowDragOver, onRowDrop, onRowDragLeave,
   onGripTouchStart, onGripTouchMove, onGripTouchEnd,
   dropMark, showSubs,
 }: RowProps) {
   const [dragOnHandle, setDragOnHandle] = useState(false);
+  const isMobile = useIsMobile();
+  const left = taskTimeLeft(task, blocks);
+  const lowLeft = left != null && task.estimate_min != null && left < task.estimate_min * 0.2 && left > 0;
 
   // Long-press → drag for the whole row on touch. The hook drives
   // `isPressing` (renders as `data-pressing="true"` for the CSS visual)
@@ -680,7 +727,7 @@ function TaskRow({
          data-pressing={longPress.isPressing ? 'true' : undefined}
          draggable={dragOnHandle}
          onDragStart={(e) => onDragStart(e, task.id)}
-         onDragEnd={() => setDragOnHandle(false)}
+         onDragEnd={() => { setDragOnHandle(false); onRowDragEnd(); }}
          onDragOver={(e) => onRowDragOver(e, task)}
          onDragLeave={onRowDragLeave}
          onDrop={(e) => onRowDrop(e, task)}
@@ -718,6 +765,9 @@ function TaskRow({
       <div className="task-title-wrap">
         <div>
           <span className="task-title">{task.title}</span>
+          {!isMobile && task.external_id && (
+            <span className="ext-id">{task.external_id}</span>
+          )}
         </div>
         {showSubs && task.subtasks.length > 0 && (
           <div className="subtasks">
@@ -734,6 +784,22 @@ function TaskRow({
           </div>
         )}
       </div>
+      {!isMobile && (
+        <div className="task-trail">
+          {task.tags.slice(0, 1).map((tg) => (
+            <span key={tg} className="chip" style={{ height: 16, fontSize: 'calc(9px * var(--fs-scale))' }}>{tg}</span>
+          ))}
+          {task.estimate_min != null && left != null ? (
+            left < 0 ? (
+              <span className="left-est" data-over="true">{fmtMin(-left)} over</span>
+            ) : (
+              <span className="left-est" data-low={lowLeft || undefined}>{fmtMin(left)} left</span>
+            )
+          ) : (
+            <span style={{ color: 'var(--ink-4)' }}>no est</span>
+          )}
+        </div>
+      )}
     </div>
   );
 }

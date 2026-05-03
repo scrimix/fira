@@ -19,6 +19,10 @@
    * + Archive button on a 360px screen — drop the count, the action is
    * what the user came here for. */
   .inbox-proj-head .meta { display: none; }
+  /* No trailing trail pill on phones (`!isMobile` in TaskRow), so the
+   * row + add-row drop the right-side padding and the trail column
+   * stays empty — title runs to the viewport edge. */
+  .task-row, .task-add { padding-right: 0; }
 }
 .inbox-empty {
   min-height: calc(100dvh - 44px - 24px);
@@ -208,10 +212,13 @@
 
 .task-row {
   display: grid;
-  grid-template-columns: 14px 18px 1fr;
+  /* Trailing `auto` column hosts the .task-trail (tags / "Xh left").
+   * Phone widths hide that pill via `!isMobile` in TaskRow, so the
+   * column collapses to zero — no spacing surprise on mobile. */
+  grid-template-columns: 14px 18px 1fr auto;
   align-items: start;
   gap: 8px;
-  padding: 6px 0;
+  padding: 6px 8px 6px 0;
   cursor: pointer;
   position: relative;
   /* The row is click-to-open; there's no useful text selection here.
@@ -352,10 +359,13 @@
  * the input cursor lands at the same x as a task title. */
 .task-add {
   display: grid;
-  grid-template-columns: 14px 18px 1fr;
+  /* Mirror .task-row's grid (incl. the trailing trail column) so the
+   * "+" lines up with the check column and the input cursor lands at
+   * the same x as a task title. */
+  grid-template-columns: 14px 18px 1fr auto;
   align-items: start;
   gap: 8px;
-  padding: 6px 0;
+  padding: 6px 8px 6px 0;
   font-size: var(--fs-md);
   color: var(--ink-4);
   cursor: text;
