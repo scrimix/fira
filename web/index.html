@@ -7,9 +7,16 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Fira" />
+    <!-- Safari iOS / desktop don't render SVG favicons consistently in
+         the tab bar — some builds frame them with a white background.
+         List PNGs first so any browser that supports them grabs the
+         pixel-perfect copy; SVG remains as a fallback. mask-icon is
+         the single-color glyph Safari uses for pinned tabs. -->
+    <link rel="icon" type="image/png" sizes="32x32" href="/icon-32.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="alternate icon" type="image/png" sizes="192x192" href="/icon-192.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="mask-icon" href="/favicon.svg" color="#0891B2" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <title>Fira</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">

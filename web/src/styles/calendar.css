@@ -249,7 +249,10 @@
 }
 @media (max-width: 700px) {
   .cal-totals-inline { display: none; }
-  .cal-totals-strip { display: flex; }
+  /* Centered on phones so the totals row reads as a banner, not a
+   * left-anchored chip. The toolbar above already has the nav cluster
+   * on the left; centering the strip below balances the page. */
+  .cal-totals-strip { display: flex; justify-content: center; }
 }
 
 .cal-grid-wrap {

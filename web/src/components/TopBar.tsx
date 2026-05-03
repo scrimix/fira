@@ -41,14 +41,16 @@ export function TopBar() {
   const isMobile = useIsMobile();
 
   // The calendar's own toolbar (prev / today / next + day-of-month numbers)
-  // already tells the user what range they're looking at. On phones we
-  // suppress the topbar week title to claw back horizontal room — only the
-  // inbox title still appears.
-  const title = view === 'calendar'
-    ? isMobile
-      ? ''
-      : `Week of ${fmtWeekRange(weekStartFor(weekOffset))}`
-    : project?.title ?? 'Inbox';
+  // already tells the user what range they're looking at, and the inbox's
+  // own page header repeats the project title above the task list. On
+  // phones we suppress the topbar title in both views to claw back
+  // horizontal room — without it the Log out button was getting pushed
+  // off-screen on narrow widths.
+  const title = isMobile
+    ? ''
+    : view === 'calendar'
+      ? `Week of ${fmtWeekRange(weekStartFor(weekOffset))}`
+      : project?.title ?? 'Inbox';
 
   const linkTitle = linkState.kind === 'received'
     ? 'Someone wants to link calendars with you'
@@ -77,7 +79,7 @@ export function TopBar() {
       )}
       <WorkspaceSwitcher />
       <span className="crumb-sep">/</span>
-      {view === 'inbox' && project && (
+      {view === 'inbox' && project && !isMobile && (
         <ProjectIcon
           name={project.icon}
           color={project.color}
@@ -113,9 +115,14 @@ export function TopBar() {
             >
               <Link size={12} strokeWidth={1.75} className="link-pair-icon" />
           </button>
-          <span className="topbar-me" title={me?.name ?? ''}>{me?.initials ?? '?'}</span>
         </>
       )}
+      {/* Own-user chip stays on mobile too — it's the slot we'll wire
+       * up to a settings menu later. The link button + partner avatar
+       * are still desktop-only because the link flow needs the modal
+       * affordance and a partner avatar without the link icon next to
+       * it reads as orphan UI. */}
+      <span className="topbar-me" title={me?.name ?? ''}>{me?.initials ?? '?'}</span>
     </div>
   );
 }
