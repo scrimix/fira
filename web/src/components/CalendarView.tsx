@@ -261,6 +261,7 @@ export function CalendarView() {
     startX: number; startY: number;
     day: number; start_min: number; dur_min: number;
     pointerId: number;
+    wasActive: boolean;
     timer: number | null;
     cleanup: (() => void) | null;
   } | null>(null);
@@ -300,6 +301,7 @@ export function CalendarView() {
         startX: e.clientX, startY: e.clientY,
         day, start_min, dur_min,
         pointerId: e.pointerId,
+        wasActive,
         timer: null, cleanup: null,
       };
       const onPreMove = (ev: PointerEvent) => {
@@ -310,7 +312,20 @@ export function CalendarView() {
           cancelBlockHold();
         }
       };
-      const onPreUp = () => cancelBlockHold();
+      // Tap (pointerup before the long-press timer fires + no movement
+      // cancel): if the block was already active, open the task; if it
+      // wasn't, the wrapper's setLastBlockId already activated it — no
+      // further action. Mirrors the desktop drag effect's `onUp`
+      // tap-vs-open branch but on the pre-lock path, since a touch tap
+      // never gets to setDrag in the long-press model.
+      const onPreUp = () => {
+        const h = blockHoldRef.current;
+        if (!h) return;
+        const taskId = h.taskId;
+        const tapWasActive = h.wasActive;
+        cancelBlockHold();
+        if (tapWasActive) openTask(taskId);
+      };
       window.addEventListener('pointermove', onPreMove);
       window.addEventListener('pointerup', onPreUp);
       window.addEventListener('pointercancel', onPreUp);
