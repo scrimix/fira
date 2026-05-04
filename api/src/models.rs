@@ -84,6 +84,11 @@ pub struct Task {
     pub estimate_min: Option<i32>,
     pub spent_min: i32,
     pub sort_key: String,
+    /// Creation wallclock. Set on INSERT (`DEFAULT now()`) and never
+    /// touched after. Used by the web inbox to sort the Done section
+    /// newest-first — approximate (it's "newest task in Done", not
+    /// "most recently finished"), but stable across edits.
+    pub created_at: DateTime<Utc>,
     #[sqlx(skip)]
     pub subtasks: Vec<Subtask>,
     /// IDs of `tags` rows attached to this task. Hydrated via the

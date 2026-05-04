@@ -1,5 +1,5 @@
 {
-  "snapshot_at": "2026-05-04T21:46:27.744911222Z",
+  "snapshot_at": "2026-05-04T23:44:15.889073797Z",
   "me": {
     "id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
     "email": "maya@fira.dev",
@@ -194,47 +194,50 @@
     ],
     "tasks": [
       {
-        "id": "027b9d13-09ea-522f-9c66-d558c2250ccd",
+        "id": "8daf604d-850e-579f-85a4-8afddb0fdec8",
         "project_id": "394c700e-b98f-5f49-911b-aeded755c4dc",
-        "epic_id": "adb95d75-2317-577e-aba2-001c853f9484",
-        "sprint_id": "e727d996-477b-5783-b015-19f0239c6ef7",
-        "assignee_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
-        "title": "Stripe webhook idempotency",
-        "description_md": "Webhook delivery is at-least-once. Dedup by event id, store last 30 days.",
+        "epic_id": "89a4fbf0-a385-5f68-9dae-09d00b92134c",
+        "sprint_id": "f511ca38-bd12-5aeb-a7da-c977d4a5c8f0",
+        "assignee_id": "90cdb98a-ef9a-562c-aeef-c0c065a9989c",
+        "title": "SAML SSO for enterprise tier",
+        "description_md": "",
         "section": "now",
-        "status": "in_progress",
+        "status": "todo",
         "priority": "p1",
         "source": "jira",
-        "external_id": "ATL-433",
+        "external_id": "ATL-451",
         "external_url": null,
-        "estimate_min": 240,
-        "spent_min": 60,
+        "estimate_min": 480,
+        "spent_min": 0,
         "sort_key": "M",
-        "subtasks": [
-          {
-            "id": "b1ad7f7d-ef33-59a2-a531-13fda00e084e",
-            "task_id": "027b9d13-09ea-522f-9c66-d558c2250ccd",
-            "title": "Create dedup table",
-            "done": true,
-            "sort_key": "M000"
-          },
-          {
-            "id": "b098bc65-9ceb-5c5d-90ae-ffc63a8609a8",
-            "task_id": "027b9d13-09ea-522f-9c66-d558c2250ccd",
-            "title": "Wrap webhook handlers",
-            "done": false,
-            "sort_key": "M001"
-          },
-          {
-            "id": "6f1a641c-0294-5993-9d20-fea5e3f7affe",
-            "task_id": "027b9d13-09ea-522f-9c66-d558c2250ccd",
-            "title": "Add metrics",
-            "done": false,
-            "sort_key": "M002"
-          }
-        ],
+        "created_at": "2026-05-04T23:44:15.726036Z",
+        "subtasks": [],
         "tag_ids": [
-          "42ce74c9-acd4-5786-8d3c-00dd0f3aca40"
+          "6d65034e-34f9-5814-b501-5ccdc2737017",
+          "4b8451d3-c4a9-58fa-9abf-94aa19bf7d68"
+        ]
+      },
+      {
+        "id": "9c0aafc2-4c24-53f5-950b-cc78a85562f8",
+        "project_id": "394c700e-b98f-5f49-911b-aeded755c4dc",
+        "epic_id": "50818215-768d-5f16-8011-ede85e537af7",
+        "sprint_id": "f511ca38-bd12-5aeb-a7da-c977d4a5c8f0",
+        "assignee_id": "90cdb98a-ef9a-562c-aeef-c0c065a9989c",
+        "title": "Audit log retention policy",
+        "description_md": "",
+        "section": "now",
+        "status": "todo",
+        "priority": "p2",
+        "source": "jira",
+        "external_id": "ATL-446",
+        "external_url": null,
+        "estimate_min": 180,
+        "spent_min": 0,
+        "sort_key": "M",
+        "created_at": "2026-05-04T23:44:15.726036Z",
+        "subtasks": [],
+        "tag_ids": [
+          "5ba1e942-35b5-55a6-91e1-c2ea060e81cf"
         ]
       },
       {
@@ -254,6 +257,7 @@
         "estimate_min": 360,
         "spent_min": 120,
         "sort_key": "M",
+        "created_at": "2026-05-04T23:44:15.726036Z",
         "subtasks": [
           {
             "id": "7b5d1680-2b5d-5394-8fa4-7ef5f5a9b0ca",
@@ -290,6 +294,51 @@
         ]
       },
       {
+        "id": "027b9d13-09ea-522f-9c66-d558c2250ccd",
+        "project_id": "394c700e-b98f-5f49-911b-aeded755c4dc",
+        "epic_id": "adb95d75-2317-577e-aba2-001c853f9484",
+        "sprint_id": "e727d996-477b-5783-b015-19f0239c6ef7",
+        "assignee_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "title": "Stripe webhook idempotency",
+        "description_md": "Webhook delivery is at-least-once. Dedup by event id, store last 30 days.",
+        "section": "now",
+        "status": "in_progress",
+        "priority": "p1",
+        "source": "jira",
+        "external_id": "ATL-433",
+        "external_url": null,
+        "estimate_min": 240,
+        "spent_min": 60,
+        "sort_key": "M",
+        "created_at": "2026-05-04T23:44:15.726036Z",
+        "subtasks": [
+          {
+            "id": "b1ad7f7d-ef33-59a2-a531-13fda00e084e",
+            "task_id": "027b9d13-09ea-522f-9c66-d558c2250ccd",
+            "title": "Create dedup table",
+            "done": true,
+            "sort_key": "M000"
+          },
+          {
+            "id": "b098bc65-9ceb-5c5d-90ae-ffc63a8609a8",
+            "task_id": "027b9d13-09ea-522f-9c66-d558c2250ccd",
+            "title": "Wrap webhook handlers",
+            "done": false,
+            "sort_key": "M001"
+          },
+          {
+            "id": "6f1a641c-0294-5993-9d20-fea5e3f7affe",
+            "task_id": "027b9d13-09ea-522f-9c66-d558c2250ccd",
+            "title": "Add metrics",
+            "done": false,
+            "sort_key": "M002"
+          }
+        ],
+        "tag_ids": [
+          "42ce74c9-acd4-5786-8d3c-00dd0f3aca40"
+        ]
+      },
+      {
         "id": "d7a540e7-b137-574b-8d2d-cea798f369aa",
         "project_id": "394c700e-b98f-5f49-911b-aeded755c4dc",
         "epic_id": "50818215-768d-5f16-8011-ede85e537af7",
@@ -306,54 +355,10 @@
         "estimate_min": 60,
         "spent_min": 0,
         "sort_key": "M",
+        "created_at": "2026-05-04T23:44:15.726036Z",
         "subtasks": [],
         "tag_ids": [
           "ad7a8c0b-e240-5295-a346-6a680328b54d"
-        ]
-      },
-      {
-        "id": "8daf604d-850e-579f-85a4-8afddb0fdec8",
-        "project_id": "394c700e-b98f-5f49-911b-aeded755c4dc",
-        "epic_id": "89a4fbf0-a385-5f68-9dae-09d00b92134c",
-        "sprint_id": "f511ca38-bd12-5aeb-a7da-c977d4a5c8f0",
-        "assignee_id": "90cdb98a-ef9a-562c-aeef-c0c065a9989c",
-        "title": "SAML SSO for enterprise tier",
-        "description_md": "",
-        "section": "now",
-        "status": "todo",
-        "priority": "p1",
-        "source": "jira",
-        "external_id": "ATL-451",
-        "external_url": null,
-        "estimate_min": 480,
-        "spent_min": 0,
-        "sort_key": "M",
-        "subtasks": [],
-        "tag_ids": [
-          "6d65034e-34f9-5814-b501-5ccdc2737017",
-          "4b8451d3-c4a9-58fa-9abf-94aa19bf7d68"
-        ]
-      },
-      {
-        "id": "9c0aafc2-4c24-53f5-950b-cc78a85562f8",
-        "project_id": "394c700e-b98f-5f49-911b-aeded755c4dc",
-        "epic_id": "50818215-768d-5f16-8011-ede85e537af7",
-        "sprint_id": "f511ca38-bd12-5aeb-a7da-c977d4a5c8f0",
-        "assignee_id": "90cdb98a-ef9a-562c-aeef-c0c065a9989c",
-        "title": "Audit log retention policy",
-        "description_md": "",
-        "section": "now",
-        "status": "todo",
-        "priority": "p2",
-        "source": "jira",
-        "external_id": "ATL-446",
-        "external_url": null,
-        "estimate_min": 180,
-        "spent_min": 0,
-        "sort_key": "M",
-        "subtasks": [],
-        "tag_ids": [
-          "5ba1e942-35b5-55a6-91e1-c2ea060e81cf"
         ]
       },
       {
@@ -373,6 +378,7 @@
         "estimate_min": 240,
         "spent_min": 60,
         "sort_key": "M",
+        "created_at": "2026-05-04T23:44:15.726036Z",
         "subtasks": [],
         "tag_ids": [
           "acf8f03e-84eb-5417-a689-67077c4f94d0"
@@ -395,6 +401,7 @@
         "estimate_min": 300,
         "spent_min": 90,
         "sort_key": "M",
+        "created_at": "2026-05-04T23:44:15.726036Z",
         "subtasks": [
           {
             "id": "d21ccc42-433f-5a65-939b-b61fc9ff368d",
@@ -439,6 +446,7 @@
         "estimate_min": 240,
         "spent_min": 0,
         "sort_key": "M",
+        "created_at": "2026-05-04T23:44:15.726036Z",
         "subtasks": [],
         "tag_ids": [
           "3c4ac1b8-c9a9-5c79-8958-c4f51946ab7e"
@@ -461,6 +469,7 @@
         "estimate_min": 360,
         "spent_min": 0,
         "sort_key": "M",
+        "created_at": "2026-05-04T23:44:15.726036Z",
         "subtasks": [],
         "tag_ids": [
           "84cf6cf9-f7cb-5224-b26d-852232e63e19"
@@ -483,6 +492,7 @@
         "estimate_min": 240,
         "spent_min": 30,
         "sort_key": "M",
+        "created_at": "2026-05-04T23:44:15.726036Z",
         "subtasks": [
           {
             "id": "06ecf45b-feb2-5941-a499-9bd525edccfe",
@@ -527,6 +537,7 @@
         "estimate_min": 60,
         "spent_min": 0,
         "sort_key": "M",
+        "created_at": "2026-05-04T23:44:15.726036Z",
         "subtasks": [],
         "tag_ids": [
           "b2588f3e-0fc5-5086-8133-b9be67427aa2"
@@ -549,6 +560,7 @@
         "estimate_min": null,
         "spent_min": 0,
         "sort_key": "M",
+        "created_at": "2026-05-04T23:44:15.726036Z",
         "subtasks": [],
         "tag_ids": []
       },
@@ -569,6 +581,7 @@
         "estimate_min": 180,
         "spent_min": 0,
         "sort_key": "M",
+        "created_at": "2026-05-04T23:44:15.726036Z",
         "subtasks": [],
         "tag_ids": []
       },
@@ -589,6 +602,7 @@
         "estimate_min": null,
         "spent_min": 0,
         "sort_key": "M",
+        "created_at": "2026-05-04T23:44:15.726036Z",
         "subtasks": [],
         "tag_ids": []
       },
@@ -609,6 +623,7 @@
         "estimate_min": null,
         "spent_min": 0,
         "sort_key": "M",
+        "created_at": "2026-05-04T23:44:15.726036Z",
         "subtasks": [],
         "tag_ids": []
       },
@@ -629,6 +644,7 @@
         "estimate_min": 60,
         "spent_min": 0,
         "sort_key": "M",
+        "created_at": "2026-05-04T23:44:15.726036Z",
         "subtasks": [],
         "tag_ids": []
       },
@@ -649,6 +665,7 @@
         "estimate_min": 30,
         "spent_min": 0,
         "sort_key": "M",
+        "created_at": "2026-05-04T23:44:15.726036Z",
         "subtasks": [],
         "tag_ids": []
       },
@@ -669,6 +686,7 @@
         "estimate_min": null,
         "spent_min": 0,
         "sort_key": "M",
+        "created_at": "2026-05-04T23:44:15.726036Z",
         "subtasks": [],
         "tag_ids": []
       },
@@ -689,6 +707,7 @@
         "estimate_min": 240,
         "spent_min": 280,
         "sort_key": "M",
+        "created_at": "2026-05-04T23:44:15.726036Z",
         "subtasks": [],
         "tag_ids": []
       },
@@ -709,6 +728,7 @@
         "estimate_min": 360,
         "spent_min": 420,
         "sort_key": "M",
+        "created_at": "2026-05-04T23:44:15.726036Z",
         "subtasks": [],
         "tag_ids": []
       },
@@ -729,6 +749,7 @@
         "estimate_min": 180,
         "spent_min": 240,
         "sort_key": "M",
+        "created_at": "2026-05-04T23:44:15.726036Z",
         "subtasks": [],
         "tag_ids": []
       }

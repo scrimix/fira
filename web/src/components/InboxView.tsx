@@ -98,7 +98,12 @@ export function InboxView() {
       });
   const nowTasks = projectTasks.filter((t) => t.section === 'now').sort(byKey);
   const laterTasks = projectTasks.filter((t) => t.section === 'later').sort(byKey);
-  const doneTasks = projectTasks.filter((t) => t.section === 'done').sort(byKey);
+  // Done sorts newest-first by creation time. Approximate stand-in
+  // for "finished at" — server has no done_at column yet, and
+  // updated_at would shuffle on any field edit (tag, title, …).
+  const doneTasks = projectTasks
+    .filter((t) => t.section === 'done')
+    .sort((a, b) => b.created_at.localeCompare(a.created_at));
   // Caller floats to the top of the assignee groups; the rest stay in
   // membership order. Members with role 'owner' (the workspace owner's
   // default per-project stance) or 'inactive' (a member who's been parked)

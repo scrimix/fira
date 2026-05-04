@@ -93,6 +93,9 @@ export interface Task {
   spent_min: number;
   tag_ids: UUID[];
   sort_key: string;
+  /// ISO timestamp of when the task was created. Stable across edits.
+  /// Used by the inbox to sort the Done section newest-first.
+  created_at: string;
   subtasks: Subtask[];
 }
 

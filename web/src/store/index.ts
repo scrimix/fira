@@ -1553,6 +1553,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
       // the task's project, so phantoms get rejected.
       tag_ids: tagIds ?? [],
       sort_key: `${maxSort}~`,
+      created_at: new Date().toISOString(),
       subtasks: [],
     };
     set((s) => ({
