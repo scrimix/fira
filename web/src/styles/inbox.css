@@ -607,8 +607,8 @@
  * onto its own wrapped line. */
 .tm-block-row {
   display: grid;
-  grid-template-columns: 20px auto 1fr auto auto;
-  grid-template-areas: "ava date time dur state";
+  grid-template-columns: 20px auto 1fr auto auto auto;
+  grid-template-areas: "ava date time dur state del";
   column-gap: 10px;
   row-gap: 2px;
   padding: 4px 0;
@@ -629,7 +629,12 @@
   font-family: var(--font-mono);
   font-size: calc(11px * var(--fs-scale));
   white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
 }
+.tm-block-time-sep { color: var(--ink-4); }
+.tm-block-time-end { color: var(--ink-3); }
 .tm-block-dur {
   grid-area: dur;
   color: var(--ink-2);
@@ -651,6 +656,67 @@
   justify-content: flex-end;
   color: var(--ink-4);
   white-space: nowrap;
+}
+.tm-block-del {
+  grid-area: del;
+  width: calc(20px * var(--fs-scale));
+  height: calc(20px * var(--fs-scale));
+  color: var(--ink-4);
+  display: inline-grid;
+  place-items: center;
+  border-radius: 2px;
+}
+@media (hover: hover) {
+  .tm-block-del:hover { color: var(--danger); background: var(--paper-2); }
+}
+/* Click-to-edit cells: read state is a span that hints at editability
+ * via a soft underline on hover, edit state is a native input matching
+ * the surrounding mono-tabular column. */
+.tm-block-cell {
+  cursor: text;
+  border-radius: 2px;
+  padding: 1px 2px;
+  margin: -1px -2px;
+}
+@media (hover: hover) {
+  .tm-block-cell:hover {
+    background: var(--paper-2);
+    box-shadow: inset 0 -1px 0 var(--rule-2);
+  }
+}
+.tm-block-cell-input {
+  font-family: var(--font-mono);
+  font-size: calc(11px * var(--fs-scale));
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--focus-line);
+  border-radius: 2px;
+  padding: 1px 4px;
+  margin: -2px 0;
+  outline: none;
+  /* Match the cell width so the row layout doesn't reflow when an input
+   * appears. Native date / time inputs ship with their own min-width;
+   * we let those win so the picker UI stays usable. */
+  width: auto;
+  min-width: 0;
+}
+input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
+.tm-block-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: calc(11px * var(--fs-scale));
+  color: var(--ink-3);
+  cursor: pointer;
+  padding: 2px 6px;
+  border: 1px dashed var(--rule-2);
+  border-radius: 2px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+@media (hover: hover) {
+  .tm-block-add:hover { color: var(--accent); border-color: var(--accent); }
 }
 .tm-block-row[data-state="planned"] .tm-block-state { color: var(--accent); }
 .tm-block-row[data-state="completed"] .tm-block-state { color: var(--done); }

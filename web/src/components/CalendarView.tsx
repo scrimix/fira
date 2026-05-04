@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Check, ChevronDown, ChevronRight, Copy, Trash2, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, Copy, MoreVertical, Trash2, X } from 'lucide-react';
 import { useFira } from '../store';
 import { ProjectIcon } from './ProjectIcon';
 import {
@@ -174,6 +174,25 @@ export function CalendarView() {
   const stepBack = () => isMobile ? setDayOffset(dayOffset - 1) : setWeekOffset(weekOffset - 1);
   const stepForward = () => isMobile ? setDayOffset(dayOffset + 1) : setWeekOffset(weekOffset + 1);
   const stepToday = () => isMobile ? setDayOffset(0) : setWeekOffset(0);
+  // Bump every minute (aligned to the wall-clock minute boundary) so
+  // `nowMin` and `todayDayIndex()` re-evaluate and the "now" line plus
+  // the today-column highlight track real time. Deliberately doesn't
+  // touch dayOffset / weekOffset — the user's chosen view stays where
+  // it is even as the day rolls over.
+  const [, setClockTick] = useState(0);
+  useEffect(() => {
+    let interval: number | null = null;
+    const tick = () => setClockTick((n) => n + 1);
+    const msUntilNextMinute = 60_000 - (Date.now() % 60_000);
+    const timeout = window.setTimeout(() => {
+      tick();
+      interval = window.setInterval(tick, 60_000);
+    }, msUntilNextMinute);
+    return () => {
+      window.clearTimeout(timeout);
+      if (interval != null) window.clearInterval(interval);
+    };
+  }, []);
   const nowMin = nowTimeMin();
   const gridRef = useRef<HTMLDivElement>(null);
   const innerGridRef = useRef<HTMLDivElement>(null);
@@ -185,6 +204,12 @@ export function CalendarView() {
   } | null>(null);
   const [draggedTaskId, setDraggedTaskId] = useState<UUID | null>(null);
   const [lastBlockId, setLastBlockId] = useState<UUID | null>(null);
+  // Which block (if any) currently has its action popup open. Compact
+  // (mobile / short / narrow) blocks have a kebab in place of the inline
+  // tick/dup/trash row; tapping the kebab pops a same-row above the
+  // block. One open at a time — opening another, or pointer-down outside,
+  // closes it.
+  const [menuBlockId, setMenuBlockId] = useState<UUID | null>(null);
   // Visible "press" feedback while the long-press timer is armed on a
   // touch block. Set when the timer starts, cleared the moment it fires
   // (drag begins) or the press is cancelled (movement / release / etc).
@@ -226,6 +251,28 @@ export function CalendarView() {
     if (gridRef.current) gridRef.current.scrollTop = 7 * HOUR_H - 12;
   }, []);
 
+  // Block drag-vs-scroll on touch: `.tblock` ships with `touch-action:
+  // pan-y` so a short-press + move scrolls the calendar normally. Once
+  // the long-press timer fires (drag locks), this flag flips to true
+  // and the always-on touchmove listener below preventDefaults so iOS
+  // doesn't yank the gesture into a scroll mid-drag. Same pattern the
+  // rail uses (see `freezeRailScroll` further down), and same reason —
+  // iOS commits to "this is a scroll" the moment the first touchmove
+  // arrives, so the listener has to be installed before the gesture
+  // starts and branch on the flag at runtime.
+  const blockDragFrozenRef = useRef(false);
+  const freezeBlockDrag = () => { blockDragFrozenRef.current = true; };
+  const unfreezeBlockDrag = () => { blockDragFrozenRef.current = false; };
+  useEffect(() => {
+    const el = gridRef.current;
+    if (!el) return;
+    const handler = (ev: TouchEvent) => {
+      if (blockDragFrozenRef.current) ev.preventDefault();
+    };
+    el.addEventListener('touchmove', handler, { passive: false });
+    return () => el.removeEventListener('touchmove', handler);
+  }, []);
+
   // Click anywhere outside a time block (and outside its action buttons)
   // clears the active highlight so the buttons don't linger after the
   // user has moved on. Applies to mouse and touch alike — same gesture
@@ -237,8 +284,9 @@ export function CalendarView() {
       if (!t) return;
       // Block surface or one of its inner action buttons → leave the
       // active state alone; the block's own handler manages it.
-      if (t.closest('.tblock') || t.closest('.tb-action')) return;
+      if (t.closest('.tblock') || t.closest('.tb-action') || t.closest('.tb-popup')) return;
       setLastBlockId(null);
+      setMenuBlockId(null);
     };
     document.addEventListener('pointerdown', onDocPointerDown);
     return () => document.removeEventListener('pointerdown', onDocPointerDown);
@@ -280,8 +328,9 @@ export function CalendarView() {
 
   const onBlockPointerDown = (e: React.PointerEvent, b: TimeBlock, taskId: UUID) => {
     if (e.button !== 0) return;
-    // Inner buttons (X / tick / duplicate) stopPropagation on their own
-    // pointerdown so they don't reach this handler — see .tb-action.
+    // Inner buttons (X / tick / duplicate / kebab) stopPropagation on
+    // their own pointerdown so they don't reach this handler — see
+    // .tb-action.
     if ((e.target as HTMLElement).closest('.tb-action')) return;
     // Capture grid coordinates against the *visible* week so the drop's
     // gridToBlock(gridAnchor) round-trips to the same absolute time.
@@ -317,18 +366,25 @@ export function CalendarView() {
         }
       };
       // Tap (pointerup before the long-press timer fires + no movement
-      // cancel): if the block was already active, open the task; if it
-      // wasn't, the wrapper's setLastBlockId already activated it — no
-      // further action. Mirrors the desktop drag effect's `onUp`
-      // tap-vs-open branch but on the pre-lock path, since a touch tap
-      // never gets to setDrag in the long-press model.
+      // cancel): if the block was already active, open the task. If
+      // it wasn't, activate it now and stamp the touch-activation
+      // grace window so the click that may follow doesn't fire an
+      // action button on the same gesture. Activation is deferred to
+      // here so a swipe-to-scroll (cancelled in onPreMove) leaves the
+      // block untouched.
       const onPreUp = () => {
         const h = blockHoldRef.current;
         if (!h) return;
         const taskId = h.taskId;
         const tapWasActive = h.wasActive;
+        const blockId = h.blockId;
         cancelBlockHold();
-        if (tapWasActive) openTask(taskId);
+        if (tapWasActive) {
+          openTask(taskId);
+        } else {
+          recentTouchActivationRef.current = { blockId, at: Date.now() };
+          setLastBlockId(blockId);
+        }
       };
       window.addEventListener('pointermove', onPreMove);
       window.addEventListener('pointerup', onPreUp);
@@ -347,7 +403,14 @@ export function CalendarView() {
         // pressing visual rides the drag until pointerup clears it in
         // the global onUp handler.
         setPressingBlockId(h.blockId);
+        // Long-press intentionally does NOT activate the block — it's a
+        // *drag* gesture, distinct from the tap-to-activate path. The
+        // pressing visual carries the gesture; data-active stays untouched
+        // so the action buttons don't reveal mid-drag.
         navigator.vibrate?.(8);
+        // Freeze browser-native scroll for the rest of the gesture so
+        // the drag isn't pulled into a scroll. Cleared in onUp below.
+        freezeBlockDrag();
         setDrag({
           blockId: h.blockId, mode: h.mode,
           startX: h.startX, startY: h.startY,
@@ -446,6 +509,9 @@ export function CalendarView() {
         openTask(d.taskId);
       }
       setDrag(null);
+      // Drag is over either way — release the scroll freeze so the
+      // calendar pans normally on the next gesture.
+      unfreezeBlockDrag();
       // The pressing visual rode through the locked drag (set 100 ms
       // after pointerdown, deliberately not cleared when the lock fired)
       // so the block stayed visibly "in-hand" the whole way. Clear it
@@ -945,31 +1011,88 @@ export function CalendarView() {
                     const sMin = isDragging ? drag.curStartMin : start_min;
                     const dMin = isDragging ? drag.curDurMin : dur_min;
                     const fullWidth = isDragging && drag.moved;
+                    // Compact mode: collapse the inline icon row to a single
+                    // kebab and surface the icons in a popup above (or below)
+                    // the block. Triggers on mobile (no hover, tiny targets),
+                    // very short blocks (< 30 min — icons fight the drag
+                    // surface) and narrow overlap clusters (3+ lanes — there
+                    // isn't horizontal room for three buttons).
+                    const isCompact = dMin <= 30 || lanes >= 2;
+                    const menuOpen = menuBlockId === b.id;
+                    const blockTopPx = (sMin / 60) * HOUR_H;
+                    const blockHeightPx = (dMin / 60) * HOUR_H - 2;
+                    const tickBtn = (
+                      <button className="tb-action tb-tick"
+                              data-checked={b.state === 'completed'}
+                              onPointerDown={(e) => e.stopPropagation()}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (consumeRecentTouchActivation(b.id)) return;
+                                tickBlock(b);
+                                setMenuBlockId(null);
+                              }}
+                              title={b.state === 'completed' ? 'Mark planned' : 'Mark complete'}>
+                        <Check className="tb-icon" strokeWidth={2.25} />
+                      </button>
+                    );
+                    const dupBtn = (
+                      <button className="tb-action tb-dup"
+                              onPointerDown={(e) => e.stopPropagation()}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (consumeRecentTouchActivation(b.id)) return;
+                                const newId = duplicateBlock(b.id);
+                                if (newId) setLastBlockId(newId);
+                                setMenuBlockId(null);
+                              }}
+                              title="Duplicate (Ctrl+D)">
+                        <Copy className="tb-icon" strokeWidth={1.75} />
+                      </button>
+                    );
+                    const closeBtn = (
+                      <button className="tb-action tb-close"
+                              onPointerDown={(e) => e.stopPropagation()}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (consumeRecentTouchActivation(b.id)) return;
+                                deleteBlock(b.id);
+                                setMenuBlockId(null);
+                              }}
+                              title="Delete block">
+                        <Trash2 className="tb-icon" strokeWidth={1.75} />
+                      </button>
+                    );
                     return (
                       <div key={b.id} className="tblock"
                            data-state={b.state}
                            data-task-done={t.status === 'done' ? 'true' : undefined}
                            data-dragging={isDragging && drag.moved ? 'true' : undefined}
                            data-short={dMin < 60 ? 'true' : undefined}
+                           data-compact={isCompact ? 'true' : undefined}
                            data-active={lastBlockId === b.id ? 'true' : undefined}
                            data-pressing={pressingBlockId === b.id ? 'true' : undefined}
                            style={{
-                             top: (sMin / 60) * HOUR_H,
-                             height: (dMin / 60) * HOUR_H - 2,
+                             top: blockTopPx,
+                             height: blockHeightPx,
                              ['--proj-color' as string]: p.color,
                              left: fullWidth ? '1px' : `calc(${(lane / lanes) * 100}% + 1px)`,
                              width: fullWidth ? 'calc(100% - 2px)' : `calc(${100 / lanes}% - 2px)`,
                            }}
                            onPointerDown={(e) => {
-                             // Touch activation grace: the very first tap on
-                             // an inactive block reveals the action buttons;
-                             // any click that lands on one of them within
-                             // ACTIVATION_GRACE_MS is suppressed so it can't
-                             // fire on the same gesture.
-                             if (e.pointerType === 'touch' && lastBlockId !== b.id) {
-                               recentTouchActivationRef.current = { blockId: b.id, at: Date.now() };
+                             // Mouse / pen: activate immediately — there's
+                             // no scroll-vs-press ambiguity. Touch defers
+                             // activation to the press-confirmation point
+                             // (tap release or long-press lock, both inside
+                             // onBlockPointerDown) so a swipe-to-scroll over
+                             // the block doesn't leave it highlighted.
+                             if (e.pointerType !== 'touch') {
+                               setLastBlockId(b.id);
                              }
-                             setLastBlockId(b.id);
+                             // Tapping a different block closes any open
+                             // popup; the new block has its own kebab.
+                             if (menuBlockId !== null && menuBlockId !== b.id) {
+                               setMenuBlockId(null);
+                             }
                              onBlockPointerDown(e, b, t.id);
                            }}
                            onContextMenu={(e) => e.preventDefault()}
@@ -985,45 +1108,112 @@ export function CalendarView() {
                         {t.external_id && (
                           <div className="tb-extid">{t.external_id}</div>
                         )}
-                        <div className="tb-actions">
-                          <button className="tb-action tb-tick"
-                                  data-checked={b.state === 'completed'}
-                                  onPointerDown={(e) => e.stopPropagation()}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    if (consumeRecentTouchActivation(b.id)) return;
-                                    tickBlock(b);
-                                  }}
-                                  title={b.state === 'completed' ? 'Mark planned' : 'Mark complete'}>
-                            <Check size={11} strokeWidth={2.25} />
-                          </button>
-                          <button className="tb-action tb-dup"
-                                  onPointerDown={(e) => e.stopPropagation()}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    if (consumeRecentTouchActivation(b.id)) return;
-                                    const newId = duplicateBlock(b.id);
-                                    if (newId) setLastBlockId(newId);
-                                  }}
-                                  title="Duplicate (Ctrl+D)">
-                            <Copy size={11} strokeWidth={1.75} />
-                          </button>
-                          <button className="tb-action tb-close"
-                                  onPointerDown={(e) => e.stopPropagation()}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    if (consumeRecentTouchActivation(b.id)) return;
-                                    deleteBlock(b.id);
-                                  }}
-                                  title="Delete block">
-                            <Trash2 size={11} strokeWidth={1.75} />
-                          </button>
-                        </div>
+                        {isCompact ? (
+                          <div className="tb-actions tb-actions-compact">
+                            <button className="tb-action tb-kebab"
+                                    data-open={menuOpen ? 'true' : undefined}
+                                    onPointerDown={(e) => e.stopPropagation()}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (consumeRecentTouchActivation(b.id)) return;
+                                      setMenuBlockId(menuOpen ? null : b.id);
+                                    }}
+                                    title="Block actions">
+                              <MoreVertical className="tb-icon" strokeWidth={1.75} />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="tb-actions">
+                            {tickBtn}
+                            {dupBtn}
+                            {closeBtn}
+                          </div>
+                        )}
                         <div className="tb-resize tb-resize-top" />
                         <div className="tb-resize tb-resize-bottom" />
                       </div>
                     );
                   })}
+                  {(() => {
+                    // Popup lives outside .tblock so it isn't clipped by
+                    // `overflow: hidden`. Rendered as a sibling in the day
+                    // column for blocks that are open and compact. One at a
+                    // time across the whole calendar — only the column that
+                    // owns the open block emits a popup.
+                    if (!menuBlockId) return null;
+                    const hit = dayPlaced.find((d) => d.block.id === menuBlockId);
+                    if (!hit) return null;
+                    const isDragging = drag?.blockId === hit.block.id;
+                    const sMin = isDragging ? drag.curStartMin : hit.start_min;
+                    const dMin = isDragging ? drag.curDurMin : hit.dur_min;
+                    const isCompact = dMin <= 30 || hit.lanes >= 2;
+                    if (!isCompact) return null;
+                    const blockTopPx = (sMin / 60) * HOUR_H;
+                    const blockHeightPx = (dMin / 60) * HOUR_H - 2;
+                    const popupGap = 4;
+                    const popupHeightPx = 32;
+                    const popupAbove = blockTopPx >= popupHeightPx + popupGap;
+                    const top = popupAbove
+                      ? blockTopPx - popupHeightPx - popupGap
+                      : blockTopPx + blockHeightPx + popupGap;
+                    const tickB = (
+                      <button className="tb-action tb-tick"
+                              data-checked={hit.block.state === 'completed'}
+                              onPointerDown={(e) => e.stopPropagation()}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                tickBlock(hit.block);
+                                setMenuBlockId(null);
+                              }}
+                              title={hit.block.state === 'completed' ? 'Mark planned' : 'Mark complete'}>
+                        <Check className="tb-icon" strokeWidth={2.25} />
+                      </button>
+                    );
+                    const dupB = (
+                      <button className="tb-action tb-dup"
+                              onPointerDown={(e) => e.stopPropagation()}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const newId = duplicateBlock(hit.block.id);
+                                if (newId) setLastBlockId(newId);
+                                setMenuBlockId(null);
+                              }}
+                              title="Duplicate (Ctrl+D)">
+                        <Copy className="tb-icon" strokeWidth={1.75} />
+                      </button>
+                    );
+                    const closeB = (
+                      <button className="tb-action tb-close"
+                              onPointerDown={(e) => e.stopPropagation()}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                deleteBlock(hit.block.id);
+                                setMenuBlockId(null);
+                              }}
+                              title="Delete block">
+                        <Trash2 className="tb-icon" strokeWidth={1.75} />
+                      </button>
+                    );
+                    return (
+                      <div className="tb-popup"
+                           data-pos={popupAbove ? 'above' : 'below'}
+                           style={{
+                             top,
+                             // Anchor the popup's right edge to the block's
+                             // right edge so it sits directly above (or
+                             // below) the kebab the user just tapped,
+                             // instead of drifting to the lane's left.
+                             right: `calc(${((hit.lanes - 1 - hit.lane) / hit.lanes) * 100}% + 1px)`,
+                             ['--proj-color' as string]: hit.project.color,
+                           }}
+                           onPointerDown={(e) => e.stopPropagation()}
+                           onClick={(e) => e.stopPropagation()}>
+                        {tickB}
+                        {dupB}
+                        {closeB}
+                      </div>
+                    );
+                  })()}
                 </div>
               );
             })}

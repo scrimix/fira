@@ -265,7 +265,7 @@ interface FiraState {
   setTaskExternalId: (taskId: UUID, external_id: string | null) => void;
   setTaskExternalUrl: (taskId: UUID, external_url: string | null) => void;
   deleteTask: (taskId: UUID) => void;
-  addSubtask: (taskId: UUID, title: string) => UUID | null;
+  addSubtask: (taskId: UUID, title: string, afterId?: UUID) => UUID | null;
   tickSubtask: (taskId: UUID, subId: UUID) => void;
   setSubtaskTitle: (taskId: UUID, subId: UUID, title: string) => void;
   deleteSubtask: (taskId: UUID, subId: UUID) => void;
@@ -274,6 +274,39 @@ interface FiraState {
   updateBlock: (blockId: UUID, patch: Partial<TimeBlock>) => void;
   duplicateBlock: (blockId: UUID) => UUID | null;
   deleteBlock: (blockId: UUID) => void;
+}
+
+// Compute a sort_key strictly between `a` and `b` (or strictly past
+// `a` if `b` is null), using the printable-ASCII range. Used by the
+// "insert after" path of `addSubtask` so a freshly inserted row can
+// slot between its neighbours without having to re-number everything.
+// Naive `a + '~'` collides when `b` is itself a tilde-extension of `a`;
+// this picks a midpoint character instead.
+function midKey(a: string, b: string | null): string {
+  const MIN = 0x21; // '!'
+  if (b == null) return a + '~';
+  let i = 0;
+  while (i < Math.min(a.length, b.length) && a[i] === b[i]) i++;
+  if (i === a.length) {
+    // a is a strict prefix of b. Pick a char strictly less than b[i]
+    // and strictly above MIN so we leave room on either side for
+    // future inserts.
+    const bCh = b.charCodeAt(i);
+    const midCh = Math.floor((MIN + bCh) / 2);
+    if (midCh > MIN && midCh < bCh) {
+      return a + String.fromCharCode(midCh);
+    }
+    return a + String.fromCharCode(MIN) + '~';
+  }
+  const aCh = a.charCodeAt(i);
+  const bCh = b.charCodeAt(i);
+  if (bCh - aCh > 1) {
+    const mid = Math.floor((aCh + bCh) / 2);
+    return a.slice(0, i) + String.fromCharCode(mid);
+  }
+  // Adjacent chars: extend `a` so c starts with `a` and is therefore
+  // less than `b` (which diverges one rung up at position i).
+  return a + '~';
 }
 
 // Append a new op to the outbox AND record its op_id so when the server
@@ -1571,22 +1604,52 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     ...pushOp(s, { kind: 'task.delete', task_id: taskId }),
   })),
 
-  addSubtask: (taskId, title) => {
+  addSubtask: (taskId, title, afterId) => {
     const trimmed = title.trim();
-    if (!trimmed) return null;
+    // Empty title is only allowed for "insert after" — that path seeds
+    // a row in edit mode (Enter on a subtask creates the next one to
+    // type into). Plain append still requires content.
+    if (!trimmed && !afterId) return null;
     const state = get();
     const task = state.tasks.find((t) => t.id === taskId);
     if (!task) return null;
-    const maxSort = task.subtasks.reduce((m, s) => (s.sort_key > m ? s.sort_key : m), '0');
+    let sortKey: string;
+    let insertIdx: number = task.subtasks.length;
+    if (afterId) {
+      const ordered = [...task.subtasks].sort((a, b) => a.sort_key.localeCompare(b.sort_key));
+      const idx = ordered.findIndex((s) => s.id === afterId);
+      if (idx === -1) {
+        const maxSort = ordered.length ? ordered[ordered.length - 1].sort_key : '0';
+        sortKey = `${maxSort}~`;
+      } else {
+        const cur = ordered[idx].sort_key;
+        const next = ordered[idx + 1]?.sort_key ?? null;
+        sortKey = midKey(cur, next);
+      }
+      // Splice into the in-memory array at the right index too — render
+      // iterates `task.subtasks` directly, so a fresh row needs to land
+      // between its neighbours regardless of where bootstrap originally
+      // placed them. The sort_key still drives server-side ordering.
+      const arrIdx = task.subtasks.findIndex((s) => s.id === afterId);
+      insertIdx = arrIdx === -1 ? task.subtasks.length : arrIdx + 1;
+    } else {
+      const maxSort = task.subtasks.reduce((m, s) => (s.sort_key > m ? s.sort_key : m), '0');
+      sortKey = `${maxSort}~`;
+    }
     const sub: Subtask = {
       id: crypto.randomUUID(),
       task_id: taskId,
       title: trimmed,
       done: false,
-      sort_key: `${maxSort}~`,
+      sort_key: sortKey,
     };
     set((s) => ({
-      tasks: s.tasks.map((t) => t.id === taskId ? { ...t, subtasks: [...t.subtasks, sub] } : t),
+      tasks: s.tasks.map((t) => {
+        if (t.id !== taskId) return t;
+        const next = [...t.subtasks];
+        next.splice(insertIdx, 0, sub);
+        return { ...t, subtasks: next };
+      }),
       ...pushOp(s, { kind: 'subtask.create', subtask: sub }),
     }));
     return sub.id;

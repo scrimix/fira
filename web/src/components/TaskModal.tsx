@@ -33,6 +33,9 @@ export function TaskModal({ taskId }: Props) {
   const setTaskExternalUrl = useFira((s) => s.setTaskExternalUrl);
   const setTaskAssignee = useFira((s) => s.setTaskAssignee);
   const deleteTask = useFira((s) => s.deleteTask);
+  const updateBlock = useFira((s) => s.updateBlock);
+  const deleteBlock = useFira((s) => s.deleteBlock);
+  const upsertBlock = useFira((s) => s.upsertBlock);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   // Sidebar collapsible — gives the description / subtasks / time-blocks
   // pane the full modal width, which matters most on phones where the
@@ -69,8 +72,21 @@ export function TaskModal({ taskId }: Props) {
           : project.external_url_template + encodeURIComponent(task.external_id))
       : null;
 
+  // Only close when *both* the mousedown and the click landed on the
+  // backdrop itself. A drag that starts on text inside the modal and
+  // releases outside (text selection that overshoots) would otherwise
+  // synthesize a click on the backdrop and dismiss the modal.
+  const downOnBackdropRef = useRef(false);
   return (
-    <div className="modal-backdrop" onClick={() => close(null)}>
+    <div
+      className="modal-backdrop"
+      onMouseDown={(e) => { downOnBackdropRef.current = e.target === e.currentTarget; }}
+      onClick={(e) => {
+        const onBackdrop = e.target === e.currentTarget;
+        if (onBackdrop && downOnBackdropRef.current) close(null);
+        downOnBackdropRef.current = false;
+      }}
+    >
       <div className="modal" onClick={(e) => e.stopPropagation()}
            style={{ ['--proj-color' as string]: project.color }}>
         <div className="modal-head">
@@ -144,33 +160,57 @@ export function TaskModal({ taskId }: Props) {
             <SectionHeading
               title="Time blocks"
               hint={taskBlocks.length > 0 ? String(taskBlocks.length) : undefined}
+              trailing={
+                meId ? (
+                  <button
+                    className="tm-block-add"
+                    type="button"
+                    onClick={() => {
+                      // New block defaults: assignee = me, ends at the
+                      // next 15-min boundary (so 22:16 → 22:30), runs
+                      // back one hour. Multi-day blocks aren't a thing
+                      // here yet, so if "end − 1h" would cross midnight
+                      // we clamp the start to 00:00 of end's day —
+                      // 00:16 produces [00:00, 00:30], not [23:30, 00:30].
+                      const end = new Date();
+                      end.setSeconds(0, 0);
+                      const m = end.getMinutes();
+                      end.setMinutes(Math.ceil(m / 15) * 15);
+                      const dayStart = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+                      const start = new Date(Math.max(end.getTime() - 60 * 60 * 1000, dayStart.getTime()));
+                      upsertBlock({
+                        id: crypto.randomUUID(),
+                        task_id: task.id,
+                        user_id: meId,
+                        start_at: start.toISOString(),
+                        end_at: end.toISOString(),
+                        state: 'planned',
+                      });
+                    }}
+                    title="Add a 1h block ending now"
+                  >
+                    <Plus size={13} strokeWidth={1.75} /> Time
+                  </button>
+                ) : undefined
+              }
             />
             {taskBlocks.length === 0 ? (
               <div className="tm-section-empty">No blocks yet.</div>
-            ) : taskBlocks.map(({ b, start_min, dur_min }) => {
-                const stale = task.status === 'done' && b.state === 'planned';
-                const startDate = new Date(b.start_at);
-                const dateLabel = `${MONTH_ABBR[startDate.getMonth()]} ${startDate.getDate()}`;
-                const u = users.find((x) => x.id === b.user_id);
-                return (
-                  <div key={b.id} className="tm-block-row" data-state={b.state}>
-                    <span className="avatar tm-block-ava" data-me={b.user_id === meId} title={u?.name ?? '?'}>
-                      {u?.initials ?? '?'}
-                    </span>
-                    <span className="tm-block-date">{dateLabel}</span>
-                    <span className="tm-block-time">
-                      {fmtClockShort(start_min)} – {fmtClockShort(start_min + dur_min)}
-                    </span>
-                    <span className="tm-block-dur">{fmtMin(dur_min)}</span>
-                    <span className="tm-block-state">
-                      {stale && (
-                        <span className="tm-block-warn" title="Task is marked done, but this block is still planned.">⚠</span>
-                      )}
-                      {b.state}
-                    </span>
-                  </div>
-                );
-              })}
+            ) : taskBlocks.map(({ b, start_min, dur_min }) => (
+                <BlockRow
+                  key={b.id}
+                  startAt={b.start_at}
+                  state={b.state}
+                  userId={b.user_id}
+                  startMin={start_min}
+                  durMin={dur_min}
+                  taskDone={task.status === 'done'}
+                  users={users}
+                  meId={meId}
+                  onSave={(patch) => updateBlock(b.id, patch)}
+                  onDelete={() => deleteBlock(b.id)}
+                />
+              ))}
           </div>
           <div className="modal-side">
             <Field label="Project" value={
@@ -264,6 +304,195 @@ function SectionHeading({ title, hint, trailing }: {
   );
 }
 
+
+// Editable + deletable row for a single time block in the task modal's
+// "Time blocks" section. Click any of the date / time / duration cells
+// to swap that cell into an input; blur or Enter commits, Escape
+// reverts. The trash button removes the block. Date-time edits round-
+// trip through ISO so the calendar (which renders from the same store)
+// re-lays the block out without a refresh.
+function BlockRow({
+  startAt, state, userId, startMin, durMin, taskDone,
+  users, meId, onSave, onDelete,
+}: {
+  startAt: string;
+  state: 'planned' | 'completed';
+  userId: UUID;
+  startMin: number;
+  durMin: number;
+  taskDone: boolean;
+  users: User[];
+  meId: UUID | null;
+  onSave: (patch: { start_at?: string; end_at?: string }) => void;
+  onDelete: () => void;
+}) {
+  const stale = taskDone && state === 'planned';
+  const startDate = new Date(startAt);
+  const dateLabel = `${MONTH_ABBR[startDate.getMonth()]} ${startDate.getDate()}`;
+  const u = users.find((x) => x.id === userId);
+
+  // Each edit patches *only* the endpoint it owns so duration falls out
+  // of the difference on the next render (parent re-derives durMin from
+  // start_at / end_at). Multi-day blocks are a separate feature — for
+  // now end must stay strictly after start on the same day.
+  const ymd = { y: startDate.getFullYear(), m: startDate.getMonth(), d: startDate.getDate() };
+
+  const saveDate = (yyyyMmDd: string) => {
+    const [y, m, d] = yyyyMmDd.split('-').map((s) => parseInt(s, 10));
+    if (!y || !m || !d) return;
+    const newStart = new Date(y, m - 1, d, Math.floor(startMin / 60), startMin % 60, 0, 0);
+    const endLocalMin = startMin + durMin;
+    const newEnd = new Date(y, m - 1, d, Math.floor(endLocalMin / 60), endLocalMin % 60, 0, 0);
+    onSave({ start_at: newStart.toISOString(), end_at: newEnd.toISOString() });
+  };
+  const saveStart = (hhmm: string) => {
+    const [h, mi] = hhmm.split(':').map((s) => parseInt(s, 10));
+    if (Number.isNaN(h) || Number.isNaN(mi)) return;
+    const newStartMin = h * 60 + mi;
+    if (newStartMin === startMin) return;
+    if (newStartMin >= startMin + durMin) return;
+    const newStart = new Date(ymd.y, ymd.m, ymd.d, h, mi, 0, 0);
+    onSave({ start_at: newStart.toISOString() });
+  };
+  const saveEnd = (hhmm: string) => {
+    const [h, mi] = hhmm.split(':').map((s) => parseInt(s, 10));
+    if (Number.isNaN(h) || Number.isNaN(mi)) return;
+    const newEndMin = h * 60 + mi;
+    // 00:00 is a special case meaning "end of day" — saved as the next
+    // day's 00:00 timestamp so duration runs out to the day boundary.
+    // Native <input type="time"> only emits 00:00–23:59, so this is the
+    // only way for the user to express "block runs to midnight".
+    if (newEndMin === 0) {
+      const newEnd = new Date(ymd.y, ymd.m, ymd.d + 1, 0, 0, 0, 0);
+      if (newEnd.getTime() === Date.parse(startAt) + durMin * 60000) return;
+      onSave({ end_at: newEnd.toISOString() });
+      return;
+    }
+    if (newEndMin === startMin + durMin) return;
+    if (newEndMin <= startMin) return;
+    const newEnd = new Date(ymd.y, ymd.m, ymd.d, h, mi, 0, 0);
+    onSave({ end_at: newEnd.toISOString() });
+  };
+
+  const startIsoVal = `${String(startMin / 60 | 0).padStart(2, '0')}:${String(startMin % 60).padStart(2, '0')}`;
+  const endMin = startMin + durMin;
+  // End-of-day blocks live as endMin === 1440 (next day's 00:00). The
+  // native time input only accepts 00:00–23:59, so we feed it "00:00"
+  // for that case and the saveEnd handler reads "00:00" right back as
+  // "end of day". Display still reads "24:00" so the row stays
+  // unambiguous.
+  const endIsoVal = endMin >= 1440
+    ? '00:00'
+    : `${String(endMin / 60 | 0).padStart(2, '0')}:${String(endMin % 60).padStart(2, '0')}`;
+  const dateInputVal = `${ymd.y}-${String(ymd.m + 1).padStart(2, '0')}-${String(ymd.d).padStart(2, '0')}`;
+
+  return (
+    <div className="tm-block-row" data-state={state}>
+      <span className="avatar tm-block-ava" data-me={userId === meId} title={u?.name ?? '?'}>
+        {u?.initials ?? '?'}
+      </span>
+      <BlockCell
+        className="tm-block-date"
+        display={dateLabel}
+        inputType="date"
+        inputValue={dateInputVal}
+        onCommit={saveDate}
+        title="Edit date"
+      />
+      <span className="tm-block-time">
+        <BlockCell
+          className="tm-block-time-cell"
+          display={fmtClockShort(startMin)}
+          inputType="time"
+          inputValue={startIsoVal}
+          onCommit={saveStart}
+          title="Edit start time"
+        />
+        <span className="tm-block-time-sep"> – </span>
+        <BlockCell
+          className="tm-block-time-cell"
+          display={fmtClockShort(endMin)}
+          inputType="time"
+          inputValue={endIsoVal}
+          onCommit={saveEnd}
+          title="Edit end time"
+        />
+      </span>
+      <span className="tm-block-dur" title="Computed from start + end">{fmtMin(durMin)}</span>
+      <span className="tm-block-state">
+        {stale && (
+          <span className="tm-block-warn" title="Task is marked done, but this block is still planned.">⚠</span>
+        )}
+        {state}
+      </span>
+      <button
+        className="icon-btn tm-block-del"
+        onClick={onDelete}
+        title="Delete block"
+        aria-label="Delete block"
+      >
+        <Trash2 size={13} strokeWidth={1.75} />
+      </button>
+    </div>
+  );
+}
+
+// One inline-editable cell. Click → swaps in a native input of the
+// requested type, autofocuses it. Blur or Enter commits via onCommit;
+// Escape reverts. Stays a span when not editing so the row layout is
+// unchanged.
+function BlockCell({
+  className, display, inputType, inputValue, onCommit, title, placeholder,
+}: {
+  className: string;
+  display: React.ReactNode;
+  inputType: 'date' | 'time' | 'text';
+  inputValue: string;
+  onCommit: (v: string) => void;
+  title: string;
+  placeholder?: string;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(inputValue);
+  const ref = useRef<HTMLInputElement>(null);
+
+  // Only resync draft from props while the cell is *not* being edited,
+  // so an external store update mid-edit doesn't clobber the in-flight
+  // draft.
+  useEffect(() => { if (!editing) setDraft(inputValue); }, [inputValue, editing]);
+  useEffect(() => { if (editing) ref.current?.focus(); }, [editing]);
+
+  const commit = () => {
+    setEditing(false);
+    if (draft && draft !== inputValue) onCommit(draft);
+    else setDraft(inputValue);
+  };
+
+  if (!editing) {
+    return (
+      <span className={`${className} tm-block-cell`}
+            onClick={() => setEditing(true)}
+            title={title}>
+        {display}
+      </span>
+    );
+  }
+  return (
+    <input
+      ref={ref}
+      className={`${className} tm-block-cell-input`}
+      type={inputType}
+      value={draft}
+      placeholder={placeholder}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') { e.preventDefault(); commit(); }
+        else if (e.key === 'Escape') { setDraft(inputValue); setEditing(false); }
+      }}
+    />
+  );
+}
 
 function TitleEditor({ value, onSave }: { value: string; onSave: (v: string) => void }) {
   const [editing, setEditing] = useState(false);
@@ -430,10 +659,15 @@ function SubtaskList({
   setSubtaskTitle: (taskId: string, subId: string, v: string) => void;
   deleteSubtask: (taskId: string, subId: string) => void;
   reorderSubtasks: (taskId: string, orderedIds: string[]) => void;
-  addSubtask: (taskId: string, title: string) => void;
+  addSubtask: (taskId: string, title: string, afterId?: string) => string | null;
 }) {
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dropAt, setDropAt] = useState<{ id: string; pos: 'before' | 'after' } | null>(null);
+  // The id of a row that should mount in edit mode. Set when Enter on
+  // a subtask creates the next one — that next row reads the focusId
+  // once on mount and self-edits, then we clear so future renders are
+  // unaffected.
+  const [focusId, setFocusId] = useState<string | null>(null);
 
   const reorderTo = (draggedSubId: string, dropAtVal: { id: string; pos: 'before' | 'after' }) => {
     if (!draggedSubId || draggedSubId === dropAtVal.id) return;
@@ -497,6 +731,12 @@ function SubtaskList({
           id={s.id}
           title={s.title}
           done={s.done}
+          autoEdit={focusId === s.id}
+          onAutoEditConsumed={() => setFocusId(null)}
+          onEnterAdd={() => {
+            const newId = addSubtask(task.id, '', s.id);
+            if (newId) setFocusId(newId);
+          }}
           onToggle={() => tickSubtask(task.id, s.id)}
           onSave={(v) => setSubtaskTitle(task.id, s.id, v)}
           onDelete={() => deleteSubtask(task.id, s.id)}
@@ -521,7 +761,8 @@ function SubtaskList({
 }
 
 function SubtaskRow({
-  id, title, done, onToggle, onSave, onDelete,
+  id, title, done, autoEdit, onAutoEditConsumed, onEnterAdd,
+  onToggle, onSave, onDelete,
   onDragStart, onDragOver, onDragLeave, onDrop,
   onGripTouchStart, onGripTouchMove, onGripTouchEnd,
   dropMark,
@@ -529,6 +770,9 @@ function SubtaskRow({
   id: string;
   title: string;
   done: boolean;
+  autoEdit: boolean;
+  onAutoEditConsumed: () => void;
+  onEnterAdd: () => void;
   onToggle: () => void;
   onSave: (v: string) => void;
   onDelete: () => void;
@@ -541,13 +785,23 @@ function SubtaskRow({
   onGripTouchEnd: () => void;
   dropMark: 'before' | 'after' | null;
 }) {
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState(autoEdit);
   const [draft, setDraft] = useState(title);
   const [dragOnHandle, setDragOnHandle] = useState(false);
   const ref = useRef<HTMLInputElement>(null);
 
   useEffect(() => { setDraft(title); }, [title]);
   useEffect(() => { if (editing) ref.current?.focus(); }, [editing]);
+  // One-shot: when the parent flags this row as the just-created
+  // "next subtask" (Enter-on-previous), drop into edit mode and tell
+  // the parent to clear its focusId so future re-renders aren't
+  // affected.
+  useEffect(() => {
+    if (autoEdit) {
+      setEditing(true);
+      onAutoEditConsumed();
+    }
+  }, [autoEdit, onAutoEditConsumed]);
 
   const commit = () => {
     const v = draft.trim();
@@ -708,7 +962,19 @@ function SubtaskRow({
           autoCapitalize="sentences"
           spellCheck={false}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') { e.preventDefault(); commit(); }
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              const v = draft.trim();
+              // Enter on a blank row commits-to-delete (matches the
+              // existing trim-empty contract). On a non-blank row,
+              // commit the title and spawn a new subtask after this
+              // one — matches the rich-text-editor convention where
+              // Enter creates the next item.
+              if (!v) { onDelete(); return; }
+              if (v !== title) onSave(v);
+              setEditing(false);
+              onEnterAdd();
+            }
             else if (e.key === 'Escape') { setDraft(title); setEditing(false); }
             else if (e.key === 'Backspace' && !draft) { e.preventDefault(); onDelete(); }
           }}

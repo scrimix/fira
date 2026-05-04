@@ -395,14 +395,16 @@
   z-index: 2;
   user-select: none;
   -webkit-user-select: none;
-  /* `touch-action: none` is necessary for the long-press to work on iOS:
-   * with pan-y, the browser commits to a vertical scroll on the first
-   * touchmove and won't honor a preventDefault from a listener attached
-   * later (when the 220 ms hold timer fires). The trade-off is that the
-   * calendar can't be scrolled by dragging on a block surface — users
-   * scroll via the gutter / empty space instead. Same constraint that
-   * `.task-row` has in the inbox, where the long-press works. */
-  touch-action: none;
+  /* `touch-action: pan-y` lets a single-finger swipe over a block scroll
+   * the calendar normally — short-press + move = scroll. The block's
+   * own drag is gated on a 220 ms long-press, so the user has to hold
+   * still long enough to commit to "drag this block" before the gesture
+   * starts. Once the long-press fires, the .cal-grid-wrap-level
+   * `touchmove` listener flips to preventDefault (see `freezeBlockDrag`
+   * in CalendarView) so the in-flight drag isn't pulled out from under
+   * us by an iOS scroll commit. The always-on / branch-on-flag pattern
+   * matches the rail-task → calendar drag flow. */
+  touch-action: pan-y;
 }
 .tblock:hover { box-shadow: 0 0 0 1px var(--proj-color, var(--ink)); z-index: 3; border-radius: 3px; }
 .tblock[data-state="completed"] {
@@ -473,7 +475,7 @@
   top: 2px;
   right: 2px;
   display: flex;
-  gap: 2px;
+  gap: 3px;
   opacity: 0;
   /* Hide function with form: invisible buttons must not be tappable. The
    * hover / active states below flip this to `auto`. Without this rule,
@@ -491,6 +493,30 @@
 @media (hover: none) {
   .tblock[data-active="true"] .tb-actions { opacity: 1; pointer-events: auto; }
 }
+/* Compact mode: a single kebab replaces the inline icon row, and a
+ * popup (rendered as a sibling outside .tblock so it isn't clipped)
+ * carries the actual actions. The kebab inherits the hover/active
+ * reveal rule from .tb-actions above. Vertically centered against the
+ * block height so it doesn't crowd the title row, and stays put even
+ * on tall blocks. */
+.tb-actions-compact {
+  gap: 0;
+  top: 50%;
+  transform: translateY(-50%);
+}
+.tb-kebab[data-open="true"] {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+}
+/* On compact blocks the kebab is the only interactive icon, so it can
+ * sit a half-step smaller without disappearing. Keeps it from eating
+ * the entire title row on a 30-minute block while the popup carries
+ * the larger touch targets. */
+.tb-actions-compact .tb-kebab {
+  width: calc(14px * var(--fs-scale));
+  height: calc(14px * var(--fs-scale));
+}
 /* Long-press feedback: while the hold timer is armed, scale the block
  * up slightly with a soft shadow so the user feels the gesture register
  * before the drag starts. Cleared as soon as the timer fires (drag
@@ -503,7 +529,11 @@
   transition: transform 100ms ease-out, box-shadow 100ms ease-out;
 }
 .tb-action {
-  width: 16px; height: 16px;
+  /* Scale with --fs-scale so the row tracks user readability the same
+   * way every other Fira surface does. The icons inside scale via
+   * .tb-icon below. */
+  width: calc(16px * var(--fs-scale));
+  height: calc(16px * var(--fs-scale));
   display: grid; place-items: center;
   font-family: var(--font-mono);
   font-size: calc(11px * var(--fs-scale));
@@ -512,6 +542,15 @@
   border: 1px solid var(--rule-2);
   color: var(--ink-3);
   cursor: pointer;
+  border-radius: 2px;
+}
+/* Lucide renders an inline SVG with hard-coded width/height attributes;
+ * this CSS rule wins because it's more specific, and lets the icon scale
+ * with --fs-scale without burning a magic number into every <Check>
+ * call site. */
+.tb-icon {
+  width: calc(11px * var(--fs-scale));
+  height: calc(11px * var(--fs-scale));
 }
 .tb-tick[data-checked="true"] {
   background: var(--done);
@@ -527,6 +566,29 @@
   .tb-dup:hover { color: var(--accent); border-color: var(--accent); }
   .tb-close:hover { color: var(--danger); border-color: var(--danger); }
 }
+
+/* Action popup for compact blocks. Floats above the block (or below if
+ * the block is at the top of the day) and carries the same icon row the
+ * desktop block surfaces inline. Sized by content so it can sit over a
+ * narrow lane without cropping. The arrow tail points at the block. */
+.tb-popup {
+  position: absolute;
+  display: flex;
+  gap: 3px;
+  padding: 4px;
+  width: max-content;
+  background: var(--paper);
+  border: 1px solid var(--proj-color, var(--rule-2));
+  border-radius: 3px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.14);
+  z-index: 12;
+  /* Don't let the popup get re-targeted by the long-press / pointer-down
+   * machinery — its buttons stop propagation themselves, but this is a
+   * belt-and-braces guard so an accidental drag on the popup chrome
+   * doesn't trigger the block's drag effect. */
+  touch-action: none;
+}
+.tb-popup .tb-action { background: var(--paper); }
 
 .tb-resize {
   position: absolute;
