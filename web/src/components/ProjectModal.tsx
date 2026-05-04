@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Plus, Trash2, X } from 'lucide-react';
+import { Pencil, Plus, Trash2, X } from 'lucide-react';
 import { useFira } from '../store';
 import { PROJECT_ICONS, DEFAULT_ICON, ProjectIcon } from './ProjectIcon';
 import { Select } from './Select';
 import { ConfirmDelete } from './ConfirmDelete';
-import type { Project, ProjectMember, ProjectRole, UUID } from '../types';
+import type { Project, ProjectMember, ProjectRole, Tag, UUID } from '../types';
 
 // Editorial-utilitarian palette. All Tailwind ~700 shades so each chip sits
 // at the same perceived weight on paper — distinguishable by hue, not by
@@ -243,6 +243,9 @@ export function ProjectModal({ project }: Props) {
                   Only the workspace owner can change project roles.
                 </div>
               )}
+
+              <label className="np-label">Tags</label>
+              <TagsEditor projectId={project!.id} />
             </>
           )}
 
@@ -467,6 +470,192 @@ function MembersEditor({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// Tag editor: list of project tags with inline rename / recolor / delete.
+// Mutations fire immediately (each click is its own outbox op) — no
+// Save-Changes batching, mirroring the Workspace member editor pattern.
+function TagsEditor({ projectId }: { projectId: UUID }) {
+  const allTags = useFira((s) => s.tags);
+  const tasks = useFira((s) => s.tasks);
+  const addTag = useFira((s) => s.addTag);
+  const setTagTitle = useFira((s) => s.setTagTitle);
+  const setTagColor = useFira((s) => s.setTagColor);
+  const deleteTag = useFira((s) => s.deleteTag);
+
+  const projectTags = useMemo(
+    () => allTags
+      .filter((t) => t.project_id === projectId)
+      .sort((a, b) => a.title.localeCompare(b.title)),
+    [allTags, projectId],
+  );
+  const taskCount = (tagId: UUID) =>
+    tasks.reduce((n, t) => n + (t.tag_ids.includes(tagId) ? 1 : 0), 0);
+
+  const [editing, setEditing] = useState<UUID | 'new' | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editColor, setEditColor] = useState(COLORS[0].hex);
+  const [deletingId, setDeletingId] = useState<UUID | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const startNew = () => {
+    setEditing('new');
+    setEditTitle('');
+    setEditColor(COLORS[0].hex);
+    setError(null);
+  };
+  const startEdit = (t: Tag) => {
+    setEditing(t.id);
+    setEditTitle(t.title);
+    setEditColor(t.color);
+    setError(null);
+  };
+  const cancel = () => {
+    setEditing(null);
+    setEditTitle('');
+    setError(null);
+  };
+
+  const commit = () => {
+    const trimmed = editTitle.trim();
+    if (!trimmed) return;
+    const lower = trimmed.toLowerCase();
+    const dupe = projectTags.find(
+      (t) => t.id !== editing && t.title.toLowerCase() === lower,
+    );
+    if (dupe) {
+      setError(`A tag named "${dupe.title}" already exists.`);
+      return;
+    }
+    if (editing === 'new') {
+      addTag(projectId, trimmed, editColor);
+    } else if (editing) {
+      const orig = projectTags.find((t) => t.id === editing);
+      if (orig) {
+        if (orig.title !== trimmed) setTagTitle(orig.id, trimmed);
+        if (orig.color !== editColor) setTagColor(orig.id, editColor);
+      }
+    }
+    cancel();
+  };
+
+  const deleting = deletingId ? projectTags.find((t) => t.id === deletingId) ?? null : null;
+  const deletingCount = deleting ? taskCount(deleting.id) : 0;
+
+  const renderEditRow = (key: string) => (
+    <div className="np-tag np-tag-edit" key={key}>
+      <input
+        autoFocus
+        className="np-tag-input"
+        value={editTitle}
+        onChange={(e) => { setEditTitle(e.target.value); setError(null); }}
+        placeholder="Tag name"
+        maxLength={40}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') { e.preventDefault(); commit(); }
+          if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+        }}
+      />
+      <div className="np-tag-swatches">
+        {COLORS.map((c) => (
+          <button
+            key={c.hex}
+            type="button"
+            className="np-tag-swatch"
+            data-active={c.hex === editColor || undefined}
+            style={{ background: c.hex }}
+            onClick={() => setEditColor(c.hex)}
+            title={c.name}
+            aria-label={c.name}
+          />
+        ))}
+      </div>
+      <button type="button" className="np-tag-cancel" onClick={cancel}>Cancel</button>
+      <button
+        type="button"
+        className="np-tag-save"
+        onClick={commit}
+        disabled={!editTitle.trim()}
+      >
+        {editing === 'new' ? 'Create' : 'Save'}
+      </button>
+    </div>
+  );
+
+  return (
+    <div className="np-members">
+      <div className="np-members-list">
+        {projectTags.length === 0 && editing !== 'new' && (
+          <div className="np-tag np-tag-empty">No tags yet.</div>
+        )}
+        {projectTags.map((t) =>
+          editing === t.id
+            ? renderEditRow(t.id)
+            : (
+              <div className="np-tag" key={t.id}>
+                <span className="np-tag-dot" style={{ background: t.color }} />
+                <span className="np-tag-title">{t.title}</span>
+                <span className="np-tag-count">
+                  {taskCount(t.id) === 0 ? 'unused' : `${taskCount(t.id)} task${taskCount(t.id) === 1 ? '' : 's'}`}
+                </span>
+                <button
+                  type="button"
+                  className="np-member-x"
+                  onClick={() => startEdit(t)}
+                  title="Edit tag"
+                  aria-label={`Edit ${t.title}`}
+                >
+                  <Pencil size={12} strokeWidth={1.75} />
+                </button>
+                <button
+                  type="button"
+                  className="np-member-x"
+                  onClick={() => setDeletingId(t.id)}
+                  title="Delete tag"
+                  aria-label={`Delete ${t.title}`}
+                >
+                  <Trash2 size={12} strokeWidth={1.75} />
+                </button>
+              </div>
+            ),
+        )}
+        {editing === 'new'
+          ? renderEditRow('new')
+          : (
+            <button
+              type="button"
+              className="np-member-add"
+              onClick={startNew}
+            >
+              <Plus size={14} strokeWidth={1.75} />
+              <span>Add tag</span>
+            </button>
+          )}
+      </div>
+      {error && <div className="np-error">{error}</div>}
+      {deleting && (
+        <ConfirmDelete
+          title="Delete tag?"
+          confirmLabel="Delete tag"
+          body={
+            <p>
+              <strong>{deleting.title}</strong>
+              {deletingCount === 0
+                ? ' is not used by any task and will be removed.'
+                : ` will be removed from ${deletingCount} task${deletingCount === 1 ? '' : 's'} and deleted from this project.`}
+              {' '}This can't be undone.
+            </p>
+          }
+          onCancel={() => setDeletingId(null)}
+          onConfirm={() => {
+            const id = deleting.id;
+            setDeletingId(null);
+            deleteTag(id);
+          }}
+        />
+      )}
     </div>
   );
 }

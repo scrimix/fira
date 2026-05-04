@@ -23,7 +23,11 @@
      the "now" accent where the brighter pop is wanted. */
   --focus-line: #0E7490;
 
-  --done: #15803D;
+  /* Sage / forest. Less saturated than Tailwind green-700 so the ticked
+   * time block reads as "done" without shouting next to the paper /
+   * ink editorial neutrals. Also feeds the chip[data-tone="done"]
+   * tone and the inbox time-block done state. */
+  --done: #4D7C5A;
   --warn: #B45309;
   --danger: #B91C1C;
 
@@ -228,7 +232,7 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   border-color: var(--accent-line);
   background: var(--accent-soft);
 }
-.chip[data-tone="done"] { color: var(--done); border-color: #B0D6BD; }
+.chip[data-tone="done"] { color: var(--done); border-color: color-mix(in srgb, var(--done) 35%, var(--paper)); }
 
 .btn {
   height: 26px;
@@ -615,6 +619,227 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
 .np-members-candidates .user-row {
   grid-template-columns: 22px 1fr auto;
 }
+/* Task-modal tag picker. Chips on the row, popover on Add. */
+.tag-editor { position: relative; }
+.tag-editor-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+/* Same dimensions / typography as the inbox-row .chip — tag chips look
+ * like every other chip in the app, just with a tag-color outline. */
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 18px;
+  padding: 0 6px;
+  background: transparent;
+  /* Faint, desaturated outline derived from the tag's hex. color-mix()
+   * blends 35% of the brand color into 65% paper, dropping saturation
+   * without picking a second hardcoded color. Falls back to rule-2 if
+   * --tag-color isn't set. */
+  border: 1px solid color-mix(in srgb, var(--tag-color, var(--rule-2)) 35%, var(--paper));
+  font-family: var(--font-mono);
+  font-size: calc(10px * var(--fs-scale));
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  line-height: 1.2;
+}
+.tag-chip-title {
+  white-space: nowrap;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* When `.tag-chip` is layered onto an inbox-row `.chip`, the outline
+ * derived from `--tag-color` should win over the default rule color. */
+.chip.tag-chip {
+  border-color: color-mix(in srgb, var(--tag-color, var(--rule-2)) 35%, var(--paper));
+}
+.tag-chip-x {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 14px; height: 14px;
+  background: transparent;
+  border: 0;
+  color: var(--ink-4);
+  cursor: pointer;
+  padding: 0;
+}
+.tag-chip-x:hover { color: var(--danger); }
+/* Sized to sit flush with `.tag-chip` (height 18) so the row reads as
+ * one strip — chip / chip / + — instead of mismatched pills. */
+.tag-editor-add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px; height: 18px;
+  background: var(--paper);
+  border: 1px dashed var(--rule-2);
+  color: var(--ink-3);
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+.tag-editor-add:hover,
+.tag-editor-add[data-open] { color: var(--ink); border-color: var(--ink-3); }
+
+.tag-editor-popover {
+  /* Anchored in JS via getBoundingClientRect. position: fixed lets the
+   * popover escape the task modal's overflow: auto sidebar; z-index has
+   * to clear the modal-backdrop (z:50) and any modals layered on top. */
+  z-index: 1300;
+  background: var(--paper);
+  border: 1px solid var(--rule-2);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.08);
+  display: flex;
+  flex-direction: column;
+}
+.tag-editor-search {
+  font: inherit;
+  font-size: var(--fs-sm);
+  padding: 6px 8px;
+  border: 0;
+  border-bottom: 1px solid var(--rule);
+  background: var(--paper);
+  color: var(--ink);
+}
+.tag-editor-search:focus { outline: 0; }
+.tag-editor-list {
+  max-height: 200px;
+  overflow: auto;
+  padding: 2px 0;
+}
+.tag-editor-empty {
+  padding: 8px 10px;
+  font-size: var(--fs-sm);
+  color: var(--ink-4);
+  font-style: italic;
+}
+.tag-editor-row-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: calc(100% - 12px);
+  margin: 3px 6px;
+  padding: 0 6px;
+  height: 22px;
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--tag-color, var(--rule-2)) 35%, var(--paper));
+  text-align: left;
+  /* Chip-style typography: mono caps, same size knob as `.tag-chip`. */
+  font-family: var(--font-mono);
+  font-size: calc(10px * var(--fs-scale));
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.tag-editor-row-btn:hover {
+  background: color-mix(in srgb, var(--tag-color, var(--rule-2)) 8%, var(--paper));
+}
+.tag-editor-row-btn[data-on] {
+  background: color-mix(in srgb, var(--tag-color, var(--rule-2)) 12%, var(--paper));
+}
+.tag-editor-row-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tag-editor-create {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--rule);
+  color: var(--ink-3);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  text-align: left;
+}
+.tag-editor-create:hover { color: var(--ink); background: var(--paper-3); }
+
+/* Project tag editor — same bordered list as members, with a colored
+ * dot, inline rename / recolor row, and a usage count. */
+.np-tag {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--rule);
+  font-size: var(--fs-sm);
+  color: var(--ink);
+  flex-wrap: wrap;
+}
+.np-tag:last-of-type { border-bottom: 0; }
+.np-tag-empty { color: var(--ink-4); font-style: italic; }
+.np-tag-dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  flex: none;
+  border: 1px solid rgb(0 0 0 / 0.12);
+}
+.np-tag-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.np-tag-count {
+  font-family: var(--font-mono);
+  font-size: calc(9px * var(--fs-scale));
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+  flex: none;
+}
+.np-tag-edit { background: var(--paper-2); }
+.np-tag-input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: var(--fs-sm);
+  padding: 4px 8px;
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  color: var(--ink);
+}
+.np-tag-input:focus { outline: 0; border-color: var(--ink-3); }
+.np-tag-swatches {
+  display: flex;
+  gap: 4px;
+  flex: none;
+}
+.np-tag-swatch {
+  width: 16px; height: 16px;
+  border: 1px solid rgb(0 0 0 / 0.12);
+  cursor: pointer;
+  padding: 0;
+}
+.np-tag-swatch[data-active="true"] {
+  outline: 2px solid var(--ink);
+  outline-offset: 1px;
+}
+.np-tag-cancel,
+.np-tag-save {
+  font-family: var(--font-mono);
+  font-size: calc(10px * var(--fs-scale));
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  cursor: pointer;
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  color: var(--ink);
+}
+.np-tag-save {
+  background: var(--ink);
+  color: var(--paper);
+  border-color: var(--ink);
+}
+.np-tag-save:disabled { opacity: 0.4; cursor: not-allowed; }
+.np-tag-cancel:hover { background: var(--paper-3); }
+
 /* Email invite section in workspace settings. Replaces the old
  * "search and pick" picker with an email input + send-pending list. */
 .np-invites {

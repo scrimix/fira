@@ -79,6 +79,16 @@ pub enum Op {
     BlockUpdate { block_id: Uuid, patch: BlockPatch },
     #[serde(rename = "block.delete")]
     BlockDelete { block_id: Uuid },
+    #[serde(rename = "tag.create")]
+    TagCreate { tag: TagInput },
+    #[serde(rename = "tag.set_title")]
+    TagSetTitle { tag_id: Uuid, title: String },
+    #[serde(rename = "tag.set_color")]
+    TagSetColor { tag_id: Uuid, color: String },
+    #[serde(rename = "tag.delete")]
+    TagDelete { tag_id: Uuid },
+    #[serde(rename = "task.set_tags")]
+    TaskSetTags { task_id: Uuid, tag_ids: Vec<Uuid> },
 }
 
 impl Op {
@@ -104,6 +114,11 @@ impl Op {
             Op::BlockCreate { .. } => "block.create",
             Op::BlockUpdate { .. } => "block.update",
             Op::BlockDelete { .. } => "block.delete",
+            Op::TagCreate { .. } => "tag.create",
+            Op::TagSetTitle { .. } => "tag.set_title",
+            Op::TagSetColor { .. } => "tag.set_color",
+            Op::TagDelete { .. } => "tag.delete",
+            Op::TaskSetTags { .. } => "task.set_tags",
         }
     }
 }
@@ -125,8 +140,16 @@ pub struct TaskInput {
     #[serde(default)] pub external_url: Option<String>,
     #[serde(default)] pub estimate_min: Option<i32>,
     #[serde(default)] pub spent_min: i32,
-    #[serde(default)] pub tags: Vec<String>,
+    #[serde(default)] pub tag_ids: Vec<Uuid>,
     #[serde(default = "default_sort")] pub sort_key: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TagInput {
+    pub id: Uuid,
+    pub project_id: Uuid,
+    pub title: String,
+    pub color: String,
 }
 fn default_sort() -> String { "M".into() }
 
@@ -304,8 +327,8 @@ async fn apply_payload(
             sqlx::query(
                 "INSERT INTO tasks (id, project_id, epic_id, sprint_id, assignee_id,
                     title, description_md, section, status, priority,
-                    source, external_id, external_url, estimate_min, spent_min, tags, sort_key)
-                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+                    source, external_id, external_url, estimate_min, spent_min, sort_key)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
                  ON CONFLICT (id) DO NOTHING",
             )
             .bind(task.id)
@@ -323,10 +346,23 @@ async fn apply_payload(
             .bind(&task.external_url)
             .bind(task.estimate_min)
             .bind(task.spent_min)
-            .bind(&task.tags)
             .bind(&task.sort_key)
             .execute(&mut **tx)
             .await?;
+            // Re-apply tag links idempotently. If task.create lost the race
+            // with a concurrent create (ON CONFLICT DO NOTHING above), the
+            // earlier writer's links stand, but applying our own links on
+            // top of theirs is safe — same task, same intent.
+            for tag_id in &task.tag_ids {
+                sqlx::query(
+                    "INSERT INTO task_tags (task_id, tag_id) VALUES ($1, $2)
+                     ON CONFLICT DO NOTHING",
+                )
+                .bind(task.id)
+                .bind(tag_id)
+                .execute(&mut **tx)
+                .await?;
+            }
         }
         Op::TaskTick { task_id, done } => {
             *out_project_id = Some(ensure_task_in_scope(tx, user_id, workspace_id, task_id).await?);
@@ -480,6 +516,68 @@ async fn apply_payload(
             *out_project_id = Some(ensure_block_in_scope(tx, user_id, workspace_id, block_id).await?);
             sqlx::query("DELETE FROM time_blocks WHERE id = $1")
                 .bind(block_id).execute(&mut **tx).await?;
+        }
+        Op::TagCreate { tag } => {
+            require_project_access(tx, user_id, workspace_id, tag.project_id).await?;
+            *out_project_id = Some(tag.project_id);
+            sqlx::query(
+                "INSERT INTO tags (id, project_id, title, color)
+                 VALUES ($1, $2, $3, $4)
+                 ON CONFLICT (id) DO NOTHING",
+            )
+            .bind(tag.id)
+            .bind(tag.project_id)
+            .bind(&tag.title)
+            .bind(&tag.color)
+            .execute(&mut **tx)
+            .await?;
+        }
+        Op::TagSetTitle { tag_id, title } => {
+            *out_project_id = Some(ensure_tag_in_scope(tx, user_id, workspace_id, tag_id).await?);
+            sqlx::query("UPDATE tags SET title = $2 WHERE id = $1")
+                .bind(tag_id).bind(&title).execute(&mut **tx).await?;
+        }
+        Op::TagSetColor { tag_id, color } => {
+            *out_project_id = Some(ensure_tag_in_scope(tx, user_id, workspace_id, tag_id).await?);
+            sqlx::query("UPDATE tags SET color = $2 WHERE id = $1")
+                .bind(tag_id).bind(&color).execute(&mut **tx).await?;
+        }
+        Op::TagDelete { tag_id } => {
+            *out_project_id = Some(ensure_tag_in_scope(tx, user_id, workspace_id, tag_id).await?);
+            // task_tags rows cascade via FK ON DELETE CASCADE.
+            sqlx::query("DELETE FROM tags WHERE id = $1")
+                .bind(tag_id).execute(&mut **tx).await?;
+        }
+        Op::TaskSetTags { task_id, tag_ids } => {
+            let project_id = ensure_task_in_scope(tx, user_id, workspace_id, task_id).await?;
+            *out_project_id = Some(project_id);
+            // All tag_ids must belong to the same project as the task.
+            // Reject the whole op if any cross over — silently filtering
+            // would lose the user's intent without telling them.
+            if !tag_ids.is_empty() {
+                let row: (i64,) = sqlx::query_as(
+                    "SELECT COUNT(*) FROM tags WHERE id = ANY($1) AND project_id = $2",
+                )
+                .bind(&tag_ids)
+                .bind(project_id)
+                .fetch_one(&mut **tx)
+                .await?;
+                if (row.0 as usize) != tag_ids.len() {
+                    anyhow::bail!("tag_ids include unknown or cross-project tags");
+                }
+            }
+            sqlx::query("DELETE FROM task_tags WHERE task_id = $1")
+                .bind(task_id).execute(&mut **tx).await?;
+            for tag_id in &tag_ids {
+                sqlx::query(
+                    "INSERT INTO task_tags (task_id, tag_id) VALUES ($1, $2)
+                     ON CONFLICT DO NOTHING",
+                )
+                .bind(task_id)
+                .bind(tag_id)
+                .execute(&mut **tx)
+                .await?;
+            }
         }
     }
     Ok(())
@@ -730,6 +828,34 @@ async fn ensure_subtask_in_scope(
     .fetch_optional(&mut **tx)
     .await?;
     row.map(|(p,)| p).ok_or_else(|| anyhow::anyhow!("subtask not in scope"))
+}
+
+async fn ensure_tag_in_scope(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+    workspace_id: Uuid,
+    tag_id: Uuid,
+) -> anyhow::Result<Uuid> {
+    let row: Option<(Uuid,)> = sqlx::query_as(
+        "SELECT t.project_id FROM tags t
+         JOIN projects p ON p.id = t.project_id
+         WHERE t.id = $1 AND p.workspace_id = $3
+           AND (
+             p.owner_id = $2
+             OR p.id IN (SELECT project_id FROM project_members WHERE user_id = $2 AND removed_at IS NULL)
+             OR EXISTS (
+               SELECT 1 FROM workspace_members wm
+               WHERE wm.workspace_id = $3 AND wm.user_id = $2
+                 AND wm.removed_at IS NULL AND wm.role = 'owner'
+             )
+           )",
+    )
+    .bind(tag_id)
+    .bind(user_id)
+    .bind(workspace_id)
+    .fetch_optional(&mut **tx)
+    .await?;
+    row.map(|(p,)| p).ok_or_else(|| anyhow::anyhow!("tag not in scope"))
 }
 
 async fn ensure_block_in_scope(

@@ -66,6 +66,8 @@ pub async fn wipe(tx: &mut Transaction<'_, Postgres>) -> sqlx::Result<()> {
         "processed_ops",
         "gcal_events",
         "time_blocks",
+        "task_tags",
+        "tags",
         "subtasks",
         "tasks",
         "sprints",
@@ -548,12 +550,38 @@ async fn seed_tasks(tx: &mut Transaction<'_, Postgres>) -> sqlx::Result<()> {
         },
     ];
 
+    // Distinct (project, tag-title) pairs across all task specs become real
+    // tag rows. Slug for the tag's deterministic UUID is `tag_<project>_<title>`
+    // so the same name in two projects gets two distinct tag rows.
+    let palette = ["#0F766E", "#B45309", "#6D28D9", "#1D4ED8", "#BE123C", "#4D7C0F", "#9333EA"];
+    let mut seen: std::collections::HashSet<(&'static str, &'static str)> = Default::default();
+    let mut palette_cursor: usize = 0;
+    for t in tasks {
+        for tag_title in t.tags.iter().copied() {
+            if seen.insert((t.project, tag_title)) {
+                let color = palette[palette_cursor % palette.len()];
+                palette_cursor += 1;
+                let tag_slug = format!("tag_{}_{}", t.project, tag_title);
+                sqlx::query(
+                    "INSERT INTO tags (id, project_id, title, color)
+                     VALUES ($1, $2, $3, $4)",
+                )
+                .bind(id(&tag_slug))
+                .bind(id(t.project))
+                .bind(tag_title)
+                .bind(color)
+                .execute(&mut **tx)
+                .await?;
+            }
+        }
+    }
+
     for t in tasks {
         sqlx::query(
             "INSERT INTO tasks (id, project_id, epic_id, sprint_id, assignee_id,
                 title, description_md, section, status, priority,
-                source, external_id, estimate_min, spent_min, tags)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)",
+                source, external_id, estimate_min, spent_min)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)",
         )
         .bind(id(t.slug))
         .bind(id(t.project))
@@ -569,9 +597,16 @@ async fn seed_tasks(tx: &mut Transaction<'_, Postgres>) -> sqlx::Result<()> {
         .bind(t.external_id)
         .bind(t.estimate_min)
         .bind(t.spent_min)
-        .bind(t.tags)
         .execute(&mut **tx)
         .await?;
+
+        for tag_title in t.tags.iter().copied() {
+            sqlx::query("INSERT INTO task_tags (task_id, tag_id) VALUES ($1, $2)")
+                .bind(id(t.slug))
+                .bind(id(&format!("tag_{}_{}", t.project, tag_title)))
+                .execute(&mut **tx)
+                .await?;
+        }
 
         for (i, (title, done)) in t.subtasks.iter().enumerate() {
             sqlx::query(

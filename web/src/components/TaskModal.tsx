@@ -1,13 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Check, Copy, PanelRightClose, PanelRightOpen, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { useFira } from '../store';
+import { useIsMobile } from '../hooks';
 import { ConfirmDelete } from './ConfirmDelete';
 import {
   fmtMin, fmtClockShort, parseEstimate,
   taskCompletedMin, taskPlannedMin, taskTimeLeft,
   blockToGrid,
 } from '../time';
-import type { Status, Task, User, UUID } from '../types';
+import type { Status, Tag, Task, User, UUID } from '../types';
 
 interface Props { taskId: string }
 
@@ -17,6 +19,7 @@ export function TaskModal({ taskId }: Props) {
     task ? s.projects.find((p) => p.id === task.project_id) ?? null : null
   );
   const blocks = useFira((s) => s.blocks);
+  const allTags = useFira((s) => s.tags);
   const users = useFira((s) => s.users);
   const meId = useFira((s) => s.meId);
   const close = useFira((s) => s.openTask);
@@ -32,6 +35,8 @@ export function TaskModal({ taskId }: Props) {
   const setTaskExternalId = useFira((s) => s.setTaskExternalId);
   const setTaskExternalUrl = useFira((s) => s.setTaskExternalUrl);
   const setTaskAssignee = useFira((s) => s.setTaskAssignee);
+  const setTaskTags = useFira((s) => s.setTaskTags);
+  const addTag = useFira((s) => s.addTag);
   const deleteTask = useFira((s) => s.deleteTask);
   const updateBlock = useFira((s) => s.updateBlock);
   const deleteBlock = useFira((s) => s.deleteBlock);
@@ -46,6 +51,8 @@ export function TaskModal({ taskId }: Props) {
       ? true
       : !window.matchMedia('(max-width: 700px)').matches,
   );
+
+  const isMobile = useIsMobile();
 
   if (!task || !project) return null;
 
@@ -132,6 +139,20 @@ export function TaskModal({ taskId }: Props) {
                   <span><strong>{fmtMin(Math.max(0, left ?? 0))}</strong> left</span>
                   <span style={{ marginLeft: 'auto' }}>of {fmtMin(task.estimate_min)} estimate</span>
                 </div>
+              </>
+            )}
+
+            {isMobile && (
+              <>
+                <SectionHeading title="Tags" />
+                <TagEditor
+                  key={task.id}
+                  projectId={project.id}
+                  selected={task.tag_ids}
+                  allTags={allTags}
+                  onChange={(ids) => setTaskTags(task.id, ids)}
+                  onCreate={(title) => addTag(project.id, title, '#334155')}
+                />
               </>
             )}
 
@@ -246,12 +267,21 @@ export function TaskModal({ taskId }: Props) {
               />
             </div>
             <Field label="Time left" mono value={left != null ? fmtMin(left) : '—'} />
-            <Field label="Tags" value={
-              task.tags.length === 0 ? <span style={{ color: 'var(--ink-4)' }}>—</span> :
-              <span style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                {task.tags.map((tg) => <span key={tg} className="chip">{tg}</span>)}
-              </span>
-            } />
+            {/* On mobile the side pane is closed by default, so the Tags
+             * editor renders in the main pane instead — see below. */}
+            {!isMobile && (
+              <div className="field">
+                <h5>Tags</h5>
+                <TagEditor
+                  key={task.id}
+                  projectId={project.id}
+                  selected={task.tag_ids}
+                  allTags={allTags}
+                  onChange={(ids) => setTaskTags(task.id, ids)}
+                  onCreate={(title) => addTag(project.id, title, '#334155')}
+                />
+              </div>
+            )}
             <div className="field">
               <h5>Issue link</h5>
               <ExternalLinkEditor
@@ -1366,6 +1396,221 @@ function AssigneeEditor({ value, users, meId, onChange }: {
       <button className="icon-btn" onClick={() => setEditing(true)} title="Change assignee">
         <Pencil size={12} strokeWidth={1.75} />
       </button>
+    </div>
+  );
+}
+
+// Multi-select tag picker. Selected tags render as chips with × to remove;
+// `+` opens a popover that lists every project tag with a checkmark for the
+// already-selected ones, plus an inline "Create new" footer for tags that
+// don't exist yet. Each toggle / create fires a single `task.set_tags` op
+// (not per-add / per-remove), keeping the outbox tidy.
+function TagEditor({
+  projectId, selected, allTags, onChange, onCreate,
+}: {
+  projectId: UUID;
+  selected: UUID[];
+  allTags: Tag[];
+  onChange: (ids: UUID[]) => void;
+  onCreate: (title: string) => UUID | null;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  // Viewport-coordinate anchor so the popover escapes the modal's
+  // overflow: auto sidebar instead of getting clipped inside it. Same
+  // pattern as <Select>.
+  const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null);
+
+  const projectTags = useMemo(
+    () => allTags
+      .filter((t) => t.project_id === projectId)
+      .sort((a, b) => a.title.localeCompare(b.title)),
+    [allTags, projectId],
+  );
+  const selectedSet = useMemo(() => new Set(selected), [selected]);
+  const selectedTags = selected
+    .map((id) => projectTags.find((t) => t.id === id))
+    .filter((t): t is Tag => !!t);
+
+  const trimmed = query.trim();
+  const lower = trimmed.toLowerCase();
+  const filtered = useMemo(
+    () => trimmed
+      ? projectTags.filter((t) => t.title.toLowerCase().includes(lower))
+      : projectTags,
+    [projectTags, trimmed, lower],
+  );
+  const exactMatch = trimmed
+    ? projectTags.find((t) => t.title.toLowerCase() === lower) ?? null
+    : null;
+  const canCreate = trimmed.length > 0 && !exactMatch;
+
+  useLayoutEffect(() => {
+    if (!open || !wrapRef.current) {
+      setPos(null);
+      return;
+    }
+    const place = () => {
+      // Anchor to the whole Tags section row so the popover spans the
+      // section's full width and sits flush under it, instead of clinging
+      // to the small + button.
+      const a = wrapRef.current!.getBoundingClientRect();
+      const w = a.width;
+      const m = popoverRef.current;
+      const mh = m ? m.getBoundingClientRect().height : 0;
+      const spaceBelow = window.innerHeight - a.bottom;
+      const flipUp = mh > 0 && spaceBelow < mh + 8 && a.top > mh + 8;
+      const top = flipUp ? Math.max(8, a.top - mh - 4) : a.bottom + 4;
+      const left = Math.max(8, Math.min(a.left, window.innerWidth - w - 8));
+      setPos({ top, left, width: w });
+    };
+    place();
+    const raf = requestAnimationFrame(place);
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    // Watch the anchor row itself so adding / removing chips that grow
+    // the row's height re-runs `place` and shifts the popover down with
+    // it instead of leaving it floating in midair.
+    const ro = new ResizeObserver(place);
+    ro.observe(wrapRef.current);
+    return () => {
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+      window.removeEventListener('resize', place);
+      window.removeEventListener('scroll', place, true);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: PointerEvent) => {
+      const t = e.target as Node;
+      if (
+        (wrapRef.current && wrapRef.current.contains(t))
+        || (popoverRef.current && popoverRef.current.contains(t))
+      ) return;
+      setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('pointerdown', onDoc);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', onDoc);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (open) {
+      setQuery('');
+      requestAnimationFrame(() => inputRef.current?.focus());
+    }
+  }, [open]);
+
+  const toggle = (id: UUID) => {
+    if (selectedSet.has(id)) {
+      onChange(selected.filter((x) => x !== id));
+    } else {
+      onChange([...selected, id]);
+    }
+  };
+  const remove = (id: UUID) => onChange(selected.filter((x) => x !== id));
+  const create = () => {
+    if (!canCreate) return;
+    const id = onCreate(trimmed);
+    if (id) onChange([...selected, id]);
+    setQuery('');
+  };
+
+  return (
+    <div className="tag-editor" ref={wrapRef}>
+      <div className="tag-editor-row">
+        {selectedTags.map((t) => (
+          <span
+            key={t.id}
+            className="tag-chip"
+            style={{ ['--tag-color' as string]: t.color }}
+          >
+            <span className="tag-chip-title">{t.title}</span>
+            <button
+              type="button"
+              className="tag-chip-x"
+              onClick={() => remove(t.id)}
+              title={`Remove ${t.title}`}
+              aria-label={`Remove ${t.title}`}
+            >
+              <X size={10} strokeWidth={2} />
+            </button>
+          </span>
+        ))}
+        <button
+          ref={triggerRef}
+          type="button"
+          className="tag-editor-add"
+          onClick={() => setOpen((v) => !v)}
+          data-open={open || undefined}
+          title="Add tag"
+          aria-label="Add tag"
+        >
+          <Plus size={12} strokeWidth={1.75} />
+        </button>
+      </div>
+      {open && createPortal(
+        <div
+          ref={popoverRef}
+          className="tag-editor-popover"
+          style={pos
+            ? { position: 'fixed', top: pos.top, left: pos.left, width: pos.width }
+            : { visibility: 'hidden', position: 'fixed', top: 0, left: 0 }}
+        >
+          <input
+            ref={inputRef}
+            className="tag-editor-search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search or create…"
+            maxLength={40}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') { e.preventDefault(); setOpen(false); }
+              if (e.key === 'Enter' && canCreate) { e.preventDefault(); create(); }
+            }}
+          />
+          <div className="tag-editor-list">
+            {filtered.length === 0 && !canCreate && (
+              <div className="tag-editor-empty">No tags yet.</div>
+            )}
+            {filtered.map((t) => {
+              const isOn = selectedSet.has(t.id);
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  className="tag-editor-row-btn"
+                  data-on={isOn || undefined}
+                  style={{ ['--tag-color' as string]: t.color }}
+                  onClick={() => toggle(t.id)}
+                >
+                  <span className="tag-editor-row-title">{t.title}</span>
+                  {isOn && <Check size={12} strokeWidth={2} />}
+                </button>
+              );
+            })}
+          </div>
+          {canCreate && (
+            <button type="button" className="tag-editor-create" onClick={create}>
+              <Plus size={12} strokeWidth={1.75} />
+              <span>Create "{trimmed}"</span>
+            </button>
+          )}
+        </div>,
+        document.body,
+      )}
     </div>
   );
 }

@@ -83,10 +83,22 @@ pub struct Task {
     pub external_url: Option<String>,
     pub estimate_min: Option<i32>,
     pub spent_min: i32,
-    pub tags: Vec<String>,
     pub sort_key: String,
     #[sqlx(skip)]
     pub subtasks: Vec<Subtask>,
+    /// IDs of `tags` rows attached to this task. Hydrated via the
+    /// `task_tags` join — the column doesn't exist on `tasks` itself.
+    #[sqlx(skip)]
+    pub tag_ids: Vec<Uuid>,
+}
+
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct Tag {
+    pub id: Uuid,
+    pub project_id: Uuid,
+    pub title: String,
+    /// Hex (`#rrggbb`) — same palette as projects for now.
+    pub color: String,
 }
 
 #[derive(Debug, Serialize, sqlx::FromRow)]

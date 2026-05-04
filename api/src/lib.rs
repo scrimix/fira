@@ -41,6 +41,7 @@ pub struct Bootstrap {
     pub epics: Vec<models::Epic>,
     pub sprints: Vec<models::Sprint>,
     pub tasks: Vec<models::Task>,
+    pub tags: Vec<models::Tag>,
     pub blocks: Vec<models::TimeBlock>,
     pub gcal: Vec<models::GcalEvent>,
     /// All links involving the caller (pending sent / received +
@@ -72,17 +73,18 @@ pub async fn load_bootstrap(
             .bind(user_id)
             .fetch_one(pool)
             .await?;
-    let (users, projects, epics, sprints, tasks, blocks, gcal, links, workspace_invites, cursor) = tokio::try_join!(
+    let (users, projects, epics, sprints, tasks, tags, blocks, gcal, links, workspace_invites, cursor) = tokio::try_join!(
         db::list_users_in_scope(pool, workspace_id, user_id),
         db::list_projects_in_scope(pool, &scope),
         db::list_epics_in_scope(pool, &scope),
         db::list_sprints_in_scope(pool, &scope),
         db::list_tasks_in_scope(pool, &scope),
+        db::list_tags_in_scope(pool, &scope),
         db::list_blocks_in_scope(pool, &scope),
         db::list_gcal_for_user(pool, user_id),
         db::list_user_links(pool, user_id),
         db::list_workspace_invites(pool, user_id, &user_email.0),
         ops::current_cursor(pool),
     )?;
-    Ok(Bootstrap { users, projects, epics, sprints, tasks, blocks, gcal, links, workspace_invites, cursor })
+    Ok(Bootstrap { users, projects, epics, sprints, tasks, tags, blocks, gcal, links, workspace_invites, cursor })
 }

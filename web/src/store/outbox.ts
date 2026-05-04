@@ -1,16 +1,4 @@
 // Outbox: append-only log of mutations to be drained by a sync worker.
-//
-// For v1 the worker is a stub — ops accumulate and never go anywhere.
-// What matters now is the *shape* and the seam:
-//
-//   - Every store action that mutates persistable state appends an Op here.
-//   - When write endpoints land, the worker drains ops in order.
-//   - Op shape is "intent", not "diff": "tick_subtask" not "subtasks[2].done = true".
-//     This matches how Linear/Replicache model offline mutations and survives
-//     concurrent edits better than diff-based replay.
-//
-// The op_id is what the server uses for idempotency: a retry of the same op_id
-// is a no-op. Generate it client-side.
 
 export type OpKind =
   | { kind: 'task.create'; task: import('../types').Task }
@@ -32,7 +20,12 @@ export type OpKind =
   | { kind: 'subtask.reorder'; task_id: string; ordered: string[] }
   | { kind: 'block.create'; block: import('../types').TimeBlock }
   | { kind: 'block.update'; block_id: string; patch: Partial<import('../types').TimeBlock> }
-  | { kind: 'block.delete'; block_id: string };
+  | { kind: 'block.delete'; block_id: string }
+  | { kind: 'tag.create'; tag: import('../types').Tag }
+  | { kind: 'tag.set_title'; tag_id: string; title: string }
+  | { kind: 'tag.set_color'; tag_id: string; color: string }
+  | { kind: 'tag.delete'; tag_id: string }
+  | { kind: 'task.set_tags'; task_id: string; tag_ids: string[] };
 
 /// Server-only op kinds — synthesized in REST handlers and delivered via
 /// /changes. Clients never enqueue these; they only apply them.

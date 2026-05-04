@@ -548,7 +548,7 @@ pub async fn list_tasks_in_scope(pool: &PgPool, scope: &[Uuid]) -> sqlx::Result<
     let mut tasks: Vec<Task> = sqlx::query_as(
         "SELECT id, project_id, epic_id, sprint_id, assignee_id, title, description_md,
                 section, status, priority, source, external_id, external_url,
-                estimate_min, spent_min, tags, sort_key
+                estimate_min, spent_min, sort_key
          FROM tasks WHERE project_id = ANY($1)
          ORDER BY sort_key, created_at",
     )
@@ -557,27 +557,52 @@ pub async fn list_tasks_in_scope(pool: &PgPool, scope: &[Uuid]) -> sqlx::Result<
     .await?;
 
     let task_ids: Vec<Uuid> = tasks.iter().map(|t| t.id).collect();
-    let subs: Vec<Subtask> = if task_ids.is_empty() {
-        vec![]
+    let (subs, tag_links): (Vec<Subtask>, Vec<(Uuid, Uuid)>) = if task_ids.is_empty() {
+        (vec![], vec![])
     } else {
-        sqlx::query_as(
-            "SELECT id, task_id, title, done, sort_key FROM subtasks
-             WHERE task_id = ANY($1) ORDER BY sort_key",
-        )
-        .bind(&task_ids)
-        .fetch_all(pool)
-        .await?
+        tokio::try_join!(
+            sqlx::query_as(
+                "SELECT id, task_id, title, done, sort_key FROM subtasks
+                 WHERE task_id = ANY($1) ORDER BY sort_key",
+            )
+            .bind(&task_ids)
+            .fetch_all(pool),
+            sqlx::query_as("SELECT task_id, tag_id FROM task_tags WHERE task_id = ANY($1)")
+                .bind(&task_ids)
+                .fetch_all(pool),
+        )?
     };
     let mut by_task: HashMap<Uuid, Vec<Subtask>> = HashMap::new();
     for s in subs {
         by_task.entry(s.task_id).or_default().push(s);
     }
+    let mut tags_by_task: HashMap<Uuid, Vec<Uuid>> = HashMap::new();
+    for (task_id, tag_id) in tag_links {
+        tags_by_task.entry(task_id).or_default().push(tag_id);
+    }
     for t in &mut tasks {
         if let Some(s) = by_task.remove(&t.id) {
             t.subtasks = s;
         }
+        if let Some(ts) = tags_by_task.remove(&t.id) {
+            t.tag_ids = ts;
+        }
     }
     Ok(tasks)
+}
+
+pub async fn list_tags_in_scope(pool: &PgPool, scope: &[Uuid]) -> sqlx::Result<Vec<Tag>> {
+    if scope.is_empty() {
+        return Ok(vec![]);
+    }
+    sqlx::query_as(
+        "SELECT id, project_id, title, color FROM tags
+         WHERE project_id = ANY($1)
+         ORDER BY title",
+    )
+    .bind(scope)
+    .fetch_all(pool)
+    .await
 }
 
 pub async fn create_project_tx(

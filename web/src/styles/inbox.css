@@ -2,6 +2,11 @@
   height: calc(100vh - 44px);
   height: calc(100dvh - 44px);
   overflow: auto;
+  /* Reserve the scrollbar gutter even when the doc isn't tall enough
+   * to overflow yet, so toggling a tag filter (which can shrink the
+   * doc below the viewport height) doesn't yank the column horizontally
+   * as the scrollbar appears / disappears. */
+  scrollbar-gutter: stable;
 }
 .inbox-doc {
   max-width: 880px;
@@ -19,10 +24,13 @@
    * + Archive button on a 360px screen — drop the count, the action is
    * what the user came here for. */
   .inbox-proj-head .meta { display: none; }
-  /* No trailing trail pill on phones (`!isMobile` in TaskRow), so the
-   * row + add-row drop the right-side padding and the trail column
-   * stays empty — title runs to the viewport edge. */
-  .task-row, .task-add { padding-right: 0; }
+  /* Mobile keeps a single tag chip in the trail column when the task
+   * has tags, so leave a small right gutter; the +N spillover sits
+   * beside it. With no tags the column stays empty and there's no
+   * visible padding cost. The add-row has nothing in the trail and
+   * can run to the viewport edge. */
+  .task-row { padding-right: 6px; }
+  .task-add { padding-right: 0; }
 }
 .inbox-empty {
   min-height: calc(100dvh - 44px - 24px);
@@ -146,6 +154,111 @@
   letter-spacing: 0;
   font-size: calc(10px * var(--fs-scale));
 }
+
+/* Tag filter strip — sticks to the top of the inbox scroll container
+ * so the active selection stays visible as the user scrolls through
+ * Now / Later / Done. Hidden when the project has no tags. */
+.inbox-tag-filter {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  /* 2-column grid: chips own the wrapping left column, the OR/AND
+   * toggle + clear pin to the right. Center-aligned vertically so the
+   * single-row case looks like a normal inline toolbar; when chips
+   * wrap to multiple rows the controls float in the middle of the
+   * chip block. */
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px 10px;
+  padding: 8px 0;
+  margin: -4px 0 0;
+  background: var(--paper);
+  border-bottom: 1px solid var(--rule);
+}
+.inbox-tag-filter-chips {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.inbox-tag-filter-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+/* Phone widths: chips take multiple rows, so the controls stack into
+ * a vertical stripe on the right with proper spacing instead of
+ * cramping against the wrapped chip column. */
+@media (max-width: 700px) {
+  .inbox-tag-filter-controls {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+  }
+}
+/* Filter chips reuse `.chip.tag-chip` typography. Off state stays
+ * dim (low-saturation outline only); on state fills with the same
+ * color-mix wash the dropdown row uses for selection feedback. */
+.inbox-tag-filter-chip {
+  cursor: pointer;
+  opacity: 0.55;
+  transition: opacity 80ms ease;
+}
+.inbox-tag-filter-chip:hover { opacity: 0.85; }
+.inbox-tag-filter-chip[data-on] {
+  opacity: 1;
+  background: color-mix(in srgb, var(--tag-color, var(--rule-2)) 12%, var(--paper));
+}
+.inbox-tag-filter-clear {
+  font-family: var(--font-mono);
+  font-size: calc(10px * var(--fs-scale));
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: transparent;
+  border: 1px solid var(--rule-2);
+  color: var(--ink-3);
+  padding: 0 8px;
+  height: 18px;
+  cursor: pointer;
+  flex: none;
+}
+.inbox-tag-filter-clear:hover:not(:disabled) { color: var(--ink); border-color: var(--ink-3); }
+.inbox-tag-filter-clear:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+/* Segmented any / all toggle: each segment is a button, active segment
+ * is filled with --ink so the current mode is visually unambiguous;
+ * clicking the *other* segment switches mode. Borders collapse
+ * between segments so they read as one control. */
+.inbox-tag-filter-mode {
+  display: inline-flex;
+  flex: none;
+  height: 18px;
+}
+.inbox-tag-filter-mode-seg {
+  font-family: var(--font-mono);
+  font-size: calc(10px * var(--fs-scale));
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: transparent;
+  border: 1px solid var(--rule-2);
+  color: var(--ink-3);
+  padding: 0 8px;
+  height: 18px;
+  cursor: pointer;
+}
+.inbox-tag-filter-mode-seg + .inbox-tag-filter-mode-seg { border-left: 0; }
+.inbox-tag-filter-mode-seg:hover { color: var(--ink); }
+.inbox-tag-filter-mode-seg[data-active] {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+  cursor: default;
+}
+.inbox-tag-filter-mode-seg[data-active]:hover { color: var(--paper); }
 
 .section { margin: 28px 0; }
 .section-head {
@@ -337,12 +450,28 @@
 }
 
 .task-trail {
-  display: flex; align-items: center; gap: 8px;
+  display: flex; align-items: center; gap: 4px;
   font-family: var(--font-mono);
   font-size: calc(11px * var(--fs-scale));
   color: var(--ink-3);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+.task-trail .left-est { margin-left: 4px; }
+/* When the user has an active filter, fade unmatched tag chips so the
+ * matched ones (which always sort to the front of the row) read as the
+ * dominant signal. With no filter active, every chip stays bright. */
+.task-trail[data-has-filter] .tag-chip { opacity: 0.45; }
+.task-trail[data-has-filter] .tag-chip[data-match] {
+  opacity: 1;
+  background: color-mix(in srgb, var(--tag-color, var(--rule-2)) 14%, var(--paper));
+  border-color: color-mix(in srgb, var(--tag-color, var(--rule-2)) 60%, var(--paper));
+}
+.task-trail .tag-chip-more {
+  color: var(--ink-4);
+  border-color: var(--rule-2);
+  padding: 0 4px;
+  letter-spacing: 0;
 }
 .task-trail .left-est { color: var(--ink-2); }
 .task-trail .left-est[data-low="true"] { color: var(--accent); }

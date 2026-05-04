@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, Pencil } from 'lucide-react';
 import { useFira } from '../store';
 import { useLongPress } from '../useLongPress';
 import { useIsMobile } from '../hooks';
 import { fmtMin, taskTimeLeft } from '../time';
 import { ProjectIcon } from './ProjectIcon';
-import type { Task, TimeBlock, Section, UUID } from '../types';
+import type { Tag, Task, TimeBlock, Section, UUID } from '../types';
 
 const byKey = (a: Task, b: Task) => a.sort_key.localeCompare(b.sort_key);
 
@@ -13,9 +13,11 @@ export function InboxView() {
   const tasks = useFira((s) => s.tasks);
   const blocks = useFira((s) => s.blocks);
   const projects = useFira((s) => s.projects);
+  const allTags = useFira((s) => s.tags);
   const users = useFira((s) => s.users);
   const meId = useFira((s) => s.meId);
   const inboxFilter = useFira((s) => s.inboxFilter);
+  const setInboxFilter = useFira((s) => s.setInboxFilter);
   const tickTask = useFira((s) => s.tickTask);
   const tickSubtask = useFira((s) => s.tickSubtask);
   const setSubtaskTitle = useFira((s) => s.setSubtaskTitle);
@@ -80,7 +82,20 @@ export function InboxView() {
     );
   }
 
-  const projectTasks = tasks.filter((t) => t.project_id === project.id);
+  const allProjectTasks = tasks.filter((t) => t.project_id === project.id);
+  // Apply the tag filter to every section in one place so reorder /
+  // assignee / archive helpers (which still operate on `projectTasks`)
+  // see only the filtered slice.
+  const tagFilter = inboxFilter.tag_ids;
+  const tagMode = inboxFilter.tag_mode;
+  const projectTasks = tagFilter.length === 0
+    ? allProjectTasks
+    : allProjectTasks.filter((t) => {
+        if (tagMode === 'and') {
+          return tagFilter.every((id) => t.tag_ids.includes(id));
+        }
+        return tagFilter.some((id) => t.tag_ids.includes(id));
+      });
   const nowTasks = projectTasks.filter((t) => t.section === 'now').sort(byKey);
   const laterTasks = projectTasks.filter((t) => t.section === 'later').sort(byKey);
   const doneTasks = projectTasks.filter((t) => t.section === 'done').sort(byKey);
@@ -338,6 +353,15 @@ export function InboxView() {
           </div>
         </div>
 
+        <InboxTagFilter
+          projectId={project.id}
+          allTags={allTags}
+          tagIds={inboxFilter.tag_ids}
+          mode={inboxFilter.tag_mode}
+          onChange={(tag_ids) => setInboxFilter({ tag_ids })}
+          onModeChange={(tag_mode) => setInboxFilter({ tag_mode })}
+        />
+
         {/* NOW */}
         <div className="section" data-section="now"
              style={dropTarget === 'now' ? { background: 'var(--accent-soft)' } : undefined}
@@ -435,7 +459,7 @@ export function InboxView() {
                         {subTasks.map((t) => renderRow(t, true))}
                         <AddTaskRow
                           placeholder={`Add task for ${firstName}…`}
-                          onAdd={(title) => addTask(project.id, 'now', title, aid)}
+                          onAdd={(title) => addTask(project.id, 'now', title, aid, tagFilter)}
                         />
                       </>
                     )}
@@ -444,7 +468,7 @@ export function InboxView() {
               }) : (
                 <>
                   {nowTasks.filter((t) => t.assignee_id != null).map((t) => renderRow(t, true))}
-                  <AddTaskRow onAdd={(title) => addTask(project.id, 'now', title)} />
+                  <AddTaskRow onAdd={(title) => addTask(project.id, 'now', title, undefined, tagFilter)} />
                 </>
               )}
               {(() => {
@@ -492,7 +516,7 @@ export function InboxView() {
           {!collapsed.later && (
             <>
               {laterTasks.map((t) => renderRow(t, false))}
-              <AddTaskRow onAdd={(title) => addTask(project.id, 'later', title)} />
+              <AddTaskRow onAdd={(title) => addTask(project.id, 'later', title, undefined, tagFilter)} />
             </>
           )}
         </div>
@@ -511,7 +535,7 @@ export function InboxView() {
           {!collapsed.done && (
             <>
               {doneTasks.map((t) => renderRow(t, false))}
-              <AddTaskRow onAdd={(title) => addTask(project.id, 'done', title)} />
+              <AddTaskRow onAdd={(title) => addTask(project.id, 'done', title, undefined, tagFilter)} />
             </>
           )}
         </div>
@@ -662,6 +686,24 @@ function TaskRow({
 }: RowProps) {
   const [dragOnHandle, setDragOnHandle] = useState(false);
   const isMobile = useIsMobile();
+  const tags = useFira((s) => s.tags);
+  const filterIds = useFira((s) => s.inboxFilter.tag_ids);
+  const filterSet = useMemo(() => new Set(filterIds), [filterIds]);
+  // Reorder so any tag matching the active filter floats to the front of
+  // the row's chip list — that way the 3-chip cap always shows the
+  // tags the user actually filtered on, regardless of how the task was
+  // tagged. Stable for unmatched (relative order preserved).
+  const sortedTagIds = useMemo(() => {
+    if (filterSet.size === 0) return task.tag_ids;
+    const matched: UUID[] = [];
+    const rest: UUID[] = [];
+    for (const id of task.tag_ids) {
+      (filterSet.has(id) ? matched : rest).push(id);
+    }
+    return [...matched, ...rest];
+  }, [task.tag_ids, filterSet]);
+  const visibleTagIds = sortedTagIds.slice(0, 3);
+  const moreCount = task.tag_ids.length - visibleTagIds.length;
   const left = taskTimeLeft(task, blocks);
   const lowLeft = left != null && task.estimate_min != null && left < task.estimate_min * 0.2 && left > 0;
 
@@ -786,22 +828,151 @@ function TaskRow({
           </div>
         )}
       </div>
-      {!isMobile && (
-        <div className="task-trail">
-          {task.tags.slice(0, 1).map((tg) => (
-            <span key={tg} className="chip" style={{ height: 16, fontSize: 'calc(9px * var(--fs-scale))' }}>{tg}</span>
-          ))}
-          {task.estimate_min != null && left != null ? (
-            left < 0 ? (
-              <span className="left-est" data-over="true">{fmtMin(-left)} over</span>
-            ) : (
-              <span className="left-est" data-low={lowLeft || undefined}>{fmtMin(left)} left</span>
-            )
-          ) : (
-            <span style={{ color: 'var(--ink-4)' }}>no est</span>
-          )}
+      {(() => {
+        // Mobile: one chip max + a quiet `+N` for the rest, no est-meta
+        // (the row is already cramped). Desktop: keep up to 3 chips +
+        // est-meta as before.
+        const mobileTagIds = visibleTagIds.slice(0, 1);
+        const mobileMore = task.tag_ids.length - mobileTagIds.length;
+        const trailTagIds = isMobile ? mobileTagIds : visibleTagIds;
+        const trailMore = isMobile ? mobileMore : moreCount;
+        if (isMobile && trailTagIds.length === 0) return null;
+        return (
+          <div className="task-trail" data-has-filter={filterSet.size > 0 || undefined}>
+            {trailTagIds.map((tid) => {
+              const tag = tags.find((t) => t.id === tid);
+              if (!tag) return null;
+              const matched = filterSet.has(tid);
+              return (
+                <span
+                  key={tid}
+                  className="chip tag-chip"
+                  data-match={matched || undefined}
+                  style={{
+                    height: 16,
+                    fontSize: 'calc(9px * var(--fs-scale))',
+                    ['--tag-color' as string]: tag.color,
+                  }}
+                >
+                  {tag.title}
+                </span>
+              );
+            })}
+            {trailMore > 0 && (
+              <span
+                className="chip tag-chip-more"
+                style={{ height: 16, fontSize: 'calc(9px * var(--fs-scale))' }}
+                title={`+${trailMore} more tag${trailMore === 1 ? '' : 's'}`}
+              >
+                +{trailMore}
+              </span>
+            )}
+            {!isMobile && (
+              task.estimate_min != null && left != null ? (
+                left < 0 ? (
+                  <span className="left-est" data-over="true">{fmtMin(-left)} over</span>
+                ) : (
+                  <span className="left-est" data-low={lowLeft || undefined}>{fmtMin(left)} left</span>
+                )
+              ) : (
+                <span style={{ color: 'var(--ink-4)' }}>no est</span>
+              )
+            )}
+          </div>
+        );
+      })()}
+    </div>
+  );
+}
+
+// Sticky tag filter strip. Sits at the top of the scroll container so the
+// active filter stays visible as the user scrolls down through Now / Later
+// / Done. Hides itself entirely when the project has no tags — empty
+// chips would just be visual noise.
+function InboxTagFilter({
+  projectId, allTags, tagIds, mode, onChange, onModeChange,
+}: {
+  projectId: UUID;
+  allTags: Tag[];
+  tagIds: UUID[];
+  mode: 'and' | 'or';
+  onChange: (ids: UUID[]) => void;
+  onModeChange: (mode: 'and' | 'or') => void;
+}) {
+  // Sort by title length descending so longer chips lead each row.
+  // flex-wrap places left-to-right in source order, and seeding rows
+  // with long chips lets shorter ones slot into the trailing space —
+  // fewer ragged half-empty rows than alphabetical order, especially
+  // on narrow widths. Alphabetical secondary sort keeps the order
+  // stable for chips of equal length.
+  const projectTags = allTags
+    .filter((t) => t.project_id === projectId)
+    .sort((a, b) => b.title.length - a.title.length || a.title.localeCompare(b.title));
+  if (projectTags.length === 0) return null;
+
+  const selected = new Set(tagIds);
+  const toggle = (id: UUID) => {
+    if (selected.has(id)) onChange(tagIds.filter((x) => x !== id));
+    else onChange([...tagIds, id]);
+  };
+  const clear = () => onChange([]);
+
+  return (
+    <div className="inbox-tag-filter">
+      <div className="inbox-tag-filter-chips">
+        {projectTags.map((t) => {
+          const on = selected.has(t.id);
+          return (
+            <button
+              key={t.id}
+              type="button"
+              className="chip tag-chip inbox-tag-filter-chip"
+              data-on={on || undefined}
+              style={{ ['--tag-color' as string]: t.color }}
+              onClick={() => toggle(t.id)}
+              title={t.title}
+            >
+              {t.title}
+            </button>
+          );
+        })}
+      </div>
+      {/* Controls are always rendered, even with 0 / 1 tag selected, so
+       * the layout doesn't shift as the user toggles chips. With one
+       * tag, OR/AND yields the same set — the toggle still works, just
+       * has no visible effect until a second tag is added. Clear is a
+       * safe no-op when nothing is selected. */}
+      <div className="inbox-tag-filter-controls">
+        <div className="inbox-tag-filter-mode" role="group" aria-label="Tag match mode">
+          <button
+            type="button"
+            className="inbox-tag-filter-mode-seg"
+            data-active={mode === 'or' || undefined}
+            onClick={() => onModeChange('or')}
+            title="Match tasks with any selected tag"
+          >
+            or
+          </button>
+          <button
+            type="button"
+            className="inbox-tag-filter-mode-seg"
+            data-active={mode === 'and' || undefined}
+            onClick={() => onModeChange('and')}
+            title="Match tasks with every selected tag"
+          >
+            and
+          </button>
         </div>
-      )}
+        <button
+          type="button"
+          className="inbox-tag-filter-clear"
+          onClick={clear}
+          disabled={tagIds.length === 0}
+          title="Clear tag filter"
+        >
+          clear
+        </button>
+      </div>
     </div>
   );
 }

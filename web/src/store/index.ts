@@ -8,7 +8,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type {
   Bootstrap, Project, User, Epic, Sprint, Task, TimeBlock, GcalEvent, UUID, Section, Subtask, Status,
-  Workspace, WorkspaceRole, UserLink, LinkedTask, WorkspaceInvite,
+  Workspace, WorkspaceRole, UserLink, LinkedTask, WorkspaceInvite, Tag,
 } from '../types';
 import { api, HttpError, setActiveWorkspaceId } from '../api';
 import { newOp, type Op, type OpKind, type AnyOpKind, type ChangeEntry } from './outbox';
@@ -38,6 +38,12 @@ interface InboxFilter {
   sprint_id: UUID | 'active' | 'all' | 'none';
   status: 'open' | 'all' | 'in_progress' | 'todo' | 'done';
   assignee_id: UUID | 'all' | null;
+  /// Subset of project tag ids to filter by. Empty = no tag filter applied.
+  /// Persisted across reloads alongside the rest of inboxFilter.
+  tag_ids: UUID[];
+  /// 'or' (default): a task matches if it has any selected tag.
+  /// 'and': a task must carry every selected tag.
+  tag_mode: 'and' | 'or';
 }
 
 export type ToastKind = 'error' | 'info';
@@ -62,6 +68,7 @@ interface FiraState {
   epics: Epic[];
   sprints: Sprint[];
   tasks: Task[];
+  tags: Tag[];
   blocks: TimeBlock[];
   gcal: GcalEvent[];
 
@@ -253,7 +260,12 @@ interface FiraState {
   loadAllUsers: () => Promise<void>;
 
   // mutations — update local state synchronously + emit op
-  addTask: (projectId: UUID, section: Section, title: string, assigneeId?: UUID | null) => UUID | null;
+  addTag: (projectId: UUID, title: string, color: string) => UUID | null;
+  setTagTitle: (tagId: UUID, title: string) => void;
+  setTagColor: (tagId: UUID, color: string) => void;
+  deleteTag: (tagId: UUID) => void;
+  setTaskTags: (taskId: UUID, tagIds: UUID[]) => void;
+  addTask: (projectId: UUID, section: Section, title: string, assigneeId?: UUID | null, tagIds?: UUID[]) => UUID | null;
   tickTask: (taskId: UUID) => void;
   setTaskStatus: (taskId: UUID, status: Status) => void;
   setTaskSection: (taskId: UUID, section: Section) => void;
@@ -445,6 +457,32 @@ function applyOpToState(s: FiraState, op: AnyOpKind): Partial<FiraState> {
       return { blocks: s.blocks.map((b) => b.id === op.block_id ? { ...b, ...op.patch } : b) };
     case 'block.delete':
       return { blocks: s.blocks.filter((b) => b.id !== op.block_id) };
+    case 'tag.create': {
+      if (s.tags.some((t) => t.id === op.tag.id)) return {};
+      return { tags: [...s.tags, op.tag] };
+    }
+    case 'tag.set_title':
+      return { tags: s.tags.map((t) => t.id === op.tag_id ? { ...t, title: op.title } : t) };
+    case 'tag.set_color':
+      return { tags: s.tags.map((t) => t.id === op.tag_id ? { ...t, color: op.color } : t) };
+    case 'tag.delete':
+      // Server cascades task_tags via FK; mirror that here so any task
+      // chip that referenced this tag disappears the moment the op lands.
+      // Also strip the deleted id from the active inbox filter so the
+      // toolbar doesn't render a chip for a tag that no longer exists.
+      return {
+        tags: s.tags.filter((t) => t.id !== op.tag_id),
+        tasks: s.tasks.map((t) => t.tag_ids.includes(op.tag_id)
+          ? { ...t, tag_ids: t.tag_ids.filter((id) => id !== op.tag_id) }
+          : t),
+        inboxFilter: s.inboxFilter.tag_ids.includes(op.tag_id)
+          ? { ...s.inboxFilter, tag_ids: s.inboxFilter.tag_ids.filter((id) => id !== op.tag_id) }
+          : s.inboxFilter,
+      };
+    case 'task.set_tags':
+      return {
+        tasks: s.tasks.map((t) => t.id === op.task_id ? { ...t, tag_ids: op.tag_ids } : t),
+      };
     case 'project.create': {
       if (s.projects.some((p) => p.id === op.project.id)) return {};
       return {
@@ -604,6 +642,7 @@ function applyBootstrap(
     epics: data.epics,
     sprints: data.sprints,
     tasks: data.tasks,
+    tags: data.tags ?? [],
     blocks: data.blocks,
     gcal: data.gcal,
     links: data.links ?? [],
@@ -622,6 +661,11 @@ function applyBootstrap(
       ...get().inboxFilter,
       project_id: firstProject,
       assignee_id: me.id,
+      // Drop persisted tag ids that no longer exist so the toolbar
+      // doesn't carry phantoms after a peer deleted a tag offline.
+      tag_ids: get().inboxFilter.tag_ids.filter(
+        (id) => (data.tags ?? []).some((t) => t.id === id),
+      ),
     },
     // Empty workspace lands on inbox: that view's empty state has the
     // owner-aware "Create your first project" / "ask an admin" CTA.
@@ -641,6 +685,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
   epics: [],
   sprints: [],
   tasks: [],
+  tags: [],
   blocks: [],
   gcal: [],
 
@@ -684,6 +729,8 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     sprint_id: 'active',
     status: 'open',
     assignee_id: null,
+    tag_ids: [],
+    tag_mode: 'or',
   },
   openTaskId: null,
 
@@ -1475,7 +1522,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     });
   },
 
-  addTask: (projectId, section, title, assigneeId) => {
+  addTask: (projectId, section, title, assigneeId, tagIds) => {
     const trimmed = title.trim();
     if (!trimmed) return null;
     const state = get();
@@ -1499,7 +1546,12 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
       external_url: null,
       estimate_min: null,
       spent_min: 0,
-      tags: [],
+      // Auto-attach any tags the caller passes (inbox uses this to seed
+      // a fresh task with the active filter so it doesn't immediately
+      // disappear from the list it was just typed into). Defaults to
+      // empty when omitted. Tag ids are validated server-side against
+      // the task's project, so phantoms get rejected.
+      tag_ids: tagIds ?? [],
       sort_key: `${maxSort}~`,
       subtasks: [],
     };
@@ -1602,6 +1654,52 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     blocks: s.blocks.filter((b) => b.task_id !== taskId),
     openTaskId: s.openTaskId === taskId ? null : s.openTaskId,
     ...pushOp(s, { kind: 'task.delete', task_id: taskId }),
+  })),
+
+  addTag: (projectId, title, color) => {
+    const trimmed = title.trim();
+    if (!trimmed) return null;
+    const state = get();
+    // Reject case-insensitive duplicates within the project — same rule
+    // the server enforces via the unique index on lower(title).
+    const exists = state.tags.some(
+      (t) => t.project_id === projectId && t.title.toLowerCase() === trimmed.toLowerCase(),
+    );
+    if (exists) return null;
+    const tag: Tag = { id: crypto.randomUUID(), project_id: projectId, title: trimmed, color };
+    set((s) => ({
+      tags: [...s.tags, tag],
+      ...pushOp(s, { kind: 'tag.create', tag }),
+    }));
+    return tag.id;
+  },
+
+  setTagTitle: (tagId, title) => set((s) => ({
+    tags: s.tags.map((t) => t.id === tagId ? { ...t, title } : t),
+    ...pushOp(s, { kind: 'tag.set_title', tag_id: tagId, title }),
+  })),
+
+  setTagColor: (tagId, color) => set((s) => ({
+    tags: s.tags.map((t) => t.id === tagId ? { ...t, color } : t),
+    ...pushOp(s, { kind: 'tag.set_color', tag_id: tagId, color }),
+  })),
+
+  deleteTag: (tagId) => set((s) => ({
+    tags: s.tags.filter((t) => t.id !== tagId),
+    // Mirror the server-side cascade: every local task loses this tag id
+    // immediately so the UI doesn't render a chip pointing at a tombstone.
+    tasks: s.tasks.map((t) => t.tag_ids.includes(tagId)
+      ? { ...t, tag_ids: t.tag_ids.filter((id) => id !== tagId) }
+      : t),
+    inboxFilter: s.inboxFilter.tag_ids.includes(tagId)
+      ? { ...s.inboxFilter, tag_ids: s.inboxFilter.tag_ids.filter((id) => id !== tagId) }
+      : s.inboxFilter,
+    ...pushOp(s, { kind: 'tag.delete', tag_id: tagId }),
+  })),
+
+  setTaskTags: (taskId, tagIds) => set((s) => ({
+    tasks: s.tasks.map((t) => t.id === taskId ? { ...t, tag_ids: tagIds } : t),
+    ...pushOp(s, { kind: 'task.set_tags', task_id: taskId, tag_ids: tagIds }),
   })),
 
   addSubtask: (taskId, title, afterId) => {
@@ -1762,6 +1860,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     epics: s.epics,
     sprints: s.sprints,
     tasks: s.tasks,
+    tags: s.tags,
     blocks: s.blocks,
     gcal: s.gcal,
     outbox: s.outbox,
@@ -1780,6 +1879,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     showLinked: s.showLinked,
     showPersonal: s.showPersonal,
     showWork: s.showWork,
+    inboxFilter: s.inboxFilter,
   // partialize is loosely typed — zustand expects S but we're returning a
   // subset of fields. Cast through unknown is the canonical workaround.
   }) as unknown as FiraState,

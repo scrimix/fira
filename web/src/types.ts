@@ -91,9 +91,17 @@ export interface Task {
   external_url: string | null;
   estimate_min: number | null;
   spent_min: number;
-  tags: string[];
+  tag_ids: UUID[];
   sort_key: string;
   subtasks: Subtask[];
+}
+
+export interface Tag {
+  id: UUID;
+  project_id: UUID;
+  title: string;
+  /// Hex color (`#rrggbb`).
+  color: string;
 }
 
 export interface TimeBlock {
@@ -183,6 +191,7 @@ export interface Bootstrap {
   epics: Epic[];
   sprints: Sprint[];
   tasks: Task[];
+  tags: Tag[];
   blocks: TimeBlock[];
   gcal: GcalEvent[];
   links: UserLink[];
