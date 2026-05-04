@@ -77,7 +77,7 @@ per-mutation `useMutation` hooks don't.
 
 ## 3. Data model — current
 
-Authoritative SQL: [api/migrations/](../api/migrations/) (0001–0013,
+Authoritative SQL: [api/migrations/](../api/migrations/) (0001–0015,
 applied in order on boot via `sqlx::migrate!`).
 
 | table              | purpose                                            |
@@ -91,6 +91,8 @@ applied in order on boot via `sqlx::migrate!`).
 | `epics`            | unit of work bigger than a task, smaller than a project. |
 | `sprints`          | time-boxed; `active` flag drives the inbox's sprint filter. |
 | `tasks`            | section (`now`/`later`/`done`), status, estimate, assignee, sort_key, optional `external_id`, optional per-task `external_url`. |
+| `tags`             | per-project, identity-bearing label: `(id, project_id, title, color)`. Case-insensitive unique on `(project_id, lower(title))`. Renaming is a `set_title` op against the row, no rewrite of attached tasks. |
+| `task_tags`        | M:N task ↔ tag, PK `(task_id, tag_id)`, FK cascades on tag delete. |
 | `subtasks`         | flat under a task. The "checkbox tree in a description" doesn't exist yet — subtasks are first-class rows. |
 | `time_blocks`      | start_at, end_at, state (`planned`/`completed`/`skipped`), `user_id` (whose calendar the block lives on, independent of `task.assignee_id`). |
 | `processed_ops`    | accepted-op log: `op_id` PK (idempotency) + `seq BIGSERIAL` (the global change-feed cursor) + `payload JSONB` (verbatim wire op) + `project_id` (nullable, for project-scope filtering) + `workspace_id` (nullable, for workspace-scope filtering). FKs to projects/workspaces were dropped in migration 0010 so log rows survive entity deletion. |
@@ -196,7 +198,7 @@ non-null):
 
 ```ts
 {
-  me, users, projects, epics, sprints, tasks, blocks,
+  me, users, projects, epics, sprints, tasks, tags, blocks,
   workspace, links, workspace_invites, cursor
 }
 ```
@@ -210,13 +212,21 @@ start polling `/api/changes` from there, not from 0. The shape
 otherwise mirrors `web/src/types.ts`; no pagination, no filtering —
 the dataset is small enough to send in one shot.
 
-**Op kinds accepted by `/api/ops`** (~21):
+**Op kinds accepted by `/api/ops`** (~26):
 `task.create`, `task.tick`, `task.set_section`, `task.set_title`,
 `task.set_description`, `task.set_estimate`, `task.set_assignee`,
 `task.set_status`, `task.set_external_id`, `task.set_external_url`,
-`task.reorder`, `task.delete`, `subtask.create`, `subtask.tick`,
-`subtask.set_title`, `subtask.delete`, `subtask.reorder`,
-`block.create`, `block.update`, `block.delete`.
+`task.set_tags`, `task.reorder`, `task.delete`, `subtask.create`,
+`subtask.tick`, `subtask.set_title`, `subtask.delete`,
+`subtask.reorder`, `block.create`, `block.update`, `block.delete`,
+`tag.create`, `tag.set_title`, `tag.set_color`, `tag.delete`.
+
+`task.create.tag_ids` is a `Vec<Uuid>` of tag ids to attach atomically;
+the tag rows must already exist (the outbox pushes `tag.create` first
+when the user creates a tag inline from the picker). `task.set_tags`
+replaces the whole tag set in one op — set-shaped is the right
+LWW-friendly intent shape, per-add / per-remove diverges under
+concurrent edits.
 
 Workspace, project, and link mutations write synthesized
 `workspace.create` / `workspace.update` / `workspace.set_members` /
@@ -427,18 +437,42 @@ the topbar hamburger.
 - Click row → task modal. New-task button opens `TaskModalDraft`
   (no default project — tap-through guard, sprint 15).
 - **Mobile** (sprint 17): row stripped to grip · check · title.
-  Tags, `external_id`, "Xh over" hidden at phone widths. Subtasks
-  blend into the parent row for tap/long-press purposes; subtask
-  edits move to the modal.
+  `external_id`, "Xh over" hidden at phone widths. Subtasks blend
+  into the parent row for tap/long-press purposes; subtask edits
+  move to the modal.
+- **Tag chips in the row trail** (sprint 21): up to 3 chips on
+  desktop, 1 on phones, plus a quiet `+N` overflow chip. Sort
+  prioritizes filter-matched ids first so the cap surfaces the
+  active-filter tags regardless of how the task was tagged. With
+  an active filter, unmatched chips fade to opacity 0.45 and
+  matched chips get a stronger color-mix outline.
+- **Sticky tag filter strip** (sprint 21) at the top of the inbox
+  scroll container: chip toggles for every project tag, a 2-segment
+  OR/AND mode pill, and a Clear button. Both controls are always
+  rendered (Clear goes `disabled` at zero selection) so toggling
+  chips doesn't cause the strip to jump. Chips inside the strip are
+  sorted by title length descending so longer chips lead each row
+  and shorter ones slot into the trailing whitespace. Filter state
+  (`tag_ids`, `tag_mode`) lives on `inboxFilter` and is persisted
+  via `partialize`. Phantom ids are pruned on bootstrap and on
+  `tag.delete`.
+- **Quick-add seeds the active filter** (sprint 21): a task created
+  through any inbox add-row attaches `inboxFilter.tag_ids` so it
+  doesn't immediately disappear from the row it was typed into.
 
 **Task modal** ([web/src/components/TaskModal.tsx](../web/src/components/TaskModal.tsx)):
 - Title, description, subtask checkboxes (with grip drag on desktop,
   long-press on touch), time-block history with the block-owner
   avatar (`data-me` highlights yours).
-- Right side: project, assignee, status, estimate, time-left, tags,
-  source, section, **Issue link** (renders `[external_id]` as a link
-  when the project has an `external_url_template`, muted text
-  otherwise; pencil icon arms the editor).
+- Right side: project, assignee, status, estimate, time-left, **tags
+  multi-select picker** (sprint 21 — selected chips with × to
+  remove, `+` opens a portal-anchored popover with search + chip-
+  style toggle rows + inline "Create *<query>*" footer; toggle
+  fires a single `task.set_tags` op), source, section, **Issue link**
+  (renders `[external_id]` as a link when the project has an
+  `external_url_template`, muted text otherwise; pencil icon arms
+  the editor). On phones the Tags section moves to the main pane
+  (under the estimate bar) since the side pane is closed by default.
 - Estimate bar showing spent / planned / left.
 - Trash icon in the header opens `ConfirmDelete` (plain confirm).
 - **Copy as markdown** affordance (sprint 11) writes
@@ -451,6 +485,12 @@ the topbar hamburger.
 - Members section: search popover to add (one click, auto-closes);
   two-step remove (× chip → red Remove button) since losing access is
   heavier than gaining it.
+- **Tags section** (sprint 21): bordered list of project tags with a
+  swatch dot, title, usage count, pencil to expand into an inline
+  rename / recolor row, and a trash button that opens a single-step
+  `ConfirmDelete` warning of how many tasks will lose the tag. Each
+  mutation fires immediately — no batching with the project's Save
+  Changes button.
 - Per-row role `<Select>` (`owner` / `lead` / `member` / `inactive`)
   — readable by everyone with edit access, but only **interactive
   for the workspace owner**; project leads see a static role tag

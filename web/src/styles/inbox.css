@@ -75,6 +75,16 @@
   padding-bottom: 12px;
   border-bottom: 1px solid var(--rule);
 }
+/* When the tag filter strip follows the project header, drop the
+ * head's own bottom border + spacing so the strip docks flush
+ * underneath. The strip's `border-bottom` provides the single rule
+ * between header zone and the Now section, instead of two parallel
+ * rules with a 24px gap. */
+.inbox-proj-head:has(+ .inbox-tag-filter) {
+  margin-bottom: 0;
+  padding-bottom: 8px;
+  border-bottom: 0;
+}
 .inbox-proj-head h1 {
   margin: 0;
   font-size: var(--fs-xxl);
@@ -172,7 +182,7 @@
   align-items: center;
   gap: 6px 10px;
   padding: 8px 0;
-  margin: -4px 0 0;
+  margin: 0 0 12px;
   background: var(--paper);
   border-bottom: 1px solid var(--rule);
 }
