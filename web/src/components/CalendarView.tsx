@@ -927,23 +927,24 @@ export function CalendarView() {
                   {dayGcal.map((g) => {
                     const { start_min, dur_min } = blockToGrid(g.start_at, g.end_at, gridAnchor);
                     return (
-                      <div
-                        key={g.id}
-                        className="gcal-evt gcal-evt-clickable"
-                        style={{
-                          top: (start_min / 60) * HOUR_H,
-                          height: (dur_min / 60) * HOUR_H,
-                        }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          const r = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
-                          setGcalPopover({
-                            eventId: g.id,
-                            rect: { left: r.left, top: r.top, right: r.right, bottom: r.bottom },
-                          });
-                        }}
-                      >
-                        {g.title} · {fmtClockShort(start_min)}
+                      <div key={g.id} className="gcal-evt" style={{
+                        top: (start_min / 60) * HOUR_H,
+                        height: (dur_min / 60) * HOUR_H,
+                      }}>
+                        <span
+                          className="gcal-evt-label"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const r = (e.currentTarget as HTMLSpanElement).getBoundingClientRect();
+                            setGcalPopover({
+                              eventId: g.id,
+                              rect: { left: r.left, top: r.top, right: r.right, bottom: r.bottom },
+                            });
+                          }}
+                          onPointerDown={(e) => e.stopPropagation()}
+                        >
+                          {g.title} · {fmtClockShort(start_min)}
+                        </span>
                       </div>
                     );
                   })}
@@ -1520,6 +1521,7 @@ function CalRail({ onDragTask, onTouchSchedule, allocByProject }: {
   const projects = useFira((s) => s.projects);
   const projectFilter = useFira((s) => s.projectFilter);
   const toggleProjectFilter = useFira((s) => s.toggleProjectFilter);
+  const soloProjectFilter = useFira((s) => s.soloProjectFilter);
   const activePersonId = useFira((s) => s.activePersonId);
   const openTask = useFira((s) => s.openTask);
   const openCreate = useFira((s) => s.openCreate);
@@ -1758,7 +1760,10 @@ function CalRail({ onDragTask, onTouchSchedule, allocByProject }: {
             return (
               <div key={p.id} className="rail-proj-row" data-dimmed={dimmed}
                    onClick={() => toggleProjectFilter(p.id)}
-                   title={dimmed ? `Show ${p.title} on calendar` : `Hide ${p.title} from calendar`}>
+                   onDoubleClick={() => soloProjectFilter(p.id)}
+                   title={dimmed
+                     ? `Show ${p.title} on calendar — double-click to solo`
+                     : `Hide ${p.title} from calendar — double-click to solo`}>
                 <ProjectIcon
                   name={p.icon}
                   color={dimmed ? 'var(--ink-4)' : p.color}
@@ -1778,8 +1783,11 @@ function CalRail({ onDragTask, onTouchSchedule, allocByProject }: {
           <div key={g.project.id} className="rail-group" data-collapsed={collapsed || undefined}>
             <button type="button" className="rail-group-head"
                     onClick={() => toggleRailGroup(g.project.id)}
+                    onDoubleClick={() => soloProjectFilter(g.project.id)}
                     aria-expanded={!collapsed}
-                    title={collapsed ? `Show ${g.project.title} tasks` : `Hide ${g.project.title} tasks`}>
+                    title={collapsed
+                      ? `Show ${g.project.title} tasks — double-click to solo on calendar`
+                      : `Hide ${g.project.title} tasks — double-click to solo on calendar`}>
               {collapsed
                 ? <ChevronRight size={11} strokeWidth={1.75} />
                 : <ChevronDown size={11} strokeWidth={1.75} />}

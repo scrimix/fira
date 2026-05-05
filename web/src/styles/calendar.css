@@ -662,11 +662,15 @@
   font-family: var(--font-mono);
   font-size: calc(10px * var(--fs-scale));
   color: var(--ink-3);
-  /* Above .tblock (z:2 / hover z:3) but below an in-flight drag (z:10).
-   * The hatch background is transparent + the text/border are muted, so
-   * an underlying time block reads through and the overlap is obvious. */
-  z-index: 4;
+  /* Background layer — sits *behind* .tblock (z:2) so dragging a task
+   * onto a slot that overlaps a meeting still hits the day column.
+   * The hatch + dashed border is intentionally subtle; an overlying
+   * time block fully covers it where they overlap. */
+  z-index: 1;
   opacity: 0.85;
+  /* The band itself never blocks pointers — drag-to-create on empty
+   * grid still works through it. The inner label opts back in to
+   * receive the click for the description popover. */
   pointer-events: none;
   white-space: nowrap;
   overflow: hidden;
@@ -680,16 +684,28 @@
   border-style: dotted;
 }
 
-/* Own gcal events are clickable — pointer-events stays off for the
- * linked variant since the partner's events have no description we
- * fetch today. */
-.gcal-evt-clickable {
+/* Own gcal events expose a small clickable label inside the band so
+ * the description popover is reachable, while the band itself stays
+ * pointer-transparent — drag-to-create / drag-task on empty grid keep
+ * working through it. The label sits at the top-left and is the only
+ * thing the user can hit. Linked-partner events have no label since
+ * we don't fetch their description today. */
+.gcal-evt-label {
   pointer-events: auto;
   cursor: pointer;
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: top;
+  /* Slight opacity bump on hover so the user notices the affordance. */
 }
-.gcal-evt-clickable:hover {
-  opacity: 1;
-  border-style: solid;
+.gcal-evt-label:hover {
+  color: var(--ink-2);
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 2px;
 }
 
 /* Popover anchored to a clicked .gcal-evt. Same visual idiom as the

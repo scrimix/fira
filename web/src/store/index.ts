@@ -232,6 +232,10 @@ interface FiraState {
   setDayOffset: (offset: number) => void;
   setSidebarOpen: (open: boolean) => void;
   toggleProjectFilter: (id: UUID) => void;
+  // "Solo" a project on the calendar — hide every other project's
+  // blocks. Double-clicking again on the already-solo'd project
+  // restores all-visible. No-op for projects that don't exist.
+  soloProjectFilter: (id: UUID) => void;
   setInboxFilter: (patch: Partial<InboxFilter>) => void;
   openTask: (id: UUID | null) => void;
   openCreate: (initial?: Partial<{
@@ -1341,6 +1345,18 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
   toggleProjectFilter: (id) => set((s) => ({
     projectFilter: { ...s.projectFilter, [id]: !(s.projectFilter[id] !== false) },
   })),
+  soloProjectFilter: (id) => set((s) => {
+    // Already solo'd? Restore all-visible. Detection: target is
+    // visible AND every other project is explicitly hidden.
+    const isSolo =
+      s.projectFilter[id] !== false &&
+      s.projects.every((p) => p.id === id || s.projectFilter[p.id] === false);
+    const next: Record<UUID, boolean> = {};
+    for (const p of s.projects) {
+      next[p.id] = isSolo ? true : p.id === id;
+    }
+    return { projectFilter: next };
+  }),
   setInboxFilter: (patch) => set((s) => ({ inboxFilter: { ...s.inboxFilter, ...patch } })),
   openTask: (id) => set({ openTaskId: id, creatingDraft: id ? null : get().creatingDraft }),
   openCreate: (initial) => set((s) => ({
