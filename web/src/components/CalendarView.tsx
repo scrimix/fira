@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Check, ChevronDown, ChevronRight, Copy, MoreVertical, Trash2, X } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { Check, ChevronDown, ChevronRight, Copy, ExternalLink, MoreVertical, Trash2, X } from 'lucide-react';
 import { useFira } from '../store';
 import { ProjectIcon } from './ProjectIcon';
 import {
@@ -246,6 +247,14 @@ export function CalendarView() {
   } | null>(null);
   const createDragRef = useRef<typeof createDrag>(null);
   createDragRef.current = createDrag;
+
+  // Click-to-show popover for gcal events. Anchored to the clicked
+  // event's bounding rect so it can be portaled to body (escapes the
+  // calendar's overflow:auto without us reimplementing scroll-following).
+  const [gcalPopover, setGcalPopover] = useState<{
+    eventId: UUID;
+    rect: { left: number; top: number; right: number; bottom: number };
+  } | null>(null);
 
   useEffect(() => {
     if (gridRef.current) gridRef.current.scrollTop = 7 * HOUR_H - 12;
@@ -918,10 +927,22 @@ export function CalendarView() {
                   {dayGcal.map((g) => {
                     const { start_min, dur_min } = blockToGrid(g.start_at, g.end_at, gridAnchor);
                     return (
-                      <div key={g.id} className="gcal-evt" style={{
-                        top: (start_min / 60) * HOUR_H,
-                        height: (dur_min / 60) * HOUR_H,
-                      }}>
+                      <div
+                        key={g.id}
+                        className="gcal-evt gcal-evt-clickable"
+                        style={{
+                          top: (start_min / 60) * HOUR_H,
+                          height: (dur_min / 60) * HOUR_H,
+                        }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const r = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
+                          setGcalPopover({
+                            eventId: g.id,
+                            rect: { left: r.left, top: r.top, right: r.right, bottom: r.bottom },
+                          });
+                        }}
+                      >
                         {g.title} · {fmtClockShort(start_min)}
                       </div>
                     );
@@ -1225,7 +1246,108 @@ export function CalendarView() {
         onTouchSchedule={onTouchSchedule}
         allocByProject={allocByProject}
       />
+      {gcalPopover && (() => {
+        const evt = gcal.find((g) => g.id === gcalPopover.eventId);
+        if (!evt) return null;
+        return (
+          <GcalEventPopover
+            event={evt}
+            anchorRect={gcalPopover.rect}
+            onClose={() => setGcalPopover(null)}
+          />
+        );
+      })()}
     </div>
+  );
+}
+
+// Small popover anchored to a clicked .gcal-evt: shows title, time
+// range, optional description, and a deep link out to Google Calendar.
+// Read-only — Fira doesn't author back into Google.
+function GcalEventPopover({
+  event,
+  anchorRect,
+  onClose,
+}: {
+  event: GcalEvent;
+  anchorRect: { left: number; top: number; right: number; bottom: number };
+  onClose: () => void;
+}) {
+  const popRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const onDown = (e: MouseEvent | TouchEvent) => {
+      const target = e.target as Node | null;
+      if (popRef.current && target && !popRef.current.contains(target)) onClose();
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('touchstart', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('touchstart', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [onClose]);
+
+  // Anchor below the event by default, flip above if it would overflow.
+  const POPOVER_W = 280;
+  const margin = 8;
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  let left = Math.min(Math.max(margin, anchorRect.left), vw - POPOVER_W - margin);
+  let top = anchorRect.bottom + 6;
+  // Flip up if there isn't room below.
+  const estHeight = 200;
+  if (top + estHeight > vh - margin) {
+    const above = anchorRect.top - estHeight - 6;
+    if (above >= margin) top = above;
+  }
+
+  const start = new Date(event.start_at);
+  const end = new Date(event.end_at);
+  const sameDay = start.toDateString() === end.toDateString();
+  const fmtTime = (d: Date) =>
+    d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const fmtDate = (d: Date) =>
+    d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+  const range = sameDay
+    ? `${fmtDate(start)} · ${fmtTime(start)} – ${fmtTime(end)}`
+    : `${fmtDate(start)} ${fmtTime(start)} – ${fmtDate(end)} ${fmtTime(end)}`;
+
+  return createPortal(
+    <div
+      ref={popRef}
+      className="gcal-popover"
+      style={{ position: 'fixed', left, top, width: POPOVER_W, zIndex: 1300 }}
+    >
+      <div className="gcal-popover-head">
+        <div className="gcal-popover-title">{event.title || '(no title)'}</div>
+        <button
+          className="icon-btn"
+          onClick={onClose}
+          title="Close (Esc)"
+          aria-label="Close"
+        >
+          <X size={13} strokeWidth={1.75} />
+        </button>
+      </div>
+      <div className="gcal-popover-time">{range}</div>
+      {event.description && (
+        <div className="gcal-popover-desc">{event.description}</div>
+      )}
+      {event.html_link && (
+        <a
+          className="gcal-popover-link"
+          href={event.html_link}
+          target="_blank"
+          rel="noreferrer"
+        >
+          <ExternalLink size={11} strokeWidth={1.75} /> Open in Google Calendar
+        </a>
+      )}
+    </div>,
+    document.body,
   );
 }
 

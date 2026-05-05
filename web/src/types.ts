@@ -132,6 +132,8 @@ export interface GcalEvent {
   title: string;
   start_at: string;
   end_at: string;
+  description: string | null;
+  html_link: string | null;
 }
 
 export type LinkStatus = 'pending' | 'accepted';
@@ -205,6 +207,11 @@ export interface UserSettings {
   /// Personal/work mode badge shown next to the topbar avatar. Null
   /// when the user hasn't picked one.
   account_badge: 'personal' | 'work' | null;
+  /// True iff the user has an active Google Calendar connection.
+  /// Drives the AccountSettings modal's connected/disconnected UI.
+  gcal_connected: boolean;
+  /// Email of the connected Google account, when known.
+  gcal_email: string | null;
 }
 
 export interface Bootstrap {

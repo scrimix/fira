@@ -15,7 +15,7 @@ use fira_api::{
     auth::{self, AuthConfig, AuthCtx},
     db, error,
     error::ApiResult,
-    invites, links,
+    gcal, invites, links,
     load_bootstrap,
     models::*,
     ops, pubsub,
@@ -27,6 +27,19 @@ async fn bootstrap(
     State(s): State<AppState>,
     ctx: AuthCtx,
 ) -> ApiResult<Json<Bootstrap>> {
+    // Fire-and-forget gcal sync: returns the cached event set
+    // immediately, lets the next rehydrate / changes tick pick up the
+    // refreshed rows. Keeps Google's API latency / availability off
+    // the critical path of every page load.
+    {
+        let pool = s.pool.clone();
+        let user_id = ctx.user.id;
+        tokio::spawn(async move {
+            if let Err(e) = gcal::sync_user_calendar(&pool, user_id).await {
+                tracing::warn!("background gcal sync failed: {}", e.0);
+            }
+        });
+    }
     let data = load_bootstrap(&s.pool, ctx.workspace_id, ctx.user.id)
         .await
         .map_err(error::ApiError::from)?;
@@ -457,6 +470,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/auth/google/login", get(auth::google_login))
         .route("/auth/google/callback", get(auth::google_callback))
         .route("/auth/logout", post(auth::logout))
+        .route("/gcal/connect", get(gcal::connect))
+        .route("/gcal/callback", get(gcal::callback))
+        .route("/gcal/disconnect", post(gcal::disconnect))
         .route("/bootstrap", get(bootstrap))
         .route("/projects", get(projects).post(create_project))
         .route("/projects/:id", patch(update_project).delete(delete_project))

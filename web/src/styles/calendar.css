@@ -680,6 +680,68 @@
   border-style: dotted;
 }
 
+/* Own gcal events are clickable — pointer-events stays off for the
+ * linked variant since the partner's events have no description we
+ * fetch today. */
+.gcal-evt-clickable {
+  pointer-events: auto;
+  cursor: pointer;
+}
+.gcal-evt-clickable:hover {
+  opacity: 1;
+  border-style: solid;
+}
+
+/* Popover anchored to a clicked .gcal-evt. Same visual idiom as the
+ * tag editor / status popover (paper background, light shadow,
+ * rounded). Portaled to body so the calendar's overflow:auto can't
+ * clip it. */
+.gcal-popover {
+  background: var(--paper);
+  border: 1px solid var(--rule-2);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+  padding: 10px 12px;
+  font-size: calc(12px * var(--fs-scale));
+  color: var(--ink);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.gcal-popover-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+.gcal-popover-title {
+  flex: 1;
+  font-weight: 600;
+  line-height: 1.3;
+  word-break: break-word;
+}
+.gcal-popover-time {
+  font-family: var(--font-mono);
+  font-size: calc(11px * var(--fs-scale));
+  color: var(--ink-2);
+}
+.gcal-popover-desc {
+  white-space: pre-wrap;
+  line-height: 1.4;
+  color: var(--ink-2);
+  max-height: 220px;
+  overflow: auto;
+  font-size: calc(12px * var(--fs-scale));
+}
+.gcal-popover-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: calc(11px * var(--fs-scale));
+  color: var(--accent);
+  text-decoration: none;
+}
+.gcal-popover-link:hover { text-decoration: underline; }
+
 /* Linked partner's time blocks — read-only overlay. Full column width
  * (no lane logic), behind personal blocks (lower z-index), with a
  * desaturated palette so it's visually distinct from your own work. */

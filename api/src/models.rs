@@ -17,6 +17,16 @@ pub struct User {
 pub struct UserSettings {
     /// `personal` or `work`, or NULL when the user hasn't picked yet.
     pub account_badge: Option<String>,
+    /// Whether the user has connected their Google Calendar. Sourced from
+    /// the presence of a row in `gcal_credentials` (not stored on the
+    /// settings row itself), but reported here so the AccountSettings
+    /// modal can render the right state on first paint.
+    #[sqlx(default)]
+    pub gcal_connected: bool,
+    /// Email of the connected Google account (the calendar owner).
+    /// `None` when not connected.
+    #[sqlx(default)]
+    pub gcal_email: Option<String>,
 }
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
@@ -151,6 +161,8 @@ pub struct GcalEvent {
     pub title: String,
     pub start_at: DateTime<Utc>,
     pub end_at: DateTime<Utc>,
+    pub description: Option<String>,
+    pub html_link: Option<String>,
 }
 
 /// A link between two user accounts. Returned to the caller from their

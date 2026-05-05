@@ -163,6 +163,11 @@ interface FiraState {
   // a compact chip next to the avatar so the user has a glance-able
   // signal of which mode they intend to be in. `null` = no badge.
   accountBadge: 'personal' | 'work' | null;
+  // Google Calendar connection state. Hydrated from
+  // `Bootstrap.settings`; toggled server-side by the OAuth callback /
+  // disconnect endpoint, not by client mutations.
+  gcalConnected: boolean;
+  gcalEmail: string | null;
   // Discriminated union — one modal serves both create and edit. null = closed.
   projectModal: { kind: 'new' } | { kind: 'edit'; id: UUID } | null;
   // Transient notifications. Auto-dismissed after a few seconds; the user
@@ -256,6 +261,7 @@ interface FiraState {
   openAccountModal: () => void;
   closeAccountModal: () => void;
   setAccountBadge: (b: 'personal' | 'work' | null) => void;
+  disconnectGcal: () => Promise<void>;
   dismissToast: (id: string) => void;
   addProject: (input: { title: string; icon: string; color: string }) => Promise<Project>;
   updateProject: (
@@ -689,6 +695,8 @@ function applyBootstrap(
     links: data.links ?? [],
     workspaceInvites: data.workspace_invites ?? [],
     accountBadge: data.settings?.account_badge ?? null,
+    gcalConnected: data.settings?.gcal_connected ?? false,
+    gcalEmail: data.settings?.gcal_email ?? null,
     cursor: data.cursor ?? 0,
     appliedOpIds: new Map(),
     outbox: [],
@@ -757,6 +765,8 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
   linkModalOpen: false,
   accountModalOpen: false,
   accountBadge: null,
+  gcalConnected: false,
+  gcalEmail: null,
   view: 'calendar',
   selectedPersonIds: [],
   activePersonId: null,
@@ -876,6 +886,8 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
         links: data.links ?? [],
         workspaceInvites: data.workspace_invites ?? [],
         accountBadge: data.settings?.account_badge ?? null,
+        gcalConnected: data.settings?.gcal_connected ?? false,
+        gcalEmail: data.settings?.gcal_email ?? null,
         // Cursor advances to the bootstrap watermark; the appliedOpIds
         // dedup map is reset because it's now scoped to a fresh window.
         cursor: data.cursor ?? s.cursor,
@@ -1519,6 +1531,18 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
       get().showToast(msg);
     });
   },
+  disconnectGcal: async () => {
+    if (get().playgroundMode) return;
+    try {
+      await api.disconnectGcal();
+      // Server already cleared the cached events; mirror that locally
+      // so the calendar drops them immediately.
+      set({ gcalConnected: false, gcalEmail: null, gcal: [] });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Failed to disconnect';
+      get().showToast(msg);
+    }
+  },
 
   addProject: async (input) => {
     // Project create is rare and deliberate — a synchronous round-trip is
@@ -1974,6 +1998,8 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     showWork: s.showWork,
     inboxFilter: s.inboxFilter,
     accountBadge: s.accountBadge,
+    gcalConnected: s.gcalConnected,
+    gcalEmail: s.gcalEmail,
   // partialize is loosely typed — zustand expects S but we're returning a
   // subset of fields. Cast through unknown is the canonical workaround.
   }) as unknown as FiraState,

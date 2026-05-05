@@ -1,5 +1,6 @@
 import { Calendar, Link, X } from 'lucide-react';
 import { useFira } from '../store';
+import { gcalConnectUrl } from '../api';
 
 // Account settings: container for personal-account stuff that isn't
 // workspace-scoped. Replaces the topbar's two-avatar + link-button
@@ -14,6 +15,10 @@ export function AccountSettingsModal() {
   const me = useFira((s) => s.users.find((u) => u.id === s.meId) ?? null);
   const links = useFira((s) => s.links);
   const users = useFira((s) => s.users);
+  const gcalConnected = useFira((s) => s.gcalConnected);
+  const gcalEmail = useFira((s) => s.gcalEmail);
+  const disconnectGcal = useFira((s) => s.disconnectGcal);
+  const playgroundMode = useFira((s) => s.playgroundMode);
 
   // Same priority order as the (former) topbar icon: most actionable first.
   const linkState = (() => {
@@ -114,15 +119,32 @@ export function AccountSettingsModal() {
 
           <Section title="Google Calendar">
             <div className="account-row">
-              <button
-                className="btn account-stub-btn"
-                disabled
-                title="Coming soon"
-              >
-                <Calendar size={13} strokeWidth={1.75} /> Connect
-              </button>
+              {gcalConnected ? (
+                <button
+                  className="btn account-stub-btn"
+                  onClick={() => { void disconnectGcal(); }}
+                  disabled={playgroundMode}
+                  title={playgroundMode ? 'Not available in playground' : 'Disconnect Google Calendar'}
+                >
+                  <Calendar size={13} strokeWidth={1.75} /> Disconnect
+                </button>
+              ) : (
+                <a
+                  className="btn account-stub-btn"
+                  href={playgroundMode ? undefined : gcalConnectUrl}
+                  aria-disabled={playgroundMode || undefined}
+                  data-disabled={playgroundMode || undefined}
+                  title={playgroundMode ? 'Not available in playground' : 'Connect Google Calendar'}
+                  onClick={(e) => { if (playgroundMode) e.preventDefault(); }}
+                >
+                  <Calendar size={13} strokeWidth={1.75} /> Connect
+                </a>
+              )}
               <p className="account-row-text account-row-muted">
-                Show your Google Calendar events alongside Fira time blocks. Coming soon.
+                {gcalConnected
+                  ? <>Connected{gcalEmail ? <> as <strong>{gcalEmail}</strong></> : null}. Events
+                    show on the calendar alongside your time blocks. Click an event for details.</>
+                  : 'Show your Google Calendar events alongside Fira time blocks (read-only).'}
               </p>
             </div>
           </Section>

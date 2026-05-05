@@ -902,7 +902,7 @@ pub async fn list_blocks_in_scope(pool: &PgPool, scope: &[Uuid]) -> sqlx::Result
 
 pub async fn list_gcal_for_user(pool: &PgPool, user_id: Uuid) -> sqlx::Result<Vec<GcalEvent>> {
     sqlx::query_as(
-        "SELECT id, user_id, title, start_at, end_at
+        "SELECT id, user_id, title, start_at, end_at, description, html_link
          FROM gcal_events WHERE user_id = $1 ORDER BY start_at",
     )
     .bind(user_id)
@@ -1412,10 +1412,21 @@ pub async fn get_user_settings(
     .bind(user_id)
     .fetch_optional(pool)
     .await?;
-    Ok(match row {
-        Some((account_badge,)) => crate::models::UserSettings { account_badge },
-        None => crate::models::UserSettings { account_badge: None },
-    })
+    let account_badge = row.and_then(|(b,)| b);
+    // Connection state lives on a separate table; fetch alongside so the
+    // bootstrap response carries everything the AccountSettings modal
+    // needs to render correctly on first paint.
+    let cred: Option<(Option<String>,)> = sqlx::query_as(
+        "SELECT calendar_email FROM gcal_credentials WHERE user_id = $1",
+    )
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await?;
+    let (gcal_connected, gcal_email) = match cred {
+        Some((email,)) => (true, email),
+        None => (false, None),
+    };
+    Ok(crate::models::UserSettings { account_badge, gcal_connected, gcal_email })
 }
 
 /// Upsert the caller's account-scoped settings. Today only the

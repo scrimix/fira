@@ -10,6 +10,7 @@
 pub mod auth;
 pub mod db;
 pub mod error;
+pub mod gcal;
 pub mod invites;
 pub mod links;
 pub mod models;

@@ -137,8 +137,13 @@ export const api = {
   /// to clear a field; omit a field to leave it unchanged.
   patchMySettings: (patch: { account_badge?: 'personal' | 'work' | null }) =>
     req<import('./types').UserSettings>('PATCH', '/me/settings', patch),
+  disconnectGcal: () => req<void>('POST', '/gcal/disconnect'),
 };
 
 // Server-driven; the browser navigates here so cookies and the OAuth redirect
 // chain work without us re-implementing them on the client.
 export const loginUrl = `${BASE}/auth/google/login`;
+// Connect flow: full-page redirect to Google's incremental-authorization
+// consent screen for `calendar.readonly`. The server stores credentials
+// on the callback and redirects back to the SPA.
+export const gcalConnectUrl = `${BASE}/gcal/connect`;
