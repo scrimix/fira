@@ -3,7 +3,7 @@ import { useFira } from '../store';
 import { weekStartFor, fmtWeekRange } from '../time';
 import { useIsMobile } from '../hooks';
 import { ProjectIcon } from './ProjectIcon';
-import { SyncPill } from './SyncPill';
+import { SyncPill, RefreshButton } from './SyncPill';
 import { WorkspaceSwitcher } from './WorkspaceSwitcher';
 
 export function TopBar() {
@@ -97,6 +97,7 @@ export function TopBar() {
           Playground
         </span>
       )}
+      <RefreshButton />
       <SyncPill />
       <button className="logout-btn" onClick={() => logout()} title="Sign out">
         Log out

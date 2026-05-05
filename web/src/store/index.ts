@@ -158,6 +158,11 @@ interface FiraState {
   toasts: Toast[];
 
   hydrate: () => Promise<void>;
+  // Re-fetch the bootstrap for the current workspace and overlay it on
+  // the existing state. Unlike `hydrate`, this preserves the outbox,
+  // workspace identity, and UI state — meant for periodic / manual
+  // "give me a fresh snapshot" without losing in-flight queued ops.
+  rehydrate: () => Promise<void>;
   enterPlayground: () => void;
   logout: () => Promise<void>;
   switchWorkspace: (id: UUID) => Promise<void>;
@@ -810,6 +815,62 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     }
   },
 
+  rehydrate: async () => {
+    // Lighter than `hydrate`: doesn't re-auth, doesn't re-list workspaces,
+    // doesn't touch outbox / appliedOpIds / cursor watermark. Just re-fetches
+    // the bootstrap for the active workspace and overlays the data fields.
+    // Used by the "refresh" affordance next to the sync pill and by the
+    // App-level 5-min interval that compensates for missed WS nudges.
+    if (get().playgroundMode || !get().activeWorkspaceId) return;
+    try {
+      const data = await api.bootstrap();
+      set((s) => ({
+        users: data.users,
+        projects: data.projects,
+        epics: data.epics,
+        sprints: data.sprints,
+        tasks: data.tasks,
+        tags: data.tags ?? [],
+        blocks: data.blocks,
+        gcal: data.gcal,
+        links: data.links ?? [],
+        workspaceInvites: data.workspace_invites ?? [],
+        // Cursor advances to the bootstrap watermark; the appliedOpIds
+        // dedup map is reset because it's now scoped to a fresh window.
+        cursor: data.cursor ?? s.cursor,
+        appliedOpIds: new Map(),
+        lastSyncedAt: Date.now(),
+        // Mirror applyBootstrap's tag-id pruning so a peer-deleted tag
+        // can't leave a phantom in the inbox filter.
+        inboxFilter: {
+          ...s.inboxFilter,
+          tag_ids: s.inboxFilter.tag_ids.filter(
+            (id) => (data.tags ?? []).some((t) => t.id === id),
+          ),
+        },
+      }));
+    } catch {
+      // Silent — same posture as pollChanges. The next tick (or the
+      // user's next manual refresh click) retries.
+    }
+
+    // Fan out to the side surfaces so a refresh click really means
+    // "give me everything fresh", not just the active-workspace
+    // bootstrap. Each helper is already idempotent and gated on its
+    // own preconditions (link accepted, personal overlay applicable,
+    // etc.) so calling them all unconditionally is safe.
+    const s = get();
+    const inTeamWorkspace = s.workspaces.find((w) => w.id === s.activeWorkspaceId)?.is_personal === false;
+    const hasAcceptedLink = s.links.some((l) => l.status === 'accepted');
+    await Promise.all([
+      get().reloadWorkspaces(),
+      get().reloadLinks(),
+      get().reloadWorkspaceInvites(),
+      hasAcceptedLink ? get().loadLinkedCalendar() : Promise.resolve(),
+      inTeamWorkspace ? get().loadPersonalCalendar() : get().loadWorkCalendar(),
+    ]);
+  },
+
   enterPlayground: () => {
     // The Login button calls this to flip the flag and reload. After
     // reload, hydrate() sees `isPlayground()` and routes through the
@@ -823,66 +884,31 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
   switchWorkspace: async (id) => {
     const ws = get().workspaces.find((w) => w.id === id);
     if (!ws) return;
+    const me = get().users.find((u) => u.id === get().meId);
+    if (!me) return;
     setActiveWorkspaceId(id);
     if (typeof localStorage !== 'undefined') {
       localStorage.setItem('fira:activeWorkspace', id);
     }
     // Re-bootstrap into the new workspace's data. We could try to be clever
     // and merge, but it's simpler and safer to re-fetch — the state shape
-    // mirrors a fresh hydrate.
+    // mirrors a fresh hydrate. Overlay caches that are per-workspace get
+    // dropped here so a stale projection doesn't leak into the new context;
+    // the App-level effects refetch them after applyBootstrap lands.
     set({
       loaded: false,
-      activeWorkspaceId: id,
-      cursor: 0,
-      outbox: [],
-      appliedOpIds: new Map(),
-      // Linked overlay is per-session, not per-workspace — but we drop
-      // the cached blocks on switch so the App-level effect refetches
-      // them after the new bootstrap lands.
       linkedBlocks: [],
       linkedTasks: [],
       linkedGcal: [],
-      // Personal overlay is workspace-specific (it only renders in team
-      // workspaces). Drop on switch so a stale projection doesn't leak.
       personalBlocks: [],
       personalTasks: [],
       showPersonal: false,
-      // Work overlay is the inverse — only renders in the personal
-      // workspace. Same drop-on-switch posture.
       workBlocks: [],
       workTasks: [],
       showWork: false,
     });
     const data = await api.bootstrap();
-    const projectFilter: Record<UUID, boolean> = {};
-    data.projects.forEach((p) => { projectFilter[p.id] = true; });
-    const firstProject = data.projects[0]?.id ?? null;
-    const meId = get().meId;
-    const myMember = ws.members.find((m) => m.user_id === meId);
-    set((s) => ({
-      loaded: true,
-      users: data.users,
-      projects: data.projects,
-      epics: data.epics,
-      sprints: data.sprints,
-      tasks: data.tasks,
-      blocks: data.blocks,
-      gcal: data.gcal,
-      links: data.links ?? [],
-      workspaceInvites: data.workspace_invites ?? [],
-      cursor: data.cursor ?? 0,
-      myWorkspaceRole: (myMember?.role ?? 'member') as WorkspaceRole,
-      projectFilter,
-      selectedPersonIds: meId ? [meId] : [],
-      activePersonId: meId,
-      inboxFilter: {
-        ...s.inboxFilter,
-        project_id: firstProject,
-        assignee_id: meId,
-      },
-      // Same empty-workspace rule as initial hydrate.
-      view: data.projects.length === 0 ? 'inbox' : 'calendar',
-    }));
+    applyBootstrap(set, get, data, me, ws, get().workspaces, get().playgroundMode);
   },
 
   reloadWorkspaces: async () => {

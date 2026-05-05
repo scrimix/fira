@@ -194,6 +194,38 @@ export function SyncPill() {
   );
 }
 
+// Standalone "refresh from server" button. Sits adjacent to (but separate
+// from) the sync pill in the topbar — the pill is a status surface, this
+// is an action surface. Triggers a full bootstrap re-fetch via `rehydrate`
+// to compensate for missed WS nudges. Hidden in playground mode (no
+// server to refetch from).
+export function RefreshButton() {
+  const rehydrate = useFira((s) => s.rehydrate);
+  const playgroundMode = useFira((s) => s.playgroundMode);
+  const [refreshing, setRefreshing] = useState(false);
+  if (playgroundMode) return null;
+  const onClick = async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    try { await rehydrate(); } finally { setRefreshing(false); }
+  };
+  return (
+    <button
+      className="topbar-refresh"
+      onClick={onClick}
+      disabled={refreshing}
+      title="Refresh from server"
+      aria-label="Refresh from server"
+    >
+      <RefreshCw
+        size={11}
+        strokeWidth={1.75}
+        className={refreshing ? 'sync-pill-spin' : undefined}
+      />
+    </button>
+  );
+}
+
 function fmtRelative(ms: number): string {
   const s = Math.round(ms / 1000);
   if (s < 60) return `${s}s`;

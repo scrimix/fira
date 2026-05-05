@@ -27,6 +27,7 @@ export default function App() {
   const linkModalOpen = useFira((s) => s.linkModalOpen);
   const syncOutbox = useFira((s) => s.syncOutbox);
   const pollChanges = useFira((s) => s.pollChanges);
+  const rehydrate = useFira((s) => s.rehydrate);
   const reloadWorkspaces = useFira((s) => s.reloadWorkspaces);
   const reloadLinks = useFira((s) => s.reloadLinks);
   const reloadWorkspaceInvites = useFira((s) => s.reloadWorkspaceInvites);
@@ -95,6 +96,17 @@ export default function App() {
     const id = window.setInterval(() => { void pollChanges(); }, 60_000);
     return () => window.clearInterval(id);
   }, [pollChanges]);
+
+  // Full bootstrap refresh every 5 min. The change-feed catches incremental
+  // ops, but it can drift if a nudge is missed AND the cursor advances past
+  // it (e.g. a transient WS reconnect that swallows a frame). Rehydrating
+  // the bootstrap snapshot at a coarse cadence is the belt-and-braces fix —
+  // outbox + UI state are preserved, only the server-derived collections
+  // get overwritten.
+  useEffect(() => {
+    const id = window.setInterval(() => { void rehydrate(); }, 5 * 60_000);
+    return () => window.clearInterval(id);
+  }, [rehydrate]);
 
   // WS nudge channel: open one socket per active workspace. Each nudge
   // triggers the same syncOutbox+pollChanges sequence as the interval, so

@@ -1066,6 +1066,26 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
 
 .sync-pill-wrap { position: relative; display: inline-flex; }
 
+/* Standalone "refresh from server" action button. Same height/typography
+ * as the sync pill so the two read as a matched pair, but with a clear
+ * margin gap so they don't merge into one segmented control. */
+.topbar-refresh {
+  display: inline-flex; align-items: center; justify-content: center;
+  height: 22px;
+  padding: 0 8px;
+  margin-right: 8px;
+  border: 1px solid var(--rule-2);
+  background: var(--paper);
+  color: var(--ink-3);
+  cursor: pointer;
+  transition: border-color 80ms ease, color 80ms ease, background 80ms ease;
+}
+.topbar-refresh:hover:not(:disabled) {
+  border-color: var(--rule-3);
+  color: var(--ink-2);
+}
+.topbar-refresh:disabled { cursor: default; color: var(--ink-4); }
+
 /* Sits flush against the sync-pill so the two read as one segmented status
  * cluster on the right. Same height + typography; muted tone (paper-3 bg,
  * ink-2 text) so the label is clear without competing with the sync state's
