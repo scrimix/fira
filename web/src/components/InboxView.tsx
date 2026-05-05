@@ -44,7 +44,7 @@ export function InboxView() {
 
   // Hooks must run unconditionally on every render — the empty-state branch
   // below is an early return, so all useState/useRef calls live above it.
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({ done: true });
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({ done: true, someday: true });
   const [collapsedAssignee, setCollapsedAssignee] = useState<Record<UUID, boolean>>({});
   const [dropTarget, setDropTarget] = useState<Section | null>(null);
   const [assigneeDropTarget, setAssigneeDropTarget] = useState<UUID | null>(null);
@@ -98,6 +98,7 @@ export function InboxView() {
       });
   const nowTasks = projectTasks.filter((t) => t.section === 'now').sort(byKey);
   const laterTasks = projectTasks.filter((t) => t.section === 'later').sort(byKey);
+  const somedayTasks = projectTasks.filter((t) => t.section === 'someday').sort(byKey);
   // Done sorts newest-first by creation time. Approximate stand-in
   // for "finished at" — server has no done_at column yet, and
   // updated_at would shuffle on any field edit (tag, title, …).
@@ -522,6 +523,27 @@ export function InboxView() {
             <>
               {laterTasks.map((t) => renderRow(t, false))}
               <AddTaskRow onAdd={(title) => addTask(project.id, 'later', title, undefined, tagFilter)} />
+            </>
+          )}
+        </div>
+
+        {/* SOMEDAY */}
+        <div className="section" data-section="someday"
+             style={dropTarget === 'someday' ? { background: 'var(--accent-soft)' } : undefined}
+             onDragOver={(e) => { e.preventDefault(); setDropTarget('someday'); }}
+             onDragLeave={() => setDropTarget(null)}
+             onDrop={(e) => onSectionDrop(e, 'someday')}>
+          <div className="section-head" onClick={() => setCollapsed({ ...collapsed, someday: !collapsed.someday })}>
+            <span className="caret">{collapsed.someday ? '▸' : '▾'}</span>
+            <h2>Someday</h2>
+            <span className="count">{somedayTasks.length}</span>
+            <span className="rule" />
+            <span className="count" style={{ fontFamily: 'var(--font-mono)' }}>maybe</span>
+          </div>
+          {!collapsed.someday && (
+            <>
+              {somedayTasks.map((t) => renderRow(t, false))}
+              <AddTaskRow onAdd={(title) => addTask(project.id, 'someday', title, undefined, tagFilter)} />
             </>
           )}
         </div>

@@ -4,12 +4,13 @@ import { Check, Copy, PanelRightClose, PanelRightOpen, Pencil, Plus, Trash2, X }
 import { useFira } from '../store';
 import { useIsMobile } from '../hooks';
 import { ConfirmDelete } from './ConfirmDelete';
+import { Select } from './Select';
 import {
   fmtMin, fmtClockShort, parseEstimate,
   taskCompletedMin, taskPlannedMin, taskTimeLeft,
   blockToGrid,
 } from '../time';
-import type { Status, Tag, Task, User, UUID } from '../types';
+import type { Section, Status, Tag, Task, User, UUID } from '../types';
 
 interface Props { taskId: string }
 
@@ -32,6 +33,7 @@ export function TaskModal({ taskId }: Props) {
   const setTaskTitle = useFira((s) => s.setTaskTitle);
   const setTaskEstimate = useFira((s) => s.setTaskEstimate);
   const setTaskStatus = useFira((s) => s.setTaskStatus);
+  const setTaskSection = useFira((s) => s.setTaskSection);
   const setTaskExternalId = useFira((s) => s.setTaskExternalId);
   const setTaskExternalUrl = useFira((s) => s.setTaskExternalUrl);
   const setTaskAssignee = useFira((s) => s.setTaskAssignee);
@@ -294,7 +296,15 @@ export function TaskModal({ taskId }: Props) {
                 onSaveUrl={(v) => setTaskExternalUrl(task.id, v)}
               />
             </div>
-            <Field label="Section" mono value={task.section} />
+            <div className="field">
+              <h5>Section</h5>
+              <Select<Section>
+                value={task.section}
+                onChange={(v) => setTaskSection(task.id, v)}
+                options={SECTION_OPTIONS}
+                size="sm"
+              />
+            </div>
           </div>
         </div>
         {confirmingDelete && (
@@ -1123,6 +1133,13 @@ function EstimateEditor({ value, onSave }: {
     />
   );
 }
+
+const SECTION_OPTIONS: Array<{ value: Section; label: string }> = [
+  { value: 'now', label: 'now' },
+  { value: 'later', label: 'later' },
+  { value: 'someday', label: 'someday' },
+  { value: 'done', label: 'done' },
+];
 
 const STATUS_OPTIONS: Array<{ id: Status; label: string; tone: string }> = [
   { id: 'backlog', label: 'backlog', tone: 'backlog' },

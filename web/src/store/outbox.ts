@@ -4,10 +4,10 @@ export type OpKind =
   | { kind: 'task.create'; task: import('../types').Task }
   | { kind: 'task.tick'; task_id: string; done: boolean }
   | { kind: 'task.set_status'; task_id: string; status: 'backlog' | 'todo' | 'in_progress' | 'done' }
-  | { kind: 'task.set_section'; task_id: string; section: 'now' | 'later' | 'done' }
+  | { kind: 'task.set_section'; task_id: string; section: 'now' | 'later' | 'done' | 'someday' }
   | { kind: 'task.set_assignee'; task_id: string; assignee_id: string | null }
   | { kind: 'task.set_estimate'; task_id: string; estimate_min: number | null }
-  | { kind: 'task.reorder'; project_id: string; section: 'now' | 'later' | 'done'; ordered: string[] }
+  | { kind: 'task.reorder'; project_id: string; section: 'now' | 'later' | 'done' | 'someday'; ordered: string[] }
   | { kind: 'task.set_title'; task_id: string; title: string }
   | { kind: 'task.set_description'; task_id: string; description_md: string }
   | { kind: 'task.set_external_id'; task_id: string; external_id: string | null }

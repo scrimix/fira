@@ -520,6 +520,34 @@ async fn seed_tasks(tx: &mut Transaction<'_, Postgres>) -> sqlx::Result<()> {
             estimate_min: None, spent_min: 0, tags: &[],
             subtasks: &[],
         },
+        // ---- SOMEDAY ----
+        TaskSpec {
+            slug: "t_atlas_someday1", project: "p_atlas", epic: Some("e_auth_v2"), sprint: None,
+            assignee: "u_maya", title: "Hardware token (YubiKey) onboarding flow",
+            description: "",
+            section: "someday", status: "backlog", priority: Some("p3"),
+            source: "jira", external_id: Some("ATL-602"),
+            estimate_min: None, spent_min: 0, tags: &[],
+            subtasks: &[],
+        },
+        TaskSpec {
+            slug: "t_relay_someday1", project: "p_relay", epic: Some("e_onboarding"), sprint: None,
+            assignee: "u_maya", title: "Linear source adapter",
+            description: "",
+            section: "someday", status: "backlog", priority: Some("p3"),
+            source: "local", external_id: None,
+            estimate_min: None, spent_min: 0, tags: &[],
+            subtasks: &[],
+        },
+        TaskSpec {
+            slug: "t_helix_someday1", project: "p_helix", epic: Some("e_explore"), sprint: None,
+            assignee: "u_maya", title: "Voice-input for quick-capture (research)",
+            description: "",
+            section: "someday", status: "backlog", priority: Some("p3"),
+            source: "local", external_id: None,
+            estimate_min: None, spent_min: 0, tags: &[],
+            subtasks: &[],
+        },
         // ---- DONE ----
         TaskSpec {
             slug: "t_atlas_done1", project: "p_atlas", epic: Some("e_auth_v2"), sprint: Some("s_apr27"),

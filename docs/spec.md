@@ -14,7 +14,7 @@ Fira is a task tool where the unit of planning is the **time block** —
 a discrete scheduled work session attached to a real task on a real day.
 A task accrues N blocks across the week; the plan is the set of blocks
 on the calendar; reality is the set of blocks marked complete. Capture
-happens in a sectioned document (Now / Later / Done), not a board.
+happens in a sectioned document (Now / Later / Someday / Done), not a board.
 Prioritization is manual ordering. The product is two screens — Inbox
 and Calendar — over a single shared task model, scoped by **workspace**
 (the company-level tenant) and project.
@@ -90,7 +90,7 @@ applied in order on boot via `sqlx::migrate!`).
 | `project_members`  | M:N user↔project, `workspace_id` mirrored from parent project by trigger, `role text check (role in ('owner','lead','member','inactive'))`, `removed_at` for soft-delete. Composite FK `(workspace_id, user_id) → workspace_members(workspace_id, user_id)` makes it structurally impossible to add a user to a project who isn't in the workspace. |
 | `epics`            | unit of work bigger than a task, smaller than a project. |
 | `sprints`          | time-boxed; `active` flag drives the inbox's sprint filter. |
-| `tasks`            | section (`now`/`later`/`done`), status, estimate, assignee, sort_key, optional `external_id`, optional per-task `external_url`. |
+| `tasks`            | section (`now`/`later`/`someday`/`done`), status, estimate, assignee, sort_key, optional `external_id`, optional per-task `external_url`. |
 | `tags`             | per-project, identity-bearing label: `(id, project_id, title, color)`. Case-insensitive unique on `(project_id, lower(title))`. Renaming is a `set_title` op against the row, no rewrite of attached tasks. |
 | `task_tags`        | M:N task ↔ tag, PK `(task_id, tag_id)`, FK cascades on tag delete. |
 | `subtasks`         | flat under a task. The "checkbox tree in a description" doesn't exist yet — subtasks are first-class rows. |
@@ -419,7 +419,7 @@ the topbar hamburger.
 
 **Inbox view** ([web/src/components/InboxView.tsx](../web/src/components/InboxView.tsx)):
 - Per-project document. Project switcher in left sidebar.
-- Now / Later / Done sections (Recurring not yet). Now is grouped by
+- Now / Later / Someday / Done sections (Recurring not yet). Now is grouped by
   assignee when the project has >1 member; the caller's group floats
   to the top. "(you)" is keyed off `meId`. Workspace `owner` and
   project-role `owner`/`inactive` members are hidden from assignee
@@ -468,7 +468,8 @@ the topbar hamburger.
   multi-select picker** (sprint 21 — selected chips with × to
   remove, `+` opens a portal-anchored popover with search + chip-
   style toggle rows + inline "Create *<query>*" footer; toggle
-  fires a single `task.set_tags` op), source, section, **Issue link**
+  fires a single `task.set_tags` op), source, **section dropdown**
+  (now / later / someday / done — `task.set_section`), **Issue link**
   (renders `[external_id]` as a link when the project has an
   `external_url_template`, muted text otherwise; pencil icon arms
   the editor). On phones the Tags section moves to the main pane
