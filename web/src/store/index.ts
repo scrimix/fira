@@ -168,6 +168,10 @@ interface FiraState {
   // disconnect endpoint, not by client mutations.
   gcalConnected: boolean;
   gcalEmail: string | null;
+  // Last server-side sync error, prefixed by kind. The modal branches
+  // on `invalid_grant:` to render Reconnect; other prefixes render a
+  // muted retry hint.
+  gcalLastSyncError: string | null;
   // Discriminated union — one modal serves both create and edit. null = closed.
   projectModal: { kind: 'new' } | { kind: 'edit'; id: UUID } | null;
   // Transient notifications. Auto-dismissed after a few seconds; the user
@@ -697,6 +701,7 @@ function applyBootstrap(
     accountBadge: data.settings?.account_badge ?? null,
     gcalConnected: data.settings?.gcal_connected ?? false,
     gcalEmail: data.settings?.gcal_email ?? null,
+    gcalLastSyncError: data.settings?.gcal_last_sync_error ?? null,
     cursor: data.cursor ?? 0,
     appliedOpIds: new Map(),
     outbox: [],
@@ -767,6 +772,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
   accountBadge: null,
   gcalConnected: false,
   gcalEmail: null,
+  gcalLastSyncError: null,
   view: 'calendar',
   selectedPersonIds: [],
   activePersonId: null,
@@ -888,6 +894,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
         accountBadge: data.settings?.account_badge ?? null,
         gcalConnected: data.settings?.gcal_connected ?? false,
         gcalEmail: data.settings?.gcal_email ?? null,
+        gcalLastSyncError: data.settings?.gcal_last_sync_error ?? null,
         // Cursor advances to the bootstrap watermark; the appliedOpIds
         // dedup map is reset because it's now scoped to a fresh window.
         cursor: data.cursor ?? s.cursor,
@@ -1537,7 +1544,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
       await api.disconnectGcal();
       // Server already cleared the cached events; mirror that locally
       // so the calendar drops them immediately.
-      set({ gcalConnected: false, gcalEmail: null, gcal: [] });
+      set({ gcalConnected: false, gcalEmail: null, gcalLastSyncError: null, gcal: [] });
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Failed to disconnect';
       get().showToast(msg);
@@ -2000,6 +2007,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     accountBadge: s.accountBadge,
     gcalConnected: s.gcalConnected,
     gcalEmail: s.gcalEmail,
+    gcalLastSyncError: s.gcalLastSyncError,
   // partialize is loosely typed — zustand expects S but we're returning a
   // subset of fields. Cast through unknown is the canonical workaround.
   }) as unknown as FiraState,

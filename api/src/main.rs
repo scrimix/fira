@@ -36,7 +36,7 @@ async fn bootstrap(
         let user_id = ctx.user.id;
         tokio::spawn(async move {
             if let Err(e) = gcal::sync_user_calendar(&pool, user_id).await {
-                tracing::warn!("background gcal sync failed: {}", e.0);
+                tracing::warn!("background gcal sync failed: {}", e.message);
             }
         });
     }

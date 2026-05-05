@@ -27,6 +27,13 @@ pub struct UserSettings {
     /// `None` when not connected.
     #[sqlx(default)]
     pub gcal_email: Option<String>,
+    /// Last sync error stored on the credentials row. The web client
+    /// branches on the `invalid_grant:` / `refresh_failed:` /
+    /// `sync_failed:` prefix to decide between "Reconnect" and a
+    /// muted retry hint. `None` when the last sync succeeded or no
+    /// sync has run yet.
+    #[sqlx(default)]
+    pub gcal_last_sync_error: Option<String>,
 }
 
 #[derive(Debug, Serialize, sqlx::FromRow)]

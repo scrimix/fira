@@ -1105,6 +1105,27 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   flex: 1; min-width: 0;
 }
 .account-row-muted { color: var(--ink-3); }
+.account-row-warn {
+  /* Reconnect-needed banner inside account modal — calmer than a
+   * toast, but distinct from neutral copy. Same warm amber as the
+   * topbar's work-mode badge. */
+  color: var(--warn, #b07300);
+}
+.account-row-text-stack {
+  /* Container that lets the gcal section stack a primary description
+   * over a secondary hint without breaking the existing account-row
+   * flex layout. */
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1; min-width: 0;
+}
+.account-row-text-stack .account-row-text { flex: none; }
+.account-row-hint {
+  font-size: calc(11px * var(--fs-scale));
+  font-style: italic;
+  opacity: 0.85;
+}
 .account-link-btn {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 4px 8px;

@@ -165,7 +165,7 @@ pub async fn callback(
     // bootstrap. Errors logged, never bubbled — the user's calendar
     // session is the right place to surface a degraded sync state.
     if let Err(e) = sync_user_calendar(&s.pool, user.id).await {
-        tracing::warn!("initial gcal sync failed: {e:?}");
+        tracing::warn!("initial gcal sync failed: {}", e.message);
     }
 
     let cleared = clear_cookie(GCAL_STATE_COOKIE, &s.auth);
@@ -218,11 +218,19 @@ fn map_db_err(e: sqlx::Error) -> Response {
 // ---- sync ----
 
 #[derive(Debug)]
-pub struct SyncError(pub String);
+pub struct SyncError {
+    pub message: String,
+    /// True when Google's token endpoint returned `invalid_grant` —
+    /// the refresh token was revoked, expired (Testing-mode 7-day cap),
+    /// or invalidated by the user. The credentials row stays so the
+    /// UI can keep rendering "Reconnect needed", but no further sync
+    /// attempts will succeed until the user reconnects.
+    pub invalid_grant: bool,
+}
 
 impl<E: std::fmt::Display> From<E> for SyncError {
     fn from(e: E) -> Self {
-        SyncError(e.to_string())
+        SyncError { message: e.to_string(), invalid_grant: false }
     }
 }
 
@@ -240,7 +248,7 @@ pub async fn sync_user_calendar(pool: &PgPool, user_id: Uuid) -> Result<(), Sync
     };
     let cfg = crate::auth::AuthConfig::from_env();
     if cfg.google_client_id.is_empty() {
-        return Err(SyncError("GOOGLE_CLIENT_ID missing".into()));
+        return Err(SyncError { message: "GOOGLE_CLIENT_ID missing".into(), invalid_grant: false });
     }
 
     let now = Utc::now();
@@ -265,14 +273,34 @@ pub async fn sync_user_calendar(pool: &PgPool, user_id: Uuid) -> Result<(), Sync
                 .await;
             }
             Err(e) => {
-                let msg = e.0.clone();
-                let _ = sqlx::query(
+                // Persist a kind-prefixed error so the UI can branch
+                // on "Reconnect" vs generic failure without parsing
+                // the message.
+                let stored = if e.invalid_grant {
+                    "invalid_grant: please reconnect Google Calendar".to_string()
+                } else {
+                    format!("refresh_failed: {}", e.message)
+                };
+                let mut tx = pool.begin().await?;
+                sqlx::query(
                     "UPDATE gcal_credentials SET last_sync_error = $2 WHERE user_id = $1",
                 )
                 .bind(user_id)
-                .bind(&msg)
-                .execute(pool)
-                .await;
+                .bind(&stored)
+                .execute(&mut *tx)
+                .await?;
+                if e.invalid_grant {
+                    // Drop cached events so the user doesn't keep
+                    // seeing stale rows behind the "reconnect needed"
+                    // banner. Reconnect upserts fresh creds + runs an
+                    // initial sync, so the events come back as soon as
+                    // they consent again.
+                    sqlx::query("DELETE FROM gcal_events WHERE user_id = $1")
+                        .bind(user_id)
+                        .execute(&mut *tx)
+                        .await?;
+                }
+                tx.commit().await?;
                 return Err(e);
             }
         }
@@ -280,11 +308,37 @@ pub async fn sync_user_calendar(pool: &PgPool, user_id: Uuid) -> Result<(), Sync
     let access = cred
         .access_token
         .as_deref()
-        .ok_or_else(|| SyncError("no access token after refresh".into()))?;
+        .ok_or_else(|| SyncError { message: "no access token after refresh".into(), invalid_grant: false })?;
 
     let time_min = now - Duration::days(SYNC_WINDOW_PAST_DAYS);
     let time_max = now + Duration::days(SYNC_WINDOW_FUTURE_DAYS);
-    let events = fetch_events(access, &cred.calendar_id, time_min, time_max).await?;
+    // Wrap the network + db section so a Google outage / 5xx /
+    // network blip surfaces as a stored `sync_failed:` instead of
+    // silently leaving the previous error message stale.
+    match do_sync(pool, user_id, access, &cred.calendar_id, time_min, time_max).await {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let _ = sqlx::query(
+                "UPDATE gcal_credentials SET last_sync_error = $2 WHERE user_id = $1",
+            )
+            .bind(user_id)
+            .bind(format!("sync_failed: {}", e.message))
+            .execute(pool)
+            .await;
+            Err(e)
+        }
+    }
+}
+
+async fn do_sync(
+    pool: &PgPool,
+    user_id: Uuid,
+    access: &str,
+    calendar_id: &str,
+    time_min: DateTime<Utc>,
+    time_max: DateTime<Utc>,
+) -> Result<(), SyncError> {
+    let events = fetch_events(access, calendar_id, time_min, time_max).await?;
 
     let mut tx = pool.begin().await?;
     let mut keep_ids: Vec<String> = Vec::with_capacity(events.len());
@@ -435,7 +489,15 @@ async fn refresh_access_token(
         access_token: String,
         expires_in: i64,
     }
+    #[derive(Deserialize)]
+    struct ErrorResponse {
+        error: String,
+    }
     let client = reqwest::Client::new();
+    // Inspect the body manually so we can distinguish `invalid_grant`
+    // (refresh token dead — user must reconnect) from generic 4xx/5xx
+    // (transient — keep the row, bubble up). `error_for_status()`
+    // would fold both into the same opaque reqwest error.
     let res = client
         .post("https://oauth2.googleapis.com/token")
         .form(&[
@@ -445,11 +507,21 @@ async fn refresh_access_token(
             ("grant_type", "refresh_token"),
         ])
         .send()
-        .await?
-        .error_for_status()?
-        .json::<RefreshResponse>()
         .await?;
-    Ok((res.access_token, Utc::now() + Duration::seconds(res.expires_in)))
+    let status = res.status();
+    let body = res.text().await?;
+    if !status.is_success() {
+        let invalid_grant = serde_json::from_str::<ErrorResponse>(&body)
+            .map(|e| e.error == "invalid_grant")
+            .unwrap_or(false);
+        return Err(SyncError {
+            message: format!("refresh failed ({}): {}", status, body),
+            invalid_grant,
+        });
+    }
+    let parsed: RefreshResponse = serde_json::from_str(&body)
+        .map_err(|e| SyncError { message: e.to_string(), invalid_grant: false })?;
+    Ok((parsed.access_token, Utc::now() + Duration::seconds(parsed.expires_in)))
 }
 
 async fn fetch_userinfo(access_token: &str) -> Result<GoogleUserInfo, SyncError> {

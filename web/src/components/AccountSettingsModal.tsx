@@ -17,8 +17,16 @@ export function AccountSettingsModal() {
   const users = useFira((s) => s.users);
   const gcalConnected = useFira((s) => s.gcalConnected);
   const gcalEmail = useFira((s) => s.gcalEmail);
+  const gcalLastSyncError = useFira((s) => s.gcalLastSyncError);
   const disconnectGcal = useFira((s) => s.disconnectGcal);
   const playgroundMode = useFira((s) => s.playgroundMode);
+  // Server stores the error with a kind prefix; the UI only branches
+  // on `invalid_grant:` (Reconnect needed) vs anything else (transient,
+  // muted retry hint).
+  const reconnectNeeded =
+    gcalConnected && (gcalLastSyncError ?? '').startsWith('invalid_grant');
+  const transientError =
+    gcalConnected && !!gcalLastSyncError && !reconnectNeeded;
 
   // Same priority order as the (former) topbar icon: most actionable first.
   const linkState = (() => {
@@ -119,7 +127,18 @@ export function AccountSettingsModal() {
 
           <Section title="Google Calendar">
             <div className="account-row">
-              {gcalConnected ? (
+              {reconnectNeeded ? (
+                <a
+                  className="btn account-stub-btn"
+                  href={playgroundMode ? undefined : gcalConnectUrl}
+                  aria-disabled={playgroundMode || undefined}
+                  data-disabled={playgroundMode || undefined}
+                  title={playgroundMode ? 'Not available in playground' : 'Reconnect Google Calendar'}
+                  onClick={(e) => { if (playgroundMode) e.preventDefault(); }}
+                >
+                  <Calendar size={13} strokeWidth={1.75} /> Reconnect
+                </a>
+              ) : gcalConnected ? (
                 <button
                   className="btn account-stub-btn"
                   onClick={() => { void disconnectGcal(); }}
@@ -140,12 +159,34 @@ export function AccountSettingsModal() {
                   <Calendar size={13} strokeWidth={1.75} /> Connect
                 </a>
               )}
-              <p className="account-row-text account-row-muted">
-                {gcalConnected
-                  ? <>Connected{gcalEmail ? <> as <strong>{gcalEmail}</strong></> : null}. Events
-                    show on the calendar alongside your time blocks. Click an event for details.</>
-                  : 'Show your Google Calendar events alongside Fira time blocks (read-only).'}
-              </p>
+              <div className="account-row-text-stack">
+                {reconnectNeeded ? (
+                  <p className="account-row-text account-row-warn">
+                    Reconnect needed — your Google session expired
+                    {gcalEmail ? <> ({gcalEmail})</> : null}. Click Reconnect to grant access again.
+                  </p>
+                ) : transientError ? (
+                  <p className="account-row-text account-row-muted">
+                    Connected{gcalEmail ? <> as <strong>{gcalEmail}</strong></> : null}. Last sync
+                    didn't go through — we'll retry on the next refresh.
+                  </p>
+                ) : gcalConnected ? (
+                  <p className="account-row-text account-row-muted">
+                    Connected{gcalEmail ? <> as <strong>{gcalEmail}</strong></> : null}. Events
+                    show on the calendar alongside your time blocks. Click an event for details.
+                  </p>
+                ) : (
+                  <>
+                    <p className="account-row-text account-row-muted">
+                      Show your Google Calendar events alongside Fira time blocks (read-only).
+                    </p>
+                    <p className="account-row-text account-row-muted account-row-hint">
+                      Heads up: while we're in Google's review queue, you may need to reconnect
+                      every 7 days.
+                    </p>
+                  </>
+                )}
+              </div>
             </div>
           </Section>
 

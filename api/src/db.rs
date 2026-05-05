@@ -1416,17 +1416,22 @@ pub async fn get_user_settings(
     // Connection state lives on a separate table; fetch alongside so the
     // bootstrap response carries everything the AccountSettings modal
     // needs to render correctly on first paint.
-    let cred: Option<(Option<String>,)> = sqlx::query_as(
-        "SELECT calendar_email FROM gcal_credentials WHERE user_id = $1",
+    let cred: Option<(Option<String>, Option<String>)> = sqlx::query_as(
+        "SELECT calendar_email, last_sync_error FROM gcal_credentials WHERE user_id = $1",
     )
     .bind(user_id)
     .fetch_optional(pool)
     .await?;
-    let (gcal_connected, gcal_email) = match cred {
-        Some((email,)) => (true, email),
-        None => (false, None),
+    let (gcal_connected, gcal_email, gcal_last_sync_error) = match cred {
+        Some((email, err)) => (true, email, err),
+        None => (false, None, None),
     };
-    Ok(crate::models::UserSettings { account_badge, gcal_connected, gcal_email })
+    Ok(crate::models::UserSettings {
+        account_badge,
+        gcal_connected,
+        gcal_email,
+        gcal_last_sync_error,
+    })
 }
 
 /// Upsert the caller's account-scoped settings. Today only the

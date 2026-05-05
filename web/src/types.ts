@@ -212,6 +212,12 @@ export interface UserSettings {
   gcal_connected: boolean;
   /// Email of the connected Google account, when known.
   gcal_email: string | null;
+  /// Stored sync error, prefixed by kind:
+  ///   - `invalid_grant:` → refresh token dead, must reconnect.
+  ///   - `refresh_failed:` → transient (network/5xx during refresh).
+  ///   - `sync_failed:`    → transient (network/5xx during fetch).
+  /// Cleared on the next successful sync. Null when no error.
+  gcal_last_sync_error: string | null;
 }
 
 export interface Bootstrap {
