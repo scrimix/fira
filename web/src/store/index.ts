@@ -38,6 +38,10 @@ interface InboxFilter {
   sprint_id: UUID | 'active' | 'all' | 'none';
   status: 'open' | 'all' | 'in_progress' | 'todo' | 'done';
   assignee_id: UUID | 'all' | null;
+  /// Assignee scope toggle in the inbox toolbar. `'all'` (default)
+  /// renders every project task; `'me'` keeps only tasks assigned to
+  /// the caller. Persisted with the rest of `inboxFilter`.
+  assignee_scope: 'me' | 'all';
   /// Subset of project tag ids to filter by. Empty = no tag filter applied.
   /// Persisted across reloads alongside the rest of inboxFilter.
   tag_ids: UUID[];
@@ -150,6 +154,15 @@ interface FiraState {
   workTasks: LinkedTask[];
   showWork: boolean;
   linkModalOpen: boolean;
+  // Account settings modal — a container for the link affordance plus
+  // (eventually) personal preferences and gcal connection. Replaces the
+  // ad-hoc avatar + link button cluster in the topbar.
+  accountModalOpen: boolean;
+  // Personal/work mode badge — purely a personal preference today
+  // (client-only, persisted in localStorage). The topbar renders it as
+  // a compact chip next to the avatar so the user has a glance-able
+  // signal of which mode they intend to be in. `null` = no badge.
+  accountBadge: 'personal' | 'work' | null;
   // Discriminated union — one modal serves both create and edit. null = closed.
   projectModal: { kind: 'new' } | { kind: 'edit'; id: UUID } | null;
   // Transient notifications. Auto-dismissed after a few seconds; the user
@@ -240,6 +253,9 @@ interface FiraState {
   setShowWork: (v: boolean) => void;
   openLinkModal: () => void;
   closeLinkModal: () => void;
+  openAccountModal: () => void;
+  closeAccountModal: () => void;
+  setAccountBadge: (b: 'personal' | 'work' | null) => void;
   dismissToast: (id: string) => void;
   addProject: (input: { title: string; icon: string; color: string }) => Promise<Project>;
   updateProject: (
@@ -363,14 +379,34 @@ function applyOpToState(s: FiraState, op: AnyOpKind): Partial<FiraState> {
       return { tasks: [...s.tasks, op.task] };
     }
     case 'task.tick': {
+      // finished_at mirrors the server's CASE: stamp on transition into
+      // 'done', clear on transition out. Receivers don't have the
+      // server's exact timestamp for the echo, so we approximate with
+      // the local clock — the drift is sub-second in normal operation
+      // and only matters for the Done-section sort tiebreak.
+      const nowIso = new Date().toISOString();
       return {
         tasks: s.tasks.map((t) => t.id === op.task_id
-          ? { ...t, status: op.done ? 'done' : 'in_progress' }
+          ? {
+              ...t,
+              status: op.done ? 'done' : 'in_progress',
+              finished_at: op.done ? nowIso : null,
+            }
           : t),
       };
     }
-    case 'task.set_status':
-      return { tasks: s.tasks.map((t) => t.id === op.task_id ? { ...t, status: op.status } : t) };
+    case 'task.set_status': {
+      const nowIso = new Date().toISOString();
+      return {
+        tasks: s.tasks.map((t) => t.id === op.task_id
+          ? {
+              ...t,
+              status: op.status,
+              finished_at: op.status === 'done' ? nowIso : null,
+            }
+          : t),
+      };
+    }
     case 'task.set_section':
       return { tasks: s.tasks.map((t) => t.id === op.task_id ? { ...t, section: op.section } : t) };
     case 'task.set_assignee':
@@ -652,6 +688,7 @@ function applyBootstrap(
     gcal: data.gcal,
     links: data.links ?? [],
     workspaceInvites: data.workspace_invites ?? [],
+    accountBadge: data.settings?.account_badge ?? null,
     cursor: data.cursor ?? 0,
     appliedOpIds: new Map(),
     outbox: [],
@@ -718,6 +755,8 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
   workTasks: [],
   showWork: false,
   linkModalOpen: false,
+  accountModalOpen: false,
+  accountBadge: null,
   view: 'calendar',
   selectedPersonIds: [],
   activePersonId: null,
@@ -734,6 +773,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     sprint_id: 'active',
     status: 'open',
     assignee_id: null,
+    assignee_scope: 'all',
     tag_ids: [],
     tag_mode: 'or',
   },
@@ -835,6 +875,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
         gcal: data.gcal,
         links: data.links ?? [],
         workspaceInvites: data.workspace_invites ?? [],
+        accountBadge: data.settings?.account_badge ?? null,
         // Cursor advances to the bootstrap watermark; the appliedOpIds
         // dedup map is reset because it's now scoped to a fresh window.
         cursor: data.cursor ?? s.cursor,
@@ -1463,6 +1504,21 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
   setShowWork: (v) => set({ showWork: v }),
   openLinkModal: () => set({ linkModalOpen: true }),
   closeLinkModal: () => set({ linkModalOpen: false }),
+  openAccountModal: () => set({ accountModalOpen: true }),
+  closeAccountModal: () => set({ accountModalOpen: false }),
+  setAccountBadge: (b) => {
+    // Optimistic local update. In playground mode the in-memory store
+    // is the only persistence layer, so we stop there. Otherwise PATCH
+    // /me/settings; on failure revert and surface a toast.
+    const prev = get().accountBadge;
+    set({ accountBadge: b });
+    if (get().playgroundMode) return;
+    void api.patchMySettings({ account_badge: b }).catch((e) => {
+      set({ accountBadge: prev });
+      const msg = e instanceof Error ? e.message : 'Failed to save badge';
+      get().showToast(msg);
+    });
+  },
 
   addProject: async (input) => {
     // Project create is rare and deliberate — a synchronous round-trip is
@@ -1580,6 +1636,8 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
       tag_ids: tagIds ?? [],
       sort_key: `${maxSort}~`,
       created_at: new Date().toISOString(),
+      created_by: state.meId,
+      finished_at: section === 'done' ? new Date().toISOString() : null,
       subtasks: [],
     };
     set((s) => ({
@@ -1594,16 +1652,24 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     if (!t) return {};
     const nextStatus = t.status === 'done' ? 'in_progress' : 'done';
     const done = nextStatus === 'done';
+    const nowIso = new Date().toISOString();
     return {
-      tasks: s.tasks.map((x) => x.id === taskId ? { ...x, status: nextStatus } : x),
+      tasks: s.tasks.map((x) => x.id === taskId
+        ? { ...x, status: nextStatus, finished_at: done ? nowIso : null }
+        : x),
       ...pushOp(s, { kind: 'task.tick', task_id: taskId, done }),
     };
   }),
 
-  setTaskStatus: (taskId, status) => set((s) => ({
-    tasks: s.tasks.map((x) => x.id === taskId ? { ...x, status } : x),
-    ...pushOp(s, { kind: 'task.set_status', task_id: taskId, status }),
-  })),
+  setTaskStatus: (taskId, status) => set((s) => {
+    const nowIso = new Date().toISOString();
+    return {
+      tasks: s.tasks.map((x) => x.id === taskId
+        ? { ...x, status, finished_at: status === 'done' ? nowIso : null }
+        : x),
+      ...pushOp(s, { kind: 'task.set_status', task_id: taskId, status }),
+    };
+  }),
 
   setTaskSection: (taskId, section) => set((s) => ({
     tasks: s.tasks.map((x) => x.id === taskId ? { ...x, section } : x),
@@ -1907,6 +1973,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     showPersonal: s.showPersonal,
     showWork: s.showWork,
     inboxFilter: s.inboxFilter,
+    accountBadge: s.accountBadge,
   // partialize is loosely typed — zustand expects S but we're returning a
   // subset of fields. Cast through unknown is the canonical workaround.
   }) as unknown as FiraState,

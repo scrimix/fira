@@ -10,6 +10,7 @@ import { TaskModalDraft } from './components/TaskModalDraft';
 import { ProjectModal } from './components/ProjectModal';
 import { WorkspaceModal } from './components/WorkspaceModal';
 import { LinkAccountModal } from './components/LinkAccountModal';
+import { AccountSettingsModal } from './components/AccountSettingsModal';
 import { WorkspaceInviteModal } from './components/WorkspaceInviteModal';
 import { Login } from './components/Login';
 import { Toasts } from './components/Toasts';
@@ -25,6 +26,7 @@ export default function App() {
   const projectModal = useFira((s) => s.projectModal);
   const workspaceModal = useFira((s) => s.workspaceModal);
   const linkModalOpen = useFira((s) => s.linkModalOpen);
+  const accountModalOpen = useFira((s) => s.accountModalOpen);
   const syncOutbox = useFira((s) => s.syncOutbox);
   const pollChanges = useFira((s) => s.pollChanges);
   const rehydrate = useFira((s) => s.rehydrate);
@@ -234,6 +236,7 @@ export default function App() {
         <WorkspaceModal key={editingWorkspace.id} workspace={editingWorkspace} />
       )}
       {(linkModalOpen || hasPendingReceived) && <LinkAccountModal />}
+      {accountModalOpen && <AccountSettingsModal />}
       {pendingWorkspaceInvite && (
         <WorkspaceInviteModal
           key={pendingWorkspaceInvite.id}

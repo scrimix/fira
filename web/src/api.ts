@@ -133,6 +133,10 @@ export const api = {
     req<WorkspaceInvite>('POST', `/invites/${id}/accept`),
   declineInvite: (id: string) =>
     req<WorkspaceInvite>('POST', `/invites/${id}/decline`),
+  /// Patch the caller's account-scoped settings. Pass an explicit `null`
+  /// to clear a field; omit a field to leave it unchanged.
+  patchMySettings: (patch: { account_badge?: 'personal' | 'work' | null }) =>
+    req<import('./types').UserSettings>('PATCH', '/me/settings', patch),
 };
 
 // Server-driven; the browser navigates here so cookies and the OAuth redirect

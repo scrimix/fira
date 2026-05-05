@@ -10,6 +10,15 @@ pub struct User {
     pub initials: String,
 }
 
+/// Per-user, account-scoped settings. Independent of workspace. Today
+/// only `account_badge` is wired up (personal/work mode chip in the
+/// topbar); future preferences land on this same row.
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct UserSettings {
+    /// `personal` or `work`, or NULL when the user hasn't picked yet.
+    pub account_badge: Option<String>,
+}
+
 #[derive(Debug, Serialize, sqlx::FromRow)]
 pub struct Project {
     pub id: Uuid,
@@ -89,6 +98,16 @@ pub struct Task {
     /// newest-first — approximate (it's "newest task in Done", not
     /// "most recently finished"), but stable across edits.
     pub created_at: DateTime<Utc>,
+    /// User who created the task. Nullable to cover legacy rows from
+    /// before migration 0017 where the creator wasn't recorded; new
+    /// tasks always have it set to the acting user via the ops handler.
+    pub created_by: Option<Uuid>,
+    /// Wallclock when the task transitioned into status='done'. Cleared
+    /// when the task moves back out of done. Nullable: NULL means the
+    /// task hasn't finished. Used by the inbox's Done section to sort
+    /// newest-finished-first; client falls back to `created_at` when
+    /// `finished_at` is missing.
+    pub finished_at: Option<DateTime<Utc>>,
     #[sqlx(skip)]
     pub subtasks: Vec<Subtask>,
     /// IDs of `tags` rows attached to this task. Hydrated via the

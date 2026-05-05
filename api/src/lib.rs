@@ -55,6 +55,9 @@ pub struct Bootstrap {
     /// Initial cursor for the change feed. Clients should poll
     /// `/changes?since=cursor` from this watermark forward.
     pub cursor: i64,
+    /// Caller's account-scoped settings (personal/work badge, etc.).
+    /// Always present — empty defaults if the user has never saved any.
+    pub settings: models::UserSettings,
 }
 
 /// Run the same set of queries `/api/bootstrap` runs, scoped to the given
@@ -73,7 +76,7 @@ pub async fn load_bootstrap(
             .bind(user_id)
             .fetch_one(pool)
             .await?;
-    let (users, projects, epics, sprints, tasks, tags, blocks, gcal, links, workspace_invites, cursor) = tokio::try_join!(
+    let (users, projects, epics, sprints, tasks, tags, blocks, gcal, links, workspace_invites, cursor, settings) = tokio::try_join!(
         db::list_users_in_scope(pool, workspace_id, user_id),
         db::list_projects_in_scope(pool, &scope),
         db::list_epics_in_scope(pool, &scope),
@@ -85,6 +88,7 @@ pub async fn load_bootstrap(
         db::list_user_links(pool, user_id),
         db::list_workspace_invites(pool, user_id, &user_email.0),
         ops::current_cursor(pool),
+        db::get_user_settings(pool, user_id),
     )?;
-    Ok(Bootstrap { users, projects, epics, sprints, tasks, tags, blocks, gcal, links, workspace_invites, cursor })
+    Ok(Bootstrap { users, projects, epics, sprints, tasks, tags, blocks, gcal, links, workspace_invites, cursor, settings })
 }

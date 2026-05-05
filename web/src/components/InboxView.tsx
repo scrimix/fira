@@ -83,28 +83,32 @@ export function InboxView() {
   }
 
   const allProjectTasks = tasks.filter((t) => t.project_id === project.id);
-  // Apply the tag filter to every section in one place so reorder /
-  // assignee / archive helpers (which still operate on `projectTasks`)
-  // see only the filtered slice.
+  // Apply the tag + assignee filter to every section in one place so
+  // reorder / assignee / archive helpers (which still operate on
+  // `projectTasks`) see only the filtered slice.
   const tagFilter = inboxFilter.tag_ids;
   const tagMode = inboxFilter.tag_mode;
-  const projectTasks = tagFilter.length === 0
-    ? allProjectTasks
-    : allProjectTasks.filter((t) => {
-        if (tagMode === 'and') {
-          return tagFilter.every((id) => t.tag_ids.includes(id));
-        }
-        return tagFilter.some((id) => t.tag_ids.includes(id));
-      });
+  // Default `all` covers persisted state from before this field existed.
+  const assigneeScope = inboxFilter.assignee_scope ?? 'all';
+  const projectTasks = allProjectTasks.filter((t) => {
+    if (assigneeScope === 'me' && t.assignee_id !== meId) return false;
+    if (tagFilter.length > 0) {
+      if (tagMode === 'and') {
+        return tagFilter.every((id) => t.tag_ids.includes(id));
+      }
+      return tagFilter.some((id) => t.tag_ids.includes(id));
+    }
+    return true;
+  });
   const nowTasks = projectTasks.filter((t) => t.section === 'now').sort(byKey);
   const laterTasks = projectTasks.filter((t) => t.section === 'later').sort(byKey);
   const somedayTasks = projectTasks.filter((t) => t.section === 'someday').sort(byKey);
-  // Done sorts newest-first by creation time. Approximate stand-in
-  // for "finished at" — server has no done_at column yet, and
-  // updated_at would shuffle on any field edit (tag, title, …).
+  // Done sorts newest-finished-first. Falls back to created_at for
+  // legacy rows from before migration 0017 where finished_at wasn't
+  // recorded — approximate but stable across edits.
   const doneTasks = projectTasks
     .filter((t) => t.section === 'done')
-    .sort((a, b) => b.created_at.localeCompare(a.created_at));
+    .sort((a, b) => (b.finished_at ?? b.created_at).localeCompare(a.finished_at ?? a.created_at));
   // Caller floats to the top of the assignee groups; the rest stay in
   // membership order. Members with role 'owner' (the workspace owner's
   // default per-project stance) or 'inactive' (a member who's been parked)
@@ -112,7 +116,13 @@ export function InboxView() {
   // render as empty assignee groups regardless of involvement.
   const nowAssignees = new Set(nowTasks.map((t) => t.assignee_id).filter((x): x is UUID => !!x));
   const visibleMembers = project.members.filter(
-    (m) => (m.role !== 'owner' && m.role !== 'inactive') || nowAssignees.has(m.user_id),
+    (m) => {
+      // Me-scope collapses Now to just the caller's group — every other
+      // member's tasks are filtered out anyway, so leaving their empty
+      // headings around is just noise.
+      if (assigneeScope === 'me') return m.user_id === meId;
+      return (m.role !== 'owner' && m.role !== 'inactive') || nowAssignees.has(m.user_id);
+    },
   );
   const memberIds = visibleMembers.map((m) => m.user_id);
   const assigneeIds = meId && memberIds.includes(meId)
@@ -364,8 +374,10 @@ export function InboxView() {
           allTags={allTags}
           tagIds={inboxFilter.tag_ids}
           mode={inboxFilter.tag_mode}
+          scope={assigneeScope}
           onChange={(tag_ids) => setInboxFilter({ tag_ids })}
           onModeChange={(tag_mode) => setInboxFilter({ tag_mode })}
+          onScopeChange={(assignee_scope) => setInboxFilter({ assignee_scope })}
         />
 
         {/* NOW */}
@@ -914,17 +926,21 @@ function TaskRow({
 
 // Sticky tag filter strip. Sits at the top of the scroll container so the
 // active filter stays visible as the user scrolls down through Now / Later
-// / Done. Hides itself entirely when the project has no tags — empty
-// chips would just be visual noise.
+// / Done. Always renders the Me/All scope pill; the tag chips section
+// hides itself when the project has no tags so empty chips don't show
+// up as visual noise.
 function InboxTagFilter({
-  projectId, allTags, tagIds, mode, onChange, onModeChange,
+  projectId, allTags, tagIds, mode, scope,
+  onChange, onModeChange, onScopeChange,
 }: {
   projectId: UUID;
   allTags: Tag[];
   tagIds: UUID[];
   mode: 'and' | 'or';
+  scope: 'me' | 'all';
   onChange: (ids: UUID[]) => void;
   onModeChange: (mode: 'and' | 'or') => void;
+  onScopeChange: (scope: 'me' | 'all') => void;
 }) {
   // Sort by title length descending so longer chips lead each row.
   // flex-wrap places left-to-right in source order, and seeding rows
@@ -935,7 +951,6 @@ function InboxTagFilter({
   const projectTags = allTags
     .filter((t) => t.project_id === projectId)
     .sort((a, b) => b.title.length - a.title.length || a.title.localeCompare(b.title));
-  if (projectTags.length === 0) return null;
 
   const selected = new Set(tagIds);
   const toggle = (id: UUID) => {
@@ -943,62 +958,89 @@ function InboxTagFilter({
     else onChange([...tagIds, id]);
   };
   const clear = () => onChange([]);
+  const hasTags = projectTags.length > 0;
 
   return (
     <div className="inbox-tag-filter">
-      <div className="inbox-tag-filter-chips">
-        {projectTags.map((t) => {
-          const on = selected.has(t.id);
-          return (
-            <button
-              key={t.id}
-              type="button"
-              className="chip tag-chip inbox-tag-filter-chip"
-              data-on={on || undefined}
-              style={{ ['--tag-color' as string]: t.color }}
-              onClick={() => toggle(t.id)}
-              title={t.title}
-            >
-              {t.title}
-            </button>
-          );
-        })}
-      </div>
+      {hasTags && (
+        <div className="inbox-tag-filter-chips">
+          {projectTags.map((t) => {
+            const on = selected.has(t.id);
+            return (
+              <button
+                key={t.id}
+                type="button"
+                className="chip tag-chip inbox-tag-filter-chip"
+                data-on={on || undefined}
+                style={{ ['--tag-color' as string]: t.color }}
+                onClick={() => toggle(t.id)}
+                title={t.title}
+              >
+                {t.title}
+              </button>
+            );
+          })}
+        </div>
+      )}
       {/* Controls are always rendered, even with 0 / 1 tag selected, so
        * the layout doesn't shift as the user toggles chips. With one
        * tag, OR/AND yields the same set — the toggle still works, just
        * has no visible effect until a second tag is added. Clear is a
        * safe no-op when nothing is selected. */}
       <div className="inbox-tag-filter-controls">
-        <div className="inbox-tag-filter-mode" role="group" aria-label="Tag match mode">
+        <div className="inbox-tag-filter-mode" role="group" aria-label="Assignee scope">
           <button
             type="button"
             className="inbox-tag-filter-mode-seg"
-            data-active={mode === 'or' || undefined}
-            onClick={() => onModeChange('or')}
-            title="Match tasks with any selected tag"
+            data-active={scope === 'all' || undefined}
+            onClick={() => onScopeChange('all')}
+            title="Show every task in this project"
           >
-            or
+            all
           </button>
           <button
             type="button"
             className="inbox-tag-filter-mode-seg"
-            data-active={mode === 'and' || undefined}
-            onClick={() => onModeChange('and')}
-            title="Match tasks with every selected tag"
+            data-active={scope === 'me' || undefined}
+            onClick={() => onScopeChange('me')}
+            title="Show only tasks assigned to me"
           >
-            and
+            me
           </button>
         </div>
-        <button
-          type="button"
-          className="inbox-tag-filter-clear"
-          onClick={clear}
-          disabled={tagIds.length === 0}
-          title="Clear tag filter"
-        >
-          clear
-        </button>
+        {hasTags && (
+          <>
+            <div className="inbox-tag-filter-mode" role="group" aria-label="Tag match mode">
+              <button
+                type="button"
+                className="inbox-tag-filter-mode-seg"
+                data-active={mode === 'or' || undefined}
+                onClick={() => onModeChange('or')}
+                title="Match tasks with any selected tag"
+              >
+                or
+              </button>
+              <button
+                type="button"
+                className="inbox-tag-filter-mode-seg"
+                data-active={mode === 'and' || undefined}
+                onClick={() => onModeChange('and')}
+                title="Match tasks with every selected tag"
+              >
+                and
+              </button>
+            </div>
+            <button
+              type="button"
+              className="inbox-tag-filter-clear"
+              onClick={clear}
+              disabled={tagIds.length === 0}
+              title="Clear tag filter"
+            >
+              clear
+            </button>
+          </>
+        )}
       </div>
     </div>
   );

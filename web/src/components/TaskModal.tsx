@@ -4,7 +4,6 @@ import { Check, Copy, PanelRightClose, PanelRightOpen, Pencil, Plus, Trash2, X }
 import { useFira } from '../store';
 import { useIsMobile } from '../hooks';
 import { ConfirmDelete } from './ConfirmDelete';
-import { Select } from './Select';
 import {
   fmtMin, fmtClockShort, parseEstimate,
   taskCompletedMin, taskPlannedMin, taskTimeLeft,
@@ -242,6 +241,7 @@ export function TaskModal({ taskId }: Props) {
                 {project.title}
               </span>
             } />
+            <Field label="Created by" value={<CreatorDisplay userId={task.created_by} users={users} meId={meId} />} />
             <div className="field">
               <h5>Assignee</h5>
               <AssigneeEditor
@@ -298,11 +298,10 @@ export function TaskModal({ taskId }: Props) {
             </div>
             <div className="field">
               <h5>Section</h5>
-              <Select<Section>
+              <SectionEditor
+                key={task.id}
                 value={task.section}
                 onChange={(v) => setTaskSection(task.id, v)}
-                options={SECTION_OPTIONS}
-                size="sm"
               />
             </div>
           </div>
@@ -1134,11 +1133,15 @@ function EstimateEditor({ value, onSave }: {
   );
 }
 
-const SECTION_OPTIONS: Array<{ value: Section; label: string }> = [
-  { value: 'now', label: 'now' },
-  { value: 'later', label: 'later' },
-  { value: 'someday', label: 'someday' },
-  { value: 'done', label: 'done' },
+// Section tones reuse the status palette so the trigger pill colors land
+// on the same accents users already learned from the Status picker:
+// `now` → in-progress accent, `later` → todo, `someday` → backlog,
+// `done` → done.
+const SECTION_OPTIONS: Array<{ value: Section; label: string; tone: string }> = [
+  { value: 'now', label: 'now', tone: 'now' },
+  { value: 'later', label: 'later', tone: 'todo' },
+  { value: 'someday', label: 'someday', tone: 'backlog' },
+  { value: 'done', label: 'done', tone: 'done' },
 ];
 
 const STATUS_OPTIONS: Array<{ id: Status; label: string; tone: string }> = [
@@ -1148,24 +1151,65 @@ const STATUS_OPTIONS: Array<{ id: Status; label: string; tone: string }> = [
   { id: 'done', label: 'done', tone: 'done' },
 ];
 
-function StatusEditor({ value, onChange }: {
-  value: Status;
-  onChange: (v: Status) => void;
+// Generic toned-pill picker. Renders a button with a tone-colored label
+// and a popover of toned options. The popover is portaled to the body
+// with `position: fixed`, anchored under the trigger — same pattern as
+// TagEditor — so it escapes the modal sidebar's overflow:auto and can
+// stay visible without forcing the user to scroll the modal.
+function TonedPicker<V extends string>({ value, options, onChange }: {
+  value: V;
+  options: Array<{ value: V; label: string; tone: string }>;
+  onChange: (v: V) => void;
 }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const current = STATUS_OPTIONS.find((o) => o.id === value) ?? STATUS_OPTIONS[1];
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null);
+  const current = options.find((o) => o.value === value) ?? options[0];
+
+  useLayoutEffect(() => {
+    if (!open || !wrapRef.current) {
+      setPos(null);
+      return;
+    }
+    const place = () => {
+      const a = wrapRef.current!.getBoundingClientRect();
+      const m = popoverRef.current;
+      const mh = m ? m.getBoundingClientRect().height : 0;
+      const mw = m ? m.getBoundingClientRect().width : Math.max(a.width, 120);
+      const spaceBelow = window.innerHeight - a.bottom;
+      const flipUp = mh > 0 && spaceBelow < mh + 8 && a.top > mh + 8;
+      const top = flipUp ? Math.max(8, a.top - mh - 4) : a.bottom + 4;
+      const width = Math.max(a.width, mw);
+      const left = Math.max(8, Math.min(a.left, window.innerWidth - width - 8));
+      setPos({ top, left, width });
+    };
+    place();
+    const raf = requestAnimationFrame(place);
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener('resize', place);
+      window.removeEventListener('scroll', place, true);
+    };
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
-    const onDoc = (e: MouseEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    const onDoc = (e: PointerEvent) => {
+      const t = e.target as Node;
+      if (
+        (wrapRef.current && wrapRef.current.contains(t))
+        || (popoverRef.current && popoverRef.current.contains(t))
+      ) return;
+      setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
-    document.addEventListener('mousedown', onDoc);
+    document.addEventListener('pointerdown', onDoc);
     document.addEventListener('keydown', onKey);
     return () => {
-      document.removeEventListener('mousedown', onDoc);
+      document.removeEventListener('pointerdown', onDoc);
       document.removeEventListener('keydown', onKey);
     };
   }, [open]);
@@ -1177,21 +1221,44 @@ function StatusEditor({ value, onChange }: {
               onClick={() => setOpen((v) => !v)}>
         {current.label}
       </button>
-      {open && (
-        <div className="status-popover">
-          {STATUS_OPTIONS.map((o) => (
-            <button key={o.id}
+      {open && createPortal(
+        <div ref={popoverRef}
+             className="status-popover"
+             style={pos
+               ? { position: 'fixed', top: pos.top, left: pos.left, width: pos.width }
+               : { visibility: 'hidden', position: 'fixed', top: 0, left: 0 }}>
+          {options.map((o) => (
+            <button key={o.value}
                     className="status-option"
                     data-tone={o.tone}
-                    data-selected={o.id === value}
-                    onClick={() => { onChange(o.id); setOpen(false); }}>
+                    data-selected={o.value === value}
+                    onClick={() => { onChange(o.value); setOpen(false); }}>
               {o.label}
             </button>
           ))}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
+}
+
+function StatusEditor({ value, onChange }: {
+  value: Status;
+  onChange: (v: Status) => void;
+}) {
+  const opts = useMemo(
+    () => STATUS_OPTIONS.map((o) => ({ value: o.id, label: o.label, tone: o.tone })),
+    [],
+  );
+  return <TonedPicker<Status> value={value} options={opts} onChange={onChange} />;
+}
+
+function SectionEditor({ value, onChange }: {
+  value: Section;
+  onChange: (v: Section) => void;
+}) {
+  return <TonedPicker<Section> value={value} options={SECTION_OPTIONS} onChange={onChange} />;
 }
 
 function ExternalLinkEditor({ label, url, resolvedUrl, hasTemplate, onSaveLabel, onSaveUrl }: {
@@ -1629,6 +1696,26 @@ function TagEditor({
         document.body,
       )}
     </div>
+  );
+}
+
+function CreatorDisplay({ userId, users, meId }: {
+  userId: UUID | null;
+  users: User[];
+  meId: UUID | null;
+}) {
+  if (!userId) {
+    return <span style={{ color: 'var(--ink-4)' }}>Unknown</span>;
+  }
+  const u = users.find((x) => x.id === userId);
+  if (!u) {
+    return <span style={{ color: 'var(--ink-4)' }}>Removed user</span>;
+  }
+  return (
+    <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      <div className="avatar" data-me={u.id === meId}>{u.initials}</div>
+      <span>{u.name}{u.id === meId ? ' (you)' : ''}</span>
+    </span>
   );
 }
 

@@ -94,8 +94,18 @@ export interface Task {
   tag_ids: UUID[];
   sort_key: string;
   /// ISO timestamp of when the task was created. Stable across edits.
-  /// Used by the inbox to sort the Done section newest-first.
+  /// Fallback sort key for the Done section when `finished_at` is null
+  /// (legacy rows from before migration 0017).
   created_at: string;
+  /// User who created the task. Server-managed: stamped on `task.create`
+  /// from the acting user. Null on legacy rows from before migration 0017.
+  created_by: UUID | null;
+  /// ISO timestamp of when the task transitioned into status='done'.
+  /// Cleared when the task moves out of done. Server-managed via the
+  /// `task.tick` / `task.set_status` ops. Used by the inbox to sort
+  /// the Done section newest-finished-first; falls back to `created_at`
+  /// when null.
+  finished_at: string | null;
   subtasks: Subtask[];
 }
 
@@ -188,6 +198,15 @@ export interface WorkCalendar {
   tasks: LinkedTask[];
 }
 
+/// Per-user, account-scoped settings. Independent of workspace.
+/// Populated from `/api/bootstrap.settings` and updated via
+/// `PATCH /api/me/settings`.
+export interface UserSettings {
+  /// Personal/work mode badge shown next to the topbar avatar. Null
+  /// when the user hasn't picked one.
+  account_badge: 'personal' | 'work' | null;
+}
+
 export interface Bootstrap {
   users: User[];
   projects: Project[];
@@ -201,4 +220,6 @@ export interface Bootstrap {
   workspace_invites: WorkspaceInvite[];
   /// Initial change-feed cursor — start polling /changes from here.
   cursor: number;
+  /// Caller's account-scoped settings.
+  settings: UserSettings;
 }

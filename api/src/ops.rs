@@ -327,8 +327,9 @@ async fn apply_payload(
             sqlx::query(
                 "INSERT INTO tasks (id, project_id, epic_id, sprint_id, assignee_id,
                     title, description_md, section, status, priority,
-                    source, external_id, external_url, estimate_min, spent_min, sort_key)
-                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+                    source, external_id, external_url, estimate_min, spent_min, sort_key,
+                    created_by)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
                  ON CONFLICT (id) DO NOTHING",
             )
             .bind(task.id)
@@ -347,6 +348,7 @@ async fn apply_payload(
             .bind(task.estimate_min)
             .bind(task.spent_min)
             .bind(&task.sort_key)
+            .bind(user_id)
             .execute(&mut **tx)
             .await?;
             // Re-apply tag links idempotently. If task.create lost the race
@@ -367,12 +369,29 @@ async fn apply_payload(
         Op::TaskTick { task_id, done } => {
             *out_project_id = Some(ensure_task_in_scope(tx, user_id, workspace_id, task_id).await?);
             let next = if done { "done" } else { "in_progress" };
-            sqlx::query("UPDATE tasks SET status = $2, updated_at = now() WHERE id = $1")
-                .bind(task_id).bind(next).execute(&mut **tx).await?;
+            // finished_at is server-managed: stamped on transition into
+            // 'done', cleared on transition out. Set unconditionally on the
+            // transition direction — re-ticking a task already done bumps
+            // the timestamp to the most recent finish, which matches the
+            // intent of "newest finished first" in the Done section.
+            sqlx::query(
+                "UPDATE tasks SET status = $2, updated_at = now(),
+                    finished_at = CASE WHEN $3 THEN now() ELSE NULL END
+                 WHERE id = $1",
+            )
+                .bind(task_id).bind(next).bind(done).execute(&mut **tx).await?;
         }
         Op::TaskSetStatus { task_id, status } => {
             *out_project_id = Some(ensure_task_in_scope(tx, user_id, workspace_id, task_id).await?);
-            sqlx::query("UPDATE tasks SET status = $2, updated_at = now() WHERE id = $1")
+            // Same finished_at policy as task.tick: any status transition
+            // into 'done' stamps it, any transition away clears it. CASE
+            // is on the *new* status only — we don't need the old one to
+            // pick the right side.
+            sqlx::query(
+                "UPDATE tasks SET status = $2, updated_at = now(),
+                    finished_at = CASE WHEN $2 = 'done' THEN now() ELSE NULL END
+                 WHERE id = $1",
+            )
                 .bind(task_id).bind(&status).execute(&mut **tx).await?;
         }
         Op::TaskSetSection { task_id, section } => {

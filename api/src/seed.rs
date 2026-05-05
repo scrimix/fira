@@ -608,8 +608,10 @@ async fn seed_tasks(tx: &mut Transaction<'_, Postgres>) -> sqlx::Result<()> {
         sqlx::query(
             "INSERT INTO tasks (id, project_id, epic_id, sprint_id, assignee_id,
                 title, description_md, section, status, priority,
-                source, external_id, estimate_min, spent_min)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)",
+                source, external_id, estimate_min, spent_min, created_by,
+                finished_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,
+                CASE WHEN $9 = 'done' THEN now() ELSE NULL END)",
         )
         .bind(id(t.slug))
         .bind(id(t.project))
@@ -625,6 +627,7 @@ async fn seed_tasks(tx: &mut Transaction<'_, Postgres>) -> sqlx::Result<()> {
         .bind(t.external_id)
         .bind(t.estimate_min)
         .bind(t.spent_min)
+        .bind(id(t.assignee))
         .execute(&mut **tx)
         .await?;
 

@@ -548,7 +548,7 @@ pub async fn list_tasks_in_scope(pool: &PgPool, scope: &[Uuid]) -> sqlx::Result<
     let mut tasks: Vec<Task> = sqlx::query_as(
         "SELECT id, project_id, epic_id, sprint_id, assignee_id, title, description_md,
                 section, status, priority, source, external_id, external_url,
-                estimate_min, spent_min, sort_key, created_at
+                estimate_min, spent_min, sort_key, created_at, created_by, finished_at
          FROM tasks WHERE project_id = ANY($1)
          ORDER BY sort_key, created_at",
     )
@@ -1397,6 +1397,47 @@ pub async fn list_linked_tasks_in_work_workspaces_for_user(
     .bind(user_id)
     .fetch_all(pool)
     .await
+}
+
+/// Read the caller's account-scoped settings, or defaults if the row
+/// hasn't been created yet. Returning a struct instead of an Option
+/// keeps callers from special-casing the empty case at every read site.
+pub async fn get_user_settings(
+    pool: &PgPool,
+    user_id: Uuid,
+) -> sqlx::Result<crate::models::UserSettings> {
+    let row: Option<(Option<String>,)> = sqlx::query_as(
+        "SELECT account_badge FROM user_settings WHERE user_id = $1",
+    )
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(match row {
+        Some((account_badge,)) => crate::models::UserSettings { account_badge },
+        None => crate::models::UserSettings { account_badge: None },
+    })
+}
+
+/// Upsert the caller's account-scoped settings. Today only the
+/// account_badge field is exposed; new fields just need adding here
+/// and to UserSettings. Pass None to clear a field.
+pub async fn upsert_user_settings(
+    pool: &PgPool,
+    user_id: Uuid,
+    account_badge: Option<&str>,
+) -> sqlx::Result<crate::models::UserSettings> {
+    sqlx::query(
+        "INSERT INTO user_settings (user_id, account_badge, updated_at)
+         VALUES ($1, $2, now())
+         ON CONFLICT (user_id) DO UPDATE
+             SET account_badge = EXCLUDED.account_badge,
+                 updated_at = now()",
+    )
+    .bind(user_id)
+    .bind(account_badge)
+    .execute(pool)
+    .await?;
+    get_user_settings(pool, user_id).await
 }
 
 /// Whether two users are mutually accepted-linked. Used for ad-hoc

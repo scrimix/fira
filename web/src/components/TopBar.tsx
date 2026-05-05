@@ -1,4 +1,4 @@
-import { Link, Menu } from 'lucide-react';
+import { Menu } from 'lucide-react';
 import { useFira } from '../store';
 import { weekStartFor, fmtWeekRange } from '../time';
 import { useIsMobile } from '../hooks';
@@ -12,29 +12,10 @@ export function TopBar() {
     s.projects.find((p) => p.id === s.inboxFilter.project_id) ?? null
   );
   const weekOffset = useFira((s) => s.weekOffset);
-  const logout = useFira((s) => s.logout);
   const me = useFira((s) => s.users.find((u) => u.id === s.meId) ?? null);
   const playgroundMode = useFira((s) => s.playgroundMode);
-  // Pick the most "actionable" link to drive the icon's state. Order:
-  // received (call to action) > sent (waiting) > accepted (settled) > none.
-  // Derived outside the selector so the result identity is stable across
-  // unrelated store updates — useSyncExternalStore otherwise treats a fresh
-  // object literal as a store change and infinite-loops.
-  const links = useFira((s) => s.links);
-  const users = useFira((s) => s.users);
-  const linkState = (() => {
-    const received = links.find((l) => l.direction === 'received' && l.status === 'pending');
-    if (received) return { kind: 'received' as const, link: received };
-    const sent = links.find((l) => l.direction === 'sent' && l.status === 'pending');
-    if (sent) return { kind: 'sent' as const, link: sent };
-    const accepted = links.find((l) => l.status === 'accepted');
-    if (accepted) return { kind: 'accepted' as const, link: accepted };
-    return { kind: 'none' as const };
-  })();
-  const partner = linkState.kind === 'accepted'
-    ? users.find((u) => u.id === linkState.link.partner_id) ?? null
-    : null;
-  const openLinkModal = useFira((s) => s.openLinkModal);
+  const accountBadge = useFira((s) => s.accountBadge);
+  const openAccountModal = useFira((s) => s.openAccountModal);
   const setSidebarOpen = useFira((s) => s.setSidebarOpen);
   const sidebarOpen = useFira((s) => s.sidebarOpen);
 
@@ -51,14 +32,6 @@ export function TopBar() {
     : view === 'calendar'
       ? `Week of ${fmtWeekRange(weekStartFor(weekOffset))}`
       : project?.title ?? 'Inbox';
-
-  const linkTitle = linkState.kind === 'received'
-    ? 'Someone wants to link calendars with you'
-    : linkState.kind === 'sent'
-      ? 'Waiting for the other account to accept'
-      : linkState.kind === 'accepted'
-        ? `Linked${partner ? ` with ${partner.name}` : ''}`
-        : 'Link another account';
 
   return (
     <div className="topbar">
@@ -99,31 +72,34 @@ export function TopBar() {
       )}
       <RefreshButton />
       <SyncPill />
-      <button className="logout-btn" onClick={() => logout()} title="Sign out">
-        Log out
-      </button>
-
-      {!isMobile && (
-        <>
-          {linkState.kind === 'accepted' && partner ?
-            (<span className="topbar-me" title={partner.name}>{partner.initials}</span>) : null
-          }
-          <button
-              className="link-pair"
-              onClick={() => openLinkModal()}
-              title={linkTitle}
-              aria-label={linkTitle}
-            >
-              <Link size={12} strokeWidth={1.75} className="link-pair-icon" />
-          </button>
-        </>
-      )}
-      {/* Own-user chip stays on mobile too — it's the slot we'll wire
-       * up to a settings menu later. The link button + partner avatar
-       * are still desktop-only because the link flow needs the modal
-       * affordance and a partner avatar without the link icon next to
-       * it reads as orphan UI. */}
-      <span className="topbar-me" title={me?.name ?? ''}>{me?.initials ?? '?'}</span>
+      {/* Own-user chip is the entry point to the account settings modal,
+       * which now hosts the link affordance, gcal connection (stubbed),
+       * preferences, and Log out. Replaces the previous two-avatar +
+       * link button cluster. The mode badge (personal/work, optional)
+       * sits ahead of the avatar as a compact one-letter chip. */}
+      {/* Badge + avatar live in one wrapper so the topbar's flex `gap`
+       * doesn't pry them apart — they should read as one paired chip
+       * the way the link-pair used to. */}
+      <div className="topbar-account">
+        {accountBadge && (
+          <span
+            className="topbar-badge"
+            data-mode={accountBadge}
+            title={accountBadge === 'personal' ? 'Personal mode' : 'Work mode'}
+            aria-label={accountBadge === 'personal' ? 'Personal mode' : 'Work mode'}
+          >
+            {accountBadge === 'personal' ? 'P' : 'W'}
+          </span>
+        )}
+        <button
+          className="topbar-me topbar-me-btn"
+          onClick={() => openAccountModal()}
+          title={me?.name ? `Account · ${me.name}` : 'Account'}
+          aria-label="Account settings"
+        >
+          {me?.initials ?? '?'}
+        </button>
+      </div>
     </div>
   );
 }

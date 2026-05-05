@@ -185,6 +185,43 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   border: 1px solid var(--ink);
   margin-left: 4px;
 }
+.topbar-me-btn { padding: 0; cursor: pointer; }
+.topbar-me-btn:hover { background: var(--ink-2); border-color: var(--ink-2); }
+/* Wrapper around the (optional) mode badge + avatar so the topbar's
+ * flex `gap` doesn't slot whitespace between them — they read as a
+ * single paired chip. Inside this wrapper the gap is zero. */
+.topbar-account {
+  display: inline-flex; align-items: center;
+  gap: 0;
+}
+.topbar-account .topbar-me { margin-left: 0; }
+/* Compact mode badge — sits flush against the avatar (no seam) and
+ * carries a saturated mode color so it reads at a glance. Personal =
+ * accent solid; work = warm amber solid. */
+.topbar-badge {
+  height: 22px;
+  padding: 0 6px;
+  display: inline-grid; place-items: center;
+  font-family: var(--font-mono);
+  font-size: calc(10px * var(--fs-scale));
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  border: 1px solid;
+  /* Right border is the avatar's left border — drop it here so there's
+   * a single 1px seam, not 2px. */
+  border-right: 0;
+}
+.topbar-badge[data-mode="personal"] {
+  color: var(--paper);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.topbar-badge[data-mode="work"] {
+  color: var(--paper);
+  background: var(--warn);
+  border-color: var(--warn);
+}
+.account-badge-picker { flex: none; }
 /* Mobile menu trigger — replaces the Fira/wordmark crumb on phones and
  * toggles the sidebar slide-over. Sized to be a comfortable touch target
  * (36px square) without dominating the topbar. */
@@ -1017,6 +1054,88 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
 .np-danger:hover {
   background: color-mix(in oklab, var(--danger) 8%, var(--paper));
   border-color: var(--danger);
+}
+
+/* Account settings modal — container for the link affordance, gcal
+ * connection (stub), preferences, and Log out. Replaces the topbar's
+ * old two-avatar + link button cluster. Uses the np-modal frame. */
+.account-modal { width: 460px; max-width: calc(100vw - 32px); }
+.account-body { gap: 18px; }
+.account-identity {
+  display: flex; align-items: center; gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px dashed var(--rule-2);
+}
+.account-identity-ava {
+  width: 32px; height: 32px;
+  font-size: calc(12px * var(--fs-scale));
+  flex: none;
+}
+.account-identity-text { display: flex; flex-direction: column; min-width: 0; }
+.account-identity-name {
+  font-size: calc(13px * var(--fs-scale));
+  color: var(--ink);
+  font-weight: 500;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.account-identity-email {
+  font-family: var(--font-mono);
+  font-size: calc(11px * var(--fs-scale));
+  color: var(--ink-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.account-section { display: flex; flex-direction: column; gap: 8px; }
+.account-section-h {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: calc(10px * var(--fs-scale));
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  font-weight: 500;
+}
+.account-row {
+  display: flex; align-items: flex-start; gap: 12px;
+}
+.account-row-text {
+  margin: 0;
+  font-size: calc(12px * var(--fs-scale));
+  color: var(--ink-2);
+  line-height: 1.45;
+  flex: 1; min-width: 0;
+}
+.account-row-muted { color: var(--ink-3); }
+.account-link-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 8px;
+  background: var(--paper);
+  border: 1px solid var(--rule-2);
+  cursor: pointer;
+  flex: none;
+}
+.account-link-btn:hover { border-color: var(--rule-3); background: var(--paper-3); }
+.account-link-btn[data-state="received"] { border-color: var(--accent); color: var(--accent-fg); }
+.account-link-btn[data-state="accepted"] { border-color: var(--done); }
+.account-link-partner {
+  width: 18px; height: 18px;
+  display: grid; place-items: center;
+  background: var(--ink); color: var(--paper);
+  font-family: var(--font-mono);
+  font-size: calc(9px * var(--fs-scale)); font-weight: 600;
+  letter-spacing: 0.04em;
+  border: 1px solid var(--ink);
+}
+.account-stub-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  flex: none;
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+.account-actions {
+  margin-top: 4px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--rule-2);
+  justify-content: flex-end;
 }
 
 /* Outbox sync status. Tone-based colors mirror the rest of the app:

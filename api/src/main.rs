@@ -41,6 +41,51 @@ async fn projects(
     Ok(Json(db::list_projects_in_scope(&s.pool, &scope).await?))
 }
 
+/// Caller's account-scoped settings. `field: null` clears the field;
+/// omitting a field leaves it unchanged. Today only `account_badge` is
+/// exposed; new preferences just need to be added here, in the
+/// UserSettings struct, and in upsert_user_settings.
+#[derive(Deserialize, Default)]
+struct PatchSettings {
+    // Two-state nullable: absent = leave alone, explicit null = clear.
+    // serde flattens null into Some(None) when wrapped in Option<Option<_>>.
+    #[serde(default, deserialize_with = "deserialize_some")]
+    account_badge: Option<Option<String>>,
+}
+
+// Distinguish "field absent" from "field present and null" — bare
+// Option<String> collapses both to None. This pattern is from serde's
+// own docs.
+fn deserialize_some<'de, T, D>(d: D) -> Result<Option<T>, D::Error>
+where T: serde::Deserialize<'de>, D: serde::Deserializer<'de>,
+{
+    serde::Deserialize::deserialize(d).map(Some)
+}
+
+async fn patch_my_settings(
+    State(s): State<AppState>,
+    ctx: AuthCtx,
+    Json(body): Json<PatchSettings>,
+) -> ApiResult<Json<UserSettings>> {
+    // Read current state, apply the patch, write the merged result.
+    // Two-call (read-modify-write) is fine here — the row is per-user,
+    // contention is nil.
+    let current = db::get_user_settings(&s.pool, ctx.user.id).await?;
+    let next_badge = match body.account_badge {
+        Some(v) => v, // explicit set or clear
+        None => current.account_badge.clone(),
+    };
+    if let Some(ref b) = next_badge {
+        if b != "personal" && b != "work" {
+            return Err(error::ApiError::BadRequest(
+                "account_badge must be 'personal' or 'work'".into(),
+            ));
+        }
+    }
+    let updated = db::upsert_user_settings(&s.pool, ctx.user.id, next_badge.as_deref()).await?;
+    Ok(Json(updated))
+}
+
 #[derive(Deserialize)]
 struct CreateProject {
     title: String,
@@ -407,6 +452,7 @@ async fn main() -> anyhow::Result<()> {
     // `/api/*` here. `/health` stays at the root for Fly's healthcheck.
     let api = Router::new()
         .route("/me", get(auth::me))
+        .route("/me/settings", patch(patch_my_settings))
         .route("/auth/config", get(auth::config))
         .route("/auth/google/login", get(auth::google_login))
         .route("/auth/google/callback", get(auth::google_callback))

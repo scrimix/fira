@@ -1008,7 +1008,10 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
   background: var(--paper);
   border: 1px solid var(--rule-3);
   box-shadow: 0 6px 20px rgba(0,0,0,0.12);
-  z-index: 30;
+  /* Portaled to document.body when inside the task modal — z-index has
+   * to clear the modal-backdrop (z:50) and any modals layered on top.
+   * Matches `.tag-editor-popover`. */
+  z-index: 1300;
   display: flex;
   flex-direction: column;
   min-width: 120px;
@@ -1025,10 +1028,7 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
   cursor: pointer;
 }
 .status-option:hover { background: var(--paper-3); }
-.status-option[data-selected="true"]::before {
-  content: '✓ ';
-  margin-right: 2px;
-}
+.status-option[data-selected="true"] { background: var(--paper-3); }
 .status-option[data-tone="now"] { color: var(--accent); }
 .status-option[data-tone="done"] { color: var(--done); }
 .status-option[data-tone="todo"] { color: var(--ink-2); }
