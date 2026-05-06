@@ -3,7 +3,7 @@ import { Check, Pencil } from 'lucide-react';
 import { useFira } from '../store';
 import { useLongPress } from '../useLongPress';
 import { useIsMobile } from '../hooks';
-import { fmtMin, taskTimeLeft } from '../time';
+import { fmtMin, taskCompletedMin, taskPlannedMin, taskTimeLeft } from '../time';
 import { ProjectIcon } from './ProjectIcon';
 import type { Tag, Task, TimeBlock, Section, UUID } from '../types';
 
@@ -100,6 +100,23 @@ export function InboxView() {
     }
     return true;
   });
+  // Time totals across the filtered task set. Done / Planned aggregate
+  // time blocks (completed / planned) so they reflect what's actually
+  // booked on the calendar; Est sums task estimates; Total is the
+  // calendar-side roll-up (Done + Planned), distinct from Est which is
+  // the user's intent. Useful mainly when a tag filter is active — the
+  // numbers answer "how much work is in this tag, and how much of it
+  // have I scheduled?".
+  let totalDone = 0;
+  let totalPlanned = 0;
+  let totalEst = 0;
+  for (const t of projectTasks) {
+    totalDone += taskCompletedMin(t, blocks);
+    totalPlanned += taskPlannedMin(t, blocks);
+    if (t.estimate_min != null) totalEst += t.estimate_min;
+  }
+  const totalAll = totalDone + totalPlanned;
+
   const nowTasks = projectTasks.filter((t) => t.section === 'now').sort(byKey);
   const laterTasks = projectTasks.filter((t) => t.section === 'later').sort(byKey);
   const somedayTasks = projectTasks.filter((t) => t.section === 'someday').sort(byKey);
@@ -379,6 +396,13 @@ export function InboxView() {
           onModeChange={(tag_mode) => setInboxFilter({ tag_mode })}
           onScopeChange={(assignee_scope) => setInboxFilter({ assignee_scope })}
         />
+
+        <div className="totals inbox-totals" aria-label="Filtered totals">
+          <span className="totals-done"><strong>{fmtMin(totalDone)}</strong> done</span>
+          <span className="totals-planned"><strong>{fmtMin(totalPlanned)}</strong> planned</span>
+          <span className="totals-est"><strong>{fmtMin(totalEst)}</strong> est</span>
+          <span className="totals-total"><strong>{fmtMin(totalAll)}</strong> total</span>
+        </div>
 
         {/* NOW */}
         <div className="section" data-section="now"

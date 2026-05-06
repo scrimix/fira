@@ -233,6 +233,7 @@
 }
 .totals .totals-done strong    { color: var(--done); }
 .totals .totals-planned strong { color: var(--accent); }
+.totals .totals-est strong     { color: var(--ink-2); }
 .totals .totals-total strong   { color: var(--ink); }
 
 /* Inline copy lives in the toolbar at the right; strip copy lives

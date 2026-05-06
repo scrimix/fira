@@ -270,6 +270,18 @@
 }
 .inbox-tag-filter-mode-seg[data-active]:hover { color: var(--paper); }
 
+/* Roll-up of time totals for the currently filtered task set. Sits
+ * directly under the tag filter strip so the numbers read as a
+ * consequence of the filter above. Visual language reuses the
+ * calendar's `.totals` (mono digits, color per slot); this rule
+ * only handles position and the divider underneath. */
+.inbox-totals {
+  flex-wrap: wrap;
+  padding: 6px 0 10px;
+  margin: 0 0 12px;
+  border-bottom: 1px dashed var(--rule);
+}
+
 .section { margin: 28px 0; }
 .section-head {
   display: flex; align-items: baseline; gap: 10px;
