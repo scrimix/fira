@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Check, Pencil } from 'lucide-react';
+import { Check, Clock, ClockFading, Pencil } from 'lucide-react';
 import { useFira } from '../store';
 import { useLongPress } from '../useLongPress';
 import { useIsMobile } from '../hooks';
@@ -18,6 +18,8 @@ export function InboxView() {
   const meId = useFira((s) => s.meId);
   const inboxFilter = useFira((s) => s.inboxFilter);
   const setInboxFilter = useFira((s) => s.setInboxFilter);
+  const showInboxTimes = useFira((s) => s.showInboxTimes);
+  const setShowInboxTimes = useFira((s) => s.setShowInboxTimes);
   const tickTask = useFira((s) => s.tickTask);
   const tickSubtask = useFira((s) => s.tickSubtask);
   const setSubtaskTitle = useFira((s) => s.setSubtaskTitle);
@@ -49,6 +51,26 @@ export function InboxView() {
   const [dropTarget, setDropTarget] = useState<Section | null>(null);
   const [assigneeDropTarget, setAssigneeDropTarget] = useState<UUID | null>(null);
   const [rowDropAt, setRowDropAt] = useState<{ id: UUID; pos: 'before' | 'after' } | null>(null);
+  // After a drop, the cursor sits at the same screen position it was in
+  // when the user released — but the row underneath it is now a *different*
+  // task (the dragged task moved elsewhere), so :hover lights up the wrong
+  // row. Suspend the hover background until the user nudges the cursor or
+  // a short timeout lapses, whichever comes first.
+  const [hoverSuspended, setHoverSuspended] = useState(false);
+
+  const suspendHover = () => {
+    setHoverSuspended(true);
+    const onMove = () => {
+      setHoverSuspended(false);
+      document.removeEventListener('pointermove', onMove);
+      window.clearTimeout(timer);
+    };
+    const timer = window.setTimeout(() => {
+      setHoverSuspended(false);
+      document.removeEventListener('pointermove', onMove);
+    }, 600);
+    document.addEventListener('pointermove', onMove);
+  };
 
   if (!project) {
     // Three empty states:
@@ -120,6 +142,18 @@ export function InboxView() {
   const nowTasks = projectTasks.filter((t) => t.section === 'now').sort(byKey);
   const laterTasks = projectTasks.filter((t) => t.section === 'later').sort(byKey);
   const somedayTasks = projectTasks.filter((t) => t.section === 'someday').sort(byKey);
+  // Per-section estimate roll-up. Surfaced next to the task count so a
+  // section's "weight" (especially Someday, which collects intentions
+  // indefinitely) is visible without expanding the list.
+  const sumEst = (xs: Task[]) => xs.reduce((s, t) => s + (t.estimate_min ?? 0), 0);
+  const nowEst = sumEst(nowTasks);
+  const laterEst = sumEst(laterTasks);
+  const somedayEst = sumEst(somedayTasks);
+  // Done section reads as actual time spent rather than original estimate —
+  // for completed work, "how long did this take" is the meaningful number.
+  const doneDone = projectTasks
+    .filter((t) => t.section === 'done')
+    .reduce((s, t) => s + taskCompletedMin(t, blocks), 0);
   // Done sorts newest-finished-first. Falls back to created_at for
   // legacy rows from before migration 0017 where finished_at wasn't
   // recorded — approximate but stable across edits.
@@ -176,19 +210,106 @@ export function InboxView() {
   // which row to target without reading dataTransfer (browsers block
   // reads during dragover for security; data is only readable on drop).
   const desktopDragIdRef = useRef<UUID | null>(null);
+  // Edge auto-scroll while a drag is in flight. Desktop: HTML5 D&D
+  // consumes wheel events over drop targets in Chromium, so wheel
+  // scroll dies as soon as the cursor is over a row. Mobile: the
+  // long-press touchmove path calls preventDefault to keep the drag
+  // alive, which also kills page scroll. Both surfaces need a manual
+  // rAF loop that scrolls `.inbox` when the cursor enters a band near
+  // its top/bottom edge — same UX Trello / Linear / Notion ship.
+  const inboxScrollRef = useRef<HTMLDivElement>(null);
+  const dragScrollStopRef = useRef<(() => void) | null>(null);
+  // Last cursor pointer position fed into the edge-scroll loop. Desktop
+  // updates this from `dragover`; touch updates it from
+  // `onGripTouchMove`. The X coordinate lets the touch path reissue
+  // `onGripTouchMove(x, y)` after each scroll step so the row under
+  // the finger refreshes the drop indicator even when the finger
+  // itself is still.
+  const dragCursorRef = useRef<{ x: number; y: number } | null>(null);
+  const startEdgeScroll = (mode: 'drag' | 'touch') => {
+    const container = inboxScrollRef.current;
+    if (!container) return;
+    dragScrollStopRef.current?.();
+    dragCursorRef.current = null;
+
+    let removeListener: (() => void) | undefined;
+    if (mode === 'drag') {
+      const onDragOver = (ev: DragEvent) => {
+        dragCursorRef.current = { x: ev.clientX, y: ev.clientY };
+      };
+      document.addEventListener('dragover', onDragOver);
+      removeListener = () => document.removeEventListener('dragover', onDragOver);
+    }
+
+    // Asymmetric zones: bottom is wider so the user can scroll down toward
+    // the natural "tail" of a long list (someday / done / new tasks)
+    // without having to push the cursor to the very last few pixels.
+    // Top is moderately wide so dragging upward to Now still feels
+    // responsive without hijacking the cursor too aggressively.
+    const ZONE_TOP = 100;
+    const ZONE_BOTTOM = 160;
+    const MAX_SPEED = 8;
+    let raf = 0;
+    const tick = () => {
+      const cur = dragCursorRef.current;
+      if (cur) {
+        const rect = container.getBoundingClientRect();
+        const fromTop = cur.y - rect.top;
+        const fromBottom = rect.bottom - cur.y;
+        let dy = 0;
+        if (fromTop < ZONE_TOP) {
+          const t = Math.max(0, fromTop) / ZONE_TOP;
+          dy = -MAX_SPEED * Math.pow(1 - t, 2);
+        } else if (fromBottom < ZONE_BOTTOM) {
+          const t = Math.max(0, fromBottom) / ZONE_BOTTOM;
+          dy = MAX_SPEED * Math.pow(1 - t, 2);
+        }
+        if (dy !== 0) {
+          container.scrollBy(0, dy);
+          // Touch only: the finger hasn't moved, so no fresh touchmove
+          // will retarget the drop indicator after the list scrolls
+          // under it. Re-run the same hit-test against the unchanged
+          // screen coords so the blue line tracks the row that's now
+          // beneath the finger.
+          if (mode === 'touch') onGripTouchMove(cur.x, cur.y);
+        }
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    dragScrollStopRef.current = () => {
+      cancelAnimationFrame(raf);
+      removeListener?.();
+      dragCursorRef.current = null;
+      dragScrollStopRef.current = null;
+    };
+  };
+  useEffect(() => () => { dragScrollStopRef.current?.(); }, []);
+
   const onRowDragStart = (e: React.DragEvent, taskId: string) => {
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', taskId);
     desktopDragIdRef.current = taskId as UUID;
+    startEdgeScroll('drag');
   };
-  const onRowDragEnd = () => { desktopDragIdRef.current = null; };
+  const onRowDragEnd = () => {
+    desktopDragIdRef.current = null;
+    dragScrollStopRef.current?.();
+  };
   const onRowDragOver = (e: React.DragEvent, target: Task) => {
     if (e.dataTransfer.types.includes('text/plain')) {
       e.preventDefault();
       e.stopPropagation();
       const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
       const pos: 'before' | 'after' = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
-      setRowDropAt({ id: target.id, pos });
+      // Dedupe: dragover fires ~60×/s, and a fresh `{id, pos}` object
+      // every time would re-render every TaskRow on every frame, which
+      // saturates the main thread and effectively wedges scroll on a
+      // long list. Only update when the target row or side actually
+      // changed.
+      setRowDropAt((cur) =>
+        cur?.id === target.id && cur.pos === pos ? cur : { id: target.id as UUID, pos }
+      );
     }
   };
   const onRowDrop = (e: React.DragEvent, target: Task) => {
@@ -201,6 +322,7 @@ export function InboxView() {
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const insertBefore = e.clientY < rect.top + rect.height / 2;
     applyTaskMove(draggedId, target, insertBefore);
+    suspendHover();
   };
   const onSectionDrop = (e: React.DragEvent, section: Section) => {
     e.preventDefault();
@@ -208,6 +330,7 @@ export function InboxView() {
     if (id) setTaskSection(id, section);
     setDropTarget(null);
     setRowDropAt(null);
+    suspendHover();
   };
 
   // Touch-based drag for the grip column. HTML5 drag-and-drop doesn't
@@ -227,10 +350,12 @@ export function InboxView() {
     setRowDropAt(null);
     setDropTarget(null);
     setAssigneeDropTarget(null);
+    startEdgeScroll('touch');
   };
   const onGripTouchMove = (clientX: number, clientY: number) => {
     const dragged = touchDraggedRef.current;
     if (!dragged) return;
+    dragCursorRef.current = { x: clientX, y: clientY };
     const el = document.elementFromPoint(clientX, clientY) as HTMLElement | null;
     const rowEl = el?.closest('[data-task-id]') as HTMLElement | null;
     if (rowEl && rowEl.dataset.taskId && rowEl.dataset.taskId !== dragged) {
@@ -318,6 +443,7 @@ export function InboxView() {
     setRowDropAt(null);
     setDropTarget(null);
     setAssigneeDropTarget(null);
+    dragScrollStopRef.current?.();
     if (!dragged) return;
     if (dropAt) {
       const target = tasks.find((t) => t.id === dropAt.id);
@@ -331,6 +457,7 @@ export function InboxView() {
     } else if (section) {
       setTaskSection(dragged, section);
     }
+    suspendHover();
   };
 
   const renderRow = (t: Task, showSubs: boolean) => (
@@ -358,7 +485,7 @@ export function InboxView() {
   };
 
   return (
-    <div className="inbox">
+    <div className="inbox" ref={inboxScrollRef} data-suspend-hover={hoverSuspended || undefined}>
       <div className="inbox-doc" style={{ ['--proj-color' as string]: project.color }}>
         <div className="inbox-proj-head">
           <span className="icon" style={{ color: project.color }}>
@@ -369,6 +496,17 @@ export function InboxView() {
             <span className="meta">
               {projectTasks.length} tasks · {project.members.length} {project.members.length === 1 ? 'member' : 'members'}
             </span>
+            <button
+              className="icon-btn proj-edit-btn time-toggle-btn"
+              onClick={() => setShowInboxTimes(!showInboxTimes)}
+              data-off={!showInboxTimes || undefined}
+              title={showInboxTimes ? 'Hide time labels' : 'Show time labels'}
+              aria-label={showInboxTimes ? 'Hide time labels' : 'Show time labels'}
+            >
+              {showInboxTimes
+                ? <Clock size={14} strokeWidth={1.75} />
+                : <ClockFading size={14} strokeWidth={1.75} />}
+            </button>
             {canEditThisProject && (
               <button className="icon-btn proj-edit-btn"
                       onClick={() => openEditProject(project.id)}
@@ -397,12 +535,14 @@ export function InboxView() {
           onScopeChange={(assignee_scope) => setInboxFilter({ assignee_scope })}
         />
 
-        <div className="totals inbox-totals" aria-label="Filtered totals">
-          <span className="totals-done"><strong>{fmtMin(totalDone)}</strong> done</span>
-          <span className="totals-planned"><strong>{fmtMin(totalPlanned)}</strong> planned</span>
-          <span className="totals-total"><strong>{fmtMin(totalAll)}</strong> total</span>
-          <span className="totals-est"><strong>{fmtMin(totalEst)}</strong> est</span>
-        </div>
+        {showInboxTimes && (
+          <div className="totals inbox-totals" aria-label="Filtered totals">
+            <span className="totals-done"><strong>{fmtMin(totalDone)}</strong> done</span>
+            <span className="totals-planned"><strong>{fmtMin(totalPlanned)}</strong> planned</span>
+            <span className="totals-total"><strong>{fmtMin(totalAll)}</strong> total</span>
+            <span className="totals-est"><strong>{fmtMin(totalEst)}</strong> est</span>
+          </div>
+        )}
 
         {/* NOW */}
         <div className="section" data-section="now"
@@ -415,6 +555,7 @@ export function InboxView() {
             <h2>Now</h2>
             <SectionCount value={nowTasks.length} />
             <span className="rule" />
+            {showInboxTimes && <span className="est" title="estimated time">{fmtMin(nowEst)}</span>}
             <span className="count" style={{ fontFamily: 'var(--font-mono)' }}>week of apr 27</span>
           </div>
           {!collapsed.now && (
@@ -553,6 +694,7 @@ export function InboxView() {
             <h2>Later</h2>
             <SectionCount value={laterTasks.length} />
             <span className="rule" />
+            {showInboxTimes && <span className="est" title="estimated time">{fmtMin(laterEst)}</span>}
             <span className="count" style={{ fontFamily: 'var(--font-mono)' }}>parking lot</span>
           </div>
           {!collapsed.later && (
@@ -574,6 +716,7 @@ export function InboxView() {
             <h2>Someday</h2>
             <SectionCount value={somedayTasks.length} />
             <span className="rule" />
+            {showInboxTimes && <span className="est" title="estimated time">{fmtMin(somedayEst)}</span>}
             <span className="count" style={{ fontFamily: 'var(--font-mono)' }}>maybe</span>
           </div>
           {!collapsed.someday && (
@@ -593,6 +736,7 @@ export function InboxView() {
             <h2>Done</h2>
             <SectionCount value={doneTasks.length} />
             <span className="rule" />
+            {showInboxTimes && <span className="est" title="completed time">{fmtMin(doneDone)}</span>}
             <span className="count" style={{ fontFamily: 'var(--font-mono)' }}>archive</span>
           </div>
           {!collapsed.done && (
@@ -772,6 +916,7 @@ function TaskRow({
   const isMobile = useIsMobile();
   const tags = useFira((s) => s.tags);
   const filterIds = useFira((s) => s.inboxFilter.tag_ids);
+  const showInboxTimes = useFira((s) => s.showInboxTimes);
   const filterSet = useMemo(() => new Set(filterIds), [filterIds]);
   // Reorder so any tag matching the active filter floats to the front of
   // the row's chip list — that way the 3-chip cap always shows the
@@ -859,7 +1004,7 @@ function TaskRow({
          onDragOver={(e) => onRowDragOver(e, task)}
          onDragLeave={onRowDragLeave}
          onDrop={(e) => onRowDrop(e, task)}
-         {...longPress.bind}
+         {...(isMobile ? longPress.bind : {})}
          onClick={(e) => {
            if (longPress.shouldSuppressClick()) return;
            const el = e.target as HTMLElement;
@@ -951,7 +1096,7 @@ function TaskRow({
                 +{trailMore}
               </span>
             )}
-            {!isMobile && (
+            {!isMobile && showInboxTimes && (
               task.estimate_min != null && left != null ? (
                 left < 0 ? (
                   <span className="left-est" data-over="true">{fmtMin(-left)} over</span>

@@ -194,9 +194,7 @@ export function AccountSettingsModal() {
             <div className="account-row">
               <BadgePicker />
               <p className="account-row-text account-row-muted">
-                A glance-able hint shown next to your avatar in the top bar. Pick a mode so
-                you (and anyone glancing at your screen) can tell whether you're in personal
-                or work mindset right now.
+                Shown next to your avatar in the top bar.
               </p>
             </div>
           </Section>

@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { Check, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import { useFira } from '../store';
 import { fmtMin, parseEstimate } from '../time';
 import { Select } from './Select';
-import type { UUID } from '../types';
+import { SectionEditor, SubtaskList } from './TaskModal';
+import type { Section, UUID } from '../types';
 
-interface DraftSubtask { localId: string; title: string; done: boolean }
+interface DraftSubtask { id: string; title: string; done: boolean }
 
 interface Props {
   draft: {
@@ -24,8 +25,6 @@ export function TaskModalDraft({ draft }: Props) {
   const addTask = useFira((s) => s.addTask);
   const setTaskDescription = useFira((s) => s.setTaskDescription);
   const setTaskEstimate = useFira((s) => s.setTaskEstimate);
-  const setTaskExternalId = useFira((s) => s.setTaskExternalId);
-  const setTaskExternalUrl = useFira((s) => s.setTaskExternalUrl);
   const addSubtask = useFira((s) => s.addSubtask);
   const upsertBlock = useFira((s) => s.upsertBlock);
 
@@ -38,12 +37,10 @@ export function TaskModalDraft({ draft }: Props) {
   const [assigneeId, setAssigneeId] = useState<UUID | ''>(
     draft.assignee_id ?? meId ?? ''
   );
-  const [section, setSection] = useState<'now' | 'later'>(draft.section);
+  const [section, setSection] = useState<Section>(draft.section);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [estimateText, setEstimateText] = useState('');
-  const [externalId, setExternalId] = useState('');
-  const [externalUrl, setExternalUrl] = useState('');
   const [subtasks, setSubtasks] = useState<DraftSubtask[]>([]);
 
   const estimateMin = parseEstimate(estimateText);
@@ -52,7 +49,7 @@ export function TaskModalDraft({ draft }: Props) {
   const isValid =
     !!title.trim() &&
     !!projectId &&
-    (section === 'later' || !!assigneeId) &&
+    (section !== 'now' || !!assigneeId) &&
     !estimateInvalid;
 
   const submit = () => {
@@ -66,8 +63,6 @@ export function TaskModalDraft({ draft }: Props) {
     if (!id) return;
     if (description.trim()) setTaskDescription(id, description);
     if (estimateMin != null && estimateMin > 0) setTaskEstimate(id, estimateMin);
-    if (externalId.trim()) setTaskExternalId(id, externalId.trim());
-    if (externalUrl.trim()) setTaskExternalUrl(id, externalUrl.trim());
     for (const s of subtasks) {
       const t = s.title.trim();
       if (t) addSubtask(id, t);
@@ -105,7 +100,7 @@ export function TaskModalDraft({ draft }: Props) {
             <X size={15} strokeWidth={1.75} />
           </button>
         </div>
-        <div className="modal-body">
+        <div className="modal-body" data-side="closed">
           <div className="modal-main">
             <input
               autoFocus
@@ -124,6 +119,22 @@ export function TaskModalDraft({ draft }: Props) {
               }}
             />
 
+            <h5 style={modalH5}>Project</h5>
+            <Select<string>
+              value={projectId}
+              onChange={(v) => setProjectId(v)}
+              options={projects.map((p) => ({ value: p.id, label: p.title }))}
+            />
+
+            <h5 style={modalH5}>Assignee</h5>
+            <AssigneePicker
+              users={users}
+              meId={meId}
+              value={assigneeId || null}
+              allowUnassigned={section !== 'now'}
+              onChange={(id) => setAssigneeId(id ?? '')}
+            />
+
             <h5 style={modalH5}>Description</h5>
             <textarea
               className="desc-md desc-md-edit"
@@ -137,70 +148,41 @@ export function TaskModalDraft({ draft }: Props) {
                 <> · {subtasks.filter((s) => s.done).length}/{subtasks.length}</>
               )}
             </h5>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              {subtasks.map((s) => (
-                <DraftSubtaskRow
-                  key={s.localId}
-                  value={s.title}
-                  done={s.done}
-                  onToggle={() => setSubtasks((arr) => arr.map((x) =>
-                    x.localId === s.localId ? { ...x, done: !x.done } : x
-                  ))}
-                  onChange={(v) => setSubtasks((arr) => arr.map((x) =>
-                    x.localId === s.localId ? { ...x, title: v } : x
-                  ))}
-                  onDelete={() => setSubtasks((arr) => arr.filter((x) => x.localId !== s.localId))}
-                />
+            <SubtaskList
+              subtasks={subtasks}
+              onTick={(sid) => setSubtasks((arr) => arr.map((x) =>
+                x.id === sid ? { ...x, done: !x.done } : x
               ))}
-              <DraftAddSubtask onAdd={(v) => setSubtasks((arr) => [
-                ...arr,
-                { localId: crypto.randomUUID(), title: v, done: false },
-              ])} />
-            </div>
-          </div>
-          <div className="modal-side">
-            <Field label="Project" value={
-              <Select<string>
-                value={projectId}
-                onChange={(v) => setProjectId(v)}
-                options={projects.map((p) => ({ value: p.id, label: p.title }))}
-              />
-            } />
-            <Field label="Assignee" value={
-              <AssigneePicker
-                users={users}
-                meId={meId}
-                value={assigneeId || null}
-                allowUnassigned={section === 'later'}
-                onChange={(id) => setAssigneeId(id ?? '')}
-              />
-            } />
-            <Field label="Status" mono value="todo" />
-            <div className="field">
-              <h5>Estimate</h5>
-              <DraftEstimateEditor
-                text={estimateText}
-                onChange={setEstimateText}
-                invalid={estimateInvalid}
-              />
-            </div>
-            <div className="field">
-              <h5>Issue link</h5>
-              <DraftExternalLinkEditor
-                label={externalId}
-                url={externalUrl}
-                onChangeLabel={setExternalId}
-                onChangeUrl={setExternalUrl}
-                hasTemplate={!!project?.external_url_template}
-                template={project?.external_url_template ?? null}
-              />
-            </div>
-            <Field label="Section" value={
-              <div className="create-seg">
-                <button data-active={section === 'now'} onClick={() => setSection('now')}>Now</button>
-                <button data-active={section === 'later'} onClick={() => setSection('later')}>Later</button>
-              </div>
-            } />
+              onSetTitle={(sid, v) => setSubtasks((arr) => arr.map((x) =>
+                x.id === sid ? { ...x, title: v } : x
+              ))}
+              onDelete={(sid) => setSubtasks((arr) => arr.filter((x) => x.id !== sid))}
+              onReorder={(ids) => setSubtasks((arr) => {
+                const byId = new Map(arr.map((x) => [x.id, x]));
+                return ids.map((i) => byId.get(i)).filter((x): x is DraftSubtask => !!x);
+              })}
+              onAdd={(t, afterId) => {
+                const id = crypto.randomUUID();
+                const item: DraftSubtask = { id, title: t, done: false };
+                setSubtasks((arr) => {
+                  if (!afterId) return [...arr, item];
+                  const idx = arr.findIndex((x) => x.id === afterId);
+                  if (idx === -1) return [...arr, item];
+                  return [...arr.slice(0, idx + 1), item, ...arr.slice(idx + 1)];
+                });
+                return id;
+              }}
+            />
+
+            <h5 style={modalH5}>Estimate</h5>
+            <DraftEstimateEditor
+              text={estimateText}
+              onChange={setEstimateText}
+              invalid={estimateInvalid}
+            />
+
+            <h5 style={modalH5}>Section</h5>
+            <SectionEditor value={section} onChange={setSection} />
           </div>
         </div>
         <div className="modal-footer">
@@ -235,68 +217,6 @@ function autosize(ta: HTMLTextAreaElement) {
   ta.style.height = `${ta.scrollHeight}px`;
 }
 
-function DraftSubtaskRow({ value, done, onToggle, onChange, onDelete }: {
-  value: string;
-  done: boolean;
-  onToggle: () => void;
-  onChange: (v: string) => void;
-  onDelete: () => void;
-}) {
-  return (
-    <div className="subtask subtask-edit" data-done={done}>
-      <span className="sc" onClick={onToggle} aria-label={done ? 'Mark not done' : 'Mark done'}>
-        {done && <Check size={11} strokeWidth={3} />}
-      </span>
-      <input
-        className="subtask-edit-input"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        type="text"
-        autoComplete="one-time-code"
-        autoCorrect="off"
-        autoCapitalize="sentences"
-        spellCheck={false}
-        onKeyDown={(e) => {
-          if (e.key === 'Backspace' && !value) { e.preventDefault(); onDelete(); }
-        }}
-      />
-      <button className="subtask-del" onClick={onDelete} title="Remove" aria-label="Remove">
-        <X size={12} strokeWidth={1.75} />
-      </button>
-    </div>
-  );
-}
-
-function DraftAddSubtask({ onAdd }: { onAdd: (v: string) => void }) {
-  const [v, setV] = useState('');
-  const ref = useRef<HTMLInputElement>(null);
-  return (
-    <div className="subtask-add" data-editing="true"
-         onClick={() => ref.current?.focus()}>
-      <span style={{ width: 11, textAlign: 'center', color: 'var(--ink-4)' }}>+</span>
-      <input
-        ref={ref}
-        className="subtask-add-input"
-        value={v}
-        onChange={(e) => setV(e.target.value)}
-        placeholder="Add subtask…"
-        type="text"
-        autoComplete="one-time-code"
-        autoCorrect="off"
-        autoCapitalize="sentences"
-        spellCheck={false}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            e.preventDefault();
-            const t = v.trim();
-            if (t) { onAdd(t); setV(''); }
-          }
-        }}
-      />
-    </div>
-  );
-}
-
 function DraftEstimateEditor({ text, onChange, invalid }: {
   text: string;
   onChange: (v: string) => void;
@@ -313,13 +233,20 @@ function DraftEstimateEditor({ text, onChange, invalid }: {
   const display = parsed != null ? fmtMin(parsed) : '';
 
   if (!editing) {
+    // Set value renders as a tabular mono time (e.g. "1h30"); empty state
+    // uses the same sans + ink-4 tone as subtask placeholders so the
+    // "Click to set" hint reads as a peer of "Add subtask…".
     return (
       <div onClick={() => setEditing(true)}
-           style={{
+           style={display ? {
              cursor: 'text',
              fontFamily: 'var(--font-mono)',
              fontVariantNumeric: 'tabular-nums',
-             color: display ? 'var(--ink)' : 'var(--ink-4)',
+             color: 'var(--ink)',
+           } : {
+             cursor: 'text',
+             fontSize: 'var(--fs-sm)',
+             color: 'var(--ink-4)',
            }}>
         {display || 'Click to set'}
       </div>
@@ -340,83 +267,6 @@ function DraftEstimateEditor({ text, onChange, invalid }: {
       placeholder="e.g. 1h30 or 90m"
       data-bad={invalid || undefined}
     />
-  );
-}
-
-function DraftExternalLinkEditor({ label, url, onChangeLabel, onChangeUrl, hasTemplate, template }: {
-  label: string;
-  url: string;
-  onChangeLabel: (v: string) => void;
-  onChangeUrl: (v: string) => void;
-  hasTemplate: boolean;
-  template: string | null;
-}) {
-  const [editing, setEditing] = useState(false);
-  const labelRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => { if (editing) labelRef.current?.focus(); }, [editing]);
-
-  const trimmedLabel = label.trim();
-  const trimmedUrl = url.trim();
-  // Display: label takes precedence; URL alone is shown bare. Either alone
-  // is enough to consider the field "set".
-  const display = trimmedLabel ? `[${trimmedLabel}]` : trimmedUrl || '';
-
-  if (!editing) {
-    return (
-      <div onClick={() => setEditing(true)}
-           style={{
-             cursor: 'text',
-             fontFamily: 'var(--font-mono)',
-             fontSize: 'calc(12px * var(--fs-scale))',
-             color: display ? 'var(--ink)' : 'var(--ink-4)',
-             wordBreak: 'break-all',
-           }}
-           title={template ? `Project template: ${template}` : undefined}>
-        {display || 'Click to set'}
-      </div>
-    );
-  }
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <input
-        ref={labelRef}
-        className="side-input"
-        value={label}
-        onChange={(e) => onChangeLabel(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') { e.preventDefault(); setEditing(false); }
-          else if (e.key === 'Escape') { onChangeLabel(''); onChangeUrl(''); setEditing(false); }
-        }}
-        placeholder={hasTemplate ? 'Label (e.g. BDS-345)' : 'Label (e.g. Design doc)'}
-      />
-      <input
-        className="side-input"
-        value={url}
-        onChange={(e) => onChangeUrl(e.target.value)}
-        onBlur={() => setEditing(false)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') { e.preventDefault(); setEditing(false); }
-          else if (e.key === 'Escape') { onChangeLabel(''); onChangeUrl(''); setEditing(false); }
-        }}
-        placeholder={hasTemplate ? 'URL (overrides template)' : 'URL (https://…)'}
-      />
-    </div>
-  );
-}
-
-function Field({ label, value, mono }: { label: string; value: React.ReactNode; mono?: boolean }) {
-  return (
-    <div className="field">
-      <h5>{label}</h5>
-      <div style={{
-        fontSize: 'var(--fs-md)',
-        color: 'var(--ink)',
-        fontFamily: mono ? 'var(--font-mono)' : 'inherit',
-        fontVariantNumeric: mono ? 'tabular-nums' : 'normal',
-      }}>{value}</div>
-    </div>
   );
 }
 

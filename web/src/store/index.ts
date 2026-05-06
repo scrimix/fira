@@ -153,6 +153,12 @@ interface FiraState {
   workBlocks: TimeBlock[];
   workTasks: LinkedTask[];
   showWork: boolean;
+  // Inbox time-label toggle. When false, the .inbox-totals row, the
+  // per-section estimate badges in section heads, and the per-row
+  // "Xh left / over / no est" labels are all hidden — useful when the
+  // user wants to focus on the work itself instead of the meter.
+  // Calendar's ambient time tracking is unaffected.
+  showInboxTimes: boolean;
   linkModalOpen: boolean;
   // Account settings modal — a container for the link affordance plus
   // (eventually) personal preferences and gcal connection. Replaces the
@@ -259,6 +265,7 @@ interface FiraState {
   acceptWorkspaceInvite: (id: UUID) => Promise<void>;
   declineWorkspaceInvite: (id: UUID) => Promise<void>;
   loadLinkedCalendar: () => Promise<void>;
+  setShowInboxTimes: (v: boolean) => void;
   setShowLinked: (v: boolean) => void;
   loadPersonalCalendar: () => Promise<void>;
   setShowPersonal: (v: boolean) => void;
@@ -728,8 +735,10 @@ function applyBootstrap(
     },
     // Empty workspace lands on inbox: that view's empty state has the
     // owner-aware "Create your first project" / "ask an admin" CTA.
-    // Calendar can't usefully render with zero projects.
-    view: data.projects.length === 0 ? 'inbox' : 'calendar',
+    // Calendar can't usefully render with zero projects. Otherwise
+    // respect the persisted view preference so a refresh doesn't yank
+    // the user out of inbox back into calendar.
+    view: data.projects.length === 0 ? 'inbox' : get().view,
   });
 }
 
@@ -771,6 +780,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
   workBlocks: [],
   workTasks: [],
   showWork: false,
+  showInboxTimes: false,
   linkModalOpen: false,
   accountModalOpen: false,
   accountBadge: null,
@@ -1515,6 +1525,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
   },
 
   setShowLinked: (v) => set({ showLinked: v }),
+  setShowInboxTimes: (v) => set({ showInboxTimes: v }),
 
   loadPersonalCalendar: async () => {
     if (get().playgroundMode) return;
@@ -1668,7 +1679,10 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
       title: trimmed,
       description_md: '',
       section,
-      status: section === 'done' ? 'done' : 'todo',
+      // Status follows section by default: now → in_progress, done →
+      // done, everything else → todo. Caller can flip status manually
+      // afterwards if they want a different starting state.
+      status: section === 'done' ? 'done' : section === 'now' ? 'in_progress' : 'todo',
       priority: null,
       source: project.source,
       external_id: null,
@@ -1718,10 +1732,30 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     };
   }),
 
-  setTaskSection: (taskId, section) => set((s) => ({
-    tasks: s.tasks.map((x) => x.id === taskId ? { ...x, section } : x),
-    ...pushOp(s, { kind: 'task.set_section', task_id: taskId, section }),
-  })),
+  setTaskSection: (taskId, section) => set((s) => {
+    const cur = s.tasks.find((x) => x.id === taskId);
+    // Auto-track status to section: moving into Now marks the task
+    // in_progress (unless it's already done — Now is also where
+    // recently-finished work lives until archived); moving out of Now
+    // back to Later/Someday clears the in_progress badge to plain todo
+    // so a parked task doesn't carry a stale "active" signal. Other
+    // transitions leave status alone.
+    let nextStatus: Status | null = null;
+    if (cur) {
+      if (section === 'now' && cur.status !== 'done') nextStatus = 'in_progress';
+      else if ((section === 'later' || section === 'someday') && cur.status === 'in_progress') {
+        nextStatus = 'todo';
+      }
+    }
+    const tasks = s.tasks.map((x) => x.id === taskId
+      ? { ...x, section, ...(nextStatus ? { status: nextStatus } : {}) }
+      : x);
+    let acc = pushOp(s, { kind: 'task.set_section', task_id: taskId, section });
+    if (nextStatus) {
+      acc = pushOp({ ...s, ...acc }, { kind: 'task.set_status', task_id: taskId, status: nextStatus });
+    }
+    return { tasks, ...acc };
+  }),
 
   setTaskAssignee: (taskId, assigneeId) => set((s) => {
     // Unassigning a task that lives in Now flips it to Later — without an
@@ -1991,9 +2025,10 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
   name: 'fira:store-v1',
   storage: createJSONStorage(() => localStorage, { replacer, reviver }),
   // Persist only data we want to recover offline. Skip transient UI state
-  // (modals, view, drag draft) and ephemeral flags (authChecked, loaded,
-  // error, syncStatus). Re-bootstrap will overwrite the data fields when
-  // the network is back.
+  // (modals, drag draft) and ephemeral flags (authChecked, loaded, error,
+  // syncStatus). View is persisted as a UX preference so a refresh keeps
+  // the user on whichever surface they were last using. Re-bootstrap will
+  // overwrite the data fields when the network is back.
   partialize: (s) => ({
     users: s.users,
     projects: s.projects,
@@ -2019,11 +2054,13 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     showLinked: s.showLinked,
     showPersonal: s.showPersonal,
     showWork: s.showWork,
+    showInboxTimes: s.showInboxTimes,
     inboxFilter: s.inboxFilter,
     accountBadge: s.accountBadge,
     gcalConnected: s.gcalConnected,
     gcalEmail: s.gcalEmail,
     gcalLastSyncError: s.gcalLastSyncError,
+    view: s.view,
   // partialize is loosely typed — zustand expects S but we're returning a
   // subset of fields. Cast through unknown is the canonical workaround.
   }) as unknown as FiraState,

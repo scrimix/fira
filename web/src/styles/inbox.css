@@ -110,8 +110,11 @@
   margin-left: auto;
   display: inline-flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   align-self: baseline;
+}
+.inbox-proj-head .proj-actions .proj-edit-btn + .proj-edit-btn {
+  margin-left: -8px;
 }
 .inbox-proj-head .meta {
   font-family: var(--font-mono);
@@ -120,7 +123,8 @@
   letter-spacing: 0.04em;
 }
 .inbox-proj-head .proj-edit-btn {
-  width: 24px; height: 24px;
+  width: auto; min-width: 22px; height: 24px;
+  padding: 0 4px;
   color: var(--ink-3);
   border: 1px solid transparent;
 }
@@ -128,6 +132,17 @@
   color: var(--ink);
   background: var(--paper-3);
   border-color: var(--rule-2);
+}
+/* Time-label toggle: regular clock when "on" (labels visible), the
+ * custom ClockOffIcon (clock with a × in the bottom-right corner)
+ * when "off". Drawing the × inside the icon's own SVG keeps the
+ * strokes crisp at 14×14 — the previous CSS pseudo-element slash
+ * read as a foreign rule pasted on top. */
+.inbox-proj-head .time-toggle-btn[data-off] {
+  /* Mixed against ink-4 (cool grey) instead of paper-3 (warm beige)
+   * so the result stays in the red family rather than drifting toward
+   * terracotta/orange. 65% danger keeps it muted without going pink. */
+  color: color-mix(in oklab, var(--danger) 65%, var(--ink-4));
 }
 .inbox-proj-head .archive-btn {
   height: 24px;
@@ -185,6 +200,14 @@
   margin: 0 0 12px;
   background: var(--paper);
   border-bottom: 1px solid var(--rule);
+}
+/* When totals follow the tag filter, drop its bottom margin so the
+ * totals row's own padding-top alone controls the gap above the
+ * numbers — otherwise the tag filter's 12px margin compounds with
+ * the totals' 8px padding-top to create ~20px above the text while
+ * only 8px sits below, reading as off-balance. */
+.inbox-tag-filter:has(+ .inbox-totals) {
+  margin-bottom: 0;
 }
 .inbox-tag-filter-chips {
   display: flex;
@@ -277,7 +300,8 @@
  * only handles position and the divider underneath. */
 .inbox-totals {
   flex-wrap: wrap;
-  padding: 6px 0 10px;
+  justify-content: center;
+  padding: 8px 0;
   margin: 0 0 12px;
   border-bottom: 1px dashed var(--rule);
 }
@@ -340,6 +364,14 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .section-head .count[data-pulse] { animation: none; }
+}
+.section-head .est {
+  font-family: var(--font-mono);
+  font-size: calc(11px * var(--fs-scale));
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  cursor: help;
 }
 .section-head .rule { flex: 1; height: 1px; background: var(--rule); margin-bottom: 4px; }
 .section[data-section="now"] .section-head h2 { color: var(--accent); }
@@ -405,6 +437,16 @@
   }
   .task-row:hover .task-grip { opacity: 1; }
   .task-grip:hover { color: var(--ink-2); }
+  /* Right after a drop the cursor is still parked over whatever screen
+   * position the user released at, but the row at that position is now
+   * a *different* task than the one they dragged — :hover would
+   * highlight the wrong row, making it look like focus stuck below the
+   * dragged task. Suppress the hover styling until the user nudges the
+   * cursor (handled in JS). */
+  .inbox[data-suspend-hover] .task-row:hover {
+    background: transparent;
+  }
+  .inbox[data-suspend-hover] .task-row:hover .task-grip { opacity: 0; }
 }
 /* Long-press feedback: scale + accent outline + glow when the row's
  * hold timer fires, mirroring `.tblock[data-pressing]` so the lock
@@ -958,6 +1000,16 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
 .desc-md.desc-md-edit {
   font-family: inherit;
   width: 100%;
+  box-sizing: border-box;
+  /* Reset the read-mode negative margin: in read mode it pulls the hover
+   * background's 6px padding back so prose still aligns with surrounding
+   * content; in edit mode the bordered box is visible, so the negative
+   * margin makes it stick out 6px to the left of neighboring fields.
+   * Also drop the read-mode 14px bottom margin: the textarea is
+   * inline-block so it doesn't collapse with the next heading's top
+   * margin, and 14 + 18 = 32px reads as dead space below the box. */
+  margin-left: 0;
+  margin-bottom: 0;
   resize: none;
   /* Autosize sets the height to scrollHeight on every keystroke, so the
    * scrollbar should never be needed. Hide it outright — without this,
@@ -1203,21 +1255,6 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
   text-overflow: ellipsis;
 }
 
-.create-seg {
-  display: inline-flex;
-  border: 1px solid var(--rule-2);
-}
-.create-seg button {
-  padding: 4px 12px;
-  font-size: var(--fs-sm);
-  color: var(--ink-3);
-  cursor: pointer;
-  background: var(--paper);
-}
-.create-seg button[data-active="true"] {
-  background: var(--accent-soft);
-  color: var(--accent);
-}
 .modal-footer {
   display: flex;
   gap: 8px;

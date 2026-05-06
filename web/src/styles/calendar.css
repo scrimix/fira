@@ -589,7 +589,6 @@
    * doesn't trigger the block's drag effect. */
   touch-action: none;
 }
-.tb-popup .tb-action { background: var(--paper); }
 
 .tb-resize {
   position: absolute;

@@ -171,12 +171,12 @@ export function TaskModal({ taskId }: Props) {
                 : undefined}
             />
             <SubtaskList
-              task={task}
-              tickSubtask={tickSubtask}
-              setSubtaskTitle={setSubtaskTitle}
-              deleteSubtask={deleteSubtask}
-              reorderSubtasks={reorderSubtasks}
-              addSubtask={addSubtask}
+              subtasks={task.subtasks}
+              onTick={(sid) => tickSubtask(task.id, sid)}
+              onSetTitle={(sid, v) => setSubtaskTitle(task.id, sid, v)}
+              onDelete={(sid) => deleteSubtask(task.id, sid)}
+              onReorder={(ids) => reorderSubtasks(task.id, ids)}
+              onAdd={(title, afterId) => addSubtask(task.id, title, afterId)}
             />
 
             <SectionHeading
@@ -690,15 +690,20 @@ function CopyMarkdownButton({ task }: { task: Task }) {
   );
 }
 
-function SubtaskList({
-  task, tickSubtask, setSubtaskTitle, deleteSubtask, reorderSubtasks, addSubtask,
+// Reusable. The list is intentionally taskId-agnostic so it can drive
+// either store-backed subtasks (TaskModal) or local-state subtasks
+// (TaskModalDraft) — callers bind their own backing through the per-id
+// callbacks. Reorder is handed back as an ordered array of ids; the
+// caller decides how to apply it (store op vs. local setState).
+export function SubtaskList({
+  subtasks, onTick, onSetTitle, onDelete, onReorder, onAdd,
 }: {
-  task: Task;
-  tickSubtask: (taskId: string, subId: string) => void;
-  setSubtaskTitle: (taskId: string, subId: string, v: string) => void;
-  deleteSubtask: (taskId: string, subId: string) => void;
-  reorderSubtasks: (taskId: string, orderedIds: string[]) => void;
-  addSubtask: (taskId: string, title: string, afterId?: string) => string | null;
+  subtasks: Array<{ id: string; title: string; done: boolean }>;
+  onTick: (subId: string) => void;
+  onSetTitle: (subId: string, v: string) => void;
+  onDelete: (subId: string) => void;
+  onReorder: (orderedIds: string[]) => void;
+  onAdd: (title: string, afterId?: string) => string | null;
 }) {
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dropAt, setDropAt] = useState<{ id: string; pos: 'before' | 'after' } | null>(null);
@@ -710,7 +715,7 @@ function SubtaskList({
 
   const reorderTo = (draggedSubId: string, dropAtVal: { id: string; pos: 'before' | 'after' }) => {
     if (!draggedSubId || draggedSubId === dropAtVal.id) return;
-    const ids = task.subtasks.map((s) => s.id);
+    const ids = subtasks.map((s) => s.id);
     const from = ids.indexOf(draggedSubId);
     const targetIdx = ids.indexOf(dropAtVal.id);
     if (from === -1 || targetIdx === -1) return;
@@ -719,7 +724,7 @@ function SubtaskList({
     if (from < targetIdx) insertAt -= 1;
     if (dropAtVal.pos === 'after') insertAt += 1;
     ids.splice(insertAt, 0, draggedSubId);
-    reorderSubtasks(task.id, ids);
+    onReorder(ids);
   };
 
   const commitReorder = () => {
@@ -764,7 +769,7 @@ function SubtaskList({
 
   return (
     <div className="modal-subtasks">
-      {task.subtasks.map((s) => (
+      {subtasks.map((s) => (
         <SubtaskRow
           key={s.id}
           id={s.id}
@@ -773,12 +778,12 @@ function SubtaskList({
           autoEdit={focusId === s.id}
           onAutoEditConsumed={() => setFocusId(null)}
           onEnterAdd={() => {
-            const newId = addSubtask(task.id, '', s.id);
+            const newId = onAdd('', s.id);
             if (newId) setFocusId(newId);
           }}
-          onToggle={() => tickSubtask(task.id, s.id)}
-          onSave={(v) => setSubtaskTitle(task.id, s.id, v)}
-          onDelete={() => deleteSubtask(task.id, s.id)}
+          onToggle={() => onTick(s.id)}
+          onSave={(v) => onSetTitle(s.id, v)}
+          onDelete={() => onDelete(s.id)}
           onDragStart={(id) => setDraggedId(id)}
           onDragOver={(id, pos) => setDropAt((cur) =>
             cur?.id === id && cur.pos === pos ? cur : { id, pos }
@@ -792,8 +797,8 @@ function SubtaskList({
         />
       ))}
       <AddSubtaskRow
-        onAdd={(title) => addSubtask(task.id, title)}
-        bare={task.subtasks.length === 0}
+        onAdd={(title) => onAdd(title)}
+        bare={subtasks.length === 0}
       />
     </div>
   );
@@ -1254,7 +1259,7 @@ function StatusEditor({ value, onChange }: {
   return <TonedPicker<Status> value={value} options={opts} onChange={onChange} />;
 }
 
-function SectionEditor({ value, onChange }: {
+export function SectionEditor({ value, onChange }: {
   value: Section;
   onChange: (v: Section) => void;
 }) {
@@ -1489,7 +1494,7 @@ function AssigneeEditor({ value, users, meId, onChange }: {
 // already-selected ones, plus an inline "Create new" footer for tags that
 // don't exist yet. Each toggle / create fires a single `task.set_tags` op
 // (not per-add / per-remove), keeping the outbox tidy.
-function TagEditor({
+export function TagEditor({
   projectId, selected, allTags, onChange, onCreate,
 }: {
   projectId: UUID;
