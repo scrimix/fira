@@ -400,8 +400,8 @@ export function InboxView() {
         <div className="totals inbox-totals" aria-label="Filtered totals">
           <span className="totals-done"><strong>{fmtMin(totalDone)}</strong> done</span>
           <span className="totals-planned"><strong>{fmtMin(totalPlanned)}</strong> planned</span>
-          <span className="totals-est"><strong>{fmtMin(totalEst)}</strong> est</span>
           <span className="totals-total"><strong>{fmtMin(totalAll)}</strong> total</span>
+          <span className="totals-est"><strong>{fmtMin(totalEst)}</strong> est</span>
         </div>
 
         {/* NOW */}
