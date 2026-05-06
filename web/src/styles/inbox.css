@@ -309,6 +309,38 @@
   color: var(--ink-4);
   font-variant-numeric: tabular-nums;
 }
+/* Pulse the numeric count when the filtered task count changes. Resting
+ * state stays faint (`--ink-4`) so the row is calm at rest; the pulse
+ * jumps to the accent + a soft glow so a 1→5 swap is unmissable next
+ * to the chip flashes happening above. `display: inline-block` lets
+ * `transform: scale` apply to an otherwise inline span. */
+.section-head .count[data-pulse] {
+  display: inline-block;
+  transform-origin: left center;
+  animation: section-count-pulse 1100ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@keyframes section-count-pulse {
+  0% {
+    transform: scale(1);
+    color: var(--ink-4);
+    text-shadow: none;
+  }
+  18% {
+    transform: scale(1.7);
+    color: var(--accent);
+    text-shadow:
+      0 0 6px color-mix(in srgb, var(--accent) 70%, transparent),
+      0 0 14px var(--accent-soft);
+  }
+  100% {
+    transform: scale(1);
+    color: var(--ink-4);
+    text-shadow: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .section-head .count[data-pulse] { animation: none; }
+}
 .section-head .rule { flex: 1; height: 1px; background: var(--rule); margin-bottom: 4px; }
 .section[data-section="now"] .section-head h2 { color: var(--accent); }
 .section[data-section="now"] .section-head .caret { color: var(--accent); }

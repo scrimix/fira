@@ -413,7 +413,7 @@ export function InboxView() {
           <div className="section-head" onClick={() => setCollapsed({ ...collapsed, now: !collapsed.now })}>
             <span className="caret">{collapsed.now ? '▸' : '▾'}</span>
             <h2>Now</h2>
-            <span className="count">{nowTasks.length}</span>
+            <SectionCount value={nowTasks.length} />
             <span className="rule" />
             <span className="count" style={{ fontFamily: 'var(--font-mono)' }}>week of apr 27</span>
           </div>
@@ -551,7 +551,7 @@ export function InboxView() {
           <div className="section-head" onClick={() => setCollapsed({ ...collapsed, later: !collapsed.later })}>
             <span className="caret">{collapsed.later ? '▸' : '▾'}</span>
             <h2>Later</h2>
-            <span className="count">{laterTasks.length}</span>
+            <SectionCount value={laterTasks.length} />
             <span className="rule" />
             <span className="count" style={{ fontFamily: 'var(--font-mono)' }}>parking lot</span>
           </div>
@@ -572,7 +572,7 @@ export function InboxView() {
           <div className="section-head" onClick={() => setCollapsed({ ...collapsed, someday: !collapsed.someday })}>
             <span className="caret">{collapsed.someday ? '▸' : '▾'}</span>
             <h2>Someday</h2>
-            <span className="count">{somedayTasks.length}</span>
+            <SectionCount value={somedayTasks.length} />
             <span className="rule" />
             <span className="count" style={{ fontFamily: 'var(--font-mono)' }}>maybe</span>
           </div>
@@ -591,7 +591,7 @@ export function InboxView() {
           <div className="section-head" onClick={() => setCollapsed({ ...collapsed, done: !collapsed.done })}>
             <span className="caret">{collapsed.done ? '▸' : '▾'}</span>
             <h2>Done</h2>
-            <span className="count">{doneTasks.length}</span>
+            <SectionCount value={doneTasks.length} />
             <span className="rule" />
             <span className="count" style={{ fontFamily: 'var(--font-mono)' }}>archive</span>
           </div>
@@ -604,6 +604,27 @@ export function InboxView() {
         </div>
       </div>
     </div>
+  );
+}
+
+// Section header count that pulses (color + scale + glow) on every
+// change. Skips the initial mount so navigating into the inbox doesn't
+// flash all four counts at once. Re-keys the span on each change so the
+// CSS animation restarts cleanly even when the value bounces during
+// the previous animation.
+function SectionCount({ value }: { value: number }) {
+  const [bump, setBump] = useState(0);
+  const prev = useRef(value);
+  useEffect(() => {
+    if (prev.current !== value) {
+      prev.current = value;
+      setBump((b) => b + 1);
+    }
+  }, [value]);
+  return (
+    <span key={bump} className="count" data-pulse={bump > 0 || undefined}>
+      {value}
+    </span>
   );
 }
 
