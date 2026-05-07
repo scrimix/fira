@@ -74,6 +74,23 @@ export function InboxView() {
   // a short timeout lapses, whichever comes first.
   const [hoverSuspended, setHoverSuspended] = useState(false);
 
+  // All hook calls (useRef / useEffect / useState) MUST run on every
+  // render — including the empty-state path below. Hoisted up here
+  // because the create-first-project flow transitions an instance from
+  // empty (early-return) to populated (full render), and React's
+  // rules-of-hooks rejects a hooks-count change between renders. The
+  // refs / cleanup effect themselves don't depend on `project`; they
+  // just need to be declared in stable order.
+  const desktopDragIdRef = useRef<UUID | null>(null);
+  const inboxScrollRef = useRef<HTMLDivElement>(null);
+  const dragScrollStopRef = useRef<(() => void) | null>(null);
+  const dragCursorRef = useRef<{ x: number; y: number } | null>(null);
+  const touchDraggedRef = useRef<UUID | null>(null);
+  const touchDropAtRef = useRef<{ id: UUID; pos: 'before' | 'after' | 'merge' } | null>(null);
+  const touchSectionRef = useRef<Section | null>(null);
+  const touchAssigneeRef = useRef<UUID | null>(null);
+  useEffect(() => () => { dragScrollStopRef.current?.(); }, []);
+
   const suspendHover = () => {
     setHoverSuspended(true);
     const onMove = () => {
@@ -222,26 +239,10 @@ export function InboxView() {
     reorderTasks(target.project_id, target.section, sectionList);
   };
 
-  // Desktop drag — kept around so `onDragOver` handlers can compute
-  // which row to target without reading dataTransfer (browsers block
-  // reads during dragover for security; data is only readable on drop).
-  const desktopDragIdRef = useRef<UUID | null>(null);
-  // Edge auto-scroll while a drag is in flight. Desktop: HTML5 D&D
-  // consumes wheel events over drop targets in Chromium, so wheel
-  // scroll dies as soon as the cursor is over a row. Mobile: the
-  // long-press touchmove path calls preventDefault to keep the drag
-  // alive, which also kills page scroll. Both surfaces need a manual
-  // rAF loop that scrolls `.inbox` when the cursor enters a band near
-  // its top/bottom edge — same UX Trello / Linear / Notion ship.
-  const inboxScrollRef = useRef<HTMLDivElement>(null);
-  const dragScrollStopRef = useRef<(() => void) | null>(null);
-  // Last cursor pointer position fed into the edge-scroll loop. Desktop
-  // updates this from `dragover`; touch updates it from
-  // `onGripTouchMove`. The X coordinate lets the touch path reissue
-  // `onGripTouchMove(x, y)` after each scroll step so the row under
-  // the finger refreshes the drop indicator even when the finger
-  // itself is still.
-  const dragCursorRef = useRef<{ x: number; y: number } | null>(null);
+  // (Refs for desktop / touch drag + edge-scroll cleanup are hoisted to
+  // the top of the component so they pass rules-of-hooks across the
+  // empty-state early return — see the block right after the useState
+  // declarations.)
   const startEdgeScroll = (mode: 'drag' | 'touch') => {
     const container = inboxScrollRef.current;
     if (!container) return;
@@ -300,7 +301,6 @@ export function InboxView() {
       dragScrollStopRef.current = null;
     };
   };
-  useEffect(() => () => { dragScrollStopRef.current?.(); }, []);
 
   const onRowDragStart = (e: React.DragEvent, taskId: string) => {
     e.dataTransfer.effectAllowed = 'move';
@@ -373,11 +373,8 @@ export function InboxView() {
   // fire from touch, so we run a parallel pointer-events flow that
   // resolves to the same applyTaskMove / setTaskSection logic on
   // release. The grip uses setPointerCapture so subsequent moves come
-  // back to it even when the finger leaves the row.
-  const touchDraggedRef = useRef<UUID | null>(null);
-  const touchDropAtRef = useRef<{ id: UUID; pos: 'before' | 'after' | 'merge' } | null>(null);
-  const touchSectionRef = useRef<Section | null>(null);
-  const touchAssigneeRef = useRef<UUID | null>(null);
+  // back to it even when the finger leaves the row. (Refs are hoisted
+  // to the top — see the block after the useState declarations.)
   const onGripTouchStart = (taskId: UUID) => {
     touchDraggedRef.current = taskId;
     touchDropAtRef.current = null;

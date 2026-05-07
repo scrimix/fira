@@ -1606,15 +1606,27 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
           members: meId ? [{ user_id: meId, role: 'owner' }] : [],
         }
       : await api.createProject(input);
-    set((s) => ({
-      projects: [...s.projects, project].sort((a, b) => a.title.localeCompare(b.title)),
-      projectFilter: { ...s.projectFilter, [project.id]: true },
-      // Switch into the new project's inbox so the user lands somewhere
-      // useful instead of an empty calendar.
-      view: 'inbox',
-      inboxFilter: { ...s.inboxFilter, project_id: project.id },
-      projectModal: null,
-    }));
+    set((s) => {
+      // Dedupe: the server's `project.create` synthesized op can race
+      // back via the WS nudge path (pg_notify → pollChanges →
+      // applyRemoteOp) before this REST response resolves. If
+      // applyRemoteOp wins, the project is already in `s.projects`;
+      // appending again would mint a duplicate React key (same id, two
+      // entries) and the inbox renders blank until reload. Match the
+      // pattern every other create handler already uses.
+      const exists = s.projects.some((p) => p.id === project.id);
+      return {
+        projects: exists
+          ? s.projects
+          : [...s.projects, project].sort((a, b) => a.title.localeCompare(b.title)),
+        projectFilter: { ...s.projectFilter, [project.id]: true },
+        // Switch into the new project's inbox so the user lands
+        // somewhere useful instead of an empty calendar.
+        view: 'inbox',
+        inboxFilter: { ...s.inboxFilter, project_id: project.id },
+        projectModal: null,
+      };
+    });
     return project;
   },
 
@@ -2169,7 +2181,10 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     showLinked: s.showLinked,
     showPersonal: s.showPersonal,
     showWork: s.showWork,
-    showInboxTimes: s.showInboxTimes,
+    // showInboxTimes intentionally omitted — the inbox should default to
+    // hidden timings every session. Persisting "on" across reloads
+    // surprised users who had toggled it in a one-off planning session
+    // and didn't expect every later visit to show estimates.
     inboxFilter: s.inboxFilter,
     accountBadge: s.accountBadge,
     gcalConnected: s.gcalConnected,

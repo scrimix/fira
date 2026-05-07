@@ -408,6 +408,28 @@
   touch-action: pan-y;
 }
 .tblock:hover { box-shadow: 0 0 0 1px var(--proj-color, var(--ink)); z-index: 3; border-radius: 3px; }
+/* Overlap stripe — thin colored bar on the right edge of an active
+ * block, scoped (via inline `top` + `height`) to exactly the time
+ * span where an underlay (linked / personal / work / gcal block)
+ * overlaps with this one. Color is the overlay's project color (or
+ * muted ink for gcal), so the user reads "this conflicts with X"
+ * just from the hue. Multiple overlaps stack leftward via inline
+ * `right` offsets, capped at three by the renderer.
+ *
+ * pointer-events: none keeps the stripe out of the block's drag /
+ * resize / click hit-tests; z-index 1 puts it above the block's
+ * background but below the .tb-actions / .tb-resize hit-targets
+ * (those sit at z-index 4-5). The 0.85 opacity softens the color
+ * just enough that a saturated underlay doesn't fight the block's
+ * own left-stripe project color. */
+.tb-overlap {
+  position: absolute;
+  width: 3px;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0.85;
+  border-radius: 1px;
+}
 .tblock[data-state="completed"] {
   background: color-mix(in oklab, var(--proj-color, var(--ink)) 22%, var(--paper));
 }

@@ -892,6 +892,32 @@ export function CalendarView() {
                   return grid.day === dayIdx ? { block: b, ...grid } : null;
                 })
                 .filter((x): x is NonNullable<typeof x> => x !== null);
+              // Flat list of every overlay segment in this day: linked /
+              // personal / work blocks plus my own gcal events. Each is
+              // [start, end) in minutes from local midnight, paired with
+              // the color we'll stripe onto an active block when they
+              // collide. gcal has no project color, so we use the same
+              // muted ink it already renders with. Used below by the
+              // active-block render to surface "you're double-booked
+              // here" without dimming the active block itself.
+              const dayOverlays: Array<{ start: number; end: number; color: string }> = [
+                ...dayLinkedBlocks.map(({ block: b, start_min, dur_min }) => {
+                  const lt = linkedTaskById.get(b.task_id);
+                  return { start: start_min, end: start_min + dur_min, color: lt?.project_color ?? 'var(--ink-3)' };
+                }),
+                ...dayPersonalBlocks.map(({ block: b, start_min, dur_min }) => {
+                  const pt = personalTaskById.get(b.task_id);
+                  return { start: start_min, end: start_min + dur_min, color: pt?.project_color ?? 'var(--ink-3)' };
+                }),
+                ...dayWorkBlocks.map(({ block: b, start_min, dur_min }) => {
+                  const wt = workTaskById.get(b.task_id);
+                  return { start: start_min, end: start_min + dur_min, color: wt?.project_color ?? 'var(--ink-3)' };
+                }),
+                ...dayGcal.map((g) => {
+                  const grid = blockToGrid(g.start_at, g.end_at, gridAnchor);
+                  return { start: grid.start_min, end: grid.start_min + grid.dur_min, color: 'var(--ink-3)' };
+                }),
+              ];
               const isToday = dayIdx === todayCol;
               const isWeekend = dayLbl === 'SAT' || dayLbl === 'SUN';
               const showPreview = dropPreview?.day === dayIdx;
@@ -1043,6 +1069,24 @@ export function CalendarView() {
                     const menuOpen = menuBlockId === b.id;
                     const blockTopPx = (sMin / 60) * HOUR_H;
                     const blockHeightPx = (dMin / 60) * HOUR_H - 2;
+                    // Overlap stripes: for each underlay segment that
+                    // intersects this active block in time, render a
+                    // thin colored strip on the right edge spanning
+                    // exactly the overlap zone. Capped at 3 stripes so
+                    // a block sitting on a stack of overlays doesn't
+                    // grow a barcode — three is enough to say "lots
+                    // going on here", and each stripe's color tells
+                    // the user which calendar/project it belongs to.
+                    const aStart = sMin;
+                    const aEnd = sMin + dMin;
+                    const overlaps = dayOverlays
+                      .map((o) => {
+                        const start = Math.max(o.start, aStart);
+                        const end = Math.min(o.end, aEnd);
+                        return end > start ? { start, end, color: o.color } : null;
+                      })
+                      .filter((x): x is NonNullable<typeof x> => x !== null)
+                      .slice(0, 3);
                     const tickBtn = (
                       <button className="tb-action tb-tick"
                               data-checked={b.state === 'completed'}
@@ -1121,6 +1165,14 @@ export function CalendarView() {
                            title={t.status === 'done' && b.state === 'planned'
                              ? `${t.title} · ${fmtMin(dMin)}\n\n⚠ Task is marked done, but this block is still planned. Delete the block or reopen the task.`
                              : `${t.title} · ${fmtMin(dMin)}`}>
+                        {overlaps.map((o, i) => (
+                          <div key={`ov-${i}`} className="tb-overlap" style={{
+                            top: `${((o.start - aStart) / dMin) * 100}%`,
+                            height: `${((o.end - o.start) / dMin) * 100}%`,
+                            right: `${i * 4}px`,
+                            background: o.color,
+                          }} />
+                        ))}
                         <div className="tb-title">{t.title}</div>
                         <div className="tb-meta">
                           <span>{fmtClockShort(sMin)}</span>
