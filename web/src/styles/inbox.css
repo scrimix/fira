@@ -477,6 +477,18 @@
   height: 2px; background: var(--accent);
   pointer-events: none;
 }
+/* Merge target: cursor parked in the middle band of the row tells the
+ * dragged task it'll be absorbed (title → subtask, description / blocks
+ * / estimate / tags merged into this one). The whole row lights up so
+ * the user reads it as "land on this block" rather than "slot beside
+ * it". `!important` clears the row's :hover gradient and beats the
+ * `[data-status="done"]` rule that's more specific by attribute count. */
+.task-row[data-drop-mark="merge"] {
+  background: var(--accent-soft) !important;
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+  border-radius: 6px;
+}
 
 .task-grip {
   width: 14px;
@@ -527,16 +539,74 @@
   border-color: var(--ink);
   color: var(--paper);
 }
-.task-row[data-status="in_progress"] .task-check {
-  border-color: var(--accent);
-  background: repeating-linear-gradient(45deg, var(--accent-soft), var(--accent-soft) 2px, var(--paper) 2px, var(--paper) 4px);
-}
 
 .task-title-wrap { min-width: 0; }
+/* Container for the toggle caret + title text + ext-id chip. flex
+ * baseline so the small caret aligns with the title's baseline rather
+ * than its top. flex-wrap so a long external_id doesn't overflow on
+ * narrow widths. */
+.task-title-line {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
 .task-title {
   font-size: var(--fs-md);
   line-height: 1.45;
   word-break: break-word;
+}
+/* Edit-zone affordance: only the title text gets the I-beam, so the
+ * surrounding row body still reads as "click to open modal". Mobile
+ * leaves the attribute off so the row pointer cursor wins. */
+.task-title[data-editable] { cursor: text; }
+/* Per-task subtask-list toggle. Only rendered when the task has at
+ * least one subtask; click flips the inbox's per-row expanded state.
+ * Sized to sit naturally next to the title without nudging the row
+ * grid. The data-expanded attribute lets the chevron firm up its
+ * color when open, matching the section caret idiom. */
+.task-toggle {
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  width: 14px;
+  height: 14px;
+  display: inline-grid;
+  place-items: center;
+  color: var(--ink-4);
+  cursor: pointer;
+  font-size: calc(10px * var(--fs-scale));
+  line-height: 1;
+  font-family: var(--font-mono);
+  flex-shrink: 0;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+.task-toggle:hover { color: var(--ink-2); }
+.task-toggle[data-expanded] { color: var(--ink-3); }
+/* Inline title editor — desktop only. Mirrors .task-add-input's shape
+ * (textarea sized as a single line via line-height + min-height) so
+ * the cursor lands exactly where the static .task-title text was. */
+.inbox-title-input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: var(--fs-md);
+  font-family: inherit;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ink);
+  padding: 0;
+  line-height: 1.45;
+  resize: none;
+  overflow-y: hidden;
+  min-height: calc(1.45em);
+  display: block;
 }
 .task-row .ext-id {
   font-family: var(--font-mono);
@@ -674,8 +744,40 @@
 
 .subtasks {
   grid-column: 2 / -1;
-  margin: 4px 0 2px;
-  display: flex; flex-direction: column; gap: 2px;
+  /* Subtasks read as a denser inner list than the parent task row.
+   * The math: subtask→subtask gap = padding-bottom + padding-top
+   * (3 + 3 = 6); title→first-subtask gap = this margin-top + first
+   * subtask's padding-top (3 + 3 = 6). Same number both directions,
+   * tighter than the parent row's 6 + 6 = 12-px task-to-task cadence,
+   * which gives subtasks the "secondary list" rhythm without making
+   * them feel cramped. */
+  margin: 3px 0 0;
+  display: flex; flex-direction: column; gap: 0;
+}
+/* Inbox subtask rows: same font as task rows (so they read as
+ * first-class siblings during the Tab-demote typing flow) but
+ * tighter vertical padding so the inner list is denser than the
+ * outer task list. Modal subtasks still use the shared .subtask
+ * defaults via .modal-subtasks, so this scoped rule doesn't leak. */
+.subtasks .subtask {
+  padding: 3px 8px 3px 0;
+  font-size: var(--fs-md);
+  align-items: flex-start;
+}
+.subtasks .subtask .sname {
+  font-size: var(--fs-md);
+  line-height: 1.45;
+}
+/* Match .task-check's vertical offset (margin-top: 2 px) so the
+ * checkbox sits on the title's baseline the same way it does on the
+ * parent row — without this, the subtask checkbox floats a couple of
+ * pixels lower and the columns visibly disagree. */
+.subtasks .subtask .sc {
+  margin-top: 2px;
+}
+.subtasks .subtask .subtask-edit-input {
+  font-size: var(--fs-md);
+  line-height: 1.45;
 }
 .subtask {
   display: flex; align-items: flex-start; gap: 8px;

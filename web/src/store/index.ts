@@ -308,6 +308,10 @@ interface FiraState {
   deleteTag: (tagId: UUID) => void;
   setTaskTags: (taskId: UUID, tagIds: UUID[]) => void;
   addTask: (projectId: UUID, section: Section, title: string, assigneeId?: UUID | null, tagIds?: UUID[]) => UUID | null;
+  /// Insert a sibling task immediately after `afterTaskId` in the same
+  /// project / section / assignee group. Empty title allowed (the inbox
+  /// inline-edit flow seeds an empty row that the user types into).
+  addTaskAfter: (afterTaskId: UUID, title?: string) => UUID | null;
   tickTask: (taskId: UUID) => void;
   setTaskStatus: (taskId: UUID, status: Status) => void;
   setTaskSection: (taskId: UUID, section: Section) => void;
@@ -319,6 +323,12 @@ interface FiraState {
   setTaskExternalId: (taskId: UUID, external_id: string | null) => void;
   setTaskExternalUrl: (taskId: UUID, external_url: string | null) => void;
   deleteTask: (taskId: UUID) => void;
+  /// Merge `sourceId` into `targetId`: source's title joins as a new
+  /// subtask under target; source's own subtasks become flat subtasks
+  /// of target; description / estimate / tags / time blocks are
+  /// merged per the inbox brief; source is deleted. No-op when ids
+  /// match or projects differ.
+  mergeTaskInto: (sourceId: UUID, targetId: UUID) => void;
   addSubtask: (taskId: UUID, title: string, afterId?: UUID) => UUID | null;
   tickSubtask: (taskId: UUID, subId: UUID) => void;
   setSubtaskTitle: (taskId: UUID, subId: UUID, title: string) => void;
@@ -1708,6 +1718,46 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     return newTask.id;
   },
 
+  addTaskAfter: (afterTaskId, title) => {
+    const state = get();
+    const after = state.tasks.find((t) => t.id === afterTaskId);
+    if (!after) return null;
+    const siblings = state.tasks
+      .filter((t) => t.project_id === after.project_id && t.section === after.section)
+      .sort((a, b) => a.sort_key.localeCompare(b.sort_key));
+    const idx = siblings.findIndex((t) => t.id === afterTaskId);
+    const next = siblings[idx + 1] ?? null;
+    const sortKey = midKey(after.sort_key, next?.sort_key ?? null);
+    const newTask: Task = {
+      id: crypto.randomUUID(),
+      project_id: after.project_id,
+      epic_id: null,
+      sprint_id: null,
+      assignee_id: after.assignee_id,
+      title: (title ?? '').trim(),
+      description_md: '',
+      section: after.section,
+      status: after.section === 'done' ? 'done' : after.section === 'now' ? 'in_progress' : 'todo',
+      priority: null,
+      source: after.source,
+      external_id: null,
+      external_url: null,
+      estimate_min: null,
+      spent_min: 0,
+      tag_ids: [],
+      sort_key: sortKey,
+      created_at: new Date().toISOString(),
+      created_by: state.meId,
+      finished_at: after.section === 'done' ? new Date().toISOString() : null,
+      subtasks: [],
+    };
+    set((s) => ({
+      tasks: [...s.tasks, newTask],
+      ...pushOp(s, { kind: 'task.create', task: newTask }),
+    }));
+    return newTask.id;
+  },
+
   tickTask: (taskId) => set((s) => {
     const t = s.tasks.find((x) => x.id === taskId);
     if (!t) return {};
@@ -1829,6 +1879,71 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     openTaskId: s.openTaskId === taskId ? null : s.openTaskId,
     ...pushOp(s, { kind: 'task.delete', task_id: taskId }),
   })),
+
+  mergeTaskInto: (sourceId, targetId) => {
+    if (sourceId === targetId) return;
+    const before = get();
+    const source = before.tasks.find((t) => t.id === sourceId);
+    const target = before.tasks.find((t) => t.id === targetId);
+    if (!source || !target) return;
+    if (source.project_id !== target.project_id) return;
+    const sourceBlocks = before.blocks.filter((b) => b.task_id === sourceId);
+    const actions = get();
+    // 1. Source title becomes a new subtask of target. Inherits the
+    //    "done" state from the source's status so a completed task
+    //    merging in doesn't silently re-open work.
+    const titleSubId = actions.addSubtask(targetId, source.title);
+    if (titleSubId && source.status === 'done') actions.tickSubtask(targetId, titleSubId);
+    // 2. Source's own subtasks come along, preserving title + done.
+    for (const sub of source.subtasks) {
+      const newSubId = actions.addSubtask(targetId, sub.title);
+      if (newSubId && sub.done) actions.tickSubtask(targetId, newSubId);
+    }
+    // 3. Description merge: target's existing description, then a
+    //    `## ${sourceTitle}` heading, then the source's description.
+    //    Skip when source has nothing to add — avoids leaving an
+    //    empty heading behind.
+    if (source.description_md.trim()) {
+      const heading = `## ${source.title}`;
+      // Tight join between the heading and the merged-in body — no
+      // blank line — so the section reads as one block rather than a
+      // heading floating above its paragraph. A blank line still
+      // separates the *new* section from the existing description so
+      // adjacent merges don't run together.
+      const merged = target.description_md.trim()
+        ? `${target.description_md}\n\n${heading}\n${source.description_md}`
+        : `${heading}\n${source.description_md}`;
+      actions.setTaskDescription(targetId, merged);
+    }
+    // 4. Estimate sum (null-safe).
+    if (source.estimate_min != null && source.estimate_min > 0) {
+      const next = (target.estimate_min ?? 0) + source.estimate_min;
+      actions.setTaskEstimate(targetId, next);
+    }
+    // 5. Tag union.
+    const newTags = Array.from(new Set([...target.tag_ids, ...source.tag_ids]));
+    if (newTags.length !== target.tag_ids.length) {
+      actions.setTaskTags(targetId, newTags);
+    }
+    // 6. Re-create source's blocks under target. The server's
+    //    block.update op doesn't accept a task_id change, so we mint
+    //    new block ids on target — the originals get cascade-deleted
+    //    when the source task is removed in step 7. Identity changes,
+    //    but the calendar slot stays put.
+    for (const block of sourceBlocks) {
+      actions.upsertBlock({
+        id: crypto.randomUUID(),
+        task_id: targetId,
+        user_id: block.user_id,
+        start_at: block.start_at,
+        end_at: block.end_at,
+        state: block.state,
+      });
+    }
+    // 7. Drop the source. Cascades remove its old blocks server-side;
+    //    the local store mirrors the cascade in deleteTask.
+    actions.deleteTask(sourceId);
+  },
 
   addTag: (projectId, title, color) => {
     const trimmed = title.trim();

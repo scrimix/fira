@@ -24,10 +24,16 @@ export function InboxView() {
   const tickSubtask = useFira((s) => s.tickSubtask);
   const setSubtaskTitle = useFira((s) => s.setSubtaskTitle);
   const deleteSubtask = useFira((s) => s.deleteSubtask);
+  const addSubtask = useFira((s) => s.addSubtask);
   const setTaskSection = useFira((s) => s.setTaskSection);
   const setTaskAssignee = useFira((s) => s.setTaskAssignee);
+  const setTaskTitle = useFira((s) => s.setTaskTitle);
+  const deleteTask = useFira((s) => s.deleteTask);
   const reorderTasks = useFira((s) => s.reorderTasks);
+  const reorderSubtasks = useFira((s) => s.reorderSubtasks);
   const addTask = useFira((s) => s.addTask);
+  const addTaskAfter = useFira((s) => s.addTaskAfter);
+  const mergeTaskInto = useFira((s) => s.mergeTaskInto);
   const openTask = useFira((s) => s.openTask);
   const openEditProject = useFira((s) => s.openEditProject);
   const openCreateProject = useFira((s) => s.openCreateProject);
@@ -50,7 +56,17 @@ export function InboxView() {
   const [collapsedAssignee, setCollapsedAssignee] = useState<Record<UUID, boolean>>({});
   const [dropTarget, setDropTarget] = useState<Section | null>(null);
   const [assigneeDropTarget, setAssigneeDropTarget] = useState<UUID | null>(null);
-  const [rowDropAt, setRowDropAt] = useState<{ id: UUID; pos: 'before' | 'after' } | null>(null);
+  const [rowDropAt, setRowDropAt] = useState<{ id: UUID; pos: 'before' | 'after' | 'merge' } | null>(null);
+  // Per-task subtask-list visibility. Default is collapsed for every task —
+  // the inbox now treats subtasks like Notion-style nested bullets that
+  // expand on demand. When `addSubtask` / Tab-demote produce a new subtask
+  // we auto-expand the parent so the user sees what they just created.
+  const [expandedSubs, setExpandedSubs] = useState<Record<UUID, boolean>>({});
+  // Auto-edit handoff: when a key action mints a fresh task or subtask,
+  // we stamp its id here so the row picks it up on mount and switches
+  // straight into edit mode (mirrors the TaskModal's `focusId` pattern).
+  const [autoEditTaskId, setAutoEditTaskId] = useState<UUID | null>(null);
+  const [autoEditSubId, setAutoEditSubId] = useState<UUID | null>(null);
   // After a drop, the cursor sits at the same screen position it was in
   // when the user released — but the row underneath it is now a *different*
   // task (the dragged task moved elsewhere), so :hover lights up the wrong
@@ -296,12 +312,24 @@ export function InboxView() {
     desktopDragIdRef.current = null;
     dragScrollStopRef.current?.();
   };
+  // Three-zone row hit-test for HTML5 drag. Top 30% → "before"
+  // (cyan line above the row); bottom 30% → "after" (cyan line
+  // below); middle 40% → "merge" (target row highlights, drop runs
+  // mergeTaskInto). Splitting by % rather than absolute pixels keeps
+  // the merge band predictable across font-size scales (-fs-scale
+  // affects row height).
+  const resolveRowDropPos = (clientY: number, rect: DOMRect): 'before' | 'after' | 'merge' => {
+    const t = (clientY - rect.top) / rect.height;
+    if (t < 0.3) return 'before';
+    if (t > 0.7) return 'after';
+    return 'merge';
+  };
   const onRowDragOver = (e: React.DragEvent, target: Task) => {
     if (e.dataTransfer.types.includes('text/plain')) {
       e.preventDefault();
       e.stopPropagation();
       const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-      const pos: 'before' | 'after' = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+      const pos = resolveRowDropPos(e.clientY, rect);
       // Dedupe: dragover fires ~60×/s, and a fresh `{id, pos}` object
       // every time would re-render every TaskRow on every frame, which
       // saturates the main thread and effectively wedges scroll on a
@@ -319,9 +347,17 @@ export function InboxView() {
     setDropTarget(null);
     setAssigneeDropTarget(null);
     const draggedId = e.dataTransfer.getData('text/plain');
+    if (!draggedId) { suspendHover(); return; }
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const insertBefore = e.clientY < rect.top + rect.height / 2;
-    applyTaskMove(draggedId, target, insertBefore);
+    const pos = resolveRowDropPos(e.clientY, rect);
+    if (pos === 'merge' && draggedId !== target.id) {
+      mergeTaskInto(draggedId, target.id);
+      // Auto-expand so the user sees what they just merged into the
+      // target — mirrors the Tab-demote handler's expansion behavior.
+      setExpandedSubs((p) => ({ ...p, [target.id]: true }));
+    } else {
+      applyTaskMove(draggedId, target, pos === 'before');
+    }
     suspendHover();
   };
   const onSectionDrop = (e: React.DragEvent, section: Section) => {
@@ -339,7 +375,7 @@ export function InboxView() {
   // release. The grip uses setPointerCapture so subsequent moves come
   // back to it even when the finger leaves the row.
   const touchDraggedRef = useRef<UUID | null>(null);
-  const touchDropAtRef = useRef<{ id: UUID; pos: 'before' | 'after' } | null>(null);
+  const touchDropAtRef = useRef<{ id: UUID; pos: 'before' | 'after' | 'merge' } | null>(null);
   const touchSectionRef = useRef<Section | null>(null);
   const touchAssigneeRef = useRef<UUID | null>(null);
   const onGripTouchStart = (taskId: UUID) => {
@@ -360,7 +396,7 @@ export function InboxView() {
     const rowEl = el?.closest('[data-task-id]') as HTMLElement | null;
     if (rowEl && rowEl.dataset.taskId && rowEl.dataset.taskId !== dragged) {
       const rect = rowEl.getBoundingClientRect();
-      const pos: 'before' | 'after' = clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+      const pos = resolveRowDropPos(clientY, rect);
       const next = { id: rowEl.dataset.taskId as UUID, pos };
       touchDropAtRef.current = next;
       touchSectionRef.current = null;
@@ -447,7 +483,14 @@ export function InboxView() {
     if (!dragged) return;
     if (dropAt) {
       const target = tasks.find((t) => t.id === dropAt.id);
-      if (target) applyTaskMove(dragged, target, dropAt.pos === 'before');
+      if (target) {
+        if (dropAt.pos === 'merge' && dragged !== target.id) {
+          mergeTaskInto(dragged, target.id);
+          setExpandedSubs((p) => ({ ...p, [target.id]: true }));
+        } else {
+          applyTaskMove(dragged, target, dropAt.pos === 'before');
+        }
+      }
     } else if (assignee) {
       const draggedTask = tasks.find((t) => t.id === dragged);
       if (draggedTask) {
@@ -460,7 +503,126 @@ export function InboxView() {
     suspendHover();
   };
 
-  const renderRow = (t: Task, showSubs: boolean) => (
+  const toggleExpanded = (taskId: UUID) =>
+    setExpandedSubs((p) => ({ ...p, [taskId]: !p[taskId] }));
+
+  // Up/Down navigation between editable rows. Reads the rendered DOM
+  // order via querySelectorAll so collapsed subtasks (not in the DOM)
+  // are naturally skipped — and so Now's assignee groups, Done, etc.
+  // all chain into one document-order list with no extra bookkeeping
+  // here. Stamping `data-task-id` on every .task-row and
+  // `data-subtask-id` on every .subtask gives the lookup a stable
+  // anchor; the autoEdit handoff drives focus into the resolved row.
+  const navigateFrom = (currentEl: HTMLElement | null, dir: 'up' | 'down') => {
+    const root = inboxScrollRef.current;
+    if (!root || !currentEl) return false;
+    // The chain spans every editable stop in document order: task
+    // rows, subtask rows, *and* the per-section / per-assignee
+    // "Add task…" rows. Section walking happens for free because all
+    // sections live in the same .inbox container — collapsed
+    // sections / subtask groups aren't in the DOM, so they're
+    // skipped naturally.
+    const rows = Array.from(
+      root.querySelectorAll('.task-row[data-task-id], .subtask[data-subtask-id], .task-add'),
+    ) as HTMLElement[];
+    const idx = rows.indexOf(currentEl);
+    if (idx === -1) return false;
+    const next = rows[idx + (dir === 'up' ? -1 : 1)];
+    if (!next) return false;
+    if (next.dataset.taskId) { setAutoEditTaskId(next.dataset.taskId); return true; }
+    if (next.dataset.subtaskId) { setAutoEditSubId(next.dataset.subtaskId); return true; }
+    if (next.classList.contains('task-add')) {
+      // Add-rows have no autoEdit handoff — their input is always
+      // present, so just focus it directly. selectionStart=end so
+      // the caret lands at the end of any pending draft.
+      const ta = next.querySelector('textarea, input') as HTMLTextAreaElement | HTMLInputElement | null;
+      ta?.focus();
+      if (ta && 'value' in ta) {
+        const len = ta.value.length;
+        try { ta.setSelectionRange(len, len); } catch { /* radio/checkbox can throw */ }
+      }
+      return true;
+    }
+    return false;
+  };
+
+  // Enter from a task title: spawn a sibling right after it, in the same
+  // section / assignee group, then hand focus to the new row's input.
+  // The new task's title starts empty; the sort_key lands between the
+  // current task and its successor (see store/addTaskAfter).
+  const handleCreateSibling = (afterTask: Task, draft: string) => {
+    if (draft.trim() !== afterTask.title) setTaskTitle(afterTask.id, draft.trim());
+    const id = addTaskAfter(afterTask.id);
+    if (id) setAutoEditTaskId(id);
+  };
+
+  // Tab from a task title: convert this task into a subtask of the
+  // previous task in the same render group. Stage 1 ships the simple
+  // case only — refuse if the source task has subtasks (can't nest)
+  // or if there's no previous task to attach to. Description / blocks
+  // / estimate / tags are dropped on demote; merge semantics come in
+  // stage 3.
+  const handleDemote = (task: Task, draft: string, prevTaskId: UUID | null) => {
+    if (!prevTaskId || task.subtasks.length > 0) return false;
+    const title = draft.trim() || task.title;
+    if (!title) return false;
+    const subId = addSubtask(prevTaskId, title);
+    if (!subId) return false;
+    setExpandedSubs((p) => ({ ...p, [prevTaskId]: true }));
+    deleteTask(task.id);
+    setAutoEditSubId(subId);
+    return true;
+  };
+
+  // Enter from a subtask: append a sibling subtask right after this one
+  // and focus its input. Mirrors the TaskModal subtask-list behavior.
+  const handleSubAdd = (taskId: UUID, afterSubId?: UUID) => {
+    const id = addSubtask(taskId, '', afterSubId);
+    if (id) setAutoEditSubId(id);
+  };
+
+  // Shift+Tab from a subtask: promote it back to a task right after its
+  // parent, in the same section. Subtasks have no metadata beyond title
+  // / done, so this round-trip is lossless.
+  const handleSubPromote = (parent: Task, subId: UUID, draft: string) => {
+    const sub = parent.subtasks.find((s) => s.id === subId);
+    if (!sub) return;
+    const title = draft.trim() || sub.title;
+    if (!title) return;
+    const newId = addTaskAfter(parent.id, title);
+    if (!newId) return;
+    deleteSubtask(parent.id, subId);
+    setAutoEditTaskId(newId);
+  };
+
+  // Shift+Up/Down on a task title moves the task itself one slot
+  // within its render group (assignee bucket in Now, the section
+  // otherwise). Reuses applyTaskMove so reorder + ops are identical
+  // to dragging — the only thing different is the keyboard trigger.
+  const shiftMoveTask = (taskId: UUID, sectionList: Task[], dir: 'up' | 'down') => {
+    const i = sectionList.findIndex((t) => t.id === taskId);
+    if (i === -1) return false;
+    const targetIdx = dir === 'up' ? i - 1 : i + 1;
+    if (targetIdx < 0 || targetIdx >= sectionList.length) return false;
+    applyTaskMove(taskId, sectionList[targetIdx], dir === 'up');
+    return true;
+  };
+
+  // Same idea for subtasks: swap with the adjacent sibling under the
+  // same parent task. reorderSubtasks renumbers sort_keys for the
+  // whole list, so a single swap requires sending the entire list.
+  const shiftMoveSubtask = (parent: Task, subId: UUID, dir: 'up' | 'down') => {
+    const ordered = [...parent.subtasks].sort((a, b) => a.sort_key.localeCompare(b.sort_key));
+    const i = ordered.findIndex((s) => s.id === subId);
+    if (i === -1) return false;
+    const targetIdx = dir === 'up' ? i - 1 : i + 1;
+    if (targetIdx < 0 || targetIdx >= ordered.length) return false;
+    [ordered[i], ordered[targetIdx]] = [ordered[targetIdx], ordered[i]];
+    reorderSubtasks(parent.id, ordered.map((s) => s.id));
+    return true;
+  };
+
+  const renderRow = (t: Task, sectionList: Task[], idx: number) => (
     <TaskRow key={t.id} task={t} blocks={blocks}
              onTick={tickTask}
              onSubTick={tickSubtask}
@@ -476,7 +638,22 @@ export function InboxView() {
              onGripTouchMove={onGripTouchMove}
              onGripTouchEnd={onGripTouchEnd}
              dropMark={rowDropAt?.id === t.id ? rowDropAt.pos : null}
-             showSubs={showSubs} />
+             expanded={!!expandedSubs[t.id]}
+             onToggleExpanded={() => toggleExpanded(t.id)}
+             prevTaskId={idx > 0 ? sectionList[idx - 1].id : null}
+             autoEditTitle={autoEditTaskId === t.id}
+             onAutoEditTitleConsumed={() => setAutoEditTaskId(null)}
+             autoEditSubId={autoEditSubId}
+             onAutoEditSubConsumed={() => setAutoEditSubId(null)}
+             onTitleSave={setTaskTitle}
+             onTitleDelete={deleteTask}
+             onCreateSibling={(draft) => handleCreateSibling(t, draft)}
+             onDemote={(draft) => handleDemote(t, draft, idx > 0 ? sectionList[idx - 1].id : null)}
+             onSubAdd={(afterSubId) => handleSubAdd(t.id, afterSubId)}
+             onSubPromote={(subId, draft) => handleSubPromote(t, subId, draft)}
+             onNavigate={navigateFrom}
+             onShiftMoveTask={(dir) => shiftMoveTask(t.id, sectionList, dir)}
+             onShiftMoveSubtask={(subId, dir) => shiftMoveSubtask(t, subId, dir)} />
   );
 
   const archivable = projectTasks.filter((t) => t.status === 'done' && t.section !== 'done');
@@ -639,20 +816,26 @@ export function InboxView() {
                     </div>
                     {!folded && (
                       <>
-                        {subTasks.map((t) => renderRow(t, true))}
+                        {subTasks.map((t, i) => renderRow(t, subTasks, i))}
                         <AddTaskRow
                           placeholder={`Add task for ${firstName}…`}
                           onAdd={(title) => addTask(project.id, 'now', title, aid, tagFilter)}
+                          onNavigate={navigateFrom}
                         />
                       </>
                     )}
                   </div>
                 );
               }) : (
-                <>
-                  {nowTasks.filter((t) => t.assignee_id != null).map((t) => renderRow(t, true))}
-                  <AddTaskRow onAdd={(title) => addTask(project.id, 'now', title, undefined, tagFilter)} />
-                </>
+                (() => {
+                  const flatNow = nowTasks.filter((t) => t.assignee_id != null);
+                  return (
+                    <>
+                      {flatNow.map((t, i) => renderRow(t, flatNow, i))}
+                      <AddTaskRow onAdd={(title) => addTask(project.id, 'now', title, undefined, tagFilter)} onNavigate={navigateFrom} />
+                    </>
+                  );
+                })()
               )}
               {(() => {
                 // Unassigned bucket: surfaces Now tasks with no owner. We
@@ -675,7 +858,7 @@ export function InboxView() {
                       <span className="ah-rule" />
                       <span className="ah-count">{unassigned.length}</span>
                     </div>
-                    {!folded && unassigned.map((t) => renderRow(t, true))}
+                    {!folded && unassigned.map((t, i) => renderRow(t, unassigned, i))}
                   </div>
                 );
               })()}
@@ -699,8 +882,8 @@ export function InboxView() {
           </div>
           {!collapsed.later && (
             <>
-              {laterTasks.map((t) => renderRow(t, false))}
-              <AddTaskRow onAdd={(title) => addTask(project.id, 'later', title, undefined, tagFilter)} />
+              {laterTasks.map((t, i) => renderRow(t, laterTasks, i))}
+              <AddTaskRow onAdd={(title) => addTask(project.id, 'later', title, undefined, tagFilter)} onNavigate={navigateFrom} />
             </>
           )}
         </div>
@@ -721,8 +904,8 @@ export function InboxView() {
           </div>
           {!collapsed.someday && (
             <>
-              {somedayTasks.map((t) => renderRow(t, false))}
-              <AddTaskRow onAdd={(title) => addTask(project.id, 'someday', title, undefined, tagFilter)} />
+              {somedayTasks.map((t, i) => renderRow(t, somedayTasks, i))}
+              <AddTaskRow onAdd={(title) => addTask(project.id, 'someday', title, undefined, tagFilter)} onNavigate={navigateFrom} />
             </>
           )}
         </div>
@@ -741,8 +924,8 @@ export function InboxView() {
           </div>
           {!collapsed.done && (
             <>
-              {doneTasks.map((t) => renderRow(t, false))}
-              <AddTaskRow onAdd={(title) => addTask(project.id, 'done', title, undefined, tagFilter)} />
+              {doneTasks.map((t, i) => renderRow(t, doneTasks, i))}
+              <AddTaskRow onAdd={(title) => addTask(project.id, 'done', title, undefined, tagFilter)} onNavigate={navigateFrom} />
             </>
           )}
         </div>
@@ -772,9 +955,10 @@ function SectionCount({ value }: { value: number }) {
   );
 }
 
-function AddTaskRow({ onAdd, placeholder = 'Add task…' }: {
+function AddTaskRow({ onAdd, placeholder = 'Add task…', onNavigate }: {
   onAdd: (title: string) => void;
   placeholder?: string;
+  onNavigate?: (currentEl: HTMLElement | null, dir: 'up' | 'down') => boolean;
 }) {
   const [value, setValue] = useState('');
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -805,6 +989,20 @@ function AddTaskRow({ onAdd, placeholder = 'Add task…' }: {
         onKeyDown={(e) => {
           if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); commit(); }
           else if (e.key === 'Escape') { setValue(''); inputRef.current?.blur(); }
+          else if (e.key === 'ArrowUp' && onNavigate) {
+            const ta = e.currentTarget;
+            const before = ta.value.slice(0, ta.selectionStart);
+            if (before.includes('\n')) return;
+            const row = ta.closest('.task-add') as HTMLElement | null;
+            if (onNavigate(row, 'up')) e.preventDefault();
+          }
+          else if (e.key === 'ArrowDown' && onNavigate) {
+            const ta = e.currentTarget;
+            const after = ta.value.slice(ta.selectionEnd);
+            if (after.includes('\n')) return;
+            const row = ta.closest('.task-add') as HTMLElement | null;
+            if (onNavigate(row, 'down')) e.preventDefault();
+          }
         }}
         placeholder={placeholder}
         name="task_title"
@@ -817,19 +1015,39 @@ function AddTaskRow({ onAdd, placeholder = 'Add task…' }: {
   );
 }
 
-function InboxSubtaskRow({ title, done, onToggle, onSave, onDelete }: {
+function InboxSubtaskRow({
+  id, title, done, autoEdit, allowInlineEdit,
+  onToggle, onSave, onDelete, onAutoEditConsumed, onEnterAdd, onShiftTabPromote,
+  onNavigate, onShiftMove,
+}: {
+  id: UUID;
   title: string;
   done: boolean;
+  autoEdit: boolean;
+  /// Mobile keeps the existing tap-passthrough-to-modal behavior; only
+  /// desktop wires up click-to-edit + Enter / Shift+Tab structure ops.
+  allowInlineEdit: boolean;
   onToggle: () => void;
   onSave: (v: string) => void;
   onDelete: () => void;
+  onAutoEditConsumed: () => void;
+  onEnterAdd: (draft: string) => void;
+  onShiftTabPromote: (draft: string) => void;
+  onNavigate: (currentEl: HTMLElement | null, dir: 'up' | 'down') => boolean;
+  onShiftMove: (dir: 'up' | 'down') => boolean;
 }) {
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState(autoEdit);
   const [draft, setDraft] = useState(title);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { setDraft(title); }, [title]);
   useEffect(() => { if (editing) inputRef.current?.focus(); }, [editing]);
+  // One-shot: a freshly-minted subtask (Enter on previous, or Tab demote
+  // from a task) gets stamped with autoEdit — drop into edit mode and
+  // tell the parent to clear the flag so re-renders don't loop.
+  useEffect(() => {
+    if (autoEdit) { setEditing(true); onAutoEditConsumed(); }
+  }, [autoEdit, onAutoEditConsumed]);
 
   // Empty title on commit means the user deleted everything — treat as delete,
   // matching the modal's behavior so the two views feel like one tool.
@@ -841,11 +1059,7 @@ function InboxSubtaskRow({ title, done, onToggle, onSave, onDelete }: {
   };
 
   return (
-    // No stopPropagation: on inbox, the subtask body should behave as
-    // part of the parent row — tap opens the task, long-press drags
-    // the task. The checkbox (.sc) handles its own click and stops
-    // there, so toggling done doesn't also open the modal.
-    <div className={editing ? 'subtask subtask-edit' : 'subtask'} data-done={done}>
+    <div className={editing ? 'subtask subtask-edit' : 'subtask'} data-done={done} data-subtask-id={id}>
       <span
         className="sc"
         onClick={(e) => { e.stopPropagation(); onToggle(); }}
@@ -862,7 +1076,40 @@ function InboxSubtaskRow({ title, done, onToggle, onSave, onDelete }: {
           onBlur={commit}
           onClick={(e) => e.stopPropagation()}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') { e.preventDefault(); commit(); }
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              const v = draft.trim();
+              if (!v) { onDelete(); return; }
+              if (v !== title) onSave(v);
+              setEditing(false);
+              onEnterAdd(v);
+            }
+            else if (e.key === 'Tab' && e.shiftKey) {
+              e.preventDefault();
+              const v = draft.trim();
+              if (!v) { onDelete(); return; }
+              if (v !== title) onSave(v);
+              setEditing(false);
+              onShiftTabPromote(v);
+            }
+            else if (e.key === 'ArrowUp') {
+              if (e.shiftKey) {
+                if (onShiftMove('up')) e.preventDefault();
+                return;
+              }
+              const inp = e.currentTarget;
+              const row = inp.closest('.subtask') as HTMLElement | null;
+              if (onNavigate(row, 'up')) e.preventDefault();
+            }
+            else if (e.key === 'ArrowDown') {
+              if (e.shiftKey) {
+                if (onShiftMove('down')) e.preventDefault();
+                return;
+              }
+              const inp = e.currentTarget;
+              const row = inp.closest('.subtask') as HTMLElement | null;
+              if (onNavigate(row, 'down')) e.preventDefault();
+            }
             else if (e.key === 'Escape') { setDraft(title); setEditing(false); }
             else if (e.key === 'Backspace' && !draft) { e.preventDefault(); onDelete(); }
           }}
@@ -874,11 +1121,19 @@ function InboxSubtaskRow({ title, done, onToggle, onSave, onDelete }: {
           spellCheck={false}
         />
       ) : (
-        // Edit-on-click disabled in the inbox: too easy to hit while
-        // aiming for the parent task row, and the resulting edit input
-        // looks like a click miss. Subtasks are still editable from
-        // the task modal — open the parent to rename or delete.
-        <span className="sname" style={{ flex: 1 }}>
+        <span
+          className="sname"
+          style={{ flex: 1, cursor: allowInlineEdit ? 'text' : undefined }}
+          onClick={(e) => {
+            // Desktop: click the subtask body to edit. Mobile falls
+            // through to the parent row's open-modal handler so the
+            // inbox's typing UX stays desktop-only (no "tab" key on
+            // phones, see the original brief).
+            if (!allowInlineEdit) return;
+            e.stopPropagation();
+            setEditing(true);
+          }}
+        >
           {title}
         </span>
       )}
@@ -902,15 +1157,36 @@ interface RowProps {
   onGripTouchStart: (taskId: UUID) => void;
   onGripTouchMove: (clientX: number, clientY: number) => void;
   onGripTouchEnd: () => void;
-  dropMark: 'before' | 'after' | null;
-  showSubs: boolean;
+  dropMark: 'before' | 'after' | 'merge' | null;
+  expanded: boolean;
+  onToggleExpanded: () => void;
+  prevTaskId: UUID | null;
+  autoEditTitle: boolean;
+  onAutoEditTitleConsumed: () => void;
+  autoEditSubId: UUID | null;
+  onAutoEditSubConsumed: () => void;
+  onTitleSave: (taskId: UUID, title: string) => void;
+  onTitleDelete: (taskId: UUID) => void;
+  onCreateSibling: (draft: string) => void;
+  onDemote: (draft: string) => boolean;
+  onSubAdd: (afterSubId?: UUID) => void;
+  onSubPromote: (subId: UUID, draft: string) => void;
+  onNavigate: (currentEl: HTMLElement | null, dir: 'up' | 'down') => boolean;
+  onShiftMoveTask: (dir: 'up' | 'down') => boolean;
+  onShiftMoveSubtask: (subId: UUID, dir: 'up' | 'down') => boolean;
 }
 
 function TaskRow({
   task, blocks, onTick, onSubTick, onSubSave, onSubDelete, onOpen,
   onDragStart, onRowDragEnd, onRowDragOver, onRowDrop, onRowDragLeave,
   onGripTouchStart, onGripTouchMove, onGripTouchEnd,
-  dropMark, showSubs,
+  dropMark,
+  expanded, onToggleExpanded, prevTaskId,
+  autoEditTitle, onAutoEditTitleConsumed,
+  autoEditSubId, onAutoEditSubConsumed,
+  onTitleSave, onTitleDelete, onCreateSibling, onDemote,
+  onSubAdd, onSubPromote, onNavigate,
+  onShiftMoveTask, onShiftMoveSubtask,
 }: RowProps) {
   const [dragOnHandle, setDragOnHandle] = useState(false);
   const isMobile = useIsMobile();
@@ -992,6 +1268,46 @@ function TaskRow({
 
   const longPress = useLongPress(onLongPress, { holdMs: 220, cancelPx: 8 });
 
+  // Inline title editor. Desktop only — mobile falls through to the
+  // existing tap-to-open-modal flow because there's no Tab key on phones
+  // and adding extra editing toolbars is out of scope (see brief).
+  const allowInlineEdit = !isMobile;
+  const [editingTitle, setEditingTitle] = useState(autoEditTitle);
+  const [titleDraft, setTitleDraft] = useState(task.title);
+  const titleRef = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => { setTitleDraft(task.title); }, [task.title]);
+  useEffect(() => {
+    if (editingTitle) {
+      const el = titleRef.current;
+      if (el) {
+        el.focus();
+        // Park the caret at the end so typing extends the title rather
+        // than overwriting from the start (common rich-editor convention).
+        const len = el.value.length;
+        el.setSelectionRange(len, len);
+      }
+    }
+  }, [editingTitle]);
+  // One-shot autoEdit handoff: a freshly-minted task (Enter on previous,
+  // Shift+Tab promote from a subtask) gets stamped with autoEditTitle so
+  // it lands in edit mode on mount.
+  useEffect(() => {
+    if (autoEditTitle) { setEditingTitle(true); onAutoEditTitleConsumed(); }
+  }, [autoEditTitle, onAutoEditTitleConsumed]);
+
+  const commitTitle = () => {
+    const v = titleDraft.trim();
+    if (!v) {
+      // Empty after edit means "delete this row" — same trim-empty
+      // contract the subtask editor uses, so the two views feel like
+      // one tool.
+      onTitleDelete(task.id);
+      return;
+    }
+    if (v !== task.title) onTitleSave(task.id, v);
+    setEditingTitle(false);
+  };
+
   return (
     <div className="task-row"
          data-status={task.status}
@@ -1008,9 +1324,14 @@ function TaskRow({
          onClick={(e) => {
            if (longPress.shouldSuppressClick()) return;
            const el = e.target as HTMLElement;
-           // Subtask body taps fall through to open the task — only the
-           // two checkboxes and the grip suppress the open.
-           if (el.closest('.task-check, .sc, .task-grip')) return;
+           // Suppress the "open modal" path only for the controls that
+           // own their own click action: tick / subtask tick / drag
+           // grip / expand caret. Inline title + subtask editing live
+           // on the text spans / inputs themselves and stopPropagation
+           // there — clicking surrounding row body still pops the
+           // modal, matching pre-inline-edit behavior.
+           if (el.closest('.task-check, .sc, .task-grip, .task-toggle')) return;
+           if (el.closest('.inbox-title-input, .subtask-edit-input')) return;
            onOpen(task.id);
          }}>
       {/* Two drag paths, split by input type:
@@ -1036,22 +1357,126 @@ function TaskRow({
         {task.status === 'done' ? '✓' : ''}
       </div>
       <div className="task-title-wrap">
-        <div>
-          <span className="task-title">{task.title}</span>
+        <div className="task-title-line">
+          {editingTitle ? (
+            <textarea
+              ref={titleRef}
+              className="inbox-title-input"
+              rows={1}
+              value={titleDraft}
+              onChange={(e) => setTitleDraft(e.target.value)}
+              onBlur={commitTitle}
+              onClick={(e) => e.stopPropagation()}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  const v = titleDraft.trim();
+                  if (!v) { onTitleDelete(task.id); return; }
+                  if (v !== task.title) onTitleSave(task.id, v);
+                  setEditingTitle(false);
+                  onCreateSibling(v);
+                }
+                else if (e.key === 'Tab' && !e.shiftKey) {
+                  e.preventDefault();
+                  // Demote into a subtask of the previous task. Stage 1
+                  // ignores the keypress when a demote isn't possible
+                  // (no prev task, or current task already has subtasks)
+                  // — the input stays in edit mode so the user can
+                  // continue typing without losing their place.
+                  if (!prevTaskId || task.subtasks.length > 0) return;
+                  const ok = onDemote(titleDraft);
+                  if (ok) setEditingTitle(false);
+                }
+                else if (e.key === 'ArrowUp') {
+                  // Shift-modified: move the task itself one slot up
+                  // within its render group (assignee bucket in Now,
+                  // section list otherwise). Plain Up: move edit
+                  // focus to the previous visible row. Multi-line
+                  // titles only navigate when the caret is on the
+                  // first line so intra-textarea Up still works.
+                  if (e.shiftKey) {
+                    if (onShiftMoveTask('up')) e.preventDefault();
+                    return;
+                  }
+                  const ta = e.currentTarget;
+                  const before = ta.value.slice(0, ta.selectionStart);
+                  if (before.includes('\n')) return;
+                  const row = ta.closest('.task-row') as HTMLElement | null;
+                  if (onNavigate(row, 'up')) e.preventDefault();
+                }
+                else if (e.key === 'ArrowDown') {
+                  if (e.shiftKey) {
+                    if (onShiftMoveTask('down')) e.preventDefault();
+                    return;
+                  }
+                  const ta = e.currentTarget;
+                  const after = ta.value.slice(ta.selectionEnd);
+                  if (after.includes('\n')) return;
+                  const row = ta.closest('.task-row') as HTMLElement | null;
+                  if (onNavigate(row, 'down')) e.preventDefault();
+                }
+                else if (e.key === 'Escape') {
+                  setTitleDraft(task.title);
+                  setEditingTitle(false);
+                }
+              }}
+              name="task_title"
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="sentences"
+              spellCheck={false}
+            />
+          ) : (
+            <span
+              className="task-title"
+              data-editable={allowInlineEdit || undefined}
+              onClick={(e) => {
+                // Edit zone scoped to the title text itself — clicking
+                // the surrounding row body still opens the modal. On
+                // mobile this is a no-op so taps fall through to the
+                // existing tap-to-open-modal flow.
+                if (!allowInlineEdit) return;
+                e.stopPropagation();
+                setEditingTitle(true);
+              }}
+            >
+              {task.title}
+            </span>
+          )}
+          {task.subtasks.length > 0 && (
+            <button
+              type="button"
+              className="task-toggle"
+              data-expanded={expanded || undefined}
+              onClick={(e) => { e.stopPropagation(); onToggleExpanded(); }}
+              aria-label={expanded ? 'Hide subtasks' : 'Show subtasks'}
+              title={expanded ? 'Hide subtasks' : `Show ${task.subtasks.length} subtask${task.subtasks.length === 1 ? '' : 's'}`}
+            >
+              {expanded ? '▾' : '▸'}
+            </button>
+          )}
           {!isMobile && task.external_id && (
             <span className="ext-id">{task.external_id}</span>
           )}
         </div>
-        {showSubs && task.subtasks.length > 0 && (
+        {expanded && task.subtasks.length > 0 && (
           <div className="subtasks">
             {task.subtasks.map((s) => (
               <InboxSubtaskRow
                 key={s.id}
+                id={s.id}
                 title={s.title}
                 done={s.done}
+                autoEdit={autoEditSubId === s.id}
+                allowInlineEdit={allowInlineEdit}
+                onAutoEditConsumed={onAutoEditSubConsumed}
                 onToggle={() => onSubTick(task.id, s.id)}
                 onSave={(v) => onSubSave(task.id, s.id, v)}
                 onDelete={() => onSubDelete(task.id, s.id)}
+                onEnterAdd={() => onSubAdd(s.id)}
+                onShiftTabPromote={(draft) => onSubPromote(s.id, draft)}
+                onNavigate={onNavigate}
+                onShiftMove={(dir) => onShiftMoveSubtask(s.id, dir)}
               />
             ))}
           </div>
