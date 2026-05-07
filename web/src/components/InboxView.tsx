@@ -1354,26 +1354,7 @@ function TaskRow({
         {task.status === 'done' ? '✓' : ''}
       </div>
       <div className="task-title-wrap">
-        <div className="task-title-line"
-             onClick={(e) => {
-               // Click past the title text (the empty trailing space
-               // on the line) should still enter edit mode with the
-               // caret at end — matches how rich-text editors treat
-               // the "rest of the line" as part of the paragraph.
-               // The title span's own onClick covers clicks on the
-               // text itself; this catches the gap between the title
-               // and the right edge of the line container. Skipped on
-               // mobile so the existing tap-row-opens-modal flow
-               // wins.
-               if (!allowInlineEdit || editingTitle) return;
-               const el = e.target as HTMLElement;
-               // Toggle caret + ext-id chip own their own click
-               // semantics; skip them to avoid hijacking those
-               // behaviors.
-               if (el.closest('.task-toggle, .ext-id')) return;
-               e.stopPropagation();
-               setEditingTitle(true);
-             }}>
+        <div className="task-title-line">
           {editingTitle ? (
             <textarea
               ref={titleRef}
@@ -1474,6 +1455,19 @@ function TaskRow({
             >
               {task.title}
             </span>
+          )}
+          {!editingTitle && allowInlineEdit && (
+            // Click-past-text edit zone, always between title and
+            // toggle. Narrow to 1 char when a toggle follows so the
+            // chevron stays close to the title; wide (5 ch) when
+            // there's no toggle so the user gets a generous click-
+            // to-type-at-end target.
+            <span
+              className="task-title-edit-pad"
+              data-narrow={task.subtasks.length > 0 || undefined}
+              aria-hidden="true"
+              onClick={(e) => { e.stopPropagation(); setEditingTitle(true); }}
+            />
           )}
           {task.subtasks.length > 0 && (
             <button

@@ -548,7 +548,11 @@
 .task-title-line {
   display: flex;
   align-items: baseline;
-  gap: 4px;
+  /* No flex gap: the 4-px slivers it would insert between title /
+   * toggle / edit-pad inherit the row's pointer cursor, creating an
+   * I-beam → pointer → I-beam flicker as the cursor crosses. The
+   * toggle / pad provide their own spacing intrinsically. */
+  gap: 0;
   flex-wrap: wrap;
   min-width: 0;
 }
@@ -561,6 +565,25 @@
  * surrounding row body still reads as "click to open modal". Mobile
  * leaves the attribute off so the row pointer cursor wins. */
 .task-title[data-editable] { cursor: text; }
+/* Click-past-text edit zone. A fixed-width invisible span after the
+ * title (and after the subtask toggle, if any) catches clicks and
+ * enters edit at end. Width is tighter when a toggle is present
+ * because the toggle eats some inline space and the modal-click
+ * area should start sooner. Beyond this pad the row's pointer
+ * cursor returns and clicks fall through to the row → open modal. */
+.task-title-edit-pad {
+  display: inline-block;
+  flex: 0 0 5ch;
+  align-self: stretch;
+  width: 5ch;
+  min-width: 5ch;
+  cursor: text;
+}
+.task-title-edit-pad[data-narrow] {
+  flex-basis: 1ch;
+  width: 1ch;
+  min-width: 1ch;
+}
 /* Per-task subtask-list toggle. Only rendered when the task has at
  * least one subtask; click flips the inbox's per-row expanded state.
  * Sized to sit naturally next to the title without nudging the row
