@@ -573,18 +573,23 @@
   border: 0;
   padding: 0;
   margin: 0;
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   display: inline-grid;
   place-items: center;
   color: var(--ink-4);
   cursor: pointer;
-  font-size: calc(10px * var(--fs-scale));
   line-height: 1;
-  font-family: var(--font-mono);
   flex-shrink: 0;
   user-select: none;
   -webkit-touch-callout: none;
+  /* Lucide chevron lines up with the title baseline a hair better when
+   * nudged down a single pixel. align-items:baseline on the parent
+   * .task-title-line targets the *button* baseline, but an SVG button
+   * has none and falls back to its bottom edge — the relative push
+   * matches what the section caret achieves with the same icon. */
+  position: relative;
+  top: 2px;
 }
 .task-toggle:hover { color: var(--ink-2); }
 .task-toggle[data-expanded] { color: var(--ink-3); }
@@ -612,7 +617,8 @@
   font-family: var(--font-mono);
   font-size: calc(10px * var(--fs-scale));
   color: var(--ink-4);
-  margin-left: 6px;
+  /* Lives at the head of .task-trail now; trail's `gap: 4px` handles
+   * spacing, so no extra margin needed. */
 }
 
 .task-trail {

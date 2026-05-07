@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Check, Clock, ClockFading, Pencil } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, Clock, ClockFading, Pencil } from 'lucide-react';
 import { useFira } from '../store';
 import { useLongPress } from '../useLongPress';
 import { useIsMobile } from '../hooks';
@@ -1354,7 +1354,26 @@ function TaskRow({
         {task.status === 'done' ? '✓' : ''}
       </div>
       <div className="task-title-wrap">
-        <div className="task-title-line">
+        <div className="task-title-line"
+             onClick={(e) => {
+               // Click past the title text (the empty trailing space
+               // on the line) should still enter edit mode with the
+               // caret at end — matches how rich-text editors treat
+               // the "rest of the line" as part of the paragraph.
+               // The title span's own onClick covers clicks on the
+               // text itself; this catches the gap between the title
+               // and the right edge of the line container. Skipped on
+               // mobile so the existing tap-row-opens-modal flow
+               // wins.
+               if (!allowInlineEdit || editingTitle) return;
+               const el = e.target as HTMLElement;
+               // Toggle caret + ext-id chip own their own click
+               // semantics; skip them to avoid hijacking those
+               // behaviors.
+               if (el.closest('.task-toggle, .ext-id')) return;
+               e.stopPropagation();
+               setEditingTitle(true);
+             }}>
           {editingTitle ? (
             <textarea
               ref={titleRef}
@@ -1383,6 +1402,22 @@ function TaskRow({
                   if (!prevTaskId || task.subtasks.length > 0) return;
                   const ok = onDemote(titleDraft);
                   if (ok) setEditingTitle(false);
+                }
+                else if (e.key === 'Backspace' && !titleDraft) {
+                  // Backspace on an empty title removes the row —
+                  // matches the subtask handler. We *do* navigate up
+                  // first: without it the textarea unmounts with the
+                  // task and focus falls back to the body, at which
+                  // point the next ↑ / ↓ scroll the page instead of
+                  // jumping to the next editable row. Skipped when
+                  // the task carries subtasks: a stray empty title
+                  // shouldn't one-key destroy nested data.
+                  if (task.subtasks.length > 0) return;
+                  e.preventDefault();
+                  const row = e.currentTarget.closest('.task-row') as HTMLElement | null;
+                  onNavigate(row, 'up');
+                  setEditingTitle(false);
+                  onTitleDelete(task.id);
                 }
                 else if (e.key === 'ArrowUp') {
                   // Shift-modified: move the task itself one slot up
@@ -1449,11 +1484,10 @@ function TaskRow({
               aria-label={expanded ? 'Hide subtasks' : 'Show subtasks'}
               title={expanded ? 'Hide subtasks' : `Show ${task.subtasks.length} subtask${task.subtasks.length === 1 ? '' : 's'}`}
             >
-              {expanded ? '▾' : '▸'}
+              {expanded
+                ? <ChevronDown size={14} strokeWidth={1.75} />
+                : <ChevronRight size={14} strokeWidth={1.75} />}
             </button>
-          )}
-          {!isMobile && task.external_id && (
-            <span className="ext-id">{task.external_id}</span>
           )}
         </div>
         {expanded && task.subtasks.length > 0 && (
@@ -1487,9 +1521,20 @@ function TaskRow({
         const mobileMore = task.tag_ids.length - mobileTagIds.length;
         const trailTagIds = isMobile ? mobileTagIds : visibleTagIds;
         const trailMore = isMobile ? mobileMore : moreCount;
+        // Desktop ext-id rides at the head of the trail so the issue
+        // key sits at the row's right edge instead of crowding the
+        // title text. Mobile keeps it hidden (sprint 17 row strip).
+        const showExtId = !isMobile && !!task.external_id;
+        // Trail collapses to nothing when there's neither a tag chip
+        // nor an ext-id to render — same data-driven hide we had
+        // before, just extended to consider the new ext-id slot.
         if (isMobile && trailTagIds.length === 0) return null;
+        if (!isMobile && trailTagIds.length === 0 && !showExtId && !showInboxTimes) return null;
         return (
           <div className="task-trail" data-has-filter={filterSet.size > 0 || undefined}>
+            {showExtId && (
+              <span className="ext-id">{task.external_id}</span>
+            )}
             {trailTagIds.map((tid) => {
               const tag = tags.find((t) => t.id === tid);
               if (!tag) return null;
