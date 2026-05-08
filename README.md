@@ -556,3 +556,10 @@ playground feeds into the store.
 Pieces of the deferred items are described in
 [docs/fira_design_doc.md](docs/fira_design_doc.md); the per-sprint
 decisions live in [docs/sprints/](docs/sprints/).
+
+## License
+
+[MIT](LICENSE) © Rihard Grickus — fork it, host it, modify it for your
+team's needs. If you build something on top of Fira, a "Based on Fira"
+link in your footer or about page would be appreciated, but it's a
+thank-you, not a requirement.
