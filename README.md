@@ -557,6 +557,14 @@ Pieces of the deferred items are described in
 [docs/fira_design_doc.md](docs/fira_design_doc.md); the per-sprint
 decisions live in [docs/sprints/](docs/sprints/).
 
+## Contact
+
+- **Bugs and feature requests** — open a [GitHub issue](../../issues).
+- **Security vulnerabilities** — see [SECURITY.md](SECURITY.md); please
+  don't file them as public issues.
+- **Everything else** (questions, hosting your own copy, saying hi) —
+  email <scrimix@gmail.com>.
+
 ## License
 
 [MIT](LICENSE) © Rihard Grickus — fork it, host it, modify it for your
