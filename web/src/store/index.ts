@@ -32,6 +32,43 @@ export type SyncStatus =
 
 const SYNC_BATCH_SIZE = 50;
 
+// Per-account "last view" snapshot. Lets a fast account switch land
+// the user where they were instead of their personal-workspace inbox.
+//
+// Keyed by `meId` rather than written into the shared `fira:store-v1`
+// blob — the shared blob is wiped on switch (otherwise the previous
+// user's projects/tasks would briefly leak through during hydrate).
+// One key per user means each account keeps its own breadcrumb.
+type LastView = {
+  workspaceId: UUID | null;
+  view: 'calendar' | 'inbox';
+  projectId: UUID | null; // inboxFilter.project_id
+};
+
+const lastViewKey = (userId: UUID) => `fira:lastView:${userId}`;
+
+function saveLastView(userId: UUID, snapshot: LastView): void {
+  try {
+    localStorage.setItem(lastViewKey(userId), JSON.stringify(snapshot));
+  } catch { /* private mode / quota */ }
+}
+
+function loadLastView(userId: UUID): LastView | null {
+  try {
+    const raw = localStorage.getItem(lastViewKey(userId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<LastView>;
+    // Defensive: future-proof against shape drift. If the stored blob
+    // is missing required fields, ignore it rather than half-applying.
+    if (parsed.view !== 'calendar' && parsed.view !== 'inbox') return null;
+    return {
+      workspaceId: parsed.workspaceId ?? null,
+      view: parsed.view,
+      projectId: parsed.projectId ?? null,
+    };
+  } catch { return null; }
+}
+
 interface InboxFilter {
   project_id: UUID | null;
   epic_id: UUID | null;
@@ -193,6 +230,14 @@ interface FiraState {
   rehydrate: () => Promise<void>;
   enterPlayground: () => void;
   logout: () => Promise<void>;
+  /// Rotate to a different live session in this browser's group.
+  /// Skips the Google OAuth round-trip. Hard-reloads on success so
+  /// the next hydrate runs with the new `sid`.
+  switchToAccount: (user_id: UUID) => Promise<void>;
+  /// Hard sign-out across every account on this device. Different
+  /// from `logout` (which only kills the current session and leaves
+  /// siblings around for the picker).
+  signOutEverywhere: () => Promise<void>;
   switchWorkspace: (id: UUID) => Promise<void>;
   // Pull listMyWorkspaces and reconcile against local state. Called on a
   // user-channel WS nudge after any membership/role/title/delete change.
@@ -841,13 +886,19 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     try {
       const me: User = await api.me();
       const workspaces = await api.listMyWorkspaces();
-      // Last-active workspace is sticky across reloads via localStorage; falls
-      // back to personal if the persisted one disappears (rare, e.g. removed).
-      const persisted = typeof localStorage !== 'undefined'
+      // Per-account view snapshot wins over the legacy single-key
+      // workspace pointer. The legacy key (`fira:activeWorkspace`)
+      // remains as a fallback for users who had a session before
+      // per-account snapshots existed.
+      const lastView = loadLastView(me.id);
+      const legacyWorkspace = typeof localStorage !== 'undefined'
         ? localStorage.getItem('fira:activeWorkspace')
         : null;
       const fallback = workspaces.find((w) => w.is_personal) ?? workspaces[0];
-      const active = workspaces.find((w) => w.id === persisted) ?? fallback;
+      const active =
+        workspaces.find((w) => w.id === lastView?.workspaceId)
+        ?? workspaces.find((w) => w.id === legacyWorkspace)
+        ?? fallback;
       if (!active) {
         // Should never happen — every user has a personal workspace.
         set({ authChecked: true, error: 'No workspace available' });
@@ -856,6 +907,22 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
       setActiveWorkspaceId(active.id);
       const data: Bootstrap = await api.bootstrap();
       applyBootstrap(set, get, data, me, active, workspaces, false);
+      // Restore view + project AFTER applyBootstrap so we override its
+      // defaults (which would otherwise force inbox view on empty
+      // workspaces and reset project_id to the first project). Skip
+      // if the saved project no longer exists in the bootstrapped
+      // data, to avoid filtering on a phantom.
+      if (lastView) {
+        const projectExists = lastView.projectId
+          ? data.projects.some((p) => p.id === lastView.projectId)
+          : false;
+        set((s) => ({
+          view: data.projects.length === 0 ? 'inbox' : lastView.view,
+          inboxFilter: projectExists
+            ? { ...s.inboxFilter, project_id: lastView.projectId }
+            : s.inboxFilter,
+        }));
+      }
     } catch (e) {
       // 401 from /me means the session expired — drop cached data and
       // bounce to login. Anything else (network error, 5xx) is treated as
@@ -1157,6 +1224,31 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     // Drop the persisted snapshot so the next user's reload doesn't see
     // the previous session's projects/tasks. Hard reload after.
     try { localStorage.removeItem('fira:store-v1'); } catch { /* private mode */ }
+    window.location.assign('/');
+  },
+
+  switchToAccount: async (user_id) => {
+    // Surface failure: if the server has no live session for that user
+    // (group expired, sibling logged out from another device), the
+    // caller should fall back to the OAuth flow rather than silently
+    // reload onto the same account.
+    await api.switchAccount(user_id);
+    try { localStorage.removeItem('fira:store-v1'); } catch { /* private mode */ }
+    // Also drop the per-user "last active workspace" — the next user
+    // has a different set of workspaces, so reusing the previous id
+    // can briefly route through `fallback` and flicker.
+    try { localStorage.removeItem('fira:activeWorkspace'); } catch { /* private mode */ }
+    window.location.assign('/');
+  },
+
+  signOutEverywhere: async () => {
+    if (get().playgroundMode) {
+      clearPlayground();
+    } else {
+      try { await api.signOutEverywhere(); } catch { /* best-effort */ }
+    }
+    try { localStorage.removeItem('fira:store-v1'); } catch { /* private mode */ }
+    try { localStorage.removeItem('fira:activeWorkspace'); } catch { /* private mode */ }
     window.location.assign('/');
   },
 
@@ -2201,6 +2293,44 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     if (state?.activeWorkspaceId) setActiveWorkspaceId(state.activeWorkspaceId);
   },
 }));
+
+// Per-account view snapshot writer. Fires on every store change but
+// short-circuits unless the snapshot fields actually moved — saves a
+// localStorage write on each keystroke / drag / sync tick. The point is
+// that a fast account switch reloads to wherever the user just was,
+// not to their personal-workspace inbox.
+//
+// Skipped in playground mode (no real account to key on) and while the
+// store is still empty (meId not set yet means hydrate hasn't landed).
+{
+  let prev: { meId: UUID | null; ws: UUID | null; view: string; project: UUID | null } = {
+    meId: null,
+    ws: null,
+    view: 'calendar',
+    project: null,
+  };
+  useFira.subscribe((s) => {
+    if (s.playgroundMode || !s.meId) return;
+    const next = {
+      meId: s.meId,
+      ws: s.activeWorkspaceId,
+      view: s.view,
+      project: s.inboxFilter.project_id,
+    };
+    if (
+      next.meId === prev.meId
+      && next.ws === prev.ws
+      && next.view === prev.view
+      && next.project === prev.project
+    ) return;
+    prev = next;
+    saveLastView(s.meId, {
+      workspaceId: s.activeWorkspaceId,
+      view: s.view,
+      projectId: s.inboxFilter.project_id,
+    });
+  });
+}
 
 // Selectors that components subscribe to. Putting these here keeps the
 // component code uncluttered with `useFira((s) => ...)` boilerplate.

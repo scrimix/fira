@@ -1162,7 +1162,28 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   padding-top: 12px;
   border-top: 1px dashed var(--rule-2);
   justify-content: flex-end;
+  gap: 8px;
 }
+
+.account-switch-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  flex: none;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.account-switch-btn:disabled { opacity: 0.6; cursor: progress; }
+.account-add-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+.account-add-account {
+  display: inline-flex; align-items: center; gap: 6px;
+  cursor: pointer;
+  text-decoration: none;
+}
+.account-add-account:disabled { opacity: 0.6; cursor: progress; }
+.account-signout-all {
+  color: var(--ink-3);
+  cursor: pointer;
+}
+.account-signout-all:hover { color: var(--ink); }
 
 /* Outbox sync status. Tone-based colors mirror the rest of the app:
  * `ok` is the muted ink-3 (success is calm), pending uses the accent cyan,

@@ -1,6 +1,8 @@
+import { useEffect, useState } from 'react';
 import { Calendar, Link, X } from 'lucide-react';
 import { useFira } from '../store';
-import { gcalConnectUrl } from '../api';
+import { api, gcalConnectUrl, loginUrl } from '../api';
+import type { AccountSummary } from '../types';
 
 // Account settings: container for personal-account stuff that isn't
 // workspace-scoped. Replaces the topbar's two-avatar + link-button
@@ -12,7 +14,10 @@ export function AccountSettingsModal() {
   const close = useFira((s) => s.closeAccountModal);
   const openLink = useFira((s) => s.openLinkModal);
   const logout = useFira((s) => s.logout);
+  const switchToAccount = useFira((s) => s.switchToAccount);
+  const signOutEverywhere = useFira((s) => s.signOutEverywhere);
   const me = useFira((s) => s.users.find((u) => u.id === s.meId) ?? null);
+  const meId = useFira((s) => s.meId);
   const links = useFira((s) => s.links);
   const users = useFira((s) => s.users);
   const gcalConnected = useFira((s) => s.gcalConnected);
@@ -20,6 +25,74 @@ export function AccountSettingsModal() {
   const gcalLastSyncError = useFira((s) => s.gcalLastSyncError);
   const disconnectGcal = useFira((s) => s.disconnectGcal);
   const playgroundMode = useFira((s) => s.playgroundMode);
+  // The linked partner with a live session in this browser's group, if
+  // any. Server-side `/auth/accounts` already requires both gates
+  // (accepted link + same session group), so this is at most one user
+  // — `user_links` enforces one accepted link per account. Drives the
+  // "Switch to {linked}" button next to the Linked account row;
+  // absent ⇒ no button (user can still log out and back in via Google).
+  const [switchTarget, setSwitchTarget] = useState<AccountSummary | null>(null);
+  const [switching, setSwitching] = useState(false);
+  // dev_auth enables the local fixture login (Maya). When it's on we
+  // also expose an "Add Maya (dev)" button so devs can pair the local
+  // fixture with a real Google account without leaving the modal.
+  const [devAuth, setDevAuth] = useState(false);
+  const [addingDev, setAddingDev] = useState(false);
+  useEffect(() => {
+    if (playgroundMode) return;
+    let cancelled = false;
+    api
+      .listAccounts()
+      .then((rows) => {
+        if (cancelled) return;
+        setSwitchTarget(rows.find((a) => a.user_id !== meId) ?? null);
+      })
+      .catch(() => {
+        // Switching is an optimization on top of the link feature —
+        // silently degrade if the lookup fails. The link itself
+        // still works (calendars overlay) regardless.
+      });
+    api
+      .authConfig()
+      .then((c) => {
+        if (!cancelled) setDevAuth(c.dev_auth);
+      })
+      .catch(() => { /* prod posture if config fails */ });
+    return () => { cancelled = true; };
+  }, [playgroundMode, meId]);
+  const onSwitch = async () => {
+    if (!switchTarget || switching) return;
+    setSwitching(true);
+    try {
+      await switchToAccount(switchTarget.user_id);
+      // Hard-reloads on success — no need to clear `switching`.
+    } catch {
+      // Sibling session was revoked from another device between the
+      // picker load and the click. Fall back to a full logout so the
+      // user lands on the login screen and can re-auth normally.
+      setSwitching(false);
+      setSwitchTarget(null);
+      void logout();
+    }
+  };
+  const onAddMaya = async () => {
+    if (addingDev) return;
+    setAddingDev(true);
+    try {
+      // Same opaque-redirect pattern as the login screen: dev-login
+      // sets a fresh `sid` (overwriting the current one) and 302s to
+      // the app root. The previous user's session row is preserved
+      // and joined to the same `sg` group, so the picker on the next
+      // load sees both. Hard-reload after to re-hydrate as Maya.
+      const res = await api.devLogin('maya@fira.dev');
+      if (!res.ok && res.type !== 'opaqueredirect') {
+        throw new Error(`dev-login failed (${res.status})`);
+      }
+      window.location.assign('/');
+    } catch {
+      setAddingDev(false);
+    }
+  };
   // Server stores the error with a kind prefix; the UI only branches
   // on `invalid_grant:` (Reconnect needed) vs anything else (transient,
   // muted retry hint).
@@ -122,7 +195,51 @@ export function AccountSettingsModal() {
                 )}
               </button>
               <p className="account-row-text">{linkBody}</p>
+              {switchTarget && linkState.kind === 'accepted' && (
+                <button
+                  type="button"
+                  className="btn account-switch-btn"
+                  onClick={onSwitch}
+                  disabled={switching}
+                  title={`Switch to ${switchTarget.email}`}
+                >
+                  {switching ? 'Switching…' : `Switch to ${switchTargetLabel(switchTarget)}`}
+                </button>
+              )}
             </div>
+            {/* When the link is accepted but the partner has no live
+                session in this browser's group, the Switch button can't
+                appear (the server-side gate fails). Surface a primer
+                that points the user at "Add another account" so they
+                can enroll the partner's session without logging out. */}
+            {linkState.kind === 'accepted' && !switchTarget && !playgroundMode && (
+              <p className="account-row-text account-row-muted account-row-hint">
+                Sign in to your linked account from here (without logging out
+                first) to enable instant switching.
+              </p>
+            )}
+            {!playgroundMode && (
+              <div className="account-add-row">
+                <a
+                  className="btn account-add-account"
+                  href={loginUrl}
+                  title="Sign in to another Google account on this device — keeps the current session alive so you can switch between them"
+                >
+                  Add Google account
+                </a>
+                {devAuth && me?.email !== 'maya@fira.dev' && (
+                  <button
+                    type="button"
+                    className="btn account-add-account"
+                    onClick={onAddMaya}
+                    disabled={addingDev}
+                    title="Sign in as the Maya fixture on this device (dev only)"
+                  >
+                    {addingDev ? 'Adding…' : 'Add Maya (dev)'}
+                  </button>
+                )}
+              </div>
+            )}
           </Section>
 
           <Section title="Google Calendar">
@@ -203,11 +320,31 @@ export function AccountSettingsModal() {
             <button className="btn np-danger" onClick={() => { close(); logout(); }}>
               Log out
             </button>
+            {switchTarget && !playgroundMode && (
+              <button
+                type="button"
+                className="btn account-signout-all"
+                onClick={() => { close(); void signOutEverywhere(); }}
+                title="Sign out of every linked account on this device"
+              >
+                Sign out everywhere
+              </button>
+            )}
           </div>
         </div>
       </div>
     </div>
   );
+}
+
+// Same vocabulary the Login picker uses: prefer the personal/work
+// badge over the user's name when present, so "Switch to Personal" /
+// "Switch to Work" reads consistently in both places. Falls back to
+// the human name for accounts that haven't picked a badge.
+function switchTargetLabel(a: AccountSummary): string {
+  if (a.account_badge === 'personal') return 'Personal';
+  if (a.account_badge === 'work') return 'Work';
+  return a.name;
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {

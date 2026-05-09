@@ -16,6 +16,19 @@ export interface User {
   initials: string;
 }
 
+/// One row in the login picker. Mirrors `auth::AccountSummary` on the
+/// server. `account_badge` lets the UI render "Switch to Personal" /
+/// "Switch to Work" instead of raw email chips when the user has
+/// tagged an account.
+export interface AccountSummary {
+  user_id: UUID;
+  email: string;
+  name: string;
+  initials: string;
+  avatar_url: string | null;
+  account_badge: 'personal' | 'work' | null;
+}
+
 export type WorkspaceRole = 'owner' | 'member';
 export type ProjectRole = 'owner' | 'lead' | 'member' | 'inactive';
 

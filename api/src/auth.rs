@@ -34,7 +34,13 @@ use crate::AppState;
 
 const SESSION_COOKIE: &str = "sid";
 const OAUTH_STATE_COOKIE: &str = "oauth_state";
+// `sg` groups every session created on the same physical browser. Stored
+// non-HttpOnly so the picker can also be entirely client-driven if we
+// later want to skip the /auth/accounts call; the cookie itself is not
+// a credential — the underlying `sid` rows stay HttpOnly.
+const SESSION_GROUP_COOKIE: &str = "sg";
 const SESSION_DAYS: i64 = 30;
+const SESSION_GROUP_DAYS: i64 = 365;
 const STATE_TTL_SECONDS: i64 = 300;
 const WORKSPACE_HEADER: &str = "x-workspace-id";
 
@@ -262,6 +268,223 @@ pub async fn logout(
     Ok((jar.add(cleared), StatusCode::NO_CONTENT))
 }
 
+// ---- /auth/accounts ----
+//
+// Returns the caller's *linked* accounts (status='accepted' user_links)
+// that also have a live session in this browser's group. The link is
+// the user-visible group definition: "I want these two of my accounts
+// to be switchable." The session group is the device-binding gate so
+// switching can only target sessions actually present on this browser
+// — without that, holding A's cookie would let an attacker swap into
+// B even on a device B never signed into.
+//
+// Both gates have to hold for a row to come back:
+//   * caller is one side of an accepted user_link with `partner`
+//   * `partner` has a non-expired session whose `session_group_id`
+//     equals the caller's group cookie
+//
+// Authenticated: the link gate needs a current user. Returns [] when
+// either gate fails (no group cookie, no accepted links, or no live
+// sibling session in the group).
+
+#[derive(Serialize)]
+pub struct AccountSummary {
+    pub user_id: Uuid,
+    pub email: String,
+    pub name: String,
+    pub initials: String,
+    pub avatar_url: Option<String>,
+    pub account_badge: Option<String>,
+}
+
+pub async fn list_accounts(
+    State(s): State<AppState>,
+    user: AuthUser,
+    jar: CookieJar,
+) -> Json<Vec<AccountSummary>> {
+    let Some(group_id) = jar
+        .get(SESSION_GROUP_COOKIE)
+        .map(|c| c.value().to_string())
+        .filter(|v| !v.is_empty())
+    else {
+        return Json(vec![]);
+    };
+    // user_links stores pairs canonicalized to (a < b); the partner of
+    // the caller is whichever side the caller isn't. DISTINCT ON
+    // collapses multiple sessions per partner into the most recent.
+    let rows: Vec<(Uuid, String, String, String, Option<String>, Option<String>)> = match sqlx::query_as(
+        "SELECT DISTINCT ON (u.id)
+            u.id, u.email, u.name, u.initials, u.avatar_url, us.account_badge
+         FROM user_links ul
+         JOIN sessions s ON s.user_id = CASE
+                WHEN ul.user_a_id = $1 THEN ul.user_b_id
+                ELSE ul.user_a_id
+            END
+         JOIN users u ON u.id = s.user_id
+         LEFT JOIN user_settings us ON us.user_id = u.id
+         WHERE ul.status = 'accepted'
+           AND (ul.user_a_id = $1 OR ul.user_b_id = $1)
+           AND s.session_group_id = $2
+           AND s.expires_at > now()
+         ORDER BY u.id, s.created_at DESC",
+    )
+    .bind(user.id)
+    .bind(&group_id)
+    .fetch_all(&s.pool)
+    .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::warn!("list_accounts query failed: {e:?}");
+            return Json(vec![]);
+        }
+    };
+    Json(
+        rows.into_iter()
+            .map(|(id, email, name, initials, avatar_url, account_badge)| AccountSummary {
+                user_id: id,
+                email,
+                name,
+                initials,
+                avatar_url,
+                account_badge,
+            })
+            .collect(),
+    )
+}
+
+// ---- /auth/switch ----
+//
+// Rotate the `sid` cookie to point at a linked-partner session in the
+// same group. The whole point of session groups: skip Google's OAuth
+// round-trip when bouncing between accounts the user is already
+// authenticated with on this device.
+//
+// Three gates, all enforced server-side regardless of what the UI
+// thinks: caller must be authenticated; caller must have an
+// `accepted` user_link with the target; the target must have a live
+// session in the same `session_group_id`. 404 if any gate fails so
+// the client falls through to the OAuth flow.
+
+#[derive(Deserialize)]
+pub struct SwitchRequest {
+    user_id: Uuid,
+}
+
+pub async fn switch_account(
+    State(s): State<AppState>,
+    user: AuthUser,
+    jar: CookieJar,
+    Json(body): Json<SwitchRequest>,
+) -> Result<(CookieJar, StatusCode), Response> {
+    let group_id = jar
+        .get(SESSION_GROUP_COOKIE)
+        .map(|c| c.value().to_string())
+        .filter(|v| !v.is_empty())
+        .ok_or_else(unauthorized)?;
+    if body.user_id == user.id {
+        // No-op switch — return success without rotating, so the client
+        // doesn't need a special-case branch.
+        return Ok((jar, StatusCode::NO_CONTENT));
+    }
+    // Single query: link gate + session gate together. The CASE
+    // expression mirrors the canonical (a < b) pair storage in
+    // user_links.
+    let row: Option<(String,)> = sqlx::query_as(
+        "SELECT s.id
+         FROM user_links ul
+         JOIN sessions s ON s.user_id = CASE
+                WHEN ul.user_a_id = $1 THEN ul.user_b_id
+                ELSE ul.user_a_id
+            END
+         WHERE ul.status = 'accepted'
+           AND (ul.user_a_id = $1 OR ul.user_b_id = $1)
+           AND s.user_id = $2
+           AND s.session_group_id = $3
+           AND s.expires_at > now()
+         ORDER BY s.created_at DESC LIMIT 1",
+    )
+    .bind(user.id)
+    .bind(body.user_id)
+    .bind(&group_id)
+    .fetch_optional(&s.pool)
+    .await
+    .map_err(|e| {
+        tracing::warn!("switch_account lookup failed: {e:?}");
+        service_unavailable("session lookup unavailable")
+    })?;
+    let Some((sid,)) = row else {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "no live linked session for that account" })),
+        )
+            .into_response());
+    };
+    let cookie = build_cookie(SESSION_COOKIE, sid, SESSION_DAYS * 86400, &s.auth);
+    Ok((jar.add(cookie), StatusCode::NO_CONTENT))
+}
+
+// ---- /auth/sign-out-everywhere ----
+//
+// The "leaving this device for good" flavor of logout: deletes the
+// caller's session AND every linked-partner session in the same
+// group, then clears both cookies. Plain `/auth/logout` only kills
+// the current session and leaves siblings alive on purpose, so the
+// picker can still find them.
+//
+// Authenticated, and the DELETE scope mirrors the picker — caller +
+// linked partners only, never unrelated sessions that happen to share
+// the `sg` cookie. Without that gate, anyone landing on a public
+// computer could nuke the prior user's sessions just by inheriting the
+// device-bound `sg` cookie.
+
+pub async fn sign_out_everywhere(
+    State(s): State<AppState>,
+    user: AuthUser,
+    jar: CookieJar,
+) -> (CookieJar, StatusCode) {
+    if let Some(group_id) = jar
+        .get(SESSION_GROUP_COOKIE)
+        .map(|c| c.value().to_string())
+        .filter(|v| !v.is_empty())
+    {
+        // Delete the caller's sessions + accepted-link partners' sessions
+        // within the same group. The CASE expression matches the picker
+        // (canonical pair storage in user_links).
+        let _ = sqlx::query(
+            "DELETE FROM sessions
+             WHERE session_group_id = $1
+               AND (
+                    user_id = $2
+                 OR user_id IN (
+                       SELECT CASE
+                                  WHEN ul.user_a_id = $2 THEN ul.user_b_id
+                                  ELSE ul.user_a_id
+                              END
+                       FROM user_links ul
+                       WHERE ul.status = 'accepted'
+                         AND (ul.user_a_id = $2 OR ul.user_b_id = $2)
+                    )
+               )",
+        )
+        .bind(&group_id)
+        .bind(user.id)
+        .execute(&s.pool)
+        .await;
+    } else {
+        // No group cookie (legacy session pre-dating the picker): fall
+        // back to single-session delete so the call still does what the
+        // user expects.
+        let _ = sqlx::query("DELETE FROM sessions WHERE user_id = $1")
+            .bind(user.id)
+            .execute(&s.pool)
+            .await;
+    }
+    let cleared_sid = clear_cookie(SESSION_COOKIE, &s.auth);
+    let cleared_sg = clear_group_cookie(&s.auth);
+    (jar.add(cleared_sid).add(cleared_sg), StatusCode::NO_CONTENT)
+}
+
 // ---- /auth/google/login ----
 
 pub async fn google_login(State(s): State<AppState>, jar: CookieJar) -> Response {
@@ -364,7 +587,8 @@ pub async fn google_callback(
         return (StatusCode::INTERNAL_SERVER_ERROR, "workspace setup failed").into_response();
     }
 
-    let sid = match create_session(&s.pool, user_id).await {
+    let group_id = ensure_session_group(&jar);
+    let sid = match create_session(&s.pool, user_id, &group_id).await {
         Ok(s) => s,
         Err(e) => {
             tracing::error!("session create failed: {e:?}");
@@ -373,8 +597,9 @@ pub async fn google_callback(
     };
 
     let session_cookie = build_cookie(SESSION_COOKIE, sid, SESSION_DAYS * 86400, &s.auth);
+    let group_cookie = build_group_cookie(group_id, &s.auth);
     let cleared_state = clear_cookie(OAUTH_STATE_COOKIE, &s.auth);
-    let jar = jar.add(session_cookie).add(cleared_state);
+    let jar = jar.add(session_cookie).add(group_cookie).add(cleared_state);
     (jar, Redirect::to(&s.auth.app_base_url)).into_response()
 }
 
@@ -457,18 +682,33 @@ fn compute_initials(name: &str, email: &str) -> String {
         .unwrap_or_else(|| "?".to_string())
 }
 
-async fn create_session(pool: &PgPool, user_id: Uuid) -> sqlx::Result<String> {
+async fn create_session(
+    pool: &PgPool,
+    user_id: Uuid,
+    session_group_id: &str,
+) -> sqlx::Result<String> {
     let sid = random_token(32);
     let expires = Utc::now() + Duration::days(SESSION_DAYS);
     sqlx::query(
-        "INSERT INTO sessions (id, user_id, expires_at) VALUES ($1, $2, $3)",
+        "INSERT INTO sessions (id, user_id, expires_at, session_group_id) VALUES ($1, $2, $3, $4)",
     )
     .bind(&sid)
     .bind(user_id)
     .bind(expires)
+    .bind(session_group_id)
     .execute(pool)
     .await?;
     Ok(sid)
+}
+
+/// Read the existing `sg` cookie or mint a fresh group. The group survives
+/// individual logouts so the picker can still find prior accounts on the
+/// next visit.
+fn ensure_session_group(jar: &CookieJar) -> String {
+    jar.get(SESSION_GROUP_COOKIE)
+        .map(|c| c.value().to_string())
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| random_token(24))
 }
 
 // ---- dev login (no Google) ----
@@ -502,7 +742,8 @@ pub async fn dev_login(
     let Some((user_id,)) = row else {
         return (StatusCode::NOT_FOUND, "user not found").into_response();
     };
-    let sid = match create_session(&s.pool, user_id).await {
+    let group_id = ensure_session_group(&jar);
+    let sid = match create_session(&s.pool, user_id, &group_id).await {
         Ok(s) => s,
         Err(e) => {
             tracing::error!("dev_login session failed: {e:?}");
@@ -510,7 +751,8 @@ pub async fn dev_login(
         }
     };
     let cookie = build_cookie(SESSION_COOKIE, sid, SESSION_DAYS * 86400, &s.auth);
-    (jar.add(cookie), Redirect::to(&s.auth.app_base_url)).into_response()
+    let group_cookie = build_group_cookie(group_id, &s.auth);
+    (jar.add(cookie).add(group_cookie), Redirect::to(&s.auth.app_base_url)).into_response()
 }
 
 // ---- /auth/dev-seed ----
@@ -549,7 +791,8 @@ pub async fn dev_seed(State(s): State<AppState>, jar: CookieJar) -> Response {
     }
 
     let user_id = crate::seed::primary_user_id();
-    let sid = match create_session(&s.pool, user_id).await {
+    let group_id = ensure_session_group(&jar);
+    let sid = match create_session(&s.pool, user_id, &group_id).await {
         Ok(s) => s,
         Err(e) => {
             tracing::error!("dev_seed session failed: {e:?}");
@@ -557,7 +800,8 @@ pub async fn dev_seed(State(s): State<AppState>, jar: CookieJar) -> Response {
         }
     };
     let cookie = build_cookie(SESSION_COOKIE, sid, SESSION_DAYS * 86400, &s.auth);
-    (jar.add(cookie), StatusCode::NO_CONTENT).into_response()
+    let group_cookie = build_group_cookie(group_id, &s.auth);
+    (jar.add(cookie).add(group_cookie), StatusCode::NO_CONTENT).into_response()
 }
 
 // ---- helpers ----
@@ -579,6 +823,30 @@ fn build_cookie<'a>(
 
 fn clear_cookie<'a>(name: &'static str, cfg: &AuthConfig) -> Cookie<'a> {
     let mut c = Cookie::new(name, "");
+    c.set_path("/");
+    c.set_http_only(true);
+    c.set_secure(cfg.cookie_secure);
+    c.set_same_site(SameSite::Lax);
+    c.set_max_age(time::Duration::seconds(0));
+    c
+}
+
+/// Companion to `build_cookie` for the `sg` group id. HttpOnly: the
+/// picker is server-driven (`/auth/accounts`), so JS never needs to
+/// read this. Longer max-age than `sid` (a year) so the device-binding
+/// survives browser restarts and routine cookie-jar grooming.
+fn build_group_cookie<'a>(value: String, cfg: &AuthConfig) -> Cookie<'a> {
+    let mut c = Cookie::new(SESSION_GROUP_COOKIE, value);
+    c.set_path("/");
+    c.set_http_only(true);
+    c.set_secure(cfg.cookie_secure);
+    c.set_same_site(SameSite::Lax);
+    c.set_max_age(time::Duration::seconds(SESSION_GROUP_DAYS * 86400));
+    c
+}
+
+fn clear_group_cookie<'a>(cfg: &AuthConfig) -> Cookie<'a> {
+    let mut c = Cookie::new(SESSION_GROUP_COOKIE, "");
     c.set_path("/");
     c.set_http_only(true);
     c.set_secure(cfg.cookie_secure);

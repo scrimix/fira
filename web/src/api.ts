@@ -1,4 +1,4 @@
-import type { Bootstrap, LinkedCalendar, PersonalCalendar, User, UserLink, WorkCalendar, Workspace, WorkspaceInvite, WorkspaceRole } from './types';
+import type { AccountSummary, Bootstrap, LinkedCalendar, PersonalCalendar, User, UserLink, WorkCalendar, Workspace, WorkspaceInvite, WorkspaceRole } from './types';
 
 // Always go through the Vite dev proxy at /api. The proxy target is
 // configured server-side in vite.config.ts (env: VITE_API_PROXY_TARGET),
@@ -73,6 +73,21 @@ export const api = {
       redirect: 'manual',
     }),
   logout: () => req<void>('POST', '/auth/logout'),
+  /// Accounts that have a live session in this browser's session group
+  /// (the `sg` cookie). Used by the login picker and the in-app
+  /// "Switch to Personal/Work" affordance to skip the Google round-trip.
+  /// Returns [] when there's no group cookie or no live siblings.
+  listAccounts: () => req<AccountSummary[]>('GET', '/auth/accounts'),
+  /// Rotate the `sid` cookie to point at the latest live session for
+  /// `user_id` in the current group. 404 if there's no live session
+  /// (caller should fall back to /auth/google/login).
+  switchAccount: (user_id: string) =>
+    req<void>('POST', '/auth/switch', { user_id }),
+  /// Hard sign-out: deletes every session in the group and clears `sg`.
+  /// Use for "leaving this device" — plain `logout()` only kills the
+  /// current session and leaves siblings around for the picker.
+  signOutEverywhere: () =>
+    req<void>('POST', '/auth/sign-out-everywhere'),
   createProject: (input: { title: string; icon: string; color: string }) =>
     req<import('./types').Project>('POST', '/projects', input),
   updateProject: (
