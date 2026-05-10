@@ -573,10 +573,10 @@
  * cursor returns and clicks fall through to the row → open modal. */
 .task-title-edit-pad {
   display: inline-block;
-  flex: 0 0 5ch;
+  flex: 0 0 3ch;
   align-self: stretch;
-  width: 5ch;
-  min-width: 5ch;
+  width: 3ch;
+  min-width: 3ch;
   cursor: text;
 }
 .task-title-edit-pad[data-narrow] {
