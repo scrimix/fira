@@ -376,6 +376,8 @@
 .section-head .rule { flex: 1; height: 1px; background: var(--rule); margin-bottom: 4px; }
 .section[data-section="now"] .section-head h2 { color: var(--accent); }
 .section[data-section="now"] .section-head .caret { color: var(--accent); }
+.section[data-section="recurring"] .section-head h2 { color: var(--recurring); }
+.section[data-section="recurring"] .section-head .caret { color: var(--recurring); }
 .section[data-section="done"] .section-head h2 { color: var(--ink-3); }
 
 .assignee-group[data-assignee-drop="true"] {
@@ -1227,6 +1229,7 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
 .status-trigger[data-tone="done"] { color: var(--done); }
 .status-trigger[data-tone="todo"] { color: var(--ink-2); }
 .status-trigger[data-tone="backlog"] { color: var(--ink-3); }
+.status-trigger[data-tone="recurring"] { color: var(--recurring); }
 
 .status-popover {
   position: absolute;
@@ -1260,6 +1263,7 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
 .status-option[data-tone="done"] { color: var(--done); }
 .status-option[data-tone="todo"] { color: var(--ink-2); }
 .status-option[data-tone="backlog"] { color: var(--ink-3); }
+.status-option[data-tone="recurring"] { color: var(--recurring); }
 .modal-side .side-input:focus { border-color: var(--focus-line); }
 .modal-side .side-input[data-bad="true"] { border-color: var(--danger); }
 

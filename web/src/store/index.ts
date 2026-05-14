@@ -1796,7 +1796,9 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
       // Status follows section by default: now → in_progress, done →
       // done, everything else → todo. Caller can flip status manually
       // afterwards if they want a different starting state.
-      status: section === 'done' ? 'done' : section === 'now' ? 'in_progress' : 'todo',
+      status: section === 'done' ? 'done'
+        : section === 'now' || section === 'recurring' ? 'in_progress'
+        : 'todo',
       priority: null,
       source: project.source,
       external_id: null,
@@ -1841,7 +1843,9 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
       title: (title ?? '').trim(),
       description_md: '',
       section: after.section,
-      status: after.section === 'done' ? 'done' : after.section === 'now' ? 'in_progress' : 'todo',
+      status: after.section === 'done' ? 'done'
+        : after.section === 'now' || after.section === 'recurring' ? 'in_progress'
+        : 'todo',
       priority: null,
       source: after.source,
       external_id: null,
@@ -1896,7 +1900,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     // transitions leave status alone.
     let nextStatus: Status | null = null;
     if (cur) {
-      if (section === 'now' && cur.status !== 'done') nextStatus = 'in_progress';
+      if ((section === 'now' || section === 'recurring') && cur.status !== 'done') nextStatus = 'in_progress';
       else if ((section === 'later' || section === 'someday') && cur.status === 'in_progress') {
         nextStatus = 'todo';
       }

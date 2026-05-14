@@ -1140,11 +1140,13 @@ function EstimateEditor({ value, onSave }: {
 
 // Section tones reuse the status palette so the trigger pill colors land
 // on the same accents users already learned from the Status picker:
-// `now` → in-progress accent, `later` → todo, `someday` → backlog,
-// `done` → done.
+// `now` → in-progress accent, `later` → todo, `recurring` → its own
+// accent (ongoing commitments are visually distinct from one-shot work),
+// `someday` → backlog, `done` → done.
 const SECTION_OPTIONS: Array<{ value: Section; label: string; tone: string }> = [
   { value: 'now', label: 'now', tone: 'now' },
   { value: 'later', label: 'later', tone: 'todo' },
+  { value: 'recurring', label: 'recurring', tone: 'recurring' },
   { value: 'someday', label: 'someday', tone: 'backlog' },
   { value: 'done', label: 'done', tone: 'done' },
 ];

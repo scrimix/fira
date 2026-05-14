@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, ChevronDown, ChevronRight, Copy, ExternalLink, MoreVertical, Trash2, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, Copy, ExternalLink, MoreVertical, Repeat, Trash2, X } from 'lucide-react';
 import { useFira } from '../store';
 import { ProjectIcon } from './ProjectIcon';
 import {
@@ -1132,6 +1132,7 @@ export function CalendarView() {
                       <div key={b.id} className="tblock"
                            data-state={b.state}
                            data-task-done={t.status === 'done' ? 'true' : undefined}
+                           data-task-recurring={t.section === 'recurring' ? 'true' : undefined}
                            data-dragging={isDragging && drag.moved ? 'true' : undefined}
                            data-short={dMin < 60 ? 'true' : undefined}
                            data-compact={isCompact ? 'true' : undefined}
@@ -1173,7 +1174,13 @@ export function CalendarView() {
                             background: o.color,
                           }} />
                         ))}
-                        <div className="tb-title">{t.title}</div>
+                        <div className="tb-title">
+                          {t.section === 'recurring' && (
+                            <Repeat size={10} strokeWidth={2} className="tb-recurring-icon"
+                                    aria-label="Recurring" />
+                          )}
+                          {t.title}
+                        </div>
                         <div className="tb-meta">
                           <span>{fmtClockShort(sMin)}</span>
                           <span className="dot" />
@@ -1756,13 +1763,18 @@ function CalRail({ onDragTask, onTouchSchedule, allocByProject }: {
         .filter((t) =>
           t.project_id === p.id &&
           (showAll || t.assignee_id === activePersonId) &&
-          (showAll ? (t.section === 'now' || t.section === 'later') : t.section === 'now') &&
+          (showAll
+            ? (t.section === 'now' || t.section === 'recurring' || t.section === 'later')
+            : t.section === 'now') &&
           (!q
             || t.title.toLowerCase().includes(q)
             || (t.external_id?.toLowerCase().includes(q) ?? false)),
         )
         .sort((a, b) => {
-          if (a.section !== b.section) return a.section === 'now' ? -1 : 1;
+          // When All is on, recurring floats to the top of each project
+          // group — they're the day's anchors. Now next, then Later.
+          const w = (s: string) => s === 'recurring' ? 0 : s === 'now' ? 1 : 2;
+          if (a.section !== b.section) return w(a.section) - w(b.section);
           return a.sort_key.localeCompare(b.sort_key);
         }),
     }))
@@ -1897,7 +1909,13 @@ function CalRail({ onDragTask, onTouchSchedule, allocByProject }: {
                      }}
                      title={blocker ? 'Silent blocker — no upcoming planned blocks' : 'Drag onto the calendar to schedule'}>
                   <div className="rail-task-body">
-                    <div className="rail-task-title">{t.title}</div>
+                    <div className="rail-task-title">
+                      {t.section === 'recurring' && (
+                        <Repeat size={11} strokeWidth={1.75} className="rail-task-recurring-icon"
+                                aria-label="Recurring task" />
+                      )}
+                      {t.title}
+                    </div>
                     <div className="rail-task-meta">
                       {t.external_id && <span style={{ color: 'var(--ink-4)' }}>{t.external_id}</span>}
                       <span className="left" data-over={left != null && left < 0 ? 'true' : undefined}>

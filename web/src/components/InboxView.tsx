@@ -174,6 +174,7 @@ export function InboxView() {
 
   const nowTasks = projectTasks.filter((t) => t.section === 'now').sort(byKey);
   const laterTasks = projectTasks.filter((t) => t.section === 'later').sort(byKey);
+  const recurringTasks = projectTasks.filter((t) => t.section === 'recurring').sort(byKey);
   const somedayTasks = projectTasks.filter((t) => t.section === 'someday').sort(byKey);
   // Per-section estimate roll-up. Surfaced next to the task count so a
   // section's "weight" (especially Someday, which collects intentions
@@ -181,6 +182,7 @@ export function InboxView() {
   const sumEst = (xs: Task[]) => xs.reduce((s, t) => s + (t.estimate_min ?? 0), 0);
   const nowEst = sumEst(nowTasks);
   const laterEst = sumEst(laterTasks);
+  const recurringEst = sumEst(recurringTasks);
   const somedayEst = sumEst(somedayTasks);
   // Done section reads as actual time spent rather than original estimate —
   // for completed work, "how long did this take" is the meaningful number.
@@ -881,6 +883,28 @@ export function InboxView() {
             <>
               {laterTasks.map((t, i) => renderRow(t, laterTasks, i))}
               <AddTaskRow onAdd={(title) => addTask(project.id, 'later', title, undefined, tagFilter)} onNavigate={navigateFrom} />
+            </>
+          )}
+        </div>
+
+        {/* RECURRING */}
+        <div className="section" data-section="recurring"
+             style={dropTarget === 'recurring' ? { background: 'var(--accent-soft)' } : undefined}
+             onDragOver={(e) => { e.preventDefault(); setDropTarget('recurring'); }}
+             onDragLeave={() => setDropTarget(null)}
+             onDrop={(e) => onSectionDrop(e, 'recurring')}>
+          <div className="section-head" onClick={() => setCollapsed({ ...collapsed, recurring: !collapsed.recurring })}>
+            <span className="caret">{collapsed.recurring ? '▸' : '▾'}</span>
+            <h2>Recurring</h2>
+            <SectionCount value={recurringTasks.length} />
+            <span className="rule" />
+            {showInboxTimes && <span className="est" title="estimated time">{fmtMin(recurringEst)}</span>}
+            <span className="count" style={{ fontFamily: 'var(--font-mono)' }}>ongoing</span>
+          </div>
+          {!collapsed.recurring && (
+            <>
+              {recurringTasks.map((t, i) => renderRow(t, recurringTasks, i))}
+              <AddTaskRow onAdd={(title) => addTask(project.id, 'recurring', title, undefined, tagFilter)} onNavigate={navigateFrom} />
             </>
           )}
         </div>

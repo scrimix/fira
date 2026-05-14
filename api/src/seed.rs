@@ -456,6 +456,29 @@ async fn seed_tasks(tx: &mut Transaction<'_, Postgres>) -> sqlx::Result<()> {
             estimate_min: Some(60), spent_min: 0, tags: &["design"],
             subtasks: &[],
         },
+        // ---- RECURRING ----
+        // Ongoing commitments — the task itself is the schedule, the
+        // calendar blocks are the instances. Demoes the recurring-section
+        // styling: completed blocks tint muted/strikethrough; planned
+        // blocks stay normal (no "stale planned" warning).
+        TaskSpec {
+            slug: "t_atlas_standup", project: "p_atlas", epic: None, sprint: None,
+            assignee: "u_maya", title: "Daily standup",
+            description: "Atlas + Relay team. 30 min before OAuth kickoff. Skip Wednesdays — design review day.",
+            section: "recurring", status: "in_progress", priority: None,
+            source: "local", external_id: None,
+            estimate_min: None, spent_min: 0, tags: &[],
+            subtasks: &[],
+        },
+        TaskSpec {
+            slug: "t_atlas_codereview", project: "p_atlas", epic: None, sprint: None,
+            assignee: "u_maya", title: "Weekly code review block",
+            description: "Tue afternoon. Burn down the PR queue.",
+            section: "recurring", status: "in_progress", priority: None,
+            source: "local", external_id: None,
+            estimate_min: None, spent_min: 0, tags: &["review"],
+            subtasks: &[],
+        },
         // ---- LATER ----
         TaskSpec {
             slug: "t_atlas_later1", project: "p_atlas", epic: Some("e_auth_v2"), sprint: None,
@@ -694,6 +717,16 @@ async fn seed_blocks(tx: &mut Transaction<'_, Postgres>) -> sqlx::Result<()> {
         (4, 15 * 60 + 30,     90,  "planned",   "t_relay_jira"),
         // SAT — planned
         (5, 10 * 60,          90,  "planned",   "t_helix_emb"),
+        // ---- Recurring instances ----
+        // Daily standup at 08:00 UTC (right before the 09:00 OAuth block)
+        // — completed Mon/Tue, planned Thu/Fri.
+        (0, 8 * 60,           30,  "completed", "t_atlas_standup"),
+        (1, 8 * 60,           30,  "completed", "t_atlas_standup"),
+        (3, 8 * 60,           30,  "planned",   "t_atlas_standup"),
+        (4, 8 * 60,           30,  "planned",   "t_atlas_standup"),
+        // Weekly code review — single Tue slot, this week's already done.
+        // 17:00–18:00 avoids the 13:00 GCal standup and the 16:00 review.
+        (1, 17 * 60,          60,  "completed", "t_atlas_codereview"),
     ];
     for (i, (day, start_min, dur, state, slug)) in blocks.iter().enumerate() {
         let start_at = ts(*day, *start_min);

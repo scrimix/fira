@@ -727,6 +727,52 @@
         "tag_ids": []
       },
       {
+        "id": "a1111111-7777-5777-8777-777777777111",
+        "project_id": "394c700e-b98f-5f49-911b-aeded755c4dc",
+        "epic_id": null,
+        "sprint_id": null,
+        "assignee_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "title": "Daily standup",
+        "description_md": "Atlas + Relay team. 30 min before OAuth kickoff. Skip Wednesdays — design review day.",
+        "section": "recurring",
+        "status": "in_progress",
+        "priority": null,
+        "source": "local",
+        "external_id": null,
+        "external_url": null,
+        "estimate_min": null,
+        "spent_min": 0,
+        "sort_key": "M",
+        "created_at": "2026-05-05T19:59:31.935811Z",
+        "created_by": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "finished_at": null,
+        "subtasks": [],
+        "tag_ids": []
+      },
+      {
+        "id": "a1111112-7777-5777-8777-777777777112",
+        "project_id": "394c700e-b98f-5f49-911b-aeded755c4dc",
+        "epic_id": null,
+        "sprint_id": null,
+        "assignee_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "title": "Weekly code review block",
+        "description_md": "Tue afternoon. Burn down the PR queue.",
+        "section": "recurring",
+        "status": "in_progress",
+        "priority": null,
+        "source": "local",
+        "external_id": null,
+        "external_url": null,
+        "estimate_min": null,
+        "spent_min": 0,
+        "sort_key": "M",
+        "created_at": "2026-05-05T19:59:31.935811Z",
+        "created_by": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "finished_at": null,
+        "subtasks": [],
+        "tag_ids": ["ad7a8c0b-e240-5295-a346-6a680328b54d"]
+      },
+      {
         "id": "12bffcfc-68df-5cd6-a643-b85b14cf94e3",
         "project_id": "394c700e-b98f-5f49-911b-aeded755c4dc",
         "epic_id": "89a4fbf0-a385-5f68-9dae-09d00b92134c",
@@ -1115,6 +1161,46 @@
         "start_at": "2026-05-09T10:00:00Z",
         "end_at": "2026-05-09T11:30:00Z",
         "state": "planned"
+      },
+      {
+        "id": "b1111101-7777-5777-8777-bbbbbbbbb101",
+        "task_id": "a1111111-7777-5777-8777-777777777111",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-05-04T08:00:00Z",
+        "end_at": "2026-05-04T08:30:00Z",
+        "state": "completed"
+      },
+      {
+        "id": "b1111102-7777-5777-8777-bbbbbbbbb102",
+        "task_id": "a1111111-7777-5777-8777-777777777111",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-05-05T08:00:00Z",
+        "end_at": "2026-05-05T08:30:00Z",
+        "state": "completed"
+      },
+      {
+        "id": "b1111103-7777-5777-8777-bbbbbbbbb103",
+        "task_id": "a1111111-7777-5777-8777-777777777111",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-05-07T08:00:00Z",
+        "end_at": "2026-05-07T08:30:00Z",
+        "state": "planned"
+      },
+      {
+        "id": "b1111104-7777-5777-8777-bbbbbbbbb104",
+        "task_id": "a1111111-7777-5777-8777-777777777111",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-05-08T08:00:00Z",
+        "end_at": "2026-05-08T08:30:00Z",
+        "state": "planned"
+      },
+      {
+        "id": "b1111201-7777-5777-8777-bbbbbbbbb201",
+        "task_id": "a1111112-7777-5777-8777-777777777112",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-05-05T17:00:00Z",
+        "end_at": "2026-05-05T18:00:00Z",
+        "state": "completed"
       }
     ],
     "gcal": [

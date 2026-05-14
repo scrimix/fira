@@ -471,6 +471,37 @@
   /* Don't fight with tb-actions on hover. */
   display: none;
 }
+
+/* Recurring task: each ticked block is a completed instance, so it
+   looks the same as a finished task's completed block (muted, struck).
+   Planned blocks stay normal — there's no "stale planned" warning
+   because the task itself is the schedule, not a one-time goal. */
+.tblock[data-task-recurring="true"][data-state="completed"] {
+  background: color-mix(in oklab, var(--proj-color, var(--ink)) 8%, var(--paper));
+  border-color: color-mix(in oklab, var(--proj-color, var(--ink)) 50%, var(--paper-2));
+  border-left-color: color-mix(in oklab, var(--proj-color, var(--ink)) 60%, var(--paper-2));
+  opacity: 0.75;
+}
+.tblock[data-task-recurring="true"][data-state="completed"] .tb-title {
+  text-decoration: line-through;
+  color: var(--ink-3);
+}
+.tblock[data-task-recurring="true"][data-state="completed"] .tb-meta { color: var(--ink-4); }
+/* Small loop glyph inside the block's title for recurring-task blocks —
+   matches the rail-task indicator so the connection between a rail row
+   and the block it produced is obvious. Sits flush with the title text;
+   currentColor so it tracks the muted/strikethrough states for free. */
+.tb-recurring-icon {
+  display: inline-block;
+  vertical-align: -1px;
+  margin-right: 3px;
+  color: var(--recurring);
+  flex-shrink: 0;
+}
+.tblock[data-state="completed"] .tb-recurring-icon,
+.tblock[data-task-recurring="true"][data-state="completed"] .tb-recurring-icon {
+  opacity: 0.65;
+}
 .tblock[data-dragging="true"] {
   cursor: grabbing;
   opacity: 0.85;
@@ -1106,6 +1137,15 @@
 }
 .rail-task-meta .left[data-over="true"] {
   color: var(--warn);
+}
+/* Loop glyph that prefixes a rail-task title for tasks in the recurring
+   section. Inline with the title; muted recurring tint. */
+.rail-task-recurring-icon {
+  display: inline-block;
+  vertical-align: -1px;
+  margin-right: 4px;
+  color: var(--recurring);
+  flex-shrink: 0;
 }
 
 .rail-fill {
