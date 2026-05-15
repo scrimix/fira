@@ -22,3 +22,6 @@ node_modules/
 api/.sqlx/
 
 .claude/
+
+
+*.tsbuildinfo
