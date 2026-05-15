@@ -412,8 +412,14 @@ async fn main() -> anyhow::Result<()> {
     //   test_before_acquire:   ping before handing out; cheap and
     //                          catches the most common dead-connection
     //                          case.
+    // Default 5 (prod posture, see above). Overridable via env for load
+    // testing, where a 5-wide funnel just measures pool queueing.
+    let max_conns = std::env::var("DB_MAX_CONNECTIONS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(5);
     let pool = PgPoolOptions::new()
-        .max_connections(5)
+        .max_connections(max_conns)
         .min_connections(0)
         .max_lifetime(Duration::from_secs(15 * 60))
         .idle_timeout(Duration::from_secs(60))
