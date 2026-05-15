@@ -77,19 +77,26 @@ pub async fn load_bootstrap(
             .bind(user_id)
             .fetch_one(pool)
             .await?;
-    let (users, projects, epics, sprints, tasks, tags, blocks, gcal, links, workspace_invites, cursor, settings) = tokio::try_join!(
-        db::list_users_in_scope(pool, workspace_id, user_id),
-        db::list_projects_in_scope(pool, &scope),
-        db::list_epics_in_scope(pool, &scope),
-        db::list_sprints_in_scope(pool, &scope),
-        db::list_tasks_in_scope(pool, &scope),
-        db::list_tags_in_scope(pool, &scope),
-        db::list_blocks_in_scope(pool, &scope),
-        db::list_gcal_for_user(pool, user_id),
-        db::list_user_links(pool, user_id),
-        db::list_workspace_invites(pool, user_id, &user_email.0),
-        ops::current_cursor(pool),
-        db::get_user_settings(pool, user_id),
-    )?;
+    // Run the hydrate queries sequentially rather than fanning out 12
+    // concurrent `tokio::try_join!` branches. Each branch acquired its own
+    // pool connection, so one bootstrap peaked at 12 connections at once —
+    // ~8 concurrent bootstraps exhausted a 100-connection pool and every
+    // other request started failing on `acquire_timeout`. Sequential keeps
+    // a bootstrap to one connection at a time. The latency cost is
+    // negligible: the `tasks` query dominates and the other 11 are
+    // sub-millisecond.
+    let users = db::list_users_in_scope(pool, workspace_id, user_id).await?;
+    let projects = db::list_projects_in_scope(pool, &scope).await?;
+    let epics = db::list_epics_in_scope(pool, &scope).await?;
+    let sprints = db::list_sprints_in_scope(pool, &scope).await?;
+    let tasks = db::list_tasks_in_scope(pool, &scope).await?;
+    let tags = db::list_tags_in_scope(pool, &scope).await?;
+    let blocks = db::list_blocks_in_scope(pool, &scope).await?;
+    let gcal = db::list_gcal_for_user(pool, user_id).await?;
+    let links = db::list_user_links(pool, user_id).await?;
+    let workspace_invites =
+        db::list_workspace_invites(pool, user_id, &user_email.0).await?;
+    let cursor = ops::current_cursor(pool).await?;
+    let settings = db::get_user_settings(pool, user_id).await?;
     Ok(Bootstrap { users, projects, epics, sprints, tasks, tags, blocks, gcal, links, workspace_invites, cursor, settings })
 }

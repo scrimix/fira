@@ -445,6 +445,55 @@ function resyncIfDrained(get: () => FiraState) {
 // already passed by, so an echo can't reasonably arrive anymore.
 const APPLIED_TTL_MS = 5 * 60 * 1000;
 
+// Guards `pollChanges` against overlapping runs. A workspace under write
+// load emits a WS nudge per op; without this, every caller (nudge handler,
+// 60s interval, focus/online) could fire a concurrent `GET /changes`, all
+// racing on the same stale cursor. At most one pull is in flight at a time.
+let changesPollInFlight = false;
+
+// A `*.create` op payload carries only the fields the creator set — the
+// server fills the rest from its `#[serde(default)]` columns (sort_key='M',
+// spent_min=0, ...). The change feed re-broadcasts that *original*, partial
+// payload, so a remote create op can arrive missing optional fields.
+// Normalize on the way into the store, mirroring the server defaults, so
+// every Task/Subtask in state is well-formed — a missing `sort_key`
+// otherwise throws in every section sort that calls `localeCompare`.
+function normalizeSubtask(st: Subtask): Subtask {
+  return {
+    id: st.id,
+    task_id: st.task_id,
+    title: st.title,
+    done: st.done ?? false,
+    sort_key: st.sort_key ?? 'M',
+  };
+}
+
+function normalizeTask(t: Task): Task {
+  return {
+    id: t.id,
+    project_id: t.project_id,
+    epic_id: t.epic_id ?? null,
+    sprint_id: t.sprint_id ?? null,
+    assignee_id: t.assignee_id ?? null,
+    title: t.title,
+    description_md: t.description_md ?? '',
+    section: t.section,
+    status: t.status,
+    priority: t.priority ?? null,
+    source: t.source ?? 'local',
+    external_id: t.external_id ?? null,
+    external_url: t.external_url ?? null,
+    estimate_min: t.estimate_min ?? null,
+    spent_min: t.spent_min ?? 0,
+    tag_ids: t.tag_ids ?? [],
+    sort_key: t.sort_key ?? 'M',
+    created_at: t.created_at ?? new Date().toISOString(),
+    created_by: t.created_by ?? null,
+    finished_at: t.finished_at ?? null,
+    subtasks: (t.subtasks ?? []).map(normalizeSubtask),
+  };
+}
+
 // Pure: produce a state delta from a remote op. Tolerant by design —
 // applying the same op twice (echo + local) must be a no-op, and applying
 // to deleted resources must not throw. Used by applyRemoteOp.
@@ -452,7 +501,7 @@ function applyOpToState(s: FiraState, op: AnyOpKind): Partial<FiraState> {
   switch (op.kind) {
     case 'task.create': {
       if (s.tasks.some((t) => t.id === op.task.id)) return {};
-      return { tasks: [...s.tasks, op.task] };
+      return { tasks: [...s.tasks, normalizeTask(op.task)] };
     }
     case 'task.tick': {
       // finished_at mirrors the server's CASE: stamp on transition into
@@ -522,7 +571,7 @@ function applyOpToState(s: FiraState, op: AnyOpKind): Partial<FiraState> {
       if (t.subtasks.some((st) => st.id === op.subtask.id)) return {};
       return {
         tasks: s.tasks.map((x) => x.id === op.subtask.task_id
-          ? { ...x, subtasks: [...x.subtasks, op.subtask] }
+          ? { ...x, subtasks: [...x.subtasks, normalizeSubtask(op.subtask)] }
           : x),
       };
     }
@@ -1370,31 +1419,39 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
 
   pollChanges: async () => {
     if (get().playgroundMode) return;
-    const { cursor, appliedOpIds, applyRemoteOp } = get();
-    let resp;
+    // At most one pull in flight — overlapping callers would race on the
+    // same stale cursor and re-apply identical rows.
+    if (changesPollInFlight) return;
+    changesPollInFlight = true;
     try {
-      resp = await api.getChanges(cursor);
-    } catch {
-      // Pull failures are silent — the existing syncStatus already reflects
-      // server reachability through the push side.
-      return;
+      const { cursor, appliedOpIds, applyRemoteOp } = get();
+      let resp;
+      try {
+        resp = await api.getChanges(cursor);
+      } catch {
+        // Pull failures are silent — the existing syncStatus already
+        // reflects server reachability through the push side.
+        return;
+      }
+      for (const entry of resp.ops) {
+        if (appliedOpIds.has(entry.op_id)) continue;
+        applyRemoteOp(entry);
+      }
+      // GC: drop appliedOpIds entries older than the TTL. After this much
+      // wallclock time, any echo that was going to come back already did.
+      const now = Date.now();
+      const trimmed = new Map(appliedOpIds);
+      let didTrim = false;
+      for (const [id, ts] of trimmed) {
+        if (now - ts > APPLIED_TTL_MS) { trimmed.delete(id); didTrim = true; }
+      }
+      set({
+        cursor: resp.cursor,
+        appliedOpIds: didTrim ? trimmed : appliedOpIds,
+      });
+    } finally {
+      changesPollInFlight = false;
     }
-    for (const entry of resp.ops) {
-      if (appliedOpIds.has(entry.op_id)) continue;
-      applyRemoteOp(entry);
-    }
-    // GC: drop appliedOpIds entries older than the TTL. After this much
-    // wallclock time, any echo that was going to come back already did.
-    const now = Date.now();
-    const trimmed = new Map(appliedOpIds);
-    let didTrim = false;
-    for (const [id, ts] of trimmed) {
-      if (now - ts > APPLIED_TTL_MS) { trimmed.delete(id); didTrim = true; }
-    }
-    set({
-      cursor: resp.cursor,
-      appliedOpIds: didTrim ? trimmed : appliedOpIds,
-    });
   },
 
   applyRemoteOp: (entry) => {
@@ -2291,10 +2348,16 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
   // subset of fields. Cast through unknown is the canonical workaround.
   }) as unknown as FiraState,
   onRehydrateStorage: () => (state) => {
+    if (!state) return;
     // After hydration, re-arm the api wrapper with the persisted active
     // workspace so the very first request after reload carries the
     // X-Workspace-Id header even before /me runs.
-    if (state?.activeWorkspaceId) setActiveWorkspaceId(state.activeWorkspaceId);
+    if (state.activeWorkspaceId) setActiveWorkspaceId(state.activeWorkspaceId);
+    // Heal tasks persisted before create-op normalization existed: an
+    // applied remote `task.create` with a partial payload could leave a
+    // task with no `sort_key`, which crashes every section sort. Cheap to
+    // run once on load; a no-op for already-well-formed tasks.
+    state.tasks = (state.tasks ?? []).map(normalizeTask);
   },
 }));
 

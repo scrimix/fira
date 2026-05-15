@@ -557,20 +557,24 @@ pub async fn list_tasks_in_scope(pool: &PgPool, scope: &[Uuid]) -> sqlx::Result<
     .await?;
 
     let task_ids: Vec<Uuid> = tasks.iter().map(|t| t.id).collect();
+    // Sequential, not `try_join!`: keep this to one pool connection at a
+    // time so a bootstrap (which calls this) never fans out connections.
     let (subs, tag_links): (Vec<Subtask>, Vec<(Uuid, Uuid)>) = if task_ids.is_empty() {
         (vec![], vec![])
     } else {
-        tokio::try_join!(
-            sqlx::query_as(
-                "SELECT id, task_id, title, done, sort_key FROM subtasks
-                 WHERE task_id = ANY($1) ORDER BY sort_key",
-            )
-            .bind(&task_ids)
-            .fetch_all(pool),
+        let subs: Vec<Subtask> = sqlx::query_as(
+            "SELECT id, task_id, title, done, sort_key FROM subtasks
+             WHERE task_id = ANY($1) ORDER BY sort_key",
+        )
+        .bind(&task_ids)
+        .fetch_all(pool)
+        .await?;
+        let tag_links: Vec<(Uuid, Uuid)> =
             sqlx::query_as("SELECT task_id, tag_id FROM task_tags WHERE task_id = ANY($1)")
                 .bind(&task_ids)
-                .fetch_all(pool),
-        )?
+                .fetch_all(pool)
+                .await?;
+        (subs, tag_links)
     };
     let mut by_task: HashMap<Uuid, Vec<Subtask>> = HashMap::new();
     for s in subs {

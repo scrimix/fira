@@ -115,12 +115,47 @@ export default function App() {
   // ordering and idempotency stay identical to the polled path. Playground
   // mode has no server, so no socket — the open would just spin in
   // reconnect backoff.
+  //
+  // Nudges are coalesced. The server emits one nudge per committed op, so a
+  // workspace under write load can fire hundreds a second — but a nudge
+  // only means "the cursor moved", and a single /changes pull (up to 500
+  // ops) drains the whole backlog. So: a short debounce collapses a burst
+  // into one sync, and an in-flight guard + `pending` flag guarantees at
+  // most one extra catch-up pass. Without this the tab fires one fetch per
+  // nudge and falls over.
   useEffect(() => {
     if (!activeWorkspaceId || playgroundMode) return;
-    const handle = openNudgeSocket(activeWorkspaceId, () => {
-      void syncOutbox().then(() => pollChanges());
-    });
-    return () => handle.close();
+    let debounceTimer: number | null = null;
+    let syncing = false;
+    let pending = false;
+    let cancelled = false;
+
+    const runSync = async () => {
+      if (syncing) { pending = true; return; }
+      syncing = true;
+      do {
+        pending = false;
+        await syncOutbox();
+        if (cancelled) break;
+        await pollChanges();
+      } while (pending && !cancelled);
+      syncing = false;
+    };
+
+    const onNudge = () => {
+      if (debounceTimer !== null) return; // a sync is already scheduled
+      debounceTimer = window.setTimeout(() => {
+        debounceTimer = null;
+        void runSync();
+      }, 200);
+    };
+
+    const handle = openNudgeSocket(activeWorkspaceId, onNudge);
+    return () => {
+      cancelled = true;
+      if (debounceTimer !== null) window.clearTimeout(debounceTimer);
+      handle.close();
+    };
   }, [activeWorkspaceId, syncOutbox, pollChanges, playgroundMode]);
 
   // User-channel socket: opaque "your workspace surface changed" nudges.

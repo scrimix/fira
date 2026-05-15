@@ -110,19 +110,37 @@ async fn main() -> anyhow::Result<()> {
     let duration_secs: u64 = env_str("LOAD_DURATION_SECS", "60").parse()?;
     let ramp_secs: u64 = env_str("LOAD_RAMP_SECS", "20").parse()?;
 
-    let raw = std::fs::read_to_string("../loadtest/loadtest-map.json")
-        .or_else(|_| std::fs::read_to_string("loadtest/loadtest-map.json"))?;
-    let map: Vec<Value> = serde_json::from_str(&raw)?;
-    let sessions: Vec<Session> = map
-        .iter()
-        .map(|v| Session {
-            token: v["token"].as_str().unwrap().to_string(),
-            user_id: v["user_id"].as_str().unwrap().parse().unwrap(),
-            workspace_id: v["workspace_id"].as_str().unwrap().parse().unwrap(),
+    // Discover the load-test sessions straight from the seeded DB — the
+    // single source of truth. There is no map file to drift out of sync
+    // with what stress_seed actually wrote.
+    let db_url = env_str("LOAD_DB_URL", "postgres://fira:fira@postgres:5432/fira_stress");
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(4)
+        .connect(&db_url)
+        .await?;
+    let rows: Vec<(String, Uuid, Uuid)> = sqlx::query_as(
+        "SELECT s.id, s.user_id, wm.workspace_id
+         FROM sessions s
+         JOIN workspace_members wm ON wm.user_id = s.user_id
+         WHERE s.user_agent = 'loadtest' AND wm.removed_at IS NULL
+         ORDER BY s.id",
+    )
+    .fetch_all(&pool)
+    .await?;
+    pool.close().await;
+    let sessions: Vec<Session> = rows
+        .into_iter()
+        .map(|(token, user_id, workspace_id)| Session {
+            token,
+            user_id,
+            workspace_id,
         })
         .collect();
+    if sessions.is_empty() {
+        anyhow::bail!("no load-test sessions in {db_url} — run stress_seed first");
+    }
     println!(
-        "stress_load: {} sessions available, target={url}, concurrency={concurrency}, \
+        "stress_load: {} sessions from DB, target={url}, concurrency={concurrency}, \
          duration={duration_secs}s, ramp={ramp_secs}s",
         sessions.len()
     );
