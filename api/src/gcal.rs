@@ -328,7 +328,7 @@ pub async fn sync_user_calendar(pool: &PgPool, user_id: Uuid) -> Result<(), Sync
     // Wrap the network + db section so a Google outage / 5xx /
     // network blip surfaces as a stored `sync_failed:` instead of
     // silently leaving the previous error message stale.
-    match do_sync(pool, user_id, access, &cred.calendar_id, time_min, time_max).await {
+    match do_sync(pool, user_id, access, time_min, time_max).await {
         Ok(()) => Ok(()),
         Err(e) => {
             let _ = sqlx::query(
@@ -347,59 +347,93 @@ async fn do_sync(
     pool: &PgPool,
     user_id: Uuid,
     access: &str,
-    calendar_id: &str,
     time_min: DateTime<Utc>,
     time_max: DateTime<Utc>,
 ) -> Result<(), SyncError> {
-    let events = fetch_events(access, calendar_id, time_min, time_max).await?;
+    // Sync every calendar the user has selected in Google Calendar's
+    // UI — primary + secondaries + shared subscriptions. Holiday /
+    // birthday calendars stay selected by default in Google so they
+    // come in too; that's fine, they look like normal events on the
+    // grid and the user can untick them on Google's side if unwanted.
+    let calendars = fetch_calendar_list(access).await?;
+
+    // (calendar_id, google_event_id) pairs we just upserted — anything
+    // in the window not on this list is stale and gets deleted below.
+    let mut keep_cal: Vec<String> = Vec::new();
+    let mut keep_evt: Vec<String> = Vec::new();
 
     let mut tx = pool.begin().await?;
-    let mut keep_ids: Vec<String> = Vec::with_capacity(events.len());
-    for evt in &events {
-        // Skip all-day and events without timed start/end. The grid
-        // has no row for all-day items today.
-        let (Some(start), Some(end)) = (evt.start_dt, evt.end_dt) else { continue };
-        keep_ids.push(evt.id.clone());
-        let summary = evt.summary.clone().unwrap_or_default();
-        sqlx::query(
-            "INSERT INTO gcal_events
-                 (id, user_id, title, start_at, end_at, description, html_link,
-                  google_event_id, updated_at_remote)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-             ON CONFLICT (user_id, google_event_id) WHERE google_event_id IS NOT NULL
-             DO UPDATE SET
-                 title             = EXCLUDED.title,
-                 start_at          = EXCLUDED.start_at,
-                 end_at            = EXCLUDED.end_at,
-                 description       = EXCLUDED.description,
-                 html_link         = EXCLUDED.html_link,
-                 updated_at_remote = EXCLUDED.updated_at_remote",
-        )
-        .bind(Uuid::new_v4())
-        .bind(user_id)
-        .bind(&summary)
-        .bind(start)
-        .bind(end)
-        .bind(evt.description.as_deref())
-        .bind(evt.html_link.as_deref())
-        .bind(&evt.id)
-        .bind(evt.updated)
-        .execute(&mut *tx)
-        .await?;
+    for cal in &calendars {
+        let events = fetch_events(access, &cal.id, time_min, time_max).await?;
+        for evt in &events {
+            // Skip all-day and events without timed start/end. The
+            // grid has no row for all-day items today.
+            let (Some(start), Some(end)) = (evt.start_dt, evt.end_dt) else { continue };
+            keep_cal.push(cal.id.clone());
+            keep_evt.push(evt.id.clone());
+            let summary = evt.summary.clone().unwrap_or_default();
+            sqlx::query(
+                "INSERT INTO gcal_events
+                     (id, user_id, title, start_at, end_at, description, html_link,
+                      google_event_id, updated_at_remote, calendar_id)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                 ON CONFLICT (user_id, calendar_id, google_event_id)
+                     WHERE google_event_id IS NOT NULL
+                 DO UPDATE SET
+                     title             = EXCLUDED.title,
+                     start_at          = EXCLUDED.start_at,
+                     end_at            = EXCLUDED.end_at,
+                     description       = EXCLUDED.description,
+                     html_link         = EXCLUDED.html_link,
+                     updated_at_remote = EXCLUDED.updated_at_remote",
+            )
+            .bind(Uuid::new_v4())
+            .bind(user_id)
+            .bind(&summary)
+            .bind(start)
+            .bind(end)
+            .bind(evt.description.as_deref())
+            .bind(evt.html_link.as_deref())
+            .bind(&evt.id)
+            .bind(evt.updated)
+            .bind(&cal.id)
+            .execute(&mut *tx)
+            .await?;
+        }
     }
-    // Delete any rows in the window that Google no longer returns —
-    // covers cancellations + events moved out of the window.
+    // Drop events for calendars the user unsubscribed/unselected since
+    // last sync — without this they'd linger forever even though Google
+    // no longer treats them as part of the user's calendar set.
+    let current_cal_ids: Vec<String> = calendars.iter().map(|c| c.id.clone()).collect();
+    sqlx::query(
+        "DELETE FROM gcal_events
+         WHERE user_id = $1
+           AND NOT (calendar_id = ANY($2))",
+    )
+    .bind(user_id)
+    .bind(&current_cal_ids)
+    .execute(&mut *tx)
+    .await?;
+    // Delete any in-window rows Google didn't return on this pass —
+    // covers cancellations and events moved out of the window. Match
+    // by (calendar_id, google_event_id) since the same id can appear
+    // in multiple calendars (e.g. shared meeting).
     sqlx::query(
         "DELETE FROM gcal_events
          WHERE user_id = $1
            AND google_event_id IS NOT NULL
            AND start_at >= $2 AND start_at < $3
-           AND NOT (google_event_id = ANY($4))",
+           AND NOT EXISTS (
+               SELECT 1 FROM unnest($4::text[], $5::text[]) AS k(cid, evtid)
+               WHERE k.cid = gcal_events.calendar_id
+                 AND k.evtid = gcal_events.google_event_id
+           )",
     )
     .bind(user_id)
     .bind(time_min)
     .bind(time_max)
-    .bind(&keep_ids)
+    .bind(&keep_cal)
+    .bind(&keep_evt)
     .execute(&mut *tx)
     .await?;
     sqlx::query(
@@ -418,25 +452,26 @@ struct StoredCredentials {
     refresh_token: String,
     access_token: Option<String>,
     access_expires_at: Option<DateTime<Utc>>,
-    calendar_id: String,
 }
 
 async fn load_credentials(
     pool: &PgPool,
     user_id: Uuid,
 ) -> sqlx::Result<Option<StoredCredentials>> {
-    let row: Option<(String, Option<String>, Option<DateTime<Utc>>, String)> = sqlx::query_as(
-        "SELECT refresh_token, access_token, access_expires_at, calendar_id
+    // `gcal_credentials.calendar_id` is left on the table for backward
+    // compat with the single-calendar era but is no longer read —
+    // multi-calendar sync discovers calendars via calendarList.list.
+    let row: Option<(String, Option<String>, Option<DateTime<Utc>>)> = sqlx::query_as(
+        "SELECT refresh_token, access_token, access_expires_at
          FROM gcal_credentials WHERE user_id = $1",
     )
     .bind(user_id)
     .fetch_optional(pool)
     .await?;
-    Ok(row.map(|(r, a, e, c)| StoredCredentials {
+    Ok(row.map(|(r, a, e)| StoredCredentials {
         refresh_token: r,
         access_token: a,
         access_expires_at: e,
-        calendar_id: c,
     }))
 }
 
@@ -611,6 +646,78 @@ struct RawTime {
     date_time: Option<DateTime<Utc>>,
     // `date` (all-day) intentionally not parsed — we ignore those rows
     // until the calendar grid grows an all-day strip.
+}
+
+#[derive(Debug)]
+struct CalendarListEntry {
+    id: String,
+}
+
+#[derive(Deserialize)]
+struct CalendarListResponse {
+    #[serde(default)]
+    items: Vec<RawCalendarListEntry>,
+    #[serde(rename = "nextPageToken", default)]
+    next_page_token: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct RawCalendarListEntry {
+    id: String,
+    // `selected` is the user's "show on the grid" toggle in Google's
+    // UI. Absent means selected (per Google's docs). We treat
+    // unselected calendars as opt-out so users get a way to silence
+    // noisy calendars (e.g. shared team calendars) without us adding
+    // a settings page.
+    #[serde(default)]
+    selected: Option<bool>,
+    // Owners get `owner`/`writer`; shared subscriptions get `reader`.
+    // `freeBusyReader` means we can only see busy/free blocks, not
+    // event details — useless for the grid, so we skip them.
+    #[serde(rename = "accessRole", default)]
+    access_role: Option<String>,
+}
+
+async fn fetch_calendar_list(access_token: &str) -> Result<Vec<CalendarListEntry>, SyncError> {
+    // Paginate just like fetch_events — most users have <50 calendars
+    // so a single page covers it, but the cap (20 pages × ~250) keeps
+    // a misbehaving response from looping.
+    let url = "https://www.googleapis.com/calendar/v3/users/me/calendarList";
+    let client = reqwest::Client::new();
+    let mut out: Vec<CalendarListEntry> = Vec::new();
+    let mut page_token: Option<String> = None;
+    for _ in 0..20 {
+        let mut query: Vec<(&str, String)> = Vec::new();
+        if let Some(t) = &page_token {
+            query.push(("pageToken", t.clone()));
+        }
+        let res = client
+            .get(url)
+            .bearer_auth(access_token)
+            .query(&query)
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<CalendarListResponse>()
+            .await?;
+        for entry in res.items {
+            if entry.selected == Some(false) {
+                continue;
+            }
+            if entry.access_role.as_deref() == Some("freeBusyReader") {
+                continue;
+            }
+            out.push(CalendarListEntry { id: entry.id });
+        }
+        match res.next_page_token {
+            Some(t) if !t.is_empty() => page_token = Some(t),
+            _ => return Ok(out),
+        }
+    }
+    Err(SyncError {
+        message: "calendarList.list exceeded pagination cap (20 pages)".into(),
+        invalid_grant: false,
+    })
 }
 
 async fn fetch_events(
