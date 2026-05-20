@@ -552,6 +552,8 @@ struct ParsedEvent {
 struct EventsListResponse {
     #[serde(default)]
     items: Vec<RawEvent>,
+    #[serde(rename = "nextPageToken", default)]
+    next_page_token: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -587,40 +589,65 @@ async fn fetch_events(
     time_min: DateTime<Utc>,
     time_max: DateTime<Utc>,
 ) -> Result<Vec<ParsedEvent>, SyncError> {
+    // Paginate via nextPageToken. Without this, busy calendars with
+    // >250 events in the window get truncated to the earliest 250
+    // (orderBy=startTime asc), so current/future events silently
+    // disappear while past ones stay visible.
     let url = format!(
         "https://www.googleapis.com/calendar/v3/calendars/{}/events",
         urlencoding_encode(calendar_id),
     );
     let client = reqwest::Client::new();
-    let res = client
-        .get(&url)
-        .bearer_auth(access_token)
-        .query(&[
-            ("timeMin", time_min.to_rfc3339()),
-            ("timeMax", time_max.to_rfc3339()),
+    let time_min_s = time_min.to_rfc3339();
+    let time_max_s = time_max.to_rfc3339();
+    let mut out: Vec<ParsedEvent> = Vec::new();
+    let mut page_token: Option<String> = None;
+    // Safety cap. 20 pages × 250 = 5000 events in a 10-week window;
+    // anything beyond that is almost certainly a misconfigured calendar
+    // and we'd rather bail than spin forever.
+    for _ in 0..20 {
+        let mut query: Vec<(&str, String)> = vec![
+            ("timeMin", time_min_s.clone()),
+            ("timeMax", time_max_s.clone()),
             ("singleEvents", "true".to_string()),
             ("orderBy", "startTime".to_string()),
             ("maxResults", "250".to_string()),
-        ])
-        .send()
-        .await?
-        .error_for_status()?
-        .json::<EventsListResponse>()
-        .await?;
-    Ok(res
-        .items
-        .into_iter()
-        .filter(|e| e.status.as_deref() != Some("cancelled"))
-        .map(|e| ParsedEvent {
-            id: e.id,
-            summary: e.summary,
-            description: e.description,
-            html_link: e.html_link,
-            start_dt: e.start.and_then(|t| t.date_time),
-            end_dt: e.end.and_then(|t| t.date_time),
-            updated: e.updated,
-        })
-        .collect())
+        ];
+        if let Some(t) = &page_token {
+            query.push(("pageToken", t.clone()));
+        }
+        let res = client
+            .get(&url)
+            .bearer_auth(access_token)
+            .query(&query)
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<EventsListResponse>()
+            .await?;
+        out.extend(
+            res.items
+                .into_iter()
+                .filter(|e| e.status.as_deref() != Some("cancelled"))
+                .map(|e| ParsedEvent {
+                    id: e.id,
+                    summary: e.summary,
+                    description: e.description,
+                    html_link: e.html_link,
+                    start_dt: e.start.and_then(|t| t.date_time),
+                    end_dt: e.end.and_then(|t| t.date_time),
+                    updated: e.updated,
+                }),
+        );
+        match res.next_page_token {
+            Some(t) if !t.is_empty() => page_token = Some(t),
+            _ => return Ok(out),
+        }
+    }
+    Err(SyncError {
+        message: "events.list exceeded pagination cap (20 pages)".into(),
+        invalid_grant: false,
+    })
 }
 
 // ---- helpers ----
