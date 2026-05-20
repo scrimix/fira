@@ -258,17 +258,30 @@ pub async fn sync_user_calendar(pool: &PgPool, user_id: Uuid) -> Result<(), Sync
     };
     if needs_refresh {
         match refresh_access_token(&cfg, &cred.refresh_token).await {
-            Ok((tok, exp)) => {
-                cred.access_token = Some(tok.clone());
-                cred.access_expires_at = Some(exp);
+            Ok(refreshed) => {
+                cred.access_token = Some(refreshed.access_token.clone());
+                cred.access_expires_at = Some(refreshed.expires_at);
+                // COALESCE so we keep the existing refresh_token when
+                // Google didn't rotate (production-mode apps), and
+                // overwrite when it did (Testing-mode rotation). The
+                // old token is invalidated by Google shortly after a
+                // rotation, so failing to persist the new one would
+                // strand the user on a dead credential.
+                if let Some(rotated) = &refreshed.rotated_refresh_token {
+                    cred.refresh_token = rotated.clone();
+                }
                 let _ = sqlx::query(
                     "UPDATE gcal_credentials
-                     SET access_token = $2, access_expires_at = $3, last_sync_error = NULL
+                     SET access_token = $2,
+                         access_expires_at = $3,
+                         refresh_token = COALESCE($4, refresh_token),
+                         last_sync_error = NULL
                      WHERE user_id = $1",
                 )
                 .bind(user_id)
-                .bind(&tok)
-                .bind(exp)
+                .bind(&refreshed.access_token)
+                .bind(refreshed.expires_at)
+                .bind(refreshed.rotated_refresh_token.as_deref())
                 .execute(pool)
                 .await;
             }
@@ -480,14 +493,27 @@ async fn exchange_code(
     Ok(res)
 }
 
+struct RefreshedToken {
+    access_token: String,
+    expires_at: DateTime<Utc>,
+    // Apps in Testing mode rotate refresh tokens — Google returns a
+    // new one in the refresh response and invalidates the old one
+    // after a short grace window. If we don't capture and persist
+    // the rotated value, the next refresh hits `invalid_grant` and
+    // the user has to reconnect.
+    rotated_refresh_token: Option<String>,
+}
+
 async fn refresh_access_token(
     cfg: &crate::auth::AuthConfig,
     refresh_token: &str,
-) -> Result<(String, DateTime<Utc>), SyncError> {
+) -> Result<RefreshedToken, SyncError> {
     #[derive(Deserialize)]
     struct RefreshResponse {
         access_token: String,
         expires_in: i64,
+        #[serde(default)]
+        refresh_token: Option<String>,
     }
     #[derive(Deserialize)]
     struct ErrorResponse {
@@ -521,7 +547,11 @@ async fn refresh_access_token(
     }
     let parsed: RefreshResponse = serde_json::from_str(&body)
         .map_err(|e| SyncError { message: e.to_string(), invalid_grant: false })?;
-    Ok((parsed.access_token, Utc::now() + Duration::seconds(parsed.expires_in)))
+    Ok(RefreshedToken {
+        access_token: parsed.access_token,
+        expires_at: Utc::now() + Duration::seconds(parsed.expires_in),
+        rotated_refresh_token: parsed.refresh_token.filter(|t| !t.is_empty()),
+    })
 }
 
 async fn fetch_userinfo(access_token: &str) -> Result<GoogleUserInfo, SyncError> {
