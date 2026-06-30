@@ -13,6 +13,8 @@ pub enum ApiError {
     Sqlx(#[from] sqlx::Error),
     #[error(transparent)]
     Other(#[from] anyhow::Error),
+    #[error("internal server error: {0}")]
+    InternalServerError(String),
 }
 
 impl IntoResponse for ApiError {
@@ -29,6 +31,10 @@ impl IntoResponse for ApiError {
             ApiError::Other(e) => {
                 tracing::error!("error: {e:?}");
                 (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+            }
+            ApiError::InternalServerError(m) => {
+                tracing::error!("internal server error: {m}");
+                (StatusCode::INTERNAL_SERVER_ERROR, m.clone())
             }
         };
         (status, Json(json!({ "error": msg }))).into_response()

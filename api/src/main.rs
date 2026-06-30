@@ -16,6 +16,7 @@ use fira_api::{
     db, error,
     error::ApiResult,
     gcal, invites, links,
+    attachments,
     load_bootstrap,
     models::*,
     ops, pubsub,
@@ -450,7 +451,8 @@ async fn main() -> anyhow::Result<()> {
     }
     let hub = Hub::new();
     pubsub::start_listener_task(pool.clone(), hub.clone());
-    let state = AppState { pool, auth: auth_cfg, hub };
+    let local_storage_dir = std::env::var("LOCAL_STORAGE_DIR").unwrap_or_else(|_| "/workspace/storage".into());
+    let state = AppState { pool, auth: auth_cfg, hub, local_storage_dir };
 
     // Same-origin in both dev (Vite proxy) and prod (api serves the SPA).
     // No CorsLayer needed; re-add scoped to the prod domain if a non-browser
@@ -505,7 +507,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/ops", post(ops::post_ops))
         .route("/changes", get(ops::get_changes))
         .route("/ws", get(ws::ws_handler))
-        .route("/ws/user", get(ws::user_ws_handler));
+        .route("/ws/user", get(ws::user_ws_handler))
+        .route("/attachments/upload/:task_id", post(attachments::upload_attachment))
+        .route("/attachments/:file_id", get(attachments::get_attachment).delete(attachments::delete_attachment));
 
     #[cfg(feature = "dev_auth")]
     let api = api

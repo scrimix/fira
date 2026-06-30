@@ -19,6 +19,8 @@ pub mod pubsub;
 pub mod seed;
 pub mod workspaces;
 pub mod ws;
+pub mod attachments;
+pub mod ensure_scope;
 
 use auth::AuthConfig;
 use pubsub::Hub;
@@ -30,6 +32,7 @@ pub struct AppState {
     pub pool: PgPool,
     pub auth: AuthConfig,
     pub hub: Arc<Hub>,
+    pub local_storage_dir: String,
 }
 
 /// The shape `/api/bootstrap` returns. Lifted out of `main.rs` so the
