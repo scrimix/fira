@@ -14,10 +14,10 @@ pub struct S3Config {
 
 impl S3Config {
     pub fn from_env(prefix: &str) -> Result<Self> {
-        let region = env::var(format!("{prefix}_S3_REGION")).with_context(|| format!("{prefix}_S3_REGION is not set"))?;
-        let access_key_id = env::var(format!("{prefix}_S3_ACCESS_KEY_ID")).with_context(|| format!("{prefix}_S3_ACCESS_KEY_ID is not set"))?;
-        let secret_access_key = env::var(format!("{prefix}_S3_SECRET_ACCESS_KEY")).with_context(|| format!("{prefix}_S3_SECRET_ACCESS_KEY is not set"))?;
-        let endpoint_url = env::var(format!("{prefix}_S3_ENDPOINT_URL")).with_context(|| format!("{prefix}_S3_ENDPOINT_URL is not set"))?;
+        let region = env::var(format!("{prefix}_REGION")).with_context(|| format!("{prefix}_REGION is not set"))?;
+        let access_key_id = env::var(format!("{prefix}_ACCESS_KEY_ID")).with_context(|| format!("{prefix}_ACCESS_KEY_ID is not set"))?;
+        let secret_access_key = env::var(format!("{prefix}_SECRET_ACCESS_KEY")).with_context(|| format!("{prefix}_SECRET_ACCESS_KEY is not set"))?;
+        let endpoint_url = env::var(format!("{prefix}_ENDPOINT_URL_S3")).with_context(|| format!("{prefix}_ENDPOINT_URL_S3 is not set"))?;
 
         Ok(S3Config {
             region,
@@ -118,8 +118,8 @@ impl S3Storage {
     pub fn from_env(prefix: &str) -> Result<Self> {
         let s3_client = build_client(prefix)
             .with_context(|| format!("Failed to build S3 client for prefix {prefix}"))?;
-        let bucket_name = env::var(format!("{prefix}_S3_BUCKET_NAME"))
-            .with_context(|| format!("{prefix}_S3_BUCKET_NAME is not set"))?;
+        let bucket_name = env::var(format!("BUCKET_NAME"))
+            .with_context(|| format!("BUCKET_NAME is not set"))?;
         Ok(S3Storage { s3_client, bucket_name })
     }
 
@@ -206,7 +206,8 @@ impl StorageBackend {
 }
 
 pub async fn init_storage_from_env() -> Result<StorageBackend> {
-    let backend = StorageBackend::from_env("FIRA")
+    let prefix = env::var("STORAGE_PREFIX").unwrap_or_else(|_| "FIRA".to_string());
+    let backend = StorageBackend::from_env(&prefix)
         .with_context(|| "Failed to initialize storage backend from environment variables")?;
     Ok(backend)
 }
