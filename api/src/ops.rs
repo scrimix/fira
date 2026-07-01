@@ -24,7 +24,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
-use crate::auth::AuthCtx;
+use crate::{attachments::delete_task_attachments, auth::AuthCtx, storage::StorageBackend};
 use crate::error::ApiResult;
 use crate::AppState;
 use crate::ensure_scope::*;
@@ -205,7 +205,7 @@ pub async fn post_ops(
 ) -> Result<(StatusCode, Json<OpsResponse>), StatusCode> {
     let mut results = Vec::with_capacity(req.ops.len());
     for env in req.ops {
-        let res = apply_one(&s.pool, ctx.user.id, ctx.workspace_id, env).await;
+        let res = apply_one(&s.pool, ctx.user.id, ctx.workspace_id, env, &s.storage).await;
         results.push(match res {
             Ok((op_id, _outcome)) => OpResult { op_id, status: "ok", error: None },
             Err((op_id, e)) => {
@@ -257,6 +257,7 @@ async fn apply_one(
     user_id: Uuid,
     workspace_id: Uuid,
     env: OpEnvelope,
+    storage: &StorageBackend
 ) -> Result<(String, ApplyOutcome), (String, anyhow::Error)> {
     let op_id = env.op_id.clone();
     let payload_value = env.payload.clone();
@@ -272,7 +273,7 @@ async fn apply_one(
         // Apply the mutation, capturing project_id along the way so we can
         // scope log delivery later. apply_payload returns Err on auth failure.
         let mut project_id: Option<Uuid> = None;
-        apply_payload(&mut tx, user_id, workspace_id, op, &mut project_id).await?;
+        apply_payload(&mut tx, user_id, workspace_id, op, &mut project_id, storage).await?;
 
         // Log + idempotency: PK conflict on op_id means a concurrent retry
         // of the same op_id won. Roll back so we don't double-apply.
@@ -320,6 +321,7 @@ async fn apply_payload(
     workspace_id: Uuid,
     payload: Op,
     out_project_id: &mut Option<Uuid>,
+    storage: &StorageBackend,
 ) -> anyhow::Result<()> {
     match payload {
         Op::TaskCreate { task } => {
@@ -456,6 +458,7 @@ async fn apply_payload(
         }
         Op::TaskDelete { task_id } => {
             *out_project_id = Some(ensure_task_in_scope(tx, user_id, workspace_id, task_id).await?);
+            delete_task_attachments(tx, storage, task_id).await?;
             // subtasks + time_blocks cascade via FK ON DELETE CASCADE.
             sqlx::query("DELETE FROM tasks WHERE id = $1")
                 .bind(task_id).execute(&mut **tx).await?;

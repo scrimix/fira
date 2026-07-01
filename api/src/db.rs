@@ -1570,3 +1570,21 @@ pub async fn delete_attachment(tx: &mut Transaction<'_, Postgres>, file_id: Uuid
     .await?;
     Ok(res.rows_affected() > 0)
 }
+
+pub async fn list_attachments_for_task(tx: &mut Transaction<'_, Postgres>, task_id: Uuid) -> sqlx::Result<Vec<Attachment>> {
+    sqlx::query_as(
+        "SELECT id, task_id, filename, storage_path, content_type, size, created_at
+         FROM attachments WHERE task_id = $1 ORDER BY created_at",
+    )
+    .bind(task_id)
+    .fetch_all(&mut **tx)
+    .await
+}
+
+pub async fn delete_attachments_for_task(tx: &mut Transaction<'_, Postgres>, task_id: Uuid) -> sqlx::Result<bool> {
+    let res = sqlx::query("DELETE FROM attachments WHERE task_id = $1")
+    .bind(task_id)
+    .execute(&mut **tx)
+    .await?;
+    Ok(res.rows_affected() > 0)
+}

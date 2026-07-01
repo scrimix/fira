@@ -3,8 +3,9 @@ use axum::{
 };
 use chrono::Utc;
 use serde::{Serialize, Deserialize};
+use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
-use crate::{auth::AuthCtx, db, ensure_scope::ensure_attachment_in_scope, ops};
+use crate::{auth::AuthCtx, db, ensure_scope::ensure_attachment_in_scope, ops, storage::StorageBackend};
 use crate::error::{ApiError, ApiResult};
 use crate::AppState;
 use crate::models::Attachment;
@@ -47,15 +48,10 @@ pub async fn upload_attachment(State(state): State<AppState>, ctx: AuthCtx, Path
                 let file_extension = file_name.split('.').last().unwrap_or("bin");
                 let storage_name = format!("{}.{}", id, file_extension);
                 let storage_path = format!("{}/{}/{}", task.project_id, task.id, storage_name);
-                let full_path = format!("{}/{}", state.local_storage_dir, storage_path);
-                let parent = std::path::Path::new(&full_path).parent()
-                    .ok_or_else(|| "path build at upload_attachment")?;
-                
-                // Write file to disk
-                std::fs::create_dir_all(parent)
-                    .map_err(|e| format!("Failed to create directories for storage path: {}", e))?;
-                std::fs::write(&full_path, &data)
-                    .map_err(|e| format!("Failed to write file to storage: {}", e))?;
+
+                // Write to storage
+                state.storage.write_file(&storage_path, &data)
+                    .await.map_err(|e| format!("Failed to write file: {storage_path} to storage: {}", e))?;
 
                 // Insert into DB
                 let attachment = Attachment {
@@ -97,6 +93,7 @@ pub async fn get_attachment(State(state): State<AppState>, ctx: AuthCtx, Path(fi
 {
     let err_ctx = format!("get_attachment[path: {file_id}]");
     let result: Result<(axum::http::HeaderMap, Vec<u8>), String> = async {
+        // Get info about attachment, check in scope
         let file_id = Uuid::from_str(&file_id)
             .map_err(|e| format!("failed to get uuid: {e}"))?;
         let _proj_id = ensure_attachment_in_scope(&state.pool, ctx.user.id, ctx.workspace_id, file_id)
@@ -104,12 +101,12 @@ pub async fn get_attachment(State(state): State<AppState>, ctx: AuthCtx, Path(fi
         let attachment = db::get_attachment(&state.pool, file_id)
             .await.map_err(|e| format!("failed to get attachment info: {e}"))?;
 
-        let full_path = format!("{}/{}", state.local_storage_dir, attachment.storage_path);
-
-        let data = std::fs::read(&full_path)
-            .map_err(|e| format!("Failed to read file {}: {}", full_path, e))?;
+        // Read from storage
+        let data = state.storage.read_file(&attachment.storage_path)
+            .await.map_err(|e| format!("failed to read file: {} from storage: {e}", attachment.storage_path))?;
+        
+        // Prepare headers
         let mut headers = axum::http::HeaderMap::new();
-
         let content_type = HeaderValue::from_str(&attachment.content_type).map_err(|e| format!("content_type: {e}"))?;
         let content_length = HeaderValue::from_str(&attachment.size.to_string()).map_err(|e| format!("content_length: {e}"))?;
         headers.insert(axum::http::header::CONTENT_TYPE, content_type);
@@ -123,7 +120,7 @@ pub async fn get_attachment(State(state): State<AppState>, ctx: AuthCtx, Path(fi
 pub async fn delete_attachment(State(state): State<AppState>, ctx: AuthCtx, Path(file_id): Path<String>)
     -> ApiResult<()>
 {
-    let err_ctx = format!("delete_attachment [file_id: {file_id}");
+    let err_ctx = format!("delete_attachment [file_id: {file_id}]");
 
     let result: Result<(), String> = async {
         // Get info about attachment, check in scope
@@ -133,15 +130,10 @@ pub async fn delete_attachment(State(state): State<AppState>, ctx: AuthCtx, Path
             .await.map_err(|e| format!("check failed for attachment in scope access: {e}"))?;
         let attachment = db::get_attachment(&state.pool, file_id)
             .await.map_err(|e| format!("failed to get attachment info: {e}"))?;
-        let full_path = format!("{}/{}", state.local_storage_dir, attachment.storage_path);
 
         // Remove from storage
-        let file_exists = std::fs::exists(full_path.clone())
-            .map_err(|e| format!("failed to check for attachment before delete: {e}"))?;
-        if file_exists {
-            std::fs::remove_file(full_path)
-                .map_err(|e| format!("failed to remove attachment: {e}"))?;
-        }
+        state.storage.delete_file(&attachment.storage_path)
+            .await.map_err(|e| format!("failed to delete file: {} from storage: {e}", attachment.storage_path))?;
 
         // Remove from db
         let mut tx = state.pool.begin()
@@ -164,4 +156,30 @@ pub async fn delete_attachment(State(state): State<AppState>, ctx: AuthCtx, Path
     }.await;
 
     result.map_err(|e| ApiError::InternalServerError(format!("{err_ctx} error: {e}")))
+}
+
+pub async fn delete_task_attachments(tx: &mut Transaction<'_, Postgres>, storage: &StorageBackend, task_id: Uuid)
+    -> anyhow::Result<()>
+{
+    let err_ctx = format!("delete_all_attachments_for_task [task_id: {task_id}]");
+
+    let result: Result<(), String> = async {
+        // Get info about attachments
+        let attachments = db::list_attachments_for_task(&mut *tx, task_id)
+            .await.map_err(|e| format!("failed to get attachments info: {e}"))?;
+
+        // Remove from storage
+        for attachment in &attachments {
+            storage.delete_file(&attachment.storage_path)
+                .await.map_err(|e| format!("failed to delete file: {} from storage: {e}", attachment.storage_path))?;
+        }
+
+        // Remove from db
+        db::delete_attachments_for_task(&mut *tx, task_id)
+            .await.map_err(|e| format!("failed to remove attachments: {e}"))?;
+
+        Ok(())
+    }.await;
+
+    result.map_err(|e| anyhow::anyhow!("{err_ctx} error: {e}"))
 }

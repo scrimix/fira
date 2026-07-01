@@ -12,16 +12,7 @@ use tower_http::services::{ServeDir, ServeFile};
 use tower_http::trace::TraceLayer;
 
 use fira_api::{
-    auth::{self, AuthConfig, AuthCtx},
-    db, error,
-    error::ApiResult,
-    gcal, invites, links,
-    attachments,
-    load_bootstrap,
-    models::*,
-    ops, pubsub,
-    pubsub::Hub,
-    workspaces, ws, AppState, Bootstrap,
+    AppState, Bootstrap, attachments, auth::{self, AuthConfig, AuthCtx}, db, error::{self, ApiResult}, gcal, invites, links, load_bootstrap, models::*, ops, pubsub::{self, Hub}, storage, workspaces, ws,
 };
 
 async fn bootstrap(
@@ -451,8 +442,8 @@ async fn main() -> anyhow::Result<()> {
     }
     let hub = Hub::new();
     pubsub::start_listener_task(pool.clone(), hub.clone());
-    let local_storage_dir = std::env::var("LOCAL_STORAGE_DIR").unwrap_or_else(|_| "/workspace/storage".into());
-    let state = AppState { pool, auth: auth_cfg, hub, local_storage_dir };
+    let storage = storage::init_storage_from_env().await?;
+    let state = AppState { pool, auth: auth_cfg, hub, storage };
 
     // Same-origin in both dev (Vite proxy) and prod (api serves the SPA).
     // No CorsLayer needed; re-add scoped to the prod domain if a non-browser
