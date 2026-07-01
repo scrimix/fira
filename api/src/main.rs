@@ -1,9 +1,5 @@
 use axum::{
-    extract::{Path, State},
-    http::StatusCode,
-    response::Json,
-    routing::{delete, get, patch, post, put},
-    Router,
+    Router, extract::{DefaultBodyLimit, Path, State}, http::StatusCode, response::Json, routing::{delete, get, patch, post, put},
 };
 use serde::Deserialize;
 use sqlx::postgres::PgPoolOptions;
@@ -499,7 +495,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/changes", get(ops::get_changes))
         .route("/ws", get(ws::ws_handler))
         .route("/ws/user", get(ws::user_ws_handler))
-        .route("/attachments/upload/:task_id", post(attachments::upload_attachment))
+        .route("/attachments/upload/:task_id", post(attachments::upload_attachment)).layer(DefaultBodyLimit::max(10 * 1024 * 1024))
         .route("/attachments/:file_id", get(attachments::get_attachment).delete(attachments::delete_attachment));
 
     #[cfg(feature = "dev_auth")]
