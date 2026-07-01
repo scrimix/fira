@@ -5,7 +5,7 @@
 
 FROM mcr.microsoft.com/devcontainers/base:bookworm
 
-ARG RUST_VERSION=1.91.1
+ARG RUST_VERSION=1.96
 ARG NODE_VERSION=22
 
 ENV DEBIAN_FRONTEND=noninteractive \
