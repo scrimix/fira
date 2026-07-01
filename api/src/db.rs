@@ -559,8 +559,8 @@ pub async fn list_tasks_in_scope(pool: &PgPool, scope: &[Uuid]) -> sqlx::Result<
     let task_ids: Vec<Uuid> = tasks.iter().map(|t| t.id).collect();
     // Sequential, not `try_join!`: keep this to one pool connection at a
     // time so a bootstrap (which calls this) never fans out connections.
-    let (subs, tag_links): (Vec<Subtask>, Vec<(Uuid, Uuid)>) = if task_ids.is_empty() {
-        (vec![], vec![])
+    let (subs, tag_links, attachments): (Vec<Subtask>, Vec<(Uuid, Uuid)>, Vec<Attachment>) = if task_ids.is_empty() {
+        (vec![], vec![], vec![])
     } else {
         let subs: Vec<Subtask> = sqlx::query_as(
             "SELECT id, task_id, title, done, sort_key FROM subtasks
@@ -574,7 +574,12 @@ pub async fn list_tasks_in_scope(pool: &PgPool, scope: &[Uuid]) -> sqlx::Result<
                 .bind(&task_ids)
                 .fetch_all(pool)
                 .await?;
-        (subs, tag_links)
+        let attachments: Vec<Attachment> =
+            sqlx::query_as("SELECT id, task_id, filename, storage_path, content_type, size, created_at FROM attachments WHERE task_id = ANY($1)")
+            .bind(&task_ids)
+            .fetch_all(pool)
+            .await?;
+        (subs, tag_links, attachments)
     };
     let mut by_task: HashMap<Uuid, Vec<Subtask>> = HashMap::new();
     for s in subs {
@@ -584,6 +589,10 @@ pub async fn list_tasks_in_scope(pool: &PgPool, scope: &[Uuid]) -> sqlx::Result<
     for (task_id, tag_id) in tag_links {
         tags_by_task.entry(task_id).or_default().push(tag_id);
     }
+    let mut attachments_by_task: HashMap<Uuid, Vec<Attachment>> = HashMap::new();
+    for attachment in attachments {
+        attachments_by_task.entry(attachment.task_id).or_default().push(attachment);
+    }
     for t in &mut tasks {
         if let Some(s) = by_task.remove(&t.id) {
             t.subtasks = s;
@@ -591,8 +600,56 @@ pub async fn list_tasks_in_scope(pool: &PgPool, scope: &[Uuid]) -> sqlx::Result<
         if let Some(ts) = tags_by_task.remove(&t.id) {
             t.tag_ids = ts;
         }
+        if let Some(atts) = attachments_by_task.remove(&t.id) {
+            t.attachments = atts;
+        }
     }
     Ok(tasks)
+}
+
+pub async fn get_task(pool: &PgPool, task_id: Uuid) -> sqlx::Result<Option<Task>> {
+    let row: Option<Task> = sqlx::query_as(
+        "SELECT id, project_id, epic_id, sprint_id, assignee_id, title, description_md,
+                section, status, priority, source, external_id, external_url,
+                estimate_min, spent_min, sort_key, created_at, created_by, finished_at
+         FROM tasks WHERE id = $1",
+    )
+    .bind(task_id)
+    .fetch_optional(pool)
+    .await?;
+
+    if let Some(mut task) = row {
+        let subtasks: Vec<Subtask> = sqlx::query_as(
+            "SELECT id, task_id, title, done, sort_key FROM subtasks
+             WHERE task_id = $1 ORDER BY sort_key",
+        )
+        .bind(task.id)
+        .fetch_all(pool)
+        .await?;
+        task.subtasks = subtasks;
+
+        let tag_ids: Vec<Uuid> =
+            sqlx::query_as("SELECT tag_id FROM task_tags WHERE task_id = $1")
+                .bind(task.id)
+                .fetch_all(pool)
+                .await?
+                .into_iter()
+                .map(|(tag_id,)| tag_id)
+                .collect();
+        task.tag_ids = tag_ids;
+
+        let attachments: Vec<Attachment> = sqlx::query_as(
+            "SELECT id, task_id, filename, storage_path, content_type, size, created_at FROM attachments WHERE task_id = $1"
+        )
+            .bind(task.id)
+            .fetch_all(pool)
+            .await?;
+        task.attachments = attachments;
+
+        Ok(Some(task))
+    } else {
+        Ok(None)
+    }
 }
 
 pub async fn list_tags_in_scope(pool: &PgPool, scope: &[Uuid]) -> sqlx::Result<Vec<Tag>> {
@@ -1474,4 +1531,60 @@ pub async fn are_linked(pool: &PgPool, a: Uuid, b: Uuid) -> sqlx::Result<bool> {
     .fetch_optional(pool)
     .await?;
     Ok(row.is_some())
+}
+
+pub async fn insert_attachment(
+    tx: &mut Transaction<'_, Postgres>,
+    attachment: Attachment
+) -> sqlx::Result<()> {
+    sqlx::query(
+        "INSERT INTO attachments (id, task_id, filename, storage_path, content_type, size)
+            VALUES ($1,$2,$3,$4,$5,$6)
+            ON CONFLICT (id) DO NOTHING",
+    )
+    .bind(attachment.id)
+    .bind(attachment.task_id)
+    .bind(&attachment.filename)
+    .bind(attachment.storage_path)
+    .bind(&attachment.content_type)
+    .bind(&attachment.size)
+    .execute(&mut **tx).await?;
+
+    Ok(())
+}
+
+pub async fn get_attachment(pool: &PgPool, file_id: Uuid) -> sqlx::Result<Attachment> {
+    sqlx::query_as(
+        "SELECT id, task_id, filename, storage_path, content_type, size, created_at
+         FROM attachments WHERE id = $1",
+    )
+    .bind(file_id)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn delete_attachment(tx: &mut Transaction<'_, Postgres>, file_id: Uuid) -> sqlx::Result<bool> {
+    let res = sqlx::query("DELETE FROM attachments WHERE id = $1")
+    .bind(file_id)
+    .execute(&mut **tx)
+    .await?;
+    Ok(res.rows_affected() > 0)
+}
+
+pub async fn list_attachments_for_task(tx: &mut Transaction<'_, Postgres>, task_id: Uuid) -> sqlx::Result<Vec<Attachment>> {
+    sqlx::query_as(
+        "SELECT id, task_id, filename, storage_path, content_type, size, created_at
+         FROM attachments WHERE task_id = $1 ORDER BY created_at",
+    )
+    .bind(task_id)
+    .fetch_all(&mut **tx)
+    .await
+}
+
+pub async fn delete_attachments_for_task(tx: &mut Transaction<'_, Postgres>, task_id: Uuid) -> sqlx::Result<bool> {
+    let res = sqlx::query("DELETE FROM attachments WHERE task_id = $1")
+    .bind(task_id)
+    .execute(&mut **tx)
+    .await?;
+    Ok(res.rows_affected() > 0)
 }

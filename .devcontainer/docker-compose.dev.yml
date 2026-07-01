@@ -12,6 +12,8 @@ services:
     # VS Code attaches as `vscode` via remoteUser in devcontainer.json,
     # so the editor session and shells run as the unprivileged user.
     entrypoint: /workspace/.devcontainer/entrypoint.sh
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "5173:5173"
     volumes:
@@ -34,6 +36,15 @@ services:
       # blocks the post-create script. Suppressing it is safe here because
       # web/package.json pins packageManager to pnpm@9.15.0.
       COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+      DEV_AUTH: "1"
+      LOCAL_STORAGE_DIR: /workspace/storage
+      FIRA_REGION: local
+      FIRA_ENDPOINT_URL_S3: http://rustfs:9000
+      FIRA_ACCESS_KEY_ID: rustfsadmin
+      FIRA_SECRET_ACCESS_KEY: rustfsadmin
+      BUCKET_NAME: fira
+      STORAGE_PREFIX: FIRA
+      STORAGE_BACKEND: local
     depends_on:
       postgres:
         condition: service_healthy

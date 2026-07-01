@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
@@ -131,6 +131,8 @@ pub struct Task {
     /// `task_tags` join — the column doesn't exist on `tasks` itself.
     #[sqlx(skip)]
     pub tag_ids: Vec<Uuid>,
+    #[sqlx(skip)]
+    pub attachments: Vec<Attachment>
 }
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
@@ -159,6 +161,17 @@ pub struct TimeBlock {
     pub start_at: DateTime<Utc>,
     pub end_at: DateTime<Utc>,
     pub state: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, sqlx::FromRow, Clone)]
+pub struct Attachment {
+    pub id: Uuid,
+    pub task_id: Uuid,
+    pub filename: String,
+    pub storage_path: String,
+    pub content_type: String,
+    pub size: i64,
+    pub created_at: DateTime<Utc>
 }
 
 #[derive(Debug, Serialize, sqlx::FromRow)]

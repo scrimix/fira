@@ -1,4 +1,4 @@
-import type { AccountSummary, Bootstrap, LinkedCalendar, PersonalCalendar, User, UserLink, WorkCalendar, Workspace, WorkspaceInvite, WorkspaceRole } from './types';
+import type { AccountSummary, Attachment, Bootstrap, LinkedCalendar, PersonalCalendar, User, UserLink, UUID, WorkCalendar, Workspace, WorkspaceInvite, WorkspaceRole } from './types';
 
 // Always go through the Vite dev proxy at /api. The proxy target is
 // configured server-side in vite.config.ts (env: VITE_API_PROXY_TARGET),
@@ -20,19 +20,8 @@ export function setActiveWorkspaceId(id: string | null) {
   activeWorkspaceId = id;
 }
 
-async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const headers: Record<string, string> = {};
-  if (body !== undefined) headers['content-type'] = 'application/json';
-  if (activeWorkspaceId) headers['x-workspace-id'] = activeWorkspaceId;
-  const res = await fetch(`${BASE}${path}`, {
-    method,
-    credentials: 'same-origin',
-    headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
+async function parseJsonResponse<T>(res: Response): Promise<T> {
   if (!res.ok) {
-    // Server error envelope is `{ "error": "..." }`. Fall back to the raw
-    // text if it's not JSON, so dev/proxy errors aren't swallowed silently.
     let msg: string | undefined;
     try {
       const body = await res.text();
@@ -44,10 +33,83 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
         if (body.length > 0) msg = body;
       }
     } catch { /* body read failed; fall through to default message */ }
-    throw new HttpError(res.status, path, msg);
+    throw new HttpError(res.status, res.url, msg);
   }
-  if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
+}
+
+async function parseBlobResponse(res: Response): Promise<Blob> {
+  if (!res.ok) {
+    let msg: string | undefined;
+    try {
+      const body = await res.text();
+      try {
+        const parsed = JSON.parse(body) as { error?: unknown };
+        if (parsed && typeof parsed.error === 'string') msg = parsed.error;
+        else if (body.length > 0) msg = body;
+      } catch {
+        if (body.length > 0) msg = body;
+      }
+    } catch { /* body read failed; fall through to default message */ }
+    throw new HttpError(res.status, res.url, msg);
+  }
+  return res.blob() as Promise<Blob>;
+}
+
+async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const headers: Record<string, string> = {};
+  if (body !== undefined) headers['content-type'] = 'application/json';
+  if (activeWorkspaceId) headers['x-workspace-id'] = activeWorkspaceId;
+  const res = await fetch(`${BASE}${path}`, {
+    method,
+    credentials: 'same-origin',
+    headers,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+  return parseJsonResponse<T>(res);
+}
+
+async function uploadAttachment(file: File, task_id: UUID): Promise<{ attachment_id: UUID, storage_path: string }> {
+  const formData = new FormData();
+  formData.append('file', file);
+  
+  const headers: Record<string, string> = {};
+  if (activeWorkspaceId) headers['x-workspace-id'] = activeWorkspaceId;
+
+  const res = await fetch(`${BASE}/attachments/upload/${task_id}`, {
+    method: 'POST',
+    credentials: 'same-origin',
+    body: formData,
+    headers,
+  });
+
+  return parseJsonResponse<{ attachment_id: UUID, storage_path: string }>(res);
+}
+
+async function getAttachmentBlobUrl(attachment_id: UUID): Promise<string> {
+  const headers: Record<string, string> = {};
+  if (activeWorkspaceId) headers['x-workspace-id'] = activeWorkspaceId;
+
+  const res = await fetch(`${BASE}/attachments/${attachment_id}`, {
+    method: 'GET',
+    credentials: 'same-origin',
+    headers,
+  });
+
+  let blob = await parseBlobResponse(res);
+  let url = URL.createObjectURL(blob);
+  return url;
+}
+
+function triggerDownloadAttachment(attachment: Attachment, content: string) {
+  const link = document.createElement('a')
+  link.href = content;
+  link.download = attachment.filename;
+  document.body.appendChild(link);
+  link.click();
+
+  document.body.removeChild(link);
+  URL.revokeObjectURL(content);
 }
 
 export interface OpResult {
@@ -153,6 +215,12 @@ export const api = {
   patchMySettings: (patch: { account_badge?: 'personal' | 'work' | null }) =>
     req<import('./types').UserSettings>('PATCH', '/me/settings', patch),
   disconnectGcal: () => req<void>('POST', '/gcal/disconnect'),
+
+  uploadAttachment,
+  getAttachmentBlobUrl,
+  deleteAttachment: (attachment_id: string) =>
+    req<void>('DELETE', `/attachments/${attachment_id}`),
+  triggerDownloadAttachment,
 };
 
 // Server-driven; the browser navigates here so cookies and the OAuth redirect

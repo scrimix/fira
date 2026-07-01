@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, Copy, PanelRightClose, PanelRightOpen, Pencil, Plus, Trash2, X } from 'lucide-react';
+import { ArrowLeft, Check, Copy, Download, PanelRightClose, PanelRightOpen, Paperclip, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { useFira } from '../store';
 import { useIsMobile } from '../hooks';
 import { ConfirmDelete } from './ConfirmDelete';
@@ -9,7 +9,8 @@ import {
   taskCompletedMin, taskPlannedMin, taskTimeLeft,
   blockToGrid,
 } from '../time';
-import type { Section, Status, Tag, Task, User, UUID } from '../types';
+import type { Section, Status, Tag, Attachment, Task, User, UUID } from '../types';
+import { api } from '@/api';
 
 interface Props { taskId: string }
 
@@ -53,6 +54,12 @@ export function TaskModal({ taskId }: Props) {
       : !window.matchMedia('(max-width: 700px)').matches,
   );
 
+  const [attachmentPreview, setAttachmentPreview] = useState<{a: Attachment, content: string} | null>(null);
+  const getAttachment = useFira((s) => s.getAttachment);
+  const [attachmentForDelete, setDeleteAttachment] = useState<Attachment | null>(null);
+  const deleteAttachment = useFira((s) => s.deleteAttachment);
+  const pollChanges = useFira((s) => s.pollChanges);
+
   const isMobile = useIsMobile();
 
   if (!task || !project) return null;
@@ -85,6 +92,8 @@ export function TaskModal({ taskId }: Props) {
   // releases outside (text selection that overshoots) would otherwise
   // synthesize a click on the backdrop and dismiss the modal.
   const downOnBackdropRef = useRef(false);
+  const previewContentType = attachmentPreview?.a?.content_type ?? '';
+  const isImagePreview = previewContentType.startsWith('image/');
   return (
     <div
       className="modal-backdrop"
@@ -96,7 +105,7 @@ export function TaskModal({ taskId }: Props) {
       }}
     >
       <div className="modal" onClick={(e) => e.stopPropagation()}
-           style={{ ['--proj-color' as string]: project.color }}>
+          style={{ display: attachmentPreview == null ? 'block' : 'none', ['--proj-color' as string]: project.color }}>
         <div className="modal-head">
           <span style={{ width: 10, height: 10, background: project.color, display: 'inline-block' }} />
           <span className="ext">{project.title}</span>
@@ -125,9 +134,7 @@ export function TaskModal({ taskId }: Props) {
         </div>
         <div className="modal-body" data-side={sideOpen ? 'open' : 'closed'}>
           <div className="modal-main">
-            <TitleEditor key={task.id} value={task.title}
-                         onSave={(v) => setTaskTitle(task.id, v)} />
-
+            <TitleEditor key={task.id} value={task.title} onSave={(v) => setTaskTitle(task.id, v)} />
             {task.estimate_min != null && (
               <>
                 <div className="est-bar">
@@ -177,6 +184,23 @@ export function TaskModal({ taskId }: Props) {
               onDelete={(sid) => deleteSubtask(task.id, sid)}
               onReorder={(ids) => reorderSubtasks(task.id, ids)}
               onAdd={(title, afterId) => addSubtask(task.id, title, afterId)}
+            />
+
+            <SectionHeading
+              title="Attachments"
+              trailing={AddAttachmentButton({task})}
+            />
+            <AttachmentList
+              attachments={task.attachments}
+              onDownload={async (attachment) => {
+                let content = await api.getAttachmentBlobUrl(attachment.id);
+                api.triggerDownloadAttachment(attachment, content);
+              }}
+              onDelete={(attachment) => setDeleteAttachment(attachment)}
+              onPreview={async (attachment) => {
+                const dataUrl = await getAttachment(attachment.id);
+                setAttachmentPreview({a: attachment, content: dataUrl})
+              }}
             />
 
             <SectionHeading
@@ -270,7 +294,7 @@ export function TaskModal({ taskId }: Props) {
             </div>
             <Field label="Time left" mono value={left != null ? fmtMin(left) : '—'} />
             {/* On mobile the side pane is closed by default, so the Tags
-             * editor renders in the main pane instead — see below. */}
+            * editor renders in the main pane instead — see below. */}
             {!isMobile && (
               <div className="field">
                 <h5>Tags</h5>
@@ -322,6 +346,59 @@ export function TaskModal({ taskId }: Props) {
             }}
           />
         )}
+      </div>
+      <div>
+        {attachmentForDelete && (
+          <ConfirmDelete
+            title="Delete attachment?"
+            body={
+              <p>
+                <strong>{attachmentForDelete.filename}</strong> the file will be removed from storage and from task.
+              </p>
+            }
+            onCancel={() => setDeleteAttachment(null)}
+            onConfirm={async () => {
+              setDeleteAttachment(null);
+              await deleteAttachment(attachmentForDelete.id);
+              await pollChanges();
+            }}
+          />
+        )}
+      </div>
+      <div
+        className="modal attachment-preview-modal"
+        style={{ display: attachmentPreview ? 'flex' : 'none' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="modal-head">
+          <span style={{ width: 10, height: 10, background: project.color, display: 'inline-block' }} />
+          <span className="ext">{project.title} / {task.title} / {attachmentPreview?.a?.filename}</span>
+          <span className="grow" />
+          <button className="icon-btn" title="Close (Esc)" aria-label="Close" onClick={() => {
+            const content = attachmentPreview?.content;
+            if (content) {
+              URL.revokeObjectURL(content);
+            }
+            setAttachmentPreview(null);
+          }}>
+            <ArrowLeft size={15} strokeWidth={1.75} />
+          </button>
+        </div>
+        <div className="attachment-preview-body">
+          {isImagePreview ? (
+            <img
+              src={attachmentPreview?.content}
+              alt={attachmentPreview?.a?.filename ?? 'Attachment preview'}
+              className="attachment-preview-asset attachment-preview-image"
+            />
+          ) : (
+            <embed
+              src={attachmentPreview?.content}
+              title={attachmentPreview?.a?.filename ?? 'Attachment preview'}
+              className="attachment-preview-asset attachment-preview-iframe"
+            />
+          )}
+        </div>
       </div>
     </div>
   );
@@ -687,6 +764,63 @@ function CopyMarkdownButton({ task }: { task: Task }) {
     >
       {copied ? <Check size={13} strokeWidth={2} /> : <Copy size={12} strokeWidth={1.5} />}
     </button>
+  );
+}
+
+function AddAttachmentButton({ task }: { task: Task }) {
+  const addAttachment = useFira((s) => s.addAttachment);
+  const onInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0)
+      return;
+    const file = files[0];
+    addAttachment(task.id, file);
+  }
+  return (
+    <label className="task-attachment-label" title="Add attachment">
+      <Paperclip size={13} strokeWidth={2} />
+    <input
+      id="task-attachment-input"
+      type="file"
+      accept="image/*,video/*,.pdf,.txt,.zip,.tar,.md,.log,.csv,.json,.xml,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
+      style={{ display: 'none' }}
+      onChange={onInput}
+     />
+    </label>
+  )
+}
+
+function AttachmentList({ attachments, onDownload, onDelete, onPreview }: 
+  { attachments: Array<Attachment>;
+    onDownload: (attachment: Attachment) => void,
+    onDelete: (attachment: Attachment) => void,
+    onPreview: (attachment: Attachment) => void }) {
+  return (
+    <div>
+      {attachments.length === 0 ? (
+        <span></span>
+      ) : attachments.map((a) => (
+        <AttachmentRow key={a.id} attachment={a}
+          onDownload={() => onDownload(a)} onPreview={() => onPreview(a)} onDelete={() => onDelete(a)} />
+      ))}
+    </div>
+  );
+}
+
+function AttachmentRow({ attachment, onDownload, onPreview, onDelete }:
+  { attachment: Attachment; onDownload: () => void; onPreview: () => void; onDelete: () => void }) {
+  return (
+    <div className="attachment-item">
+      <span className="attachment-item-text" onClick={onPreview}>
+        {attachment.filename}
+      </span>
+      <button className="attachment-item-btn" onClick={onDownload} title="Download">
+        <Download size={13} strokeWidth={1.75} />
+      </button>
+      <button className="attachment-item-btn" onClick={onDelete} title="Remove">
+        <X size={14} strokeWidth={1.75} />
+      </button>
+    </div>
   );
 }
 

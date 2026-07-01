@@ -15,8 +15,23 @@ services:
       timeout: 3s
       retries: 20
 
+  rustfs:
+    image: rustfs/rustfs:latest
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - rustfs-data:/data
+      - rustfs-logs:/logs
+    environment:
+      RUSTFS_NOTIFY_ENABLE: "false"
+      RUSTFS_CONSOLE_ENABLE: "true"
+    restart: unless-stopped
+
 volumes:
   pgdata:
   cargo-cache:
   cargo-target:
   web-node-modules:
+  rustfs-data:
+  rustfs-logs:

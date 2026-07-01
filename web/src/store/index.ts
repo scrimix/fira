@@ -383,6 +383,9 @@ interface FiraState {
   updateBlock: (blockId: UUID, patch: Partial<TimeBlock>) => void;
   duplicateBlock: (blockId: UUID) => UUID | null;
   deleteBlock: (blockId: UUID) => void;
+  addAttachment: (taskId: UUID, file: File) => Promise<UUID | null>;
+  getAttachment: (attachment_id: UUID) => Promise<string>;
+  deleteAttachment: (attachment_id: UUID) => Promise<void>;
 }
 
 // Compute a sort_key strictly between `a` and `b` (or strictly past
@@ -491,6 +494,7 @@ function normalizeTask(t: Task): Task {
     created_by: t.created_by ?? null,
     finished_at: t.finished_at ?? null,
     subtasks: (t.subtasks ?? []).map(normalizeSubtask),
+    attachments: t.attachments ?? [],
   };
 }
 
@@ -649,6 +653,14 @@ function applyOpToState(s: FiraState, op: AnyOpKind): Partial<FiraState> {
       return {
         tasks: s.tasks.map((t) => t.id === op.task_id ? { ...t, tag_ids: op.tag_ids } : t),
       };
+    case 'task.add_attachment':
+      return {
+        tasks: s.tasks.map((t) => t.id === op.task_id ? { ...t, attachments: [...(t.attachments ?? []), op.attachment] } : t)
+      };
+    case 'task.remove_attachment':
+      return {
+        tasks: s.tasks.map((t) => t.id === op.task_id ? { ...t, attachments: t.attachments.filter((a) => a.id != op.attachment.id)} : t)
+      }
     case 'project.create': {
       if (s.projects.some((p) => p.id === op.project.id)) return {};
       return {
@@ -807,7 +819,7 @@ function applyBootstrap(
     projects: data.projects,
     epics: data.epics,
     sprints: data.sprints,
-    tasks: data.tasks,
+    tasks: data.tasks.map(normalizeTask),
     tags: data.tags ?? [],
     blocks: data.blocks,
     gcal: data.gcal,
@@ -905,7 +917,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     project_id: null,
     epic_id: null,
     sprint_id: 'active',
-    status: 'open',
+    status: 'open' as const,
     assignee_id: null,
     assignee_scope: 'all',
     tag_ids: [],
@@ -1025,7 +1037,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
         projects: data.projects,
         epics: data.epics,
         sprints: data.sprints,
-        tasks: data.tasks,
+        tasks: data.tasks.map(normalizeTask),
         tags: data.tags ?? [],
         blocks: data.blocks,
         gcal: data.gcal,
@@ -1873,6 +1885,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
       created_by: state.meId,
       finished_at: section === 'done' ? new Date().toISOString() : null,
       subtasks: [],
+      attachments: [],
     };
     set((s) => ({
       tasks: [...s.tasks, newTask],
@@ -1915,6 +1928,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
       created_by: state.meId,
       finished_at: after.section === 'done' ? new Date().toISOString() : null,
       subtasks: [],
+      attachments: [],
     };
     set((s) => ({
       tasks: [...s.tasks, newTask],
@@ -2301,6 +2315,21 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     blocks: s.blocks.filter((b) => b.id !== blockId),
     ...pushOp(s, { kind: 'block.delete', block_id: blockId }),
   })),
+
+  addAttachment: async (taskId, file) => {
+    const { attachment_id } = await api.uploadAttachment(file, taskId);
+    return attachment_id;
+  },
+
+  getAttachment: async (attachment_id) => {
+    const url = await api.getAttachmentBlobUrl(attachment_id);
+    return url;
+  },
+
+  deleteAttachment: async (attachment_id) => {
+    await api.deleteAttachment(attachment_id); 
+  }
+
 }), {
   name: 'fira:store-v1',
   storage: createJSONStorage(() => localStorage, { replacer, reviver }),

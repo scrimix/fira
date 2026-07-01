@@ -26,3 +26,5 @@ api/.sqlx/
 
 *.tsbuildinfo
 loadtest/
+
+storage/

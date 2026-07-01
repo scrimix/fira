@@ -17,6 +17,14 @@ path = "src/bin/seed.rs"
 name = "dump-bootstrap"
 path = "src/bin/dump_bootstrap.rs"
 
+[[bin]]
+name = "aws_s3_example"
+path = "src/bin/aws_s3_example.rs"
+
+[[bin]]
+name = "storage_test"
+path = "src/bin/storage_test.rs"
+
 [features]
 default = ["dev_auth"]
 # Enables the dev-only auth endpoints (`/auth/dev-login`, `/auth/dev-seed`)
@@ -24,7 +32,7 @@ default = ["dev_auth"]
 dev_auth = []
 
 [dependencies]
-axum = { version = "0.7", features = ["ws"] }
+axum = { version = "0.7", features = ["ws", "multipart", "macros"] }
 axum-extra = { version = "0.9", features = ["cookie"] }
 futures-util = "0.3"
 tokio = { version = "1", features = ["full"] }
@@ -46,3 +54,6 @@ rand = "0.8"
 base64 = "0.22"
 time = "0.3"
 cookie = "0.18"
+aws-config = "1"
+aws-sdk-s3 = "1"
+aws-types = "1"

@@ -86,6 +86,16 @@ export interface Subtask {
   sort_key: string;
 }
 
+export interface Attachment {
+  id: UUID;
+  task_id: UUID;
+  filename: string;
+  storage_path: string;
+  content_type: string;
+  size_bytes: number;
+  created_at: string;
+}
+
 export interface Task {
   id: UUID;
   project_id: UUID;
@@ -120,6 +130,7 @@ export interface Task {
   /// when null.
   finished_at: string | null;
   subtasks: Subtask[];
+  attachments: Attachment[];
 }
 
 export interface Tag {

@@ -24,9 +24,10 @@ use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
-use crate::auth::AuthCtx;
+use crate::{attachments::delete_task_attachments, auth::AuthCtx, storage::StorageBackend};
 use crate::error::ApiResult;
 use crate::AppState;
+use crate::ensure_scope::*;
 
 #[derive(Debug, Deserialize)]
 pub struct OpEnvelope {
@@ -204,7 +205,7 @@ pub async fn post_ops(
 ) -> Result<(StatusCode, Json<OpsResponse>), StatusCode> {
     let mut results = Vec::with_capacity(req.ops.len());
     for env in req.ops {
-        let res = apply_one(&s.pool, ctx.user.id, ctx.workspace_id, env).await;
+        let res = apply_one(&s.pool, ctx.user.id, ctx.workspace_id, env, &s.storage).await;
         results.push(match res {
             Ok((op_id, _outcome)) => OpResult { op_id, status: "ok", error: None },
             Err((op_id, e)) => {
@@ -256,6 +257,7 @@ async fn apply_one(
     user_id: Uuid,
     workspace_id: Uuid,
     env: OpEnvelope,
+    storage: &StorageBackend
 ) -> Result<(String, ApplyOutcome), (String, anyhow::Error)> {
     let op_id = env.op_id.clone();
     let payload_value = env.payload.clone();
@@ -271,7 +273,7 @@ async fn apply_one(
         // Apply the mutation, capturing project_id along the way so we can
         // scope log delivery later. apply_payload returns Err on auth failure.
         let mut project_id: Option<Uuid> = None;
-        apply_payload(&mut tx, user_id, workspace_id, op, &mut project_id).await?;
+        apply_payload(&mut tx, user_id, workspace_id, op, &mut project_id, storage).await?;
 
         // Log + idempotency: PK conflict on op_id means a concurrent retry
         // of the same op_id won. Roll back so we don't double-apply.
@@ -319,6 +321,7 @@ async fn apply_payload(
     workspace_id: Uuid,
     payload: Op,
     out_project_id: &mut Option<Uuid>,
+    storage: &StorageBackend,
 ) -> anyhow::Result<()> {
     match payload {
         Op::TaskCreate { task } => {
@@ -455,6 +458,7 @@ async fn apply_payload(
         }
         Op::TaskDelete { task_id } => {
             *out_project_id = Some(ensure_task_in_scope(tx, user_id, workspace_id, task_id).await?);
+            delete_task_attachments(tx, storage, task_id).await?;
             // subtasks + time_blocks cascade via FK ON DELETE CASCADE.
             sqlx::query("DELETE FROM tasks WHERE id = $1")
                 .bind(task_id).execute(&mut **tx).await?;
@@ -755,154 +759,3 @@ pub async fn record_workspace_op(
         .await?;
     Ok(())
 }
-
-// --- authorization helpers ---
-
-// Auth predicate: caller owns the project, is an explicit member, OR is an
-// owner/lead of the project's workspace. The workspace_id parameter scopes
-// the check so an `X-Workspace-Id` header can't be paired with a project_id
-// from a different workspace — the project row's workspace_id must match.
-async fn require_project_access(
-    tx: &mut Transaction<'_, Postgres>,
-    user_id: Uuid,
-    workspace_id: Uuid,
-    project_id: Uuid,
-) -> anyhow::Result<()> {
-    let row: Option<(Uuid,)> = sqlx::query_as(
-        "SELECT id FROM projects p
-         WHERE id = $1 AND p.workspace_id = $3
-           AND (
-             p.owner_id = $2
-             OR p.id IN (SELECT project_id FROM project_members WHERE user_id = $2 AND removed_at IS NULL)
-             OR EXISTS (
-               SELECT 1 FROM workspace_members wm
-               WHERE wm.workspace_id = $3 AND wm.user_id = $2
-                 AND wm.removed_at IS NULL AND wm.role = 'owner'
-             )
-           )",
-    )
-    .bind(project_id)
-    .bind(user_id)
-    .bind(workspace_id)
-    .fetch_optional(&mut **tx)
-    .await?;
-    if row.is_none() {
-        anyhow::bail!("project not in scope");
-    }
-    Ok(())
-}
-
-async fn ensure_task_in_scope(
-    tx: &mut Transaction<'_, Postgres>,
-    user_id: Uuid,
-    workspace_id: Uuid,
-    task_id: Uuid,
-) -> anyhow::Result<Uuid> {
-    let row: Option<(Uuid,)> = sqlx::query_as(
-        "SELECT t.project_id FROM tasks t
-         JOIN projects p ON p.id = t.project_id
-         WHERE t.id = $1 AND p.workspace_id = $3
-           AND (
-             p.owner_id = $2
-             OR p.id IN (SELECT project_id FROM project_members WHERE user_id = $2 AND removed_at IS NULL)
-             OR EXISTS (
-               SELECT 1 FROM workspace_members wm
-               WHERE wm.workspace_id = $3 AND wm.user_id = $2
-                 AND wm.removed_at IS NULL AND wm.role = 'owner'
-             )
-           )",
-    )
-    .bind(task_id)
-    .bind(user_id)
-    .bind(workspace_id)
-    .fetch_optional(&mut **tx)
-    .await?;
-    row.map(|(p,)| p).ok_or_else(|| anyhow::anyhow!("task not in scope"))
-}
-
-async fn ensure_subtask_in_scope(
-    tx: &mut Transaction<'_, Postgres>,
-    user_id: Uuid,
-    workspace_id: Uuid,
-    subtask_id: Uuid,
-) -> anyhow::Result<Uuid> {
-    let row: Option<(Uuid,)> = sqlx::query_as(
-        "SELECT t.project_id FROM subtasks s
-         JOIN tasks t ON t.id = s.task_id
-         JOIN projects p ON p.id = t.project_id
-         WHERE s.id = $1 AND p.workspace_id = $3
-           AND (
-             p.owner_id = $2
-             OR p.id IN (SELECT project_id FROM project_members WHERE user_id = $2 AND removed_at IS NULL)
-             OR EXISTS (
-               SELECT 1 FROM workspace_members wm
-               WHERE wm.workspace_id = $3 AND wm.user_id = $2
-                 AND wm.removed_at IS NULL AND wm.role = 'owner'
-             )
-           )",
-    )
-    .bind(subtask_id)
-    .bind(user_id)
-    .bind(workspace_id)
-    .fetch_optional(&mut **tx)
-    .await?;
-    row.map(|(p,)| p).ok_or_else(|| anyhow::anyhow!("subtask not in scope"))
-}
-
-async fn ensure_tag_in_scope(
-    tx: &mut Transaction<'_, Postgres>,
-    user_id: Uuid,
-    workspace_id: Uuid,
-    tag_id: Uuid,
-) -> anyhow::Result<Uuid> {
-    let row: Option<(Uuid,)> = sqlx::query_as(
-        "SELECT t.project_id FROM tags t
-         JOIN projects p ON p.id = t.project_id
-         WHERE t.id = $1 AND p.workspace_id = $3
-           AND (
-             p.owner_id = $2
-             OR p.id IN (SELECT project_id FROM project_members WHERE user_id = $2 AND removed_at IS NULL)
-             OR EXISTS (
-               SELECT 1 FROM workspace_members wm
-               WHERE wm.workspace_id = $3 AND wm.user_id = $2
-                 AND wm.removed_at IS NULL AND wm.role = 'owner'
-             )
-           )",
-    )
-    .bind(tag_id)
-    .bind(user_id)
-    .bind(workspace_id)
-    .fetch_optional(&mut **tx)
-    .await?;
-    row.map(|(p,)| p).ok_or_else(|| anyhow::anyhow!("tag not in scope"))
-}
-
-async fn ensure_block_in_scope(
-    tx: &mut Transaction<'_, Postgres>,
-    user_id: Uuid,
-    workspace_id: Uuid,
-    block_id: Uuid,
-) -> anyhow::Result<Uuid> {
-    let row: Option<(Uuid,)> = sqlx::query_as(
-        "SELECT t.project_id FROM time_blocks b
-         JOIN tasks t ON t.id = b.task_id
-         JOIN projects p ON p.id = t.project_id
-         WHERE b.id = $1 AND p.workspace_id = $3
-           AND (
-             p.owner_id = $2
-             OR p.id IN (SELECT project_id FROM project_members WHERE user_id = $2 AND removed_at IS NULL)
-             OR EXISTS (
-               SELECT 1 FROM workspace_members wm
-               WHERE wm.workspace_id = $3 AND wm.user_id = $2
-                 AND wm.removed_at IS NULL AND wm.role = 'owner'
-             )
-           )",
-    )
-    .bind(block_id)
-    .bind(user_id)
-    .bind(workspace_id)
-    .fetch_optional(&mut **tx)
-    .await?;
-    row.map(|(p,)| p).ok_or_else(|| anyhow::anyhow!("block not in scope"))
-}
-
