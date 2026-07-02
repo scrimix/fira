@@ -1284,7 +1284,9 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
 }
 .desc-md[data-empty="true"] { color: var(--ink-4); }
 .desc-md.desc-md-edit {
-  font-family: inherit;
+  font-family: var(--font-mono);
+  font-size: calc(11px * var(--fs-scale));
+  line-height: 1.45;
   width: 100%;
   box-sizing: border-box;
   white-space: pre-wrap;
