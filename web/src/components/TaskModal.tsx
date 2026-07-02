@@ -148,7 +148,7 @@ export function TaskModal({ taskId }: Props) {
       }}
     >
       <div className="modal" onClick={(e) => e.stopPropagation()}
-          style={{ display: attachmentPreview == null ? 'block' : 'none', ['--proj-color' as string]: project.color }}>
+          style={{ display: attachmentPreview == null ? 'flex' : 'none', ['--proj-color' as string]: project.color }}>
         <div className="modal-head">
           <span style={{ width: 10, height: 10, background: project.color, display: 'inline-block' }} />
           <span className="ext">{project.title}</span>
