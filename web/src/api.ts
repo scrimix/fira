@@ -119,6 +119,13 @@ function triggerDownloadAttachment(attachment: Attachment, content: string) {
   URL.revokeObjectURL(content);
 }
 
+function getAttachmentUrl(attachment_id: UUID): string {
+  const params = new URLSearchParams();
+  if (activeWorkspaceId) params.append('workspace_id', activeWorkspaceId);
+  const query = params.toString();
+  return `/api/attachments/${attachment_id}${query ? '?' + query : ''}`;
+}
+
 export interface OpResult {
   op_id: string;
   status: 'ok' | 'error';
@@ -225,6 +232,7 @@ export const api = {
 
   uploadAttachment,
   getAttachmentBlobUrl,
+  getAttachmentUrl,
   deleteAttachment: (attachment_id: string) =>
     req<void>('DELETE', `/attachments/${attachment_id}`),
   triggerDownloadAttachment,

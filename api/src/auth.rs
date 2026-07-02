@@ -154,12 +154,24 @@ where
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
         let user = AuthUser::from_request_parts(parts, state).await?;
         let app_state = AppState::from_ref(state);
-        let header = parts
+        
+        // Try header first, then fall back to query parameter
+        let workspace_id_str = parts
             .headers
             .get(WORKSPACE_HEADER)
             .and_then(|h| h.to_str().ok())
-            .ok_or_else(|| forbidden("workspace header required"))?;
-        let workspace_id: Uuid = header
+            .map(|s| s.to_string())
+            .or_else(|| {
+                // Extract workspace_id from query parameters as fallback
+                parts.uri.query().and_then(|q| {
+                    url::form_urlencoded::parse(q.as_bytes())
+                        .find(|(k, _)| k == "workspace_id")
+                        .map(|(_, v)| v.to_string())
+                })
+            })
+            .ok_or_else(|| forbidden("workspace header or workspace_id query param required"))?;
+        
+        let workspace_id: Uuid = workspace_id_str
             .parse()
             .map_err(|_| forbidden("invalid workspace id"))?;
         // Same posture as session lookup: a DB error here is transient

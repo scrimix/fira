@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
-import { ArrowLeft, Check, Copy, Download, PanelRightClose, PanelRightOpen, Paperclip, Pencil, Plus, Trash2, X } from 'lucide-react';
+import { ArrowLeft, Check, Copy, Download, Link, PanelRightClose, PanelRightOpen, Paperclip, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { useFira } from '../store';
 import { useIsMobile } from '../hooks';
 import { ConfirmDelete } from './ConfirmDelete';
@@ -239,6 +239,10 @@ export function TaskModal({ taskId }: Props) {
               onDownload={async (attachment) => {
                 let content = await api.getAttachmentBlobUrl(attachment.id);
                 api.triggerDownloadAttachment(attachment, content);
+              }}
+              onCopyLink={(attachment) => {
+                const url = api.getAttachmentUrl(attachment.id);
+                navigator.clipboard.writeText(url);
               }}
               onDelete={(attachment) => setDeleteAttachment(attachment)}
               onPreview={async (attachment) => {
@@ -924,9 +928,10 @@ function AddAttachmentButton({ task, setError }: { task: Task, setError: (err: s
   );
 }
 
-function AttachmentList({ attachments, onDownload, onDelete, onPreview, error }: 
+function AttachmentList({ attachments, onDownload, onCopyLink, onDelete, onPreview, error }: 
   { attachments: Array<Attachment>;
     onDownload: (attachment: Attachment) => void,
+    onCopyLink: (attachment: Attachment) => void,
     onDelete: (attachment: Attachment) => void,
     onPreview: (attachment: Attachment) => void,
     error: string | null }) {
@@ -936,15 +941,15 @@ function AttachmentList({ attachments, onDownload, onDelete, onPreview, error }:
         <span></span>
       ) : attachments.map((a) => (
         <AttachmentRow key={a.id} attachment={a}
-          onDownload={() => onDownload(a)} onPreview={() => onPreview(a)} onDelete={() => onDelete(a)} />
+          onDownload={() => onDownload(a)} onCopyLink={() => onCopyLink(a)} onPreview={() => onPreview(a)} onDelete={() => onDelete(a)} />
       ))}
       {error && <span className="task-attachment-error">{error}</span>}
     </div>
   );
 }
 
-function AttachmentRow({ attachment, onDownload, onPreview, onDelete }:
-  { attachment: Attachment; onDownload: () => void; onPreview: () => void; onDelete: () => void }) {
+function AttachmentRow({ attachment, onDownload, onCopyLink, onPreview, onDelete }:
+  { attachment: Attachment; onDownload: () => void; onCopyLink: () => void; onPreview: () => void; onDelete: () => void }) {
   return (
     <div className="attachment-item">
       <span className="attachment-item-text" onClick={onPreview}>
@@ -952,6 +957,9 @@ function AttachmentRow({ attachment, onDownload, onPreview, onDelete }:
       </span>
       <button className="attachment-item-btn" onClick={onDownload} title="Download">
         <Download size={13} strokeWidth={1.75} />
+      </button>
+      <button className="attachment-item-btn" onClick={onCopyLink} title="Copy link">
+        <Link size={13} strokeWidth={1.75} />
       </button>
       <button className="attachment-item-btn" onClick={onDelete} title="Remove">
         <X size={14} strokeWidth={1.75} />
