@@ -113,7 +113,10 @@ async fn main() -> anyhow::Result<()> {
     // Discover the load-test sessions straight from the seeded DB — the
     // single source of truth. There is no map file to drift out of sync
     // with what stress_seed actually wrote.
-    let db_url = env_str("LOAD_DB_URL", "postgres://fira:fira@postgres:5432/fira_stress");
+    let db_url = env_str(
+        "LOAD_DB_URL",
+        "postgres://fira:fira@postgres:5432/fira_stress",
+    );
     let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(4)
         .connect(&db_url)
@@ -450,7 +453,9 @@ fn hydrate(st: &mut UserState, d: &Value) {
         for t in arr {
             let (Some(id), Some(pid)) = (
                 t["id"].as_str().and_then(|s| s.parse::<Uuid>().ok()),
-                t["project_id"].as_str().and_then(|s| s.parse::<Uuid>().ok()),
+                t["project_id"]
+                    .as_str()
+                    .and_then(|s| s.parse::<Uuid>().ok()),
             ) else {
                 continue;
             };
@@ -467,7 +472,9 @@ fn hydrate(st: &mut UserState, d: &Value) {
         for t in arr {
             let (Some(id), Some(pid)) = (
                 t["id"].as_str().and_then(|s| s.parse::<Uuid>().ok()),
-                t["project_id"].as_str().and_then(|s| s.parse::<Uuid>().ok()),
+                t["project_id"]
+                    .as_str()
+                    .and_then(|s| s.parse::<Uuid>().ok()),
             ) else {
                 continue;
             };
@@ -537,11 +544,7 @@ async fn post_op(
             // 200 — but a per-op rejection still counts as an error.
             let op_ok = bytes
                 .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
-                .and_then(|v| {
-                    v["results"][0]["status"]
-                        .as_str()
-                        .map(|s| s == "ok")
-                })
+                .and_then(|v| v["results"][0]["status"].as_str().map(|s| s == "ok"))
                 .unwrap_or(false);
             (ms, if op_ok { Outcome::Ok } else { Outcome::Err })
         }

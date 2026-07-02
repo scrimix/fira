@@ -1,5 +1,9 @@
 use axum::{
-    Router, extract::{DefaultBodyLimit, Path, State}, http::StatusCode, response::Json, routing::{delete, get, patch, post, put},
+    extract::{DefaultBodyLimit, Path, State},
+    http::StatusCode,
+    response::Json,
+    routing::{delete, get, patch, post, put},
+    Router,
 };
 use serde::Deserialize;
 use sqlx::postgres::PgPoolOptions;
@@ -8,13 +12,18 @@ use tower_http::services::{ServeDir, ServeFile};
 use tower_http::trace::TraceLayer;
 
 use fira_api::{
-    AppState, Bootstrap, attachments, auth::{self, AuthConfig, AuthCtx}, db, error::{self, ApiResult}, gcal, invites, links, load_bootstrap, models::*, ops, pubsub::{self, Hub}, storage, workspaces, ws,
+    attachments,
+    auth::{self, AuthConfig, AuthCtx},
+    db,
+    error::{self, ApiResult},
+    gcal, invites, links, load_bootstrap,
+    models::*,
+    ops,
+    pubsub::{self, Hub},
+    storage, workspaces, ws, AppState, Bootstrap,
 };
 
-async fn bootstrap(
-    State(s): State<AppState>,
-    ctx: AuthCtx,
-) -> ApiResult<Json<Bootstrap>> {
+async fn bootstrap(State(s): State<AppState>, ctx: AuthCtx) -> ApiResult<Json<Bootstrap>> {
     // Fire-and-forget gcal sync: returns the cached event set
     // immediately, lets the next rehydrate / changes tick pick up the
     // refreshed rows. Keeps Google's API latency / availability off
@@ -34,10 +43,7 @@ async fn bootstrap(
     Ok(Json(data))
 }
 
-async fn projects(
-    State(s): State<AppState>,
-    ctx: AuthCtx,
-) -> ApiResult<Json<Vec<Project>>> {
+async fn projects(State(s): State<AppState>, ctx: AuthCtx) -> ApiResult<Json<Vec<Project>>> {
     let scope = db::project_scope(&s.pool, ctx.user.id, ctx.workspace_id).await?;
     Ok(Json(db::list_projects_in_scope(&s.pool, &scope).await?))
 }
@@ -58,7 +64,9 @@ struct PatchSettings {
 // Option<String> collapses both to None. This pattern is from serde's
 // own docs.
 fn deserialize_some<'de, T, D>(d: D) -> Result<Option<T>, D::Error>
-where T: serde::Deserialize<'de>, D: serde::Deserializer<'de>,
+where
+    T: serde::Deserialize<'de>,
+    D: serde::Deserializer<'de>,
 {
     serde::Deserialize::deserialize(d).map(Some)
 }
@@ -107,17 +115,31 @@ async fn create_project(
     let title = body.title.trim();
     validate_title(title)?;
     if !is_hex_color(&body.color) {
-        return Err(error::ApiError::BadRequest("color must be a hex string".into()));
+        return Err(error::ApiError::BadRequest(
+            "color must be a hex string".into(),
+        ));
     }
     validate_icon(&body.icon)?;
     let mut tx = s.pool.begin().await?;
     let project = db::create_project_tx(
-        &mut tx, ctx.workspace_id, ctx.user.id, title, &body.icon, &body.color,
-    ).await?;
+        &mut tx,
+        ctx.workspace_id,
+        ctx.user.id,
+        title,
+        &body.icon,
+        &body.color,
+    )
+    .await?;
     let payload = serde_json::json!({ "kind": "project.create", "project": &project });
     ops::record_synthesized_op(
-        &mut tx, ctx.user.id, ctx.workspace_id, "project.create", payload, Some(project.id),
-    ).await?;
+        &mut tx,
+        ctx.user.id,
+        ctx.workspace_id,
+        "project.create",
+        payload,
+        Some(project.id),
+    )
+    .await?;
     tx.commit().await?;
     Ok((StatusCode::CREATED, Json(project)))
 }
@@ -155,12 +177,17 @@ async fn update_project(
 ) -> ApiResult<Json<Project>> {
     authorize_project_edit(&s.pool, &ctx, id).await?;
     let title = match body.title.as_deref().map(str::trim) {
-        Some(t) => { validate_title(t)?; Some(t) }
+        Some(t) => {
+            validate_title(t)?;
+            Some(t)
+        }
         None => None,
     };
     if let Some(c) = body.color.as_deref() {
         if !is_hex_color(c) {
-            return Err(error::ApiError::BadRequest("color must be a hex string".into()));
+            return Err(error::ApiError::BadRequest(
+                "color must be a hex string".into(),
+            ));
         }
     }
     if let Some(i) = body.icon.as_deref() {
@@ -168,9 +195,10 @@ async fn update_project(
     }
     // Trim + collapse empty-string-to-null so the UI can clear the field
     // by sending "" without the client knowing about JSON null.
-    let eut: Option<Option<&str>> = body.external_url_template.as_ref().map(|v| {
-        v.as_deref().map(str::trim).filter(|s| !s.is_empty())
-    });
+    let eut: Option<Option<&str>> = body
+        .external_url_template
+        .as_ref()
+        .map(|v| v.as_deref().map(str::trim).filter(|s| !s.is_empty()));
     if let Some(Some(t)) = eut {
         validate_url_template(t)?;
     }
@@ -187,8 +215,14 @@ async fn update_project(
     .ok_or(error::ApiError::NotFound)?;
     let payload = serde_json::json!({ "kind": "project.update", "project": &project });
     ops::record_synthesized_op(
-        &mut tx, ctx.user.id, ctx.workspace_id, "project.update", payload, Some(project.id),
-    ).await?;
+        &mut tx,
+        ctx.user.id,
+        ctx.workspace_id,
+        "project.update",
+        payload,
+        Some(project.id),
+    )
+    .await?;
     tx.commit().await?;
     Ok(Json(project))
 }
@@ -219,7 +253,9 @@ async fn authorize_project_edit(
 
 fn validate_url_template(t: &str) -> Result<(), error::ApiError> {
     if t.len() > 512 {
-        return Err(error::ApiError::BadRequest("url template is too long".into()));
+        return Err(error::ApiError::BadRequest(
+            "url template is too long".into(),
+        ));
     }
     if !(t.starts_with("http://") || t.starts_with("https://")) {
         return Err(error::ApiError::BadRequest(
@@ -273,7 +309,14 @@ async fn delete_project(
     // exists. Migration 0010 made processed_ops durable, so this row
     // survives the cascade triggered by the project delete above.
     let payload = serde_json::json!({ "kind": "project.delete", "project_id": id });
-    ops::record_workspace_op(&mut tx, ctx.user.id, "project.delete", payload, ctx.workspace_id).await?;
+    ops::record_workspace_op(
+        &mut tx,
+        ctx.user.id,
+        "project.delete",
+        payload,
+        ctx.workspace_id,
+    )
+    .await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -287,14 +330,19 @@ async fn set_project_members(
     authorize_project_edit(&s.pool, &ctx, id).await?;
     for m in &body.members {
         if m.role != "owner" && m.role != "lead" && m.role != "member" && m.role != "inactive" {
-            return Err(error::ApiError::BadRequest("role must be owner|lead|member|inactive".into()));
+            return Err(error::ApiError::BadRequest(
+                "role must be owner|lead|member|inactive".into(),
+            ));
         }
     }
     // Only workspace owners may set/promote roles. Project leads can change
     // the membership set but can't reshuffle roles.
     let allow_role_change = ctx.is_owner();
-    let desired: Vec<(uuid::Uuid, String)> = body.members.iter()
-        .map(|m| (m.user_id, m.role.clone())).collect();
+    let desired: Vec<(uuid::Uuid, String)> = body
+        .members
+        .iter()
+        .map(|m| (m.user_id, m.role.clone()))
+        .collect();
     let mut tx = s.pool.begin().await?;
     let project = db::set_project_members_tx(&mut tx, id, &desired, allow_role_change)
         .await?
@@ -305,8 +353,14 @@ async fn set_project_members(
         "members": &project.members,
     });
     ops::record_synthesized_op(
-        &mut tx, ctx.user.id, ctx.workspace_id, "project.set_members", payload, Some(project.id),
-    ).await?;
+        &mut tx,
+        ctx.user.id,
+        ctx.workspace_id,
+        "project.set_members",
+        payload,
+        Some(project.id),
+    )
+    .await?;
     tx.commit().await?;
     Ok(Json(project))
 }
@@ -439,7 +493,17 @@ async fn main() -> anyhow::Result<()> {
     let hub = Hub::new();
     pubsub::start_listener_task(pool.clone(), hub.clone());
     let storage = storage::init_storage_from_env().await?;
-    let state = AppState { pool, auth: auth_cfg, hub, storage };
+    if auth_cfg.dev_auth {
+        if let storage::StorageBackend::S3(s3_storage) = &storage {
+            s3_storage.create_bucket().await?;
+        }
+    }
+    let state = AppState {
+        pool,
+        auth: auth_cfg,
+        hub,
+        storage,
+    };
 
     // Same-origin in both dev (Vite proxy) and prod (api serves the SPA).
     // No CorsLayer needed; re-add scoped to the prod domain if a non-browser
@@ -473,12 +537,24 @@ async fn main() -> anyhow::Result<()> {
         .route("/gcal/disconnect", post(gcal::disconnect))
         .route("/bootstrap", get(bootstrap))
         .route("/projects", get(projects).post(create_project))
-        .route("/projects/:id", patch(update_project).delete(delete_project))
+        .route(
+            "/projects/:id",
+            patch(update_project).delete(delete_project),
+        )
         .route("/projects/:id/members", put(set_project_members))
-        .route("/workspaces", get(workspaces::list_my).post(workspaces::create))
-        .route("/workspaces/:id", patch(workspaces::rename).delete(workspaces::delete))
+        .route(
+            "/workspaces",
+            get(workspaces::list_my).post(workspaces::create),
+        )
+        .route(
+            "/workspaces/:id",
+            patch(workspaces::rename).delete(workspaces::delete),
+        )
         .route("/workspaces/:id/members", put(workspaces::set_members))
-        .route("/workspaces/:id/members/:user_id", patch(workspaces::set_member_role).delete(workspaces::remove_member))
+        .route(
+            "/workspaces/:id/members/:user_id",
+            patch(workspaces::set_member_role).delete(workspaces::remove_member),
+        )
         .route("/workspaces/:id/users", get(workspaces::list_users))
         .route("/workspaces/:id/all-users", get(workspaces::list_all_users))
         .route("/links", get(links::list_my).post(links::create))
@@ -499,7 +575,10 @@ async fn main() -> anyhow::Result<()> {
     let attachments_router = Router::new()
         .route("/upload/:task_id", post(attachments::upload_attachment))
         .layer(DefaultBodyLimit::max(10 * 1024 * 1024))
-        .route("/:file_id", get(attachments::get_attachment).delete(attachments::delete_attachment));
+        .route(
+            "/:file_id",
+            get(attachments::get_attachment).delete(attachments::delete_attachment),
+        );
 
     let api = api.nest("/attachments", attachments_router);
 
@@ -534,4 +613,3 @@ fn redact_db_host(url: &str) -> String {
         Err(_) => "<unparseable>".into(),
     }
 }
-

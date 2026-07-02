@@ -230,7 +230,10 @@ pub struct SyncError {
 
 impl<E: std::fmt::Display> From<E> for SyncError {
     fn from(e: E) -> Self {
-        SyncError { message: e.to_string(), invalid_grant: false }
+        SyncError {
+            message: e.to_string(),
+            invalid_grant: false,
+        }
     }
 }
 
@@ -248,7 +251,10 @@ pub async fn sync_user_calendar(pool: &PgPool, user_id: Uuid) -> Result<(), Sync
     };
     let cfg = crate::auth::AuthConfig::from_env();
     if cfg.google_client_id.is_empty() {
-        return Err(SyncError { message: "GOOGLE_CLIENT_ID missing".into(), invalid_grant: false });
+        return Err(SyncError {
+            message: "GOOGLE_CLIENT_ID missing".into(),
+            invalid_grant: false,
+        });
     }
 
     let now = Utc::now();
@@ -295,13 +301,11 @@ pub async fn sync_user_calendar(pool: &PgPool, user_id: Uuid) -> Result<(), Sync
                     format!("refresh_failed: {}", e.message)
                 };
                 let mut tx = pool.begin().await?;
-                sqlx::query(
-                    "UPDATE gcal_credentials SET last_sync_error = $2 WHERE user_id = $1",
-                )
-                .bind(user_id)
-                .bind(&stored)
-                .execute(&mut *tx)
-                .await?;
+                sqlx::query("UPDATE gcal_credentials SET last_sync_error = $2 WHERE user_id = $1")
+                    .bind(user_id)
+                    .bind(&stored)
+                    .execute(&mut *tx)
+                    .await?;
                 if e.invalid_grant {
                     // Drop cached events so the user doesn't keep
                     // seeing stale rows behind the "reconnect needed"
@@ -318,10 +322,10 @@ pub async fn sync_user_calendar(pool: &PgPool, user_id: Uuid) -> Result<(), Sync
             }
         }
     }
-    let access = cred
-        .access_token
-        .as_deref()
-        .ok_or_else(|| SyncError { message: "no access token after refresh".into(), invalid_grant: false })?;
+    let access = cred.access_token.as_deref().ok_or_else(|| SyncError {
+        message: "no access token after refresh".into(),
+        invalid_grant: false,
+    })?;
 
     let time_min = now - Duration::days(SYNC_WINDOW_PAST_DAYS);
     let time_max = now + Duration::days(SYNC_WINDOW_FUTURE_DAYS);
@@ -331,13 +335,12 @@ pub async fn sync_user_calendar(pool: &PgPool, user_id: Uuid) -> Result<(), Sync
     match do_sync(pool, user_id, access, time_min, time_max).await {
         Ok(()) => Ok(()),
         Err(e) => {
-            let _ = sqlx::query(
-                "UPDATE gcal_credentials SET last_sync_error = $2 WHERE user_id = $1",
-            )
-            .bind(user_id)
-            .bind(format!("sync_failed: {}", e.message))
-            .execute(pool)
-            .await;
+            let _ =
+                sqlx::query("UPDATE gcal_credentials SET last_sync_error = $2 WHERE user_id = $1")
+                    .bind(user_id)
+                    .bind(format!("sync_failed: {}", e.message))
+                    .execute(pool)
+                    .await;
             Err(e)
         }
     }
@@ -368,7 +371,9 @@ async fn do_sync(
         for evt in &events {
             // Skip all-day and events without timed start/end. The
             // grid has no row for all-day items today.
-            let (Some(start), Some(end)) = (evt.start_dt, evt.end_dt) else { continue };
+            let (Some(start), Some(end)) = (evt.start_dt, evt.end_dt) else {
+                continue;
+            };
             keep_cal.push(cal.id.clone());
             keep_evt.push(evt.id.clone());
             let summary = evt.summary.clone().unwrap_or_default();
@@ -454,10 +459,7 @@ struct StoredCredentials {
     access_expires_at: Option<DateTime<Utc>>,
 }
 
-async fn load_credentials(
-    pool: &PgPool,
-    user_id: Uuid,
-) -> sqlx::Result<Option<StoredCredentials>> {
+async fn load_credentials(pool: &PgPool, user_id: Uuid) -> sqlx::Result<Option<StoredCredentials>> {
     // `gcal_credentials.calendar_id` is left on the table for backward
     // compat with the single-calendar era but is no longer read —
     // multi-calendar sync discovers calendars via calendarList.list.
@@ -580,8 +582,10 @@ async fn refresh_access_token(
             invalid_grant,
         });
     }
-    let parsed: RefreshResponse = serde_json::from_str(&body)
-        .map_err(|e| SyncError { message: e.to_string(), invalid_grant: false })?;
+    let parsed: RefreshResponse = serde_json::from_str(&body).map_err(|e| SyncError {
+        message: e.to_string(),
+        invalid_grant: false,
+    })?;
     Ok(RefreshedToken {
         access_token: parsed.access_token,
         expires_at: Utc::now() + Duration::seconds(parsed.expires_in),
@@ -794,10 +798,7 @@ fn gcal_redirect_url(cfg: &crate::auth::AuthConfig) -> String {
     // the suffix to land at the gcal callback. Falls back to deriving
     // from app_base_url if the signup URL doesn't match the expected
     // shape.
-    if let Some(base) = cfg
-        .redirect_url
-        .strip_suffix("/api/auth/google/callback")
-    {
+    if let Some(base) = cfg.redirect_url.strip_suffix("/api/auth/google/callback") {
         return format!("{base}/api/gcal/callback");
     }
     std::env::var("OAUTH_GCAL_REDIRECT_URL")

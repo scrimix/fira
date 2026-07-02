@@ -1,8 +1,12 @@
 use anyhow::Context;
-use aws_config::{BehaviorVersion, Region};
-use aws_sdk_s3::{Client, config::Credentials};
-use std::env;
 use anyhow::Result;
+use aws_config::{BehaviorVersion, Region};
+use aws_sdk_s3::{config::Credentials, Client};
+use std::env;
+
+fn bucket_name_from_env() -> String {
+    env::var("BUCKET_NAME").unwrap_or_else(|_| "fira".to_string())
+}
 
 #[derive(Clone)]
 pub struct S3Config {
@@ -14,10 +18,14 @@ pub struct S3Config {
 
 impl S3Config {
     pub fn from_env(prefix: &str) -> Result<Self> {
-        let region = env::var(format!("{prefix}_REGION")).with_context(|| format!("{prefix}_REGION is not set"))?;
-        let access_key_id = env::var(format!("{prefix}_ACCESS_KEY_ID")).with_context(|| format!("{prefix}_ACCESS_KEY_ID is not set"))?;
-        let secret_access_key = env::var(format!("{prefix}_SECRET_ACCESS_KEY")).with_context(|| format!("{prefix}_SECRET_ACCESS_KEY is not set"))?;
-        let endpoint_url = env::var(format!("{prefix}_ENDPOINT_URL_S3")).with_context(|| format!("{prefix}_ENDPOINT_URL_S3 is not set"))?;
+        let region = env::var(format!("{prefix}_REGION"))
+            .with_context(|| format!("{prefix}_REGION is not set"))?;
+        let access_key_id = env::var(format!("{prefix}_ACCESS_KEY_ID"))
+            .with_context(|| format!("{prefix}_ACCESS_KEY_ID is not set"))?;
+        let secret_access_key = env::var(format!("{prefix}_SECRET_ACCESS_KEY"))
+            .with_context(|| format!("{prefix}_SECRET_ACCESS_KEY is not set"))?;
+        let endpoint_url = env::var(format!("{prefix}_ENDPOINT_URL_S3"))
+            .with_context(|| format!("{prefix}_ENDPOINT_URL_S3 is not set"))?;
 
         Ok(S3Config {
             region,
@@ -65,8 +73,8 @@ impl LocalStorage {
     }
 
     pub fn from_env() -> Result<Self> {
-        let local_storage_dir = env::var("LOCAL_STORAGE_DIR")
-            .with_context(|| "LOCAL_STORAGE_DIR is not set")?;
+        let local_storage_dir =
+            env::var("LOCAL_STORAGE_DIR").with_context(|| "LOCAL_STORAGE_DIR is not set")?;
         Ok(LocalStorage { local_storage_dir })
     }
 
@@ -76,10 +84,11 @@ impl LocalStorage {
 
     pub fn write_file(&self, storage_path: &str, data: &[u8]) -> Result<()> {
         let full_path = self.get_full_path(storage_path);
-        let parent = std::path::Path::new(&full_path).parent()
+        let parent = std::path::Path::new(&full_path)
+            .parent()
             .ok_or_else(|| anyhow::anyhow!("Failed to get parent: {}", storage_path))?;
         std::fs::create_dir_all(parent)
-                    .with_context(|| format!("Failed to create parent: {}", storage_path))?;
+            .with_context(|| format!("Failed to create parent: {}", storage_path))?;
         std::fs::write(&full_path, data)
             .with_context(|| format!("Failed to write file to {}", full_path))?;
         Ok(())
@@ -112,19 +121,36 @@ pub struct S3Storage {
 
 impl S3Storage {
     pub fn new(s3_client: Client, bucket_name: String) -> Self {
-        S3Storage { s3_client, bucket_name }
+        S3Storage {
+            s3_client,
+            bucket_name,
+        }
     }
 
     pub fn from_env(prefix: &str) -> Result<Self> {
         let s3_client = build_client(prefix)
             .with_context(|| format!("Failed to build S3 client for prefix {prefix}"))?;
-        let bucket_name = env::var(format!("BUCKET_NAME"))
-            .with_context(|| format!("BUCKET_NAME is not set"))?;
-        Ok(S3Storage { s3_client, bucket_name })
+        let bucket_name = bucket_name_from_env();
+        Ok(S3Storage {
+            s3_client,
+            bucket_name,
+        })
+    }
+
+    pub async fn create_bucket(&self) -> Result<()> {
+        let bucket_name = self.bucket_name.clone();
+        self.s3_client
+            .create_bucket()
+            .bucket(&bucket_name)
+            .send()
+            .await
+            .with_context(|| format!("Failed to create S3 bucket {}", bucket_name))?;
+        Ok(())
     }
 
     pub async fn upload_file(&self, key: &str, data: Vec<u8>) -> Result<()> {
-        self.s3_client.put_object()
+        self.s3_client
+            .put_object()
             .bucket(&self.bucket_name)
             .key(key)
             .body(aws_sdk_s3::primitives::ByteStream::from(data))
@@ -135,20 +161,26 @@ impl S3Storage {
     }
 
     pub async fn download_file(&self, key: &str) -> Result<Vec<u8>> {
-        let resp = self.s3_client.get_object()
+        let resp = self
+            .s3_client
+            .get_object()
             .bucket(&self.bucket_name)
             .key(key)
             .send()
             .await
             .with_context(|| format!("Failed to download file from S3 with key {}", key))?;
 
-        let data = resp.body.collect().await
+        let data = resp
+            .body
+            .collect()
+            .await
             .with_context(|| format!("Failed to read data from S3 response for key {}", key))?;
         Ok(data.into_bytes().to_vec())
     }
 
     pub async fn delete_file(&self, key: &str) -> Result<()> {
-        self.s3_client.delete_object()
+        self.s3_client
+            .delete_object()
             .bucket(&self.bucket_name)
             .key(key)
             .send()
@@ -175,18 +207,24 @@ impl StorageBackend {
                 Ok(StorageBackend::Local(local_storage))
             }
             "s3" => {
-                let s3_storage = S3Storage::from_env(prefix)
-                    .with_context(|| format!("Failed to create S3Storage from env for prefix {prefix}"))?;
+                let s3_storage = S3Storage::from_env(prefix).with_context(|| {
+                    format!("Failed to create S3Storage from env for prefix {prefix}")
+                })?;
                 Ok(StorageBackend::S3(s3_storage))
             }
-            _ => Err(anyhow::anyhow!("Unknown storage backend type: {}", backend_type)),
+            _ => Err(anyhow::anyhow!(
+                "Unknown storage backend type: {}",
+                backend_type
+            )),
         }
     }
 
     pub async fn write_file(&self, storage_path: &str, data: &[u8]) -> Result<()> {
         match self {
             StorageBackend::Local(local_storage) => local_storage.write_file(storage_path, data),
-            StorageBackend::S3(s3_storage) => s3_storage.upload_file(storage_path, data.to_vec()).await,
+            StorageBackend::S3(s3_storage) => {
+                s3_storage.upload_file(storage_path, data.to_vec()).await
+            }
         }
     }
 

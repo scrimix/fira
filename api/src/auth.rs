@@ -138,7 +138,9 @@ pub struct AuthCtx {
 }
 
 impl AuthCtx {
-    pub fn is_owner(&self) -> bool { self.role == "owner" }
+    pub fn is_owner(&self) -> bool {
+        self.role == "owner"
+    }
 }
 
 #[async_trait]
@@ -172,16 +174,27 @@ where
                 return Err(service_unavailable("workspace lookup unavailable"));
             }
         };
-        Ok(AuthCtx { user, workspace_id, role })
+        Ok(AuthCtx {
+            user,
+            workspace_id,
+            role,
+        })
     }
 }
 
 fn forbidden(msg: &str) -> Response {
-    (StatusCode::FORBIDDEN, Json(serde_json::json!({ "error": msg }))).into_response()
+    (
+        StatusCode::FORBIDDEN,
+        Json(serde_json::json!({ "error": msg })),
+    )
+        .into_response()
 }
 
 fn unauthorized() -> Response {
-    (StatusCode::UNAUTHORIZED, Json(serde_json::json!({ "error": "unauthorized" })))
+    (
+        StatusCode::UNAUTHORIZED,
+        Json(serde_json::json!({ "error": "unauthorized" })),
+    )
         .into_response()
 }
 
@@ -194,15 +207,16 @@ fn service_unavailable(msg: &str) -> Response {
 }
 
 pub async fn load_session_user(pool: &PgPool, sid: &str) -> sqlx::Result<Option<AuthUser>> {
-    let row: Option<(Uuid, String, String, String, Option<String>, DateTime<Utc>)> = sqlx::query_as(
-        "SELECT u.id, u.email, u.name, u.initials, u.avatar_url, s.expires_at
+    let row: Option<(Uuid, String, String, String, Option<String>, DateTime<Utc>)> =
+        sqlx::query_as(
+            "SELECT u.id, u.email, u.name, u.initials, u.avatar_url, s.expires_at
          FROM sessions s
          JOIN users u ON u.id = s.user_id
          WHERE s.id = $1",
-    )
-    .bind(sid)
-    .fetch_optional(pool)
-    .await?;
+        )
+        .bind(sid)
+        .fetch_optional(pool)
+        .await?;
     let Some((id, email, name, initials, avatar_url, expires_at)) = row else {
         return Ok(None);
     };
@@ -213,7 +227,13 @@ pub async fn load_session_user(pool: &PgPool, sid: &str) -> sqlx::Result<Option<
             .await;
         return Ok(None);
     }
-    Ok(Some(AuthUser { id, email, name, initials, avatar_url }))
+    Ok(Some(AuthUser {
+        id,
+        email,
+        name,
+        initials,
+        avatar_url,
+    }))
 }
 
 // ---- /auth/config ----
@@ -228,7 +248,9 @@ pub struct AuthConfigResponse {
 }
 
 pub async fn config(State(s): State<AppState>) -> Json<AuthConfigResponse> {
-    Json(AuthConfigResponse { dev_auth: s.auth.dev_auth })
+    Json(AuthConfigResponse {
+        dev_auth: s.auth.dev_auth,
+    })
 }
 
 // ---- /me ----
@@ -312,8 +334,9 @@ pub async fn list_accounts(
     // user_links stores pairs canonicalized to (a < b); the partner of
     // the caller is whichever side the caller isn't. DISTINCT ON
     // collapses multiple sessions per partner into the most recent.
-    let rows: Vec<(Uuid, String, String, String, Option<String>, Option<String>)> = match sqlx::query_as(
-        "SELECT DISTINCT ON (u.id)
+    let rows: Vec<(Uuid, String, String, String, Option<String>, Option<String>)> =
+        match sqlx::query_as(
+            "SELECT DISTINCT ON (u.id)
             u.id, u.email, u.name, u.initials, u.avatar_url, us.account_badge
          FROM user_links ul
          JOIN sessions s ON s.user_id = CASE
@@ -327,28 +350,30 @@ pub async fn list_accounts(
            AND s.session_group_id = $2
            AND s.expires_at > now()
          ORDER BY u.id, s.created_at DESC",
-    )
-    .bind(user.id)
-    .bind(&group_id)
-    .fetch_all(&s.pool)
-    .await
-    {
-        Ok(r) => r,
-        Err(e) => {
-            tracing::warn!("list_accounts query failed: {e:?}");
-            return Json(vec![]);
-        }
-    };
+        )
+        .bind(user.id)
+        .bind(&group_id)
+        .fetch_all(&s.pool)
+        .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::warn!("list_accounts query failed: {e:?}");
+                return Json(vec![]);
+            }
+        };
     Json(
         rows.into_iter()
-            .map(|(id, email, name, initials, avatar_url, account_badge)| AccountSummary {
-                user_id: id,
-                email,
-                name,
-                initials,
-                avatar_url,
-                account_badge,
-            })
+            .map(
+                |(id, email, name, initials, avatar_url, account_badge)| AccountSummary {
+                    user_id: id,
+                    email,
+                    name,
+                    initials,
+                    avatar_url,
+                    account_badge,
+                },
+            )
             .collect(),
     )
 }
@@ -659,10 +684,7 @@ async fn upsert_user(pool: &PgPool, info: &GoogleUserInfo) -> sqlx::Result<Uuid>
 }
 
 fn compute_initials(name: &str, email: &str) -> String {
-    let parts: Vec<&str> = name
-        .split_whitespace()
-        .filter(|p| !p.is_empty())
-        .collect();
+    let parts: Vec<&str> = name.split_whitespace().filter(|p| !p.is_empty()).collect();
     if !parts.is_empty() {
         let mut s = String::new();
         if let Some(c) = parts[0].chars().next() {
@@ -752,7 +774,11 @@ pub async fn dev_login(
     };
     let cookie = build_cookie(SESSION_COOKIE, sid, SESSION_DAYS * 86400, &s.auth);
     let group_cookie = build_group_cookie(group_id, &s.auth);
-    (jar.add(cookie).add(group_cookie), Redirect::to(&s.auth.app_base_url)).into_response()
+    (
+        jar.add(cookie).add(group_cookie),
+        Redirect::to(&s.auth.app_base_url),
+    )
+        .into_response()
 }
 
 // ---- /auth/dev-seed ----
@@ -888,4 +914,3 @@ mod urlencoding {
         out
     }
 }
-

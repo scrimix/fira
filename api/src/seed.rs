@@ -42,8 +42,7 @@ fn ts(day: i64, start_min: i64) -> DateTime<Utc> {
 }
 
 const MONTHS: [&str; 12] = [
-    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
 
 fn fmt_md(d: NaiveDate) -> String {
@@ -181,9 +180,30 @@ pub async fn seed_all(tx: &mut Transaction<'_, Postgres>) -> sqlx::Result<()> {
     // so the seed appears in the same icon set the picker offers — not as
     // unicode-glyph fallbacks that can't be re-selected.
     let projects = [
-        ("p_atlas", "Atlas", "Compass",  "#0F766E", "jira",   "Core platform. Auth, billing, infra."),
-        ("p_relay", "Relay", "Zap",      "#B45309", "notion", "Internal tooling — sync engine."),
-        ("p_helix", "Helix", "Sparkles", "#6D28D9", "local",  "Personal R&D — embedding experiments."),
+        (
+            "p_atlas",
+            "Atlas",
+            "Compass",
+            "#0F766E",
+            "jira",
+            "Core platform. Auth, billing, infra.",
+        ),
+        (
+            "p_relay",
+            "Relay",
+            "Zap",
+            "#B45309",
+            "notion",
+            "Internal tooling — sync engine.",
+        ),
+        (
+            "p_helix",
+            "Helix",
+            "Sparkles",
+            "#6D28D9",
+            "local",
+            "Personal R&D — embedding experiments.",
+        ),
     ];
     for (slug, title, icon, color, source, desc) in projects {
         sqlx::query(
@@ -207,7 +227,10 @@ pub async fn seed_all(tx: &mut Transaction<'_, Postgres>) -> sqlx::Result<()> {
     // implicitly added as 'lead' by create_project_tx, but we're inserting
     // raw rows here, so spell out the role for everyone including Maya.
     let members: &[(&str, &[(&str, &str)])] = &[
-        ("p_atlas", &[("u_maya", "lead"), ("u_anna", "lead"), ("u_bob", "member")]),
+        (
+            "p_atlas",
+            &[("u_maya", "lead"), ("u_anna", "lead"), ("u_bob", "member")],
+        ),
         ("p_relay", &[("u_maya", "lead"), ("u_jin", "member")]),
         ("p_helix", &[("u_maya", "lead")]),
     ];
@@ -235,14 +258,12 @@ pub async fn seed_all(tx: &mut Transaction<'_, Postgres>) -> sqlx::Result<()> {
         ("e_explore", "p_helix", "Misc exploration"),
     ];
     for (slug, proj, title) in epics {
-        sqlx::query(
-            "INSERT INTO epics (id, project_id, title) VALUES ($1,$2,$3)",
-        )
-        .bind(id(slug))
-        .bind(id(proj))
-        .bind(title)
-        .execute(&mut **tx)
-        .await?;
+        sqlx::query("INSERT INTO epics (id, project_id, title) VALUES ($1,$2,$3)")
+            .bind(id(slug))
+            .bind(id(proj))
+            .bind(title)
+            .execute(&mut **tx)
+            .await?;
     }
 
     // ---- Sprints ----
@@ -252,25 +273,49 @@ pub async fn seed_all(tx: &mut Transaction<'_, Postgres>) -> sqlx::Result<()> {
     let q_start = anchor_date;
     let q_end = anchor_date + Duration::days(60);
     let sprints = [
-        ("s_apr27", "p_atlas",
-         format!("Atlas · {}", fmt_md(anchor_date)),
-         sprint_dates(0, 11), true),
-        ("s_may11", "p_atlas",
-         format!("Atlas · {}", fmt_md(anchor_date + Duration::days(14))),
-         sprint_dates(14, 25), false),
-        ("s_relay9", "p_relay",
-         "Relay · Sprint 9".to_string(),
-         sprint_dates(-5, 8), true),
-        ("s_relay10", "p_relay",
-         "Relay · Sprint 10".to_string(),
-         sprint_dates(9, 22), false),
-        ("s_helix_q2", "p_helix",
-         "Helix · Q2".to_string(),
-         format!("{} – {}", MONTHS[q_start.month0() as usize], MONTHS[q_end.month0() as usize]),
-         true),
+        (
+            "s_apr27",
+            "p_atlas",
+            format!("Atlas · {}", fmt_md(anchor_date)),
+            sprint_dates(0, 11),
+            true,
+        ),
+        (
+            "s_may11",
+            "p_atlas",
+            format!("Atlas · {}", fmt_md(anchor_date + Duration::days(14))),
+            sprint_dates(14, 25),
+            false,
+        ),
+        (
+            "s_relay9",
+            "p_relay",
+            "Relay · Sprint 9".to_string(),
+            sprint_dates(-5, 8),
+            true,
+        ),
+        (
+            "s_relay10",
+            "p_relay",
+            "Relay · Sprint 10".to_string(),
+            sprint_dates(9, 22),
+            false,
+        ),
+        (
+            "s_helix_q2",
+            "p_helix",
+            "Helix · Q2".to_string(),
+            format!(
+                "{} – {}",
+                MONTHS[q_start.month0() as usize],
+                MONTHS[q_end.month0() as usize]
+            ),
+            true,
+        ),
     ];
     for (slug, proj, title, dates, active) in &sprints {
-        let (slug, proj, title, dates, active) = (*slug, *proj, title.as_str(), dates.as_str(), *active);
+        let (slug, proj, title, dates, active) =
+            (*slug, *proj, title.as_str(), dates.as_str(), *active);
         sqlx::query(
             "INSERT INTO sprints (id, project_id, title, dates, active)
              VALUES ($1,$2,$3,$4,$5)",
@@ -604,7 +649,9 @@ async fn seed_tasks(tx: &mut Transaction<'_, Postgres>) -> sqlx::Result<()> {
     // Distinct (project, tag-title) pairs across all task specs become real
     // tag rows. Slug for the tag's deterministic UUID is `tag_<project>_<title>`
     // so the same name in two projects gets two distinct tag rows.
-    let palette = ["#0F766E", "#B45309", "#6D28D9", "#1D4ED8", "#BE123C", "#4D7C0F", "#9333EA"];
+    let palette = [
+        "#0F766E", "#B45309", "#6D28D9", "#1D4ED8", "#BE123C", "#4D7C0F", "#9333EA",
+    ];
     let mut seen: std::collections::HashSet<(&'static str, &'static str)> = Default::default();
     let mut palette_cursor: usize = 0;
     for t in tasks {
@@ -690,43 +737,43 @@ async fn seed_blocks(tx: &mut Transaction<'_, Postgres>) -> sqlx::Result<()> {
     // when the dump ran.
     let blocks: &[(i64, i64, i64, &str, &str)] = &[
         // MON — fully completed
-        (0, 9 * 60,           90,  "completed", "t_atlas_oauth"),
-        (0, 10 * 60 + 30,     60,  "completed", "t_atlas_review"),
-        (0, 13 * 60,         120,  "completed", "t_atlas_billing"),
-        (0, 15 * 60 + 30,     90,  "completed", "t_relay_jira"),
+        (0, 9 * 60, 90, "completed", "t_atlas_oauth"),
+        (0, 10 * 60 + 30, 60, "completed", "t_atlas_review"),
+        (0, 13 * 60, 120, "completed", "t_atlas_billing"),
+        (0, 15 * 60 + 30, 90, "completed", "t_relay_jira"),
         // TUE — fully completed
-        (1, 9 * 60,          120,  "completed", "t_atlas_oauth"),
-        (1, 11 * 60 + 30,     90,  "completed", "t_helix_emb"),
-        (1, 14 * 60,          90,  "completed", "t_relay_jira"),
-        (1, 16 * 60,          60,  "completed", "t_atlas_review"),
+        (1, 9 * 60, 120, "completed", "t_atlas_oauth"),
+        (1, 11 * 60 + 30, 90, "completed", "t_helix_emb"),
+        (1, 14 * 60, 90, "completed", "t_relay_jira"),
+        (1, 16 * 60, 60, "completed", "t_atlas_review"),
         // WED — morning completed, afternoon still planned
-        (2, 9 * 60,           90,  "completed", "t_atlas_oauth"),
-        (2, 11 * 60,          60,  "completed", "t_atlas_billing"),
-        (2, 13 * 60,          90,  "planned",   "t_relay_jira"),
-        (2, 15 * 60,          60,  "planned",   "t_atlas_review"),
-        (2, 16 * 60 + 30,     90,  "planned",   "t_helix_emb"),
+        (2, 9 * 60, 90, "completed", "t_atlas_oauth"),
+        (2, 11 * 60, 60, "completed", "t_atlas_billing"),
+        (2, 13 * 60, 90, "planned", "t_relay_jira"),
+        (2, 15 * 60, 60, "planned", "t_atlas_review"),
+        (2, 16 * 60 + 30, 90, "planned", "t_helix_emb"),
         // THU — all planned
-        (3, 9 * 60,          120,  "planned",   "t_atlas_oauth"),
-        (3, 11 * 60 + 30,     60,  "planned",   "t_atlas_billing"),
-        (3, 13 * 60,          90,  "planned",   "t_relay_jira"),
-        (3, 15 * 60,         120,  "planned",   "t_relay_diff"),
+        (3, 9 * 60, 120, "planned", "t_atlas_oauth"),
+        (3, 11 * 60 + 30, 60, "planned", "t_atlas_billing"),
+        (3, 13 * 60, 90, "planned", "t_relay_jira"),
+        (3, 15 * 60, 120, "planned", "t_relay_diff"),
         // FRI — all planned
-        (4, 9 * 60,           90,  "planned",   "t_atlas_billing"),
-        (4, 10 * 60 + 30,     60,  "planned",   "t_atlas_oauth"),
-        (4, 13 * 60,         120,  "planned",   "t_helix_emb"),
-        (4, 15 * 60 + 30,     90,  "planned",   "t_relay_jira"),
+        (4, 9 * 60, 90, "planned", "t_atlas_billing"),
+        (4, 10 * 60 + 30, 60, "planned", "t_atlas_oauth"),
+        (4, 13 * 60, 120, "planned", "t_helix_emb"),
+        (4, 15 * 60 + 30, 90, "planned", "t_relay_jira"),
         // SAT — planned
-        (5, 10 * 60,          90,  "planned",   "t_helix_emb"),
+        (5, 10 * 60, 90, "planned", "t_helix_emb"),
         // ---- Recurring instances ----
         // Daily standup at 08:00 UTC (right before the 09:00 OAuth block)
         // — completed Mon/Tue, planned Thu/Fri.
-        (0, 8 * 60,           30,  "completed", "t_atlas_standup"),
-        (1, 8 * 60,           30,  "completed", "t_atlas_standup"),
-        (3, 8 * 60,           30,  "planned",   "t_atlas_standup"),
-        (4, 8 * 60,           30,  "planned",   "t_atlas_standup"),
+        (0, 8 * 60, 30, "completed", "t_atlas_standup"),
+        (1, 8 * 60, 30, "completed", "t_atlas_standup"),
+        (3, 8 * 60, 30, "planned", "t_atlas_standup"),
+        (4, 8 * 60, 30, "planned", "t_atlas_standup"),
         // Weekly code review — single Tue slot, this week's already done.
         // 17:00–18:00 avoids the 13:00 GCal standup and the 16:00 review.
-        (1, 17 * 60,          60,  "completed", "t_atlas_codereview"),
+        (1, 17 * 60, 60, "completed", "t_atlas_codereview"),
     ];
     for (i, (day, start_min, dur, state, slug)) in blocks.iter().enumerate() {
         let start_at = ts(*day, *start_min);

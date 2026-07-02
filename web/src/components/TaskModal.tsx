@@ -1,5 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import ReactMarkdown from 'react-markdown';
+import remarkBreaks from 'remark-breaks';
+import remarkGfm from 'remark-gfm';
 import { ArrowLeft, Check, Copy, Download, PanelRightClose, PanelRightOpen, Paperclip, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { useFira } from '../store';
 import { useIsMobile } from '../hooks';
@@ -660,18 +663,26 @@ function DescriptionEditor({ taskId, value, onSave }: {
   const ref = useRef<HTMLTextAreaElement>(null);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
+  const pendingScrollRef = useRef<{scrollTop: number; scrollLeft: number} | null>(null);
 
   useEffect(() => {
     setEditing(false);
     setDraft(value);
   }, [taskId, value]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (editing && ref.current) {
-      ref.current.focus();
       const ta = ref.current;
+      const scrollContainer =
+        (ta.closest('.modal-main') as HTMLElement | null) ??
+        (ta.closest('.modal') as HTMLElement | null);
+      const prevScrollTop = pendingScrollRef.current?.scrollTop ?? scrollContainer?.scrollTop ?? 0;
+      const prevScrollLeft = pendingScrollRef.current?.scrollLeft ?? scrollContainer?.scrollLeft ?? 0;
+      pendingScrollRef.current = null;
+
+      ta.focus({ preventScroll: true });
       ta.setSelectionRange(ta.value.length, ta.value.length);
-      autosize(ta);
+      autosize(ta, { scrollTop: prevScrollTop, scrollLeft: prevScrollLeft });
     }
   }, [editing]);
 
@@ -684,10 +695,24 @@ function DescriptionEditor({ taskId, value, onSave }: {
     return (
       <div
         className="desc-md"
-        onClick={() => setEditing(true)}
+        onClick={(e) => {
+          const clickedLink = (e.target as HTMLElement | null)?.closest('a');
+          if (!clickedLink) {
+            const scrollContainer = document.querySelector('.modal-main') as HTMLElement | null;
+            pendingScrollRef.current = {
+              scrollTop: scrollContainer?.scrollTop ?? 0,
+              scrollLeft: scrollContainer?.scrollLeft ?? 0,
+            };
+            setEditing(true);
+          }
+        }}
         data-empty={!value}
       >
-        {value || 'No description. Click to edit.'}
+        {value ? (
+          <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>
+            {value}
+          </ReactMarkdown>
+        ) : 'No description. Click to edit.'}
       </div>
     );
   }
@@ -707,9 +732,31 @@ function DescriptionEditor({ taskId, value, onSave }: {
   );
 }
 
-function autosize(ta: HTMLTextAreaElement) {
+function autosize(ta: HTMLTextAreaElement, restoreScroll?: {scrollTop: number; scrollLeft: number}) {
+  const scrollContainer =
+    (ta.closest('.modal-main') as HTMLElement | null) ??
+    (ta.closest('.modal') as HTMLElement | null);
+  const prevParentScrollTop = restoreScroll?.scrollTop ?? scrollContainer?.scrollTop ?? 0;
+  const prevParentScrollLeft = restoreScroll?.scrollLeft ?? scrollContainer?.scrollLeft ?? 0;
+  const prevCursorTop = ta.scrollTop;
+  const prevCursorLeft = ta.scrollLeft;
+  const prevSelectionStart = ta.selectionStart;
+  const prevSelectionEnd = ta.selectionEnd;
+
   ta.style.height = 'auto';
-  ta.style.height = `${ta.scrollHeight}px`;
+  ta.style.height = `${Math.max(ta.scrollHeight, 150)}px`;
+
+  requestAnimationFrame(() => {
+    if (scrollContainer) {
+      scrollContainer.scrollTop = prevParentScrollTop;
+      scrollContainer.scrollLeft = prevParentScrollLeft;
+    }
+    ta.scrollTop = prevCursorTop;
+    ta.scrollLeft = prevCursorLeft;
+    if (prevSelectionStart != null && prevSelectionEnd != null) {
+      ta.setSelectionRange(prevSelectionStart, prevSelectionEnd);
+    }
+  });
 }
 
 // Build a markdown rendering of the task suitable for pasting into Notion,
