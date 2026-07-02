@@ -84,14 +84,9 @@ pub async fn create(
     }
 
     let mut tx = s.pool.begin().await?;
-    let (id, _newly_created) = db::create_workspace_invite_tx(
-        &mut tx,
-        body.workspace_id,
-        &email,
-        &role,
-        ctx.user.id,
-    )
-    .await?;
+    let (id, _newly_created) =
+        db::create_workspace_invite_tx(&mut tx, body.workspace_id, &email, &role, ctx.user.id)
+            .await?;
     tx.commit().await?;
 
     // Notify the inviter (so their pending list updates) and any user
@@ -218,16 +213,11 @@ pub async fn decline(
 
 // ── helpers ────────────────────────────────────────────────────────────
 
-async fn lookup_user_id_by_email(
-    pool: &sqlx::PgPool,
-    email: &str,
-) -> sqlx::Result<Option<Uuid>> {
-    let row: Option<(Uuid,)> = sqlx::query_as(
-        "SELECT id FROM users WHERE lower(email) = $1",
-    )
-    .bind(email)
-    .fetch_optional(pool)
-    .await?;
+async fn lookup_user_id_by_email(pool: &sqlx::PgPool, email: &str) -> sqlx::Result<Option<Uuid>> {
+    let row: Option<(Uuid,)> = sqlx::query_as("SELECT id FROM users WHERE lower(email) = $1")
+        .bind(email)
+        .fetch_optional(pool)
+        .await?;
     Ok(row.map(|(id,)| id))
 }
 
@@ -249,25 +239,35 @@ async fn invite_for(
     }
     // Resolved invite — synthesize a row so the caller can read the
     // terminal state. Direction is computed off the actor.
-    let row: (Uuid, Uuid, String, String, String, String, Uuid, chrono::DateTime<chrono::Utc>) =
-        sqlx::query_as(
-            "SELECT i.id, i.workspace_id, w.title, i.email, i.role, i.status,
+    let row: (
+        Uuid,
+        Uuid,
+        String,
+        String,
+        String,
+        String,
+        Uuid,
+        chrono::DateTime<chrono::Utc>,
+    ) = sqlx::query_as(
+        "SELECT i.id, i.workspace_id, w.title, i.email, i.role, i.status,
                     i.invited_by, i.created_at
              FROM workspace_invites i
              JOIN workspaces w ON w.id = i.workspace_id
              WHERE i.id = $1",
-        )
-        .bind(invite_id)
-        .fetch_one(pool)
-        .await?;
-    let (id, workspace_id, workspace_title, email, role, status, invited_by, created_at) = row;
-    let inviter: (String, String) = sqlx::query_as(
-        "SELECT name, email FROM users WHERE id = $1",
     )
-    .bind(invited_by)
+    .bind(invite_id)
     .fetch_one(pool)
     .await?;
-    let direction = if invited_by == user_id { "sent" } else { "received" };
+    let (id, workspace_id, workspace_title, email, role, status, invited_by, created_at) = row;
+    let inviter: (String, String) = sqlx::query_as("SELECT name, email FROM users WHERE id = $1")
+        .bind(invited_by)
+        .fetch_one(pool)
+        .await?;
+    let direction = if invited_by == user_id {
+        "sent"
+    } else {
+        "received"
+    };
     Ok(crate::models::WorkspaceInvite {
         id,
         workspace_id,

@@ -44,7 +44,7 @@ services:
       FIRA_SECRET_ACCESS_KEY: rustfsadmin
       BUCKET_NAME: fira
       STORAGE_PREFIX: FIRA
-      STORAGE_BACKEND: local
+      STORAGE_BACKEND: s3
     depends_on:
       postgres:
         condition: service_healthy

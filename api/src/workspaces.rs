@@ -13,7 +13,11 @@
 // Personal workspaces are immutable post-creation: their title can be
 // renamed by the owner, but membership operations are no-ops.
 
-use axum::{extract::{Path, State}, http::StatusCode, Json};
+use axum::{
+    extract::{Path, State},
+    http::StatusCode,
+    Json,
+};
 use serde::Deserialize;
 use uuid::Uuid;
 
@@ -68,7 +72,9 @@ pub async fn rename(
     Json(body): Json<UpdateWorkspace>,
 ) -> ApiResult<Json<crate::models::Workspace>> {
     if ctx.workspace_id != id || !ctx.is_owner() {
-        return Err(ApiError::BadRequest("only workspace owners can rename".into()));
+        return Err(ApiError::BadRequest(
+            "only workspace owners can rename".into(),
+        ));
     }
     let title = body.title.trim();
     if title.is_empty() || title.len() > 80 {
@@ -102,7 +108,9 @@ pub async fn delete(
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, ApiError> {
     if ctx.workspace_id != id || !ctx.is_owner() {
-        return Err(ApiError::BadRequest("only workspace owners can delete".into()));
+        return Err(ApiError::BadRequest(
+            "only workspace owners can delete".into(),
+        ));
     }
     let row: Option<(bool,)> = sqlx::query_as("SELECT is_personal FROM workspaces WHERE id = $1")
         .bind(id)
@@ -127,10 +135,7 @@ pub async fn delete(
     Ok(StatusCode::NO_CONTENT)
 }
 
-async fn active_member_ids(
-    pool: &sqlx::PgPool,
-    workspace_id: Uuid,
-) -> sqlx::Result<Vec<Uuid>> {
+async fn active_member_ids(pool: &sqlx::PgPool, workspace_id: Uuid) -> sqlx::Result<Vec<Uuid>> {
     let rows: Vec<(Uuid,)> = sqlx::query_as(
         "SELECT user_id FROM workspace_members
          WHERE workspace_id = $1 AND removed_at IS NULL",
@@ -159,12 +164,18 @@ pub async fn set_members(
     Json(body): Json<SetMembersBody>,
 ) -> ApiResult<Json<crate::models::Workspace>> {
     if ctx.workspace_id != id || !ctx.is_owner() {
-        return Err(ApiError::BadRequest("only workspace owners can edit membership".into()));
+        return Err(ApiError::BadRequest(
+            "only workspace owners can edit membership".into(),
+        ));
     }
     for m in &body.members {
         validate_role(&m.role)?;
     }
-    let desired: Vec<(Uuid, String)> = body.members.iter().map(|m| (m.user_id, m.role.clone())).collect();
+    let desired: Vec<(Uuid, String)> = body
+        .members
+        .iter()
+        .map(|m| (m.user_id, m.role.clone()))
+        .collect();
     // Snapshot pre-mutation membership so removed users still get nudged.
     let pre = active_member_ids(&s.pool, id).await.unwrap_or_default();
     let mut tx = s.pool.begin().await?;
@@ -177,9 +188,12 @@ pub async fn set_members(
     // ex-member as a project member because workspace_members is
     // soft-deleted (so the FK ON DELETE CASCADE never fires). Soft-
     // delete those rows here.
-    let post_ids: std::collections::BTreeSet<Uuid> =
-        ws.members.iter().map(|m| m.user_id).collect();
-    let removed: Vec<Uuid> = pre.iter().copied().filter(|u| !post_ids.contains(u)).collect();
+    let post_ids: std::collections::BTreeSet<Uuid> = ws.members.iter().map(|m| m.user_id).collect();
+    let removed: Vec<Uuid> = pre
+        .iter()
+        .copied()
+        .filter(|u| !post_ids.contains(u))
+        .collect();
     db::soft_remove_project_members_tx(&mut tx, id, &removed).await?;
     let payload = serde_json::json!({
         "kind": "workspace.set_members",
@@ -192,7 +206,9 @@ pub async fn set_members(
     // retained (both) — all need a refetch because someone's row in the
     // member list changed.
     let mut targets: std::collections::BTreeSet<Uuid> = pre.into_iter().collect();
-    for m in &ws.members { targets.insert(m.user_id); }
+    for m in &ws.members {
+        targets.insert(m.user_id);
+    }
     for uid in targets {
         let _ = s.hub.notify_user(&s.pool, uid).await;
     }
@@ -245,12 +261,20 @@ pub async fn remove_member(
             "members": &members,
         });
         ops::record_synthesized_op(
-            &mut tx, ctx.user.id, id, "project.set_members", payload, Some(pid),
-        ).await?;
+            &mut tx,
+            ctx.user.id,
+            id,
+            "project.set_members",
+            payload,
+            Some(pid),
+        )
+        .await?;
     }
     tx.commit().await?;
     let mut targets: std::collections::BTreeSet<Uuid> = pre.into_iter().collect();
-    for m in &ws.members { targets.insert(m.user_id); }
+    for m in &ws.members {
+        targets.insert(m.user_id);
+    }
     for uid in targets {
         let _ = s.hub.notify_user(&s.pool, uid).await;
     }
@@ -264,7 +288,9 @@ pub async fn set_member_role(
     Json(body): Json<SetRoleBody>,
 ) -> ApiResult<Json<crate::models::Workspace>> {
     if ctx.workspace_id != id || !ctx.is_owner() {
-        return Err(ApiError::BadRequest("only workspace owners can change roles".into()));
+        return Err(ApiError::BadRequest(
+            "only workspace owners can change roles".into(),
+        ));
     }
     validate_role(&body.role)?;
     let mut tx = s.pool.begin().await?;
@@ -277,7 +303,14 @@ pub async fn set_member_role(
         "user_id": user_id,
         "role": &body.role,
     });
-    ops::record_workspace_op(&mut tx, ctx.user.id, "workspace.set_member_role", payload, id).await?;
+    ops::record_workspace_op(
+        &mut tx,
+        ctx.user.id,
+        "workspace.set_member_role",
+        payload,
+        id,
+    )
+    .await?;
     tx.commit().await?;
     // Role appears in every member's view of the member list.
     for uid in active_member_ids(&s.pool, id).await.unwrap_or_default() {
@@ -290,7 +323,9 @@ pub async fn list_users(
     State(s): State<AppState>,
     ctx: AuthCtx,
 ) -> ApiResult<Json<Vec<crate::models::User>>> {
-    Ok(Json(db::list_users_in_workspace(&s.pool, ctx.workspace_id).await?))
+    Ok(Json(
+        db::list_users_in_workspace(&s.pool, ctx.workspace_id).await?,
+    ))
 }
 
 /// Full user directory — the picker the workspace owner uses to add a
@@ -302,7 +337,9 @@ pub async fn list_all_users(
     ctx: AuthCtx,
 ) -> ApiResult<Json<Vec<crate::models::User>>> {
     if !ctx.is_owner() {
-        return Err(ApiError::BadRequest("only workspace owners can list all users".into()));
+        return Err(ApiError::BadRequest(
+            "only workspace owners can list all users".into(),
+        ));
     }
     Ok(Json(db::list_all_users(&s.pool).await?))
 }

@@ -57,12 +57,10 @@ pub async fn create(
     }
     // Look up the partner by email. We don't pre-validate the format —
     // if it isn't a real account, the lookup just misses.
-    let target: Option<(Uuid,)> = sqlx::query_as(
-        "SELECT id FROM users WHERE lower(email) = $1",
-    )
-    .bind(&email)
-    .fetch_optional(&s.pool)
-    .await?;
+    let target: Option<(Uuid,)> = sqlx::query_as("SELECT id FROM users WHERE lower(email) = $1")
+        .bind(&email)
+        .fetch_optional(&s.pool)
+        .await?;
     let Some((target_user_id,)) = target else {
         return Err(ApiError::BadRequest(
             "no Fira account found for that email".into(),
@@ -180,7 +178,12 @@ pub async fn linked_calendar(
     let blocks = db::list_blocks_for_user(&s.pool, partner_id).await?;
     let tasks = db::list_linked_tasks_for_blocks(&s.pool, partner_id).await?;
     let gcal = db::list_gcal_for_user(&s.pool, partner_id).await?;
-    Ok(Json(LinkedCalendarResponse { partner_id, blocks, tasks, gcal }))
+    Ok(Json(LinkedCalendarResponse {
+        partner_id,
+        blocks,
+        tasks,
+        gcal,
+    }))
 }
 
 #[derive(serde::Serialize)]
@@ -201,10 +204,16 @@ pub async fn personal_calendar(
 ) -> ApiResult<Json<PersonalCalendarResponse>> {
     let personal_ws = db::personal_workspace_id(&s.pool, ctx.user.id).await?;
     let Some(ws_id) = personal_ws else {
-        return Ok(Json(PersonalCalendarResponse { blocks: vec![], tasks: vec![] }));
+        return Ok(Json(PersonalCalendarResponse {
+            blocks: vec![],
+            tasks: vec![],
+        }));
     };
     if ws_id == ctx.workspace_id {
-        return Ok(Json(PersonalCalendarResponse { blocks: vec![], tasks: vec![] }));
+        return Ok(Json(PersonalCalendarResponse {
+            blocks: vec![],
+            tasks: vec![],
+        }));
     }
     let blocks = db::list_blocks_in_workspace_for_user(&s.pool, ws_id, ctx.user.id).await?;
     let tasks = db::list_linked_tasks_in_workspace_for_user(&s.pool, ws_id, ctx.user.id).await?;
@@ -228,10 +237,16 @@ pub async fn work_calendar(
 ) -> ApiResult<Json<WorkCalendarResponse>> {
     let personal_ws = db::personal_workspace_id(&s.pool, ctx.user.id).await?;
     let Some(ws_id) = personal_ws else {
-        return Ok(Json(WorkCalendarResponse { blocks: vec![], tasks: vec![] }));
+        return Ok(Json(WorkCalendarResponse {
+            blocks: vec![],
+            tasks: vec![],
+        }));
     };
     if ws_id != ctx.workspace_id {
-        return Ok(Json(WorkCalendarResponse { blocks: vec![], tasks: vec![] }));
+        return Ok(Json(WorkCalendarResponse {
+            blocks: vec![],
+            tasks: vec![],
+        }));
     }
     let blocks = db::list_blocks_in_work_workspaces_for_user(&s.pool, ctx.user.id).await?;
     let tasks = db::list_linked_tasks_in_work_workspaces_for_user(&s.pool, ctx.user.id).await?;
@@ -239,12 +254,11 @@ pub async fn work_calendar(
 }
 
 async fn has_any_link(pool: &sqlx::PgPool, user_id: Uuid) -> sqlx::Result<bool> {
-    let row: Option<(i32,)> = sqlx::query_as(
-        "SELECT 1 FROM user_links WHERE user_a_id = $1 OR user_b_id = $1",
-    )
-    .bind(user_id)
-    .fetch_optional(pool)
-    .await?;
+    let row: Option<(i32,)> =
+        sqlx::query_as("SELECT 1 FROM user_links WHERE user_a_id = $1 OR user_b_id = $1")
+            .bind(user_id)
+            .fetch_optional(pool)
+            .await?;
     Ok(row.is_some())
 }
 

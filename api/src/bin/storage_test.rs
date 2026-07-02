@@ -1,5 +1,5 @@
-use fira_api::storage;
 use anyhow::{Context, Result};
+use fira_api::storage;
 
 async fn test_local_storage() -> Result<()> {
     let storage = storage::LocalStorage::from_env()
@@ -9,17 +9,24 @@ async fn test_local_storage() -> Result<()> {
     let test_data = b"Hello, world!";
 
     // Write file
-    storage.write_file(test_file_path, test_data)
+    storage
+        .write_file(test_file_path, test_data)
         .with_context(|| format!("Failed to write file: {}", test_file_path))?;
     println!("File written: {}", test_file_path);
 
     // Read file
-    let read_data = storage.read_file(test_file_path)
+    let read_data = storage
+        .read_file(test_file_path)
         .with_context(|| format!("Failed to read file: {}", test_file_path))?;
-    println!("File read: {} with content: {:?}", test_file_path, String::from_utf8_lossy(&read_data));
+    println!(
+        "File read: {} with content: {:?}",
+        test_file_path,
+        String::from_utf8_lossy(&read_data)
+    );
 
     // Delete file
-    storage.delete_file(test_file_path)
+    storage
+        .delete_file(test_file_path)
         .with_context(|| format!("Failed to delete file: {}", test_file_path))?;
     println!("File deleted: {}", test_file_path);
 
@@ -34,18 +41,28 @@ async fn test_s3_storage() -> Result<()> {
     let test_data = b"Hello, S3!".to_vec();
 
     // Write file
-    storage.upload_file(test_file_path, test_data.clone())
-        .await.with_context(|| format!("Failed to write file: {}", test_file_path))?;
+    storage
+        .upload_file(test_file_path, test_data.clone())
+        .await
+        .with_context(|| format!("Failed to write file: {}", test_file_path))?;
     println!("File written: {}", test_file_path);
 
     // Read file
-    let read_data = storage.download_file(test_file_path)
-        .await.with_context(|| format!("Failed to read file: {}", test_file_path))?;
-    println!("File read: {} with content: {:?}", test_file_path, String::from_utf8_lossy(&read_data));
+    let read_data = storage
+        .download_file(test_file_path)
+        .await
+        .with_context(|| format!("Failed to read file: {}", test_file_path))?;
+    println!(
+        "File read: {} with content: {:?}",
+        test_file_path,
+        String::from_utf8_lossy(&read_data)
+    );
 
     // Delete file
-    storage.delete_file(test_file_path)
-        .await.with_context(|| format!("Failed to delete file: {}", test_file_path))?;
+    storage
+        .delete_file(test_file_path)
+        .await
+        .with_context(|| format!("Failed to delete file: {}", test_file_path))?;
     println!("File deleted: {}", test_file_path);
 
     Ok(())

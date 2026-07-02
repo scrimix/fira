@@ -17,7 +17,9 @@ async fn main() -> anyhow::Result<()> {
     let url = std::env::var("DATABASE_URL")
         .unwrap_or_else(|_| "postgres://fira:fira@localhost:5432/fira".into());
     let drop = std::env::args().any(|a| a == "--drop")
-        || std::env::var("SEED_DROP").map(|v| v == "1").unwrap_or(false);
+        || std::env::var("SEED_DROP")
+            .map(|v| v == "1")
+            .unwrap_or(false);
 
     let pool = wait_for_pool(&url).await?;
 
@@ -28,11 +30,10 @@ async fn main() -> anyhow::Result<()> {
         // permissions weirdness with extension-owned objects and means
         // sqlx's prepared-statement protocol stays happy. CASCADE on each
         // drop knocks out FKs without us having to topo-sort.
-        let tables: Vec<(String,)> = sqlx::query_as(
-            "SELECT tablename FROM pg_tables WHERE schemaname = 'public'",
-        )
-        .fetch_all(&pool)
-        .await?;
+        let tables: Vec<(String,)> =
+            sqlx::query_as("SELECT tablename FROM pg_tables WHERE schemaname = 'public'")
+                .fetch_all(&pool)
+                .await?;
         for (t,) in &tables {
             sqlx::query(&format!("DROP TABLE IF EXISTS public.\"{t}\" CASCADE"))
                 .execute(&pool)
@@ -55,7 +56,11 @@ async fn main() -> anyhow::Result<()> {
             .execute(&pool)
             .await?;
         }
-        println!("seed: dropped {} tables, {} functions", tables.len(), funcs.len());
+        println!(
+            "seed: dropped {} tables, {} functions",
+            tables.len(),
+            funcs.len()
+        );
     }
 
     sqlx::migrate!("./migrations").run(&pool).await?;
@@ -69,14 +74,16 @@ async fn main() -> anyhow::Result<()> {
     // the new code ran. If you still see a stale name, your *running* api
     // process has older code compiled in — restart `cargo watch` / the
     // api container to pick up changes.
-    let rows: Vec<(String, bool)> = sqlx::query_as(
-        "SELECT title, is_personal FROM workspaces ORDER BY is_personal, title",
-    )
-    .fetch_all(&pool)
-    .await?;
+    let rows: Vec<(String, bool)> =
+        sqlx::query_as("SELECT title, is_personal FROM workspaces ORDER BY is_personal, title")
+            .fetch_all(&pool)
+            .await?;
     println!("seed: workspaces in db now:");
     for (title, is_personal) in &rows {
-        println!("  - {title}{}", if *is_personal { " (personal)" } else { "" });
+        println!(
+            "  - {title}{}",
+            if *is_personal { " (personal)" } else { "" }
+        );
     }
     println!("seed: done — restart the api process if it was running");
     Ok(())

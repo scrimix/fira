@@ -62,7 +62,8 @@ pub async fn ensure_task_in_scope(
     .bind(workspace_id)
     .fetch_optional(&mut **tx)
     .await?;
-    row.map(|(p,)| p).ok_or_else(|| anyhow::anyhow!("task not in scope"))
+    row.map(|(p,)| p)
+        .ok_or_else(|| anyhow::anyhow!("task not in scope"))
 }
 
 pub async fn ensure_attachment_in_scope(
@@ -91,7 +92,8 @@ pub async fn ensure_attachment_in_scope(
     .bind(workspace_id)
     .fetch_optional(pool)
     .await?;
-    row.map(|(p,)| p).ok_or_else(|| anyhow::anyhow!("task not in scope"))
+    row.map(|(p,)| p)
+        .ok_or_else(|| anyhow::anyhow!("task not in scope"))
 }
 
 pub async fn ensure_subtask_in_scope(
@@ -120,7 +122,8 @@ pub async fn ensure_subtask_in_scope(
     .bind(workspace_id)
     .fetch_optional(&mut **tx)
     .await?;
-    row.map(|(p,)| p).ok_or_else(|| anyhow::anyhow!("subtask not in scope"))
+    row.map(|(p,)| p)
+        .ok_or_else(|| anyhow::anyhow!("subtask not in scope"))
 }
 
 pub async fn ensure_tag_in_scope(
@@ -148,7 +151,8 @@ pub async fn ensure_tag_in_scope(
     .bind(workspace_id)
     .fetch_optional(&mut **tx)
     .await?;
-    row.map(|(p,)| p).ok_or_else(|| anyhow::anyhow!("tag not in scope"))
+    row.map(|(p,)| p)
+        .ok_or_else(|| anyhow::anyhow!("tag not in scope"))
 }
 
 pub async fn ensure_block_in_scope(
@@ -177,5 +181,6 @@ pub async fn ensure_block_in_scope(
     .bind(workspace_id)
     .fetch_optional(&mut **tx)
     .await?;
-    row.map(|(p,)| p).ok_or_else(|| anyhow::anyhow!("block not in scope"))
+    row.map(|(p,)| p)
+        .ok_or_else(|| anyhow::anyhow!("block not in scope"))
 }

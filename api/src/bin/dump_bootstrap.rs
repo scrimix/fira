@@ -73,22 +73,20 @@ async fn main() -> anyhow::Result<()> {
     let bootstrap = load_bootstrap(&pool, workspace_id, user_id)
         .await
         .context("load_bootstrap")?;
-    let me: models::User = sqlx::query_as(
-        "SELECT id, email, name, initials FROM users WHERE id = $1",
-    )
-    .bind(user_id)
-    .fetch_one(&pool)
-    .await
-    .context("seeded user not found")?;
+    let me: models::User =
+        sqlx::query_as("SELECT id, email, name, initials FROM users WHERE id = $1")
+            .bind(user_id)
+            .fetch_one(&pool)
+            .await
+            .context("seeded user not found")?;
     // Workspace + members. Match the shape the SPA's `Workspace` type expects
     // (id, title, is_personal, members[]).
-    let (id, title, is_personal): (uuid::Uuid, String, bool) = sqlx::query_as(
-        "SELECT id, title, is_personal FROM workspaces WHERE id = $1",
-    )
-    .bind(workspace_id)
-    .fetch_one(&pool)
-    .await
-    .context("seeded workspace not found")?;
+    let (id, title, is_personal): (uuid::Uuid, String, bool) =
+        sqlx::query_as("SELECT id, title, is_personal FROM workspaces WHERE id = $1")
+            .bind(workspace_id)
+            .fetch_one(&pool)
+            .await
+            .context("seeded workspace not found")?;
     let members: Vec<models::WorkspaceMember> = sqlx::query_as(
         "SELECT user_id, role FROM workspace_members
          WHERE workspace_id = $1 AND removed_at IS NULL",
@@ -97,7 +95,12 @@ async fn main() -> anyhow::Result<()> {
     .fetch_all(&pool)
     .await
     .context("workspace members")?;
-    let workspace = models::Workspace { id, title, is_personal, members };
+    let workspace = models::Workspace {
+        id,
+        title,
+        is_personal,
+        members,
+    };
 
     let snapshot = Snapshot {
         snapshot_at: Utc::now(),

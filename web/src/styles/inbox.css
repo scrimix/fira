@@ -864,13 +864,14 @@
   place-items: center;
 }
 .modal {
-  width: min(840px, 92vw);
+  width: min(1080px, 92vw);
   max-height: 88vh;
   max-height: 88dvh;
+  height: min(88vh, 1080px);
   background: var(--paper);
   border: 1px solid var(--rule-3);
   display: flex; flex-direction: column;
-  overflow: hidden;
+  overflow: clip;
 }
 /* On phones the modal needs to leave room for both Safari toolbars,
  * not just take 88 % of the *layout* viewport (which is taller than
@@ -885,7 +886,68 @@
   display: flex; align-items: center; gap: 10px;
   padding: 14px 18px;
   border-bottom: 1px solid var(--rule);
+  flex-shrink: 0;
 }
+.modal-head .ext {
+  font-family: var(--font-mono);
+  font-size: calc(11px * var(--fs-scale));
+  color: var(--ink-3);
+}
+.modal-head .grow { flex: 1; }
+
+.modal-body {
+  display: grid;
+  grid-template-columns: 1fr 220px;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  height: 100%;
+  overflow: clip;
+}
+/* Sidebar collapsible — burger toggle in the head pane swaps the
+ * grid to a single column and hides the side panel. Especially
+ * relevant on phones where 220 px would otherwise be most of the
+ * viewport. */
+.modal-body[data-side="closed"] {
+  grid-template-columns: 1fr;
+}
+.modal-body[data-side="closed"] .modal-side {
+  display: none;
+}
+.modal-body[data-side="closed"] .modal-main {
+  border-right: 0;
+}
+.modal-main {
+  padding: 16px 22px 22px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+  min-width: 0;
+  height: 100%;
+  box-sizing: border-box;
+  border-right: 1px solid var(--rule);
+  scrollbar-gutter: stable;
+}
+.modal-side {
+  padding: 16px 18px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+  min-width: 0;
+  height: 100%;
+  box-sizing: border-box;
+  background: var(--paper-2);
+  scrollbar-gutter: stable;
+}
+/* On phones the side panel keeps eating ~220 px even when collapsed
+ * later, and the time-block row's "COMPLETED" tag was clipping past
+ * the right edge. Shrink the main pane's horizontal padding to claw
+ * back the pixels — the content reads fine tighter to the edges. */
+@media (max-width: 700px) {
+  .modal-main { padding: 12px 10px 16px; }
+  .modal-side { padding: 12px 10px; }
+}
+
 .attachment-preview-modal {
   width: min(96vw, 1400px);
   max-width: min(96vw, 1400px);
@@ -919,49 +981,7 @@
   border: 0;
   background: #fff;
 }
-.modal-head .ext {
-  font-family: var(--font-mono);
-  font-size: calc(11px * var(--fs-scale));
-  color: var(--ink-3);
-}
-.modal-head .grow { flex: 1; }
 
-.modal-body {
-  display: grid;
-  grid-template-columns: 1fr 220px;
-  flex: 1; min-height: 0;
-}
-/* Sidebar collapsible — burger toggle in the head pane swaps the
- * grid to a single column and hides the side panel. Especially
- * relevant on phones where 220 px would otherwise be most of the
- * viewport. */
-.modal-body[data-side="closed"] {
-  grid-template-columns: 1fr;
-}
-.modal-body[data-side="closed"] .modal-side {
-  display: none;
-}
-.modal-body[data-side="closed"] .modal-main {
-  border-right: 0;
-}
-.modal-main {
-  padding: 16px 22px 22px;
-  overflow: auto;
-  border-right: 1px solid var(--rule);
-}
-.modal-side {
-  padding: 16px 18px;
-  overflow: auto;
-  background: var(--paper-2);
-}
-/* On phones the side panel keeps eating ~220 px even when collapsed
- * later, and the time-block row's "COMPLETED" tag was clipping past
- * the right edge. Shrink the main pane's horizontal padding to claw
- * back the pixels — the content reads fine tighter to the edges. */
-@media (max-width: 700px) {
-  .modal-main { padding: 12px 10px 16px; }
-  .modal-side { padding: 12px 10px; }
-}
 .modal-side h5,
 .tm-section-h {
   margin: 0 0 4px;
@@ -1145,15 +1165,116 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
   font-size: var(--fs-sm);
   line-height: 1.55;
   color: var(--ink-2);
-  white-space: pre-wrap;
+  white-space: normal;
   margin: 6px 0 14px;
   outline: none;
   min-height: 1.55em;
-  cursor: text;
+  cursor: default;
   padding: 4px 6px;
-  margin-left: -6px;
+  box-sizing: border-box;
   border-radius: 2px;
 }
+.desc-md > *:first-child { margin-top: 0; }
+.desc-md > *:last-child { margin-bottom: 0; }
+.desc-md p { margin: 0 0 0.7em; }
+.desc-md ul, .desc-md ol { margin: 0 0 0.7em 1.2em; padding: 0; }
+.desc-md li { margin: 0.2em 0; }
+.desc-md blockquote {
+  margin: 0 0 0.7em;
+  padding-left: 0.8em;
+  border-left: 4px solid var(--rule-2);
+  color: var(--ink-2);
+  background: var(--paper-2);
+  font-size: 0.95em;
+}
+.desc-md h1, .desc-md h2, .desc-md h3, .desc-md h4, .desc-md h5, .desc-md h6 {
+  margin: 0.8em 0 0.4em;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+.desc-md a { color: var(--accent); text-decoration: underline; }
+.desc-md code {
+  font-family: var(--font-mono);
+  font-size: 0.95em;
+  background: var(--paper-2);
+  padding: 0.1em 0.3em;
+  border-radius: 2px;
+}
+.desc-md pre {
+  margin: 0 0 0.7em;
+  padding: 0.7em 0.8em;
+  border-radius: 4px;
+  background: var(--paper-2);
+  overflow-x: auto;
+}
+.desc-md pre code {
+  display: block;
+  padding: 0;
+  background: transparent;
+  border-radius: 0;
+  white-space: pre;
+  line-height: 1.45;
+}
+.desc-md ul, .desc-md ol { margin: 0 0 0.7em 1.2em; padding: 0; }
+.desc-md li { margin: 0.2em 0; }
+
+/* Force round bullets at every nesting depth instead of the browser's
+ * disc → circle → square default escalation. */
+.desc-md ul { list-style-type: disc; }
+.desc-md ul ul { list-style-type: disc; }
+
+/* GFM task lists ("- [ ] foo") get their own <ul class="contains-task-list">
+ * — strip the marker entirely so only the checkbox shows. */
+.desc-md ul.contains-task-list {
+  list-style: none;
+  margin-left: 0;
+  padding-left: 0;
+}
+.desc-md li.task-list-item {
+  margin-left: 0;
+  padding-left: 0;
+}
+.desc-md li.task-list-item input[type="checkbox"] {
+  margin-right: 6px;
+  cursor: default; /* it's disabled/read-only, don't imply it's clickable */
+}
+
+.desc-md table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0 0 0.7em;
+  font-size: var(--fs-md);
+}
+.desc-md th, .desc-md td {
+  border: 1px solid var(--rule);
+  padding: 6px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+.desc-md thead th {
+  background: var(--paper-2);
+  color: var(--ink-3);
+  font-weight: 600;
+}
+/* GFM tables support per-column alignment via the header's separator
+ * row (":---", ":---:", "---:") — browsers apply this as inline
+ * text-align on <th>/<td> automatically, so no extra CSS needed there. */
+
+/* Wide tables (many columns) shouldn't blow out the modal width —
+ * scroll horizontally within the cell block instead. */
+.desc-md table {
+  display: block;
+  overflow-x: auto;
+}
+.desc-md img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: 4px;
+  margin: 0.4em 0;
+  border: 1px solid var(--rule);
+}
+
 .modal-subtasks {
   display: flex;
   flex-direction: column;
@@ -1161,12 +1282,12 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
   padding: 4px 6px;
   margin-left: -6px;
 }
-.desc-md:hover { background: var(--paper-2); }
 .desc-md[data-empty="true"] { color: var(--ink-4); }
 .desc-md.desc-md-edit {
   font-family: inherit;
   width: 100%;
   box-sizing: border-box;
+  white-space: pre-wrap;
   /* Reset the read-mode negative margin: in read mode it pulls the hover
    * background's 6px padding back so prose still aligns with surrounding
    * content; in edit mode the bordered box is visible, so the negative
@@ -1244,6 +1365,43 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
 .attachment-item .attachment-item-btn:hover { background: var(--paper-3); }
 .attachment-item:hover .attachment-item-btn { opacity: 1; }
 .attachment-item .attachment-item-btn:hover { color: var(--danger); }
+
+.attachment-preview-text {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 16px 20px;
+  overflow: auto;
+  box-sizing: border-box;
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--paper);
+}
+.attachment-preview-markdown {
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  box-sizing: border-box;
+  padding: 16px 20px;
+  background: var(--paper);
+}
+.attachment-preview-unsupported {
+  color: var(--ink-4);
+  padding: 20px;
+}
+
+.task-attachment-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.task-attachment-error {
+  font-size: calc(11px * var(--fs-scale));
+  color: var(--danger);
+}
 
 .est-bar {
   height: 6px;
@@ -1504,6 +1662,7 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
 .confirm-modal {
   width: min(420px, 92vw);
   max-height: none;
+  height: auto;
 }
 .confirm-body {
   padding: 18px 22px 8px;

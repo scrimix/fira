@@ -24,10 +24,10 @@ use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
-use crate::{attachments::delete_task_attachments, auth::AuthCtx, storage::StorageBackend};
+use crate::ensure_scope::*;
 use crate::error::ApiResult;
 use crate::AppState;
-use crate::ensure_scope::*;
+use crate::{attachments::delete_task_attachments, auth::AuthCtx, storage::StorageBackend};
 
 #[derive(Debug, Deserialize)]
 pub struct OpEnvelope {
@@ -49,19 +49,37 @@ pub enum Op {
     #[serde(rename = "task.set_section")]
     TaskSetSection { task_id: Uuid, section: String },
     #[serde(rename = "task.set_assignee")]
-    TaskSetAssignee { task_id: Uuid, assignee_id: Option<Uuid> },
+    TaskSetAssignee {
+        task_id: Uuid,
+        assignee_id: Option<Uuid>,
+    },
     #[serde(rename = "task.set_estimate")]
-    TaskSetEstimate { task_id: Uuid, estimate_min: Option<i32> },
+    TaskSetEstimate {
+        task_id: Uuid,
+        estimate_min: Option<i32>,
+    },
     #[serde(rename = "task.set_title")]
     TaskSetTitle { task_id: Uuid, title: String },
     #[serde(rename = "task.set_description")]
-    TaskSetDescription { task_id: Uuid, description_md: String },
+    TaskSetDescription {
+        task_id: Uuid,
+        description_md: String,
+    },
     #[serde(rename = "task.set_external_id")]
-    TaskSetExternalId { task_id: Uuid, external_id: Option<String> },
+    TaskSetExternalId {
+        task_id: Uuid,
+        external_id: Option<String>,
+    },
     #[serde(rename = "task.set_external_url")]
-    TaskSetExternalUrl { task_id: Uuid, external_url: Option<String> },
+    TaskSetExternalUrl {
+        task_id: Uuid,
+        external_url: Option<String>,
+    },
     #[serde(rename = "task.reorder")]
-    TaskReorder { project_id: Uuid, ordered: Vec<Uuid> },
+    TaskReorder {
+        project_id: Uuid,
+        ordered: Vec<Uuid>,
+    },
     #[serde(rename = "task.delete")]
     TaskDelete { task_id: Uuid },
     #[serde(rename = "subtask.create")]
@@ -128,21 +146,32 @@ impl Op {
 pub struct TaskInput {
     pub id: Uuid,
     pub project_id: Uuid,
-    #[serde(default)] pub epic_id: Option<Uuid>,
-    #[serde(default)] pub sprint_id: Option<Uuid>,
-    #[serde(default)] pub assignee_id: Option<Uuid>,
+    #[serde(default)]
+    pub epic_id: Option<Uuid>,
+    #[serde(default)]
+    pub sprint_id: Option<Uuid>,
+    #[serde(default)]
+    pub assignee_id: Option<Uuid>,
     pub title: String,
-    #[serde(default)] pub description_md: String,
+    #[serde(default)]
+    pub description_md: String,
     pub section: String,
     pub status: String,
-    #[serde(default)] pub priority: Option<String>,
+    #[serde(default)]
+    pub priority: Option<String>,
     pub source: String,
-    #[serde(default)] pub external_id: Option<String>,
-    #[serde(default)] pub external_url: Option<String>,
-    #[serde(default)] pub estimate_min: Option<i32>,
-    #[serde(default)] pub spent_min: i32,
-    #[serde(default)] pub tag_ids: Vec<Uuid>,
-    #[serde(default = "default_sort")] pub sort_key: String,
+    #[serde(default)]
+    pub external_id: Option<String>,
+    #[serde(default)]
+    pub external_url: Option<String>,
+    #[serde(default)]
+    pub estimate_min: Option<i32>,
+    #[serde(default)]
+    pub spent_min: i32,
+    #[serde(default)]
+    pub tag_ids: Vec<Uuid>,
+    #[serde(default = "default_sort")]
+    pub sort_key: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -152,15 +181,19 @@ pub struct TagInput {
     pub title: String,
     pub color: String,
 }
-fn default_sort() -> String { "M".into() }
+fn default_sort() -> String {
+    "M".into()
+}
 
 #[derive(Debug, Deserialize)]
 pub struct SubtaskInput {
     pub id: Uuid,
     pub task_id: Uuid,
     pub title: String,
-    #[serde(default)] pub done: bool,
-    #[serde(default = "default_sort")] pub sort_key: String,
+    #[serde(default)]
+    pub done: bool,
+    #[serde(default = "default_sort")]
+    pub sort_key: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -175,9 +208,12 @@ pub struct BlockInput {
 
 #[derive(Debug, Deserialize, Default)]
 pub struct BlockPatch {
-    #[serde(default)] pub start_at: Option<DateTime<Utc>>,
-    #[serde(default)] pub end_at: Option<DateTime<Utc>>,
-    #[serde(default)] pub state: Option<String>,
+    #[serde(default)]
+    pub start_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub end_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub state: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -207,7 +243,11 @@ pub async fn post_ops(
     for env in req.ops {
         let res = apply_one(&s.pool, ctx.user.id, ctx.workspace_id, env, &s.storage).await;
         results.push(match res {
-            Ok((op_id, _outcome)) => OpResult { op_id, status: "ok", error: None },
+            Ok((op_id, _outcome)) => OpResult {
+                op_id,
+                status: "ok",
+                error: None,
+            },
             Err((op_id, e)) => {
                 // Transient DB errors (stale pool connection killed by
                 // the server, pool timeout, network blip) used to surface
@@ -225,7 +265,11 @@ pub async fn post_ops(
                     return Err(StatusCode::SERVICE_UNAVAILABLE);
                 }
                 tracing::warn!("op {op_id} failed: {e:#}");
-                OpResult { op_id, status: "error", error: Some(e.to_string()) }
+                OpResult {
+                    op_id,
+                    status: "error",
+                    error: Some(e.to_string()),
+                }
             }
         });
     }
@@ -257,7 +301,7 @@ async fn apply_one(
     user_id: Uuid,
     workspace_id: Uuid,
     env: OpEnvelope,
-    storage: &StorageBackend
+    storage: &StorageBackend,
 ) -> Result<(String, ApplyOutcome), (String, anyhow::Error)> {
     let op_id = env.op_id.clone();
     let payload_value = env.payload.clone();
@@ -307,7 +351,8 @@ async fn apply_one(
             .await?;
         tx.commit().await?;
         Ok(ApplyOutcome::Applied)
-    }).await;
+    })
+    .await;
 
     match result {
         Ok(o) => Ok((op_id, o)),
@@ -382,7 +427,11 @@ async fn apply_payload(
                     finished_at = CASE WHEN $3 THEN now() ELSE NULL END
                  WHERE id = $1",
             )
-                .bind(task_id).bind(next).bind(done).execute(&mut **tx).await?;
+            .bind(task_id)
+            .bind(next)
+            .bind(done)
+            .execute(&mut **tx)
+            .await?;
         }
         Op::TaskSetStatus { task_id, status } => {
             *out_project_id = Some(ensure_task_in_scope(tx, user_id, workspace_id, task_id).await?);
@@ -395,55 +444,101 @@ async fn apply_payload(
                     finished_at = CASE WHEN $2 = 'done' THEN now() ELSE NULL END
                  WHERE id = $1",
             )
-                .bind(task_id).bind(&status).execute(&mut **tx).await?;
+            .bind(task_id)
+            .bind(&status)
+            .execute(&mut **tx)
+            .await?;
         }
         Op::TaskSetSection { task_id, section } => {
             *out_project_id = Some(ensure_task_in_scope(tx, user_id, workspace_id, task_id).await?);
             sqlx::query("UPDATE tasks SET section = $2, updated_at = now() WHERE id = $1")
-                .bind(task_id).bind(&section).execute(&mut **tx).await?;
+                .bind(task_id)
+                .bind(&section)
+                .execute(&mut **tx)
+                .await?;
         }
-        Op::TaskSetAssignee { task_id, assignee_id } => {
+        Op::TaskSetAssignee {
+            task_id,
+            assignee_id,
+        } => {
             *out_project_id = Some(ensure_task_in_scope(tx, user_id, workspace_id, task_id).await?);
             sqlx::query("UPDATE tasks SET assignee_id = $2, updated_at = now() WHERE id = $1")
-                .bind(task_id).bind(assignee_id).execute(&mut **tx).await?;
+                .bind(task_id)
+                .bind(assignee_id)
+                .execute(&mut **tx)
+                .await?;
         }
-        Op::TaskSetEstimate { task_id, estimate_min } => {
+        Op::TaskSetEstimate {
+            task_id,
+            estimate_min,
+        } => {
             *out_project_id = Some(ensure_task_in_scope(tx, user_id, workspace_id, task_id).await?);
             sqlx::query("UPDATE tasks SET estimate_min = $2, updated_at = now() WHERE id = $1")
-                .bind(task_id).bind(estimate_min).execute(&mut **tx).await?;
+                .bind(task_id)
+                .bind(estimate_min)
+                .execute(&mut **tx)
+                .await?;
         }
         Op::TaskSetTitle { task_id, title } => {
             *out_project_id = Some(ensure_task_in_scope(tx, user_id, workspace_id, task_id).await?);
             sqlx::query("UPDATE tasks SET title = $2, updated_at = now() WHERE id = $1")
-                .bind(task_id).bind(&title).execute(&mut **tx).await?;
+                .bind(task_id)
+                .bind(&title)
+                .execute(&mut **tx)
+                .await?;
         }
-        Op::TaskSetDescription { task_id, description_md } => {
+        Op::TaskSetDescription {
+            task_id,
+            description_md,
+        } => {
             *out_project_id = Some(ensure_task_in_scope(tx, user_id, workspace_id, task_id).await?);
             sqlx::query("UPDATE tasks SET description_md = $2, updated_at = now() WHERE id = $1")
-                .bind(task_id).bind(&description_md).execute(&mut **tx).await?;
+                .bind(task_id)
+                .bind(&description_md)
+                .execute(&mut **tx)
+                .await?;
         }
-        Op::TaskSetExternalId { task_id, external_id } => {
+        Op::TaskSetExternalId {
+            task_id,
+            external_id,
+        } => {
             *out_project_id = Some(ensure_task_in_scope(tx, user_id, workspace_id, task_id).await?);
             // Empty string from the UI = clear (consistent with PATCH semantics).
-            let value = external_id.as_deref().map(str::trim).filter(|s| !s.is_empty());
+            let value = external_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty());
             sqlx::query("UPDATE tasks SET external_id = $2, updated_at = now() WHERE id = $1")
-                .bind(task_id).bind(value).execute(&mut **tx).await?;
+                .bind(task_id)
+                .bind(value)
+                .execute(&mut **tx)
+                .await?;
         }
-        Op::TaskSetExternalUrl { task_id, external_url } => {
+        Op::TaskSetExternalUrl {
+            task_id,
+            external_url,
+        } => {
             *out_project_id = Some(ensure_task_in_scope(tx, user_id, workspace_id, task_id).await?);
-            let value = external_url.as_deref().map(str::trim).filter(|s| !s.is_empty());
+            let value = external_url
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty());
             // Soft validation — same shape as projects.external_url_template.
             if let Some(u) = value {
-                if u.len() > 2048
-                    || !(u.starts_with("http://") || u.starts_with("https://"))
-                {
+                if u.len() > 2048 || !(u.starts_with("http://") || u.starts_with("https://")) {
                     anyhow::bail!("external_url must be an http(s) URL ≤ 2048 chars");
                 }
             }
             sqlx::query("UPDATE tasks SET external_url = $2, updated_at = now() WHERE id = $1")
-                .bind(task_id).bind(value).execute(&mut **tx).await?;
+                .bind(task_id)
+                .bind(value)
+                .execute(&mut **tx)
+                .await?;
         }
-        Op::TaskReorder { project_id, ordered } => {
+        Op::TaskReorder {
+            project_id,
+            ordered,
+        } => {
             require_project_access(tx, user_id, workspace_id, project_id).await?;
             *out_project_id = Some(project_id);
             for (i, task_id) in ordered.iter().enumerate() {
@@ -452,8 +547,11 @@ async fn apply_payload(
                     "UPDATE tasks SET sort_key = $2, updated_at = now()
                      WHERE id = $1 AND project_id = $3",
                 )
-                .bind(task_id).bind(&sort_key).bind(project_id)
-                .execute(&mut **tx).await?;
+                .bind(task_id)
+                .bind(&sort_key)
+                .bind(project_id)
+                .execute(&mut **tx)
+                .await?;
             }
         }
         Op::TaskDelete { task_id } => {
@@ -461,10 +559,13 @@ async fn apply_payload(
             delete_task_attachments(tx, storage, task_id).await?;
             // subtasks + time_blocks cascade via FK ON DELETE CASCADE.
             sqlx::query("DELETE FROM tasks WHERE id = $1")
-                .bind(task_id).execute(&mut **tx).await?;
+                .bind(task_id)
+                .execute(&mut **tx)
+                .await?;
         }
         Op::SubtaskCreate { subtask } => {
-            *out_project_id = Some(ensure_task_in_scope(tx, user_id, workspace_id, subtask.task_id).await?);
+            *out_project_id =
+                Some(ensure_task_in_scope(tx, user_id, workspace_id, subtask.task_id).await?);
             sqlx::query(
                 "INSERT INTO subtasks (id, task_id, title, done, sort_key)
                  VALUES ($1,$2,$3,$4,$5)
@@ -475,22 +576,34 @@ async fn apply_payload(
             .bind(&subtask.title)
             .bind(subtask.done)
             .bind(&subtask.sort_key)
-            .execute(&mut **tx).await?;
+            .execute(&mut **tx)
+            .await?;
         }
         Op::SubtaskTick { subtask_id, done } => {
-            *out_project_id = Some(ensure_subtask_in_scope(tx, user_id, workspace_id, subtask_id).await?);
+            *out_project_id =
+                Some(ensure_subtask_in_scope(tx, user_id, workspace_id, subtask_id).await?);
             sqlx::query("UPDATE subtasks SET done = $2 WHERE id = $1")
-                .bind(subtask_id).bind(done).execute(&mut **tx).await?;
+                .bind(subtask_id)
+                .bind(done)
+                .execute(&mut **tx)
+                .await?;
         }
         Op::SubtaskSetTitle { subtask_id, title } => {
-            *out_project_id = Some(ensure_subtask_in_scope(tx, user_id, workspace_id, subtask_id).await?);
+            *out_project_id =
+                Some(ensure_subtask_in_scope(tx, user_id, workspace_id, subtask_id).await?);
             sqlx::query("UPDATE subtasks SET title = $2 WHERE id = $1")
-                .bind(subtask_id).bind(&title).execute(&mut **tx).await?;
+                .bind(subtask_id)
+                .bind(&title)
+                .execute(&mut **tx)
+                .await?;
         }
         Op::SubtaskDelete { subtask_id } => {
-            *out_project_id = Some(ensure_subtask_in_scope(tx, user_id, workspace_id, subtask_id).await?);
+            *out_project_id =
+                Some(ensure_subtask_in_scope(tx, user_id, workspace_id, subtask_id).await?);
             sqlx::query("DELETE FROM subtasks WHERE id = $1")
-                .bind(subtask_id).execute(&mut **tx).await?;
+                .bind(subtask_id)
+                .execute(&mut **tx)
+                .await?;
         }
         Op::SubtaskReorder { task_id, ordered } => {
             *out_project_id = Some(ensure_task_in_scope(tx, user_id, workspace_id, task_id).await?);
@@ -498,15 +611,17 @@ async fn apply_payload(
             // text comparison gives the desired order.
             for (i, sub_id) in ordered.iter().enumerate() {
                 let sort_key = format!("M{:03}", i);
-                sqlx::query(
-                    "UPDATE subtasks SET sort_key = $2 WHERE id = $1 AND task_id = $3",
-                )
-                .bind(sub_id).bind(&sort_key).bind(task_id)
-                .execute(&mut **tx).await?;
+                sqlx::query("UPDATE subtasks SET sort_key = $2 WHERE id = $1 AND task_id = $3")
+                    .bind(sub_id)
+                    .bind(&sort_key)
+                    .bind(task_id)
+                    .execute(&mut **tx)
+                    .await?;
             }
         }
         Op::BlockCreate { block } => {
-            *out_project_id = Some(ensure_task_in_scope(tx, user_id, workspace_id, block.task_id).await?);
+            *out_project_id =
+                Some(ensure_task_in_scope(tx, user_id, workspace_id, block.task_id).await?);
             sqlx::query(
                 "INSERT INTO time_blocks (id, task_id, user_id, start_at, end_at, state)
                  VALUES ($1,$2,$3,$4,$5,$6)
@@ -518,10 +633,12 @@ async fn apply_payload(
             .bind(block.start_at)
             .bind(block.end_at)
             .bind(&block.state)
-            .execute(&mut **tx).await?;
+            .execute(&mut **tx)
+            .await?;
         }
         Op::BlockUpdate { block_id, patch } => {
-            *out_project_id = Some(ensure_block_in_scope(tx, user_id, workspace_id, block_id).await?);
+            *out_project_id =
+                Some(ensure_block_in_scope(tx, user_id, workspace_id, block_id).await?);
             sqlx::query(
                 "UPDATE time_blocks SET
                     start_at = COALESCE($2, start_at),
@@ -533,12 +650,16 @@ async fn apply_payload(
             .bind(patch.start_at)
             .bind(patch.end_at)
             .bind(patch.state)
-            .execute(&mut **tx).await?;
+            .execute(&mut **tx)
+            .await?;
         }
         Op::BlockDelete { block_id } => {
-            *out_project_id = Some(ensure_block_in_scope(tx, user_id, workspace_id, block_id).await?);
+            *out_project_id =
+                Some(ensure_block_in_scope(tx, user_id, workspace_id, block_id).await?);
             sqlx::query("DELETE FROM time_blocks WHERE id = $1")
-                .bind(block_id).execute(&mut **tx).await?;
+                .bind(block_id)
+                .execute(&mut **tx)
+                .await?;
         }
         Op::TagCreate { tag } => {
             require_project_access(tx, user_id, workspace_id, tag.project_id).await?;
@@ -558,18 +679,26 @@ async fn apply_payload(
         Op::TagSetTitle { tag_id, title } => {
             *out_project_id = Some(ensure_tag_in_scope(tx, user_id, workspace_id, tag_id).await?);
             sqlx::query("UPDATE tags SET title = $2 WHERE id = $1")
-                .bind(tag_id).bind(&title).execute(&mut **tx).await?;
+                .bind(tag_id)
+                .bind(&title)
+                .execute(&mut **tx)
+                .await?;
         }
         Op::TagSetColor { tag_id, color } => {
             *out_project_id = Some(ensure_tag_in_scope(tx, user_id, workspace_id, tag_id).await?);
             sqlx::query("UPDATE tags SET color = $2 WHERE id = $1")
-                .bind(tag_id).bind(&color).execute(&mut **tx).await?;
+                .bind(tag_id)
+                .bind(&color)
+                .execute(&mut **tx)
+                .await?;
         }
         Op::TagDelete { tag_id } => {
             *out_project_id = Some(ensure_tag_in_scope(tx, user_id, workspace_id, tag_id).await?);
             // task_tags rows cascade via FK ON DELETE CASCADE.
             sqlx::query("DELETE FROM tags WHERE id = $1")
-                .bind(tag_id).execute(&mut **tx).await?;
+                .bind(tag_id)
+                .execute(&mut **tx)
+                .await?;
         }
         Op::TaskSetTags { task_id, tag_ids } => {
             let project_id = ensure_task_in_scope(tx, user_id, workspace_id, task_id).await?;
@@ -590,7 +719,9 @@ async fn apply_payload(
                 }
             }
             sqlx::query("DELETE FROM task_tags WHERE task_id = $1")
-                .bind(task_id).execute(&mut **tx).await?;
+                .bind(task_id)
+                .execute(&mut **tx)
+                .await?;
             for tag_id in &tag_ids {
                 sqlx::query(
                     "INSERT INTO task_tags (task_id, tag_id) VALUES ($1, $2)
@@ -677,7 +808,11 @@ pub async fn get_changes(
     let ops = rows
         .into_iter()
         .map(|(seq, op_id, kind, payload, applied_at)| ChangeEntry {
-            seq, op_id, kind, payload, applied_at,
+            seq,
+            op_id,
+            kind,
+            payload,
+            applied_at,
         })
         .collect();
 

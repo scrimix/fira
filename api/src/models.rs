@@ -132,7 +132,7 @@ pub struct Task {
     #[sqlx(skip)]
     pub tag_ids: Vec<Uuid>,
     #[sqlx(skip)]
-    pub attachments: Vec<Attachment>
+    pub attachments: Vec<Attachment>,
 }
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
@@ -171,7 +171,7 @@ pub struct Attachment {
     pub storage_path: String,
     pub content_type: String,
     pub size: i64,
-    pub created_at: DateTime<Utc>
+    pub created_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Serialize, sqlx::FromRow)]

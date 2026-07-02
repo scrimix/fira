@@ -7,8 +7,10 @@
 // always available so out-of-process consumers (the dump-bootstrap bin)
 // can call it regardless of feature flags.
 
+pub mod attachments;
 pub mod auth;
 pub mod db;
+pub mod ensure_scope;
 pub mod error;
 pub mod gcal;
 pub mod invites;
@@ -17,11 +19,9 @@ pub mod models;
 pub mod ops;
 pub mod pubsub;
 pub mod seed;
+pub mod storage;
 pub mod workspaces;
 pub mod ws;
-pub mod attachments;
-pub mod ensure_scope;
-pub mod storage;
 
 use auth::AuthConfig;
 use pubsub::Hub;
@@ -76,11 +76,10 @@ pub async fn load_bootstrap(
     // Fetch the caller's email for the invite query — invites are keyed
     // by canonical email, not user_id, so the recipient side of a
     // pending invite needs an email lookup.
-    let user_email: (String,) =
-        sqlx::query_as("SELECT email FROM users WHERE id = $1")
-            .bind(user_id)
-            .fetch_one(pool)
-            .await?;
+    let user_email: (String,) = sqlx::query_as("SELECT email FROM users WHERE id = $1")
+        .bind(user_id)
+        .fetch_one(pool)
+        .await?;
     // Run the hydrate queries sequentially rather than fanning out 12
     // concurrent `tokio::try_join!` branches. Each branch acquired its own
     // pool connection, so one bootstrap peaked at 12 connections at once —
@@ -98,9 +97,21 @@ pub async fn load_bootstrap(
     let blocks = db::list_blocks_in_scope(pool, &scope).await?;
     let gcal = db::list_gcal_for_user(pool, user_id).await?;
     let links = db::list_user_links(pool, user_id).await?;
-    let workspace_invites =
-        db::list_workspace_invites(pool, user_id, &user_email.0).await?;
+    let workspace_invites = db::list_workspace_invites(pool, user_id, &user_email.0).await?;
     let cursor = ops::current_cursor(pool).await?;
     let settings = db::get_user_settings(pool, user_id).await?;
-    Ok(Bootstrap { users, projects, epics, sprints, tasks, tags, blocks, gcal, links, workspace_invites, cursor, settings })
+    Ok(Bootstrap {
+        users,
+        projects,
+        epics,
+        sprints,
+        tasks,
+        tags,
+        blocks,
+        gcal,
+        links,
+        workspace_invites,
+        cursor,
+        settings,
+    })
 }

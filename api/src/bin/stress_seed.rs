@@ -37,26 +37,126 @@ const COPY_FLUSH_ROWS: usize = 50_000;
 
 /// The 20 "template tasks": (title prefix, description, est-min lo, est-min hi).
 const TEMPLATES: [(&str, &str, i32, i32); 20] = [
-    ("Fix login redirect bug", "Session cookie dropped on cross-site redirect.", 30, 120),
-    ("Write integration tests", "Cover the happy path and two failure modes.", 60, 240),
-    ("Refactor auth module", "Split the 800-line file into extractor + service.", 120, 480),
-    ("Update API docs", "Document the new /ops batch endpoint.", 30, 90),
-    ("Design onboarding flow", "Three-step wizard, skippable.", 90, 300),
-    ("Investigate slow query", "tasks_project_section index not used.", 45, 180),
-    ("Add dark mode toggle", "Persist preference in user_settings.", 60, 150),
-    ("Migrate to Postgres 16", "Test the upgrade on staging first.", 120, 360),
-    ("Review PR #842", "Touches the pubsub hub - check the listener.", 20, 60),
-    ("Plan Q3 roadmap", "Collect input from each squad lead.", 120, 480),
-    ("Fix flaky CI job", "Race between the seeder and the API boot.", 45, 150),
-    ("Implement rate limiting", "Token bucket per session on /ops.", 90, 300),
-    ("Upgrade frontend deps", "Vite 5 -> 6, check the proxy config.", 30, 120),
-    ("Write postmortem", "The Tuesday outage - timeline + action items.", 60, 120),
-    ("Optimize bootstrap payload", "Workspace hydrate ships every task at once.", 90, 360),
-    ("Add export to CSV", "Tasks list, respecting current filters.", 60, 180),
-    ("Set up error tracking", "Wire Sentry into the API and web build.", 45, 120),
-    ("Improve search relevance", "Title match should outrank description.", 90, 240),
-    ("Schedule weekly 1:1", "Recurring - 30 min, calendar block.", 15, 30),
-    ("Daily standup notes", "Recurring - capture blockers.", 10, 20),
+    (
+        "Fix login redirect bug",
+        "Session cookie dropped on cross-site redirect.",
+        30,
+        120,
+    ),
+    (
+        "Write integration tests",
+        "Cover the happy path and two failure modes.",
+        60,
+        240,
+    ),
+    (
+        "Refactor auth module",
+        "Split the 800-line file into extractor + service.",
+        120,
+        480,
+    ),
+    (
+        "Update API docs",
+        "Document the new /ops batch endpoint.",
+        30,
+        90,
+    ),
+    (
+        "Design onboarding flow",
+        "Three-step wizard, skippable.",
+        90,
+        300,
+    ),
+    (
+        "Investigate slow query",
+        "tasks_project_section index not used.",
+        45,
+        180,
+    ),
+    (
+        "Add dark mode toggle",
+        "Persist preference in user_settings.",
+        60,
+        150,
+    ),
+    (
+        "Migrate to Postgres 16",
+        "Test the upgrade on staging first.",
+        120,
+        360,
+    ),
+    (
+        "Review PR #842",
+        "Touches the pubsub hub - check the listener.",
+        20,
+        60,
+    ),
+    (
+        "Plan Q3 roadmap",
+        "Collect input from each squad lead.",
+        120,
+        480,
+    ),
+    (
+        "Fix flaky CI job",
+        "Race between the seeder and the API boot.",
+        45,
+        150,
+    ),
+    (
+        "Implement rate limiting",
+        "Token bucket per session on /ops.",
+        90,
+        300,
+    ),
+    (
+        "Upgrade frontend deps",
+        "Vite 5 -> 6, check the proxy config.",
+        30,
+        120,
+    ),
+    (
+        "Write postmortem",
+        "The Tuesday outage - timeline + action items.",
+        60,
+        120,
+    ),
+    (
+        "Optimize bootstrap payload",
+        "Workspace hydrate ships every task at once.",
+        90,
+        360,
+    ),
+    (
+        "Add export to CSV",
+        "Tasks list, respecting current filters.",
+        60,
+        180,
+    ),
+    (
+        "Set up error tracking",
+        "Wire Sentry into the API and web build.",
+        45,
+        120,
+    ),
+    (
+        "Improve search relevance",
+        "Title match should outrank description.",
+        90,
+        240,
+    ),
+    (
+        "Schedule weekly 1:1",
+        "Recurring - 30 min, calendar block.",
+        15,
+        30,
+    ),
+    (
+        "Daily standup notes",
+        "Recurring - capture blockers.",
+        10,
+        20,
+    ),
 ];
 
 /// Task sections, in weighted-bucket order (see the picker in the task loop).
@@ -78,8 +178,9 @@ const TAG_VOCAB: [(&str, &str); 10] = [
     ("v2", "#14b8a6"),
 ];
 
-const PROJECT_COLORS: [&str; 6] =
-    ["#2563eb", "#dc2626", "#16a34a", "#9333ea", "#ea580c", "#0891b2"];
+const PROJECT_COLORS: [&str; 6] = [
+    "#2563eb", "#dc2626", "#16a34a", "#9333ea", "#ea580c", "#0891b2",
+];
 
 /// Fixed ids for the "Maya" dev user — the stress-env equivalent of the
 /// base-dev fixture user. Lets the login page's "Sign in as Maya" button
@@ -183,7 +284,12 @@ async fn main() -> anyhow::Result<()> {
             ));
         }
     }
-    copy_in(&pool, "COPY users (id,email,name,initials,created_at,google_sub,avatar_url) FROM STDIN", buf).await?;
+    copy_in(
+        &pool,
+        "COPY users (id,email,name,initials,created_at,google_sub,avatar_url) FROM STDIN",
+        buf,
+    )
+    .await?;
     println!("stress_seed: {uidx} users");
 
     // ---- workspaces ----
@@ -191,9 +297,17 @@ async fn main() -> anyhow::Result<()> {
     for (w, &wid) in ws_ids.iter().enumerate() {
         let owner = ws_users[w][0];
         let created = (now - Duration::days(365)).to_rfc3339();
-        buf.push_str(&format!("{wid}\tWorkspace {}\tf\t{owner}\t{created}\n", w + 1));
+        buf.push_str(&format!(
+            "{wid}\tWorkspace {}\tf\t{owner}\t{created}\n",
+            w + 1
+        ));
     }
-    copy_in(&pool, "COPY workspaces (id,title,is_personal,created_by,created_at) FROM STDIN", buf).await?;
+    copy_in(
+        &pool,
+        "COPY workspaces (id,title,is_personal,created_by,created_at) FROM STDIN",
+        buf,
+    )
+    .await?;
     println!("stress_seed: {WORKSPACES} workspaces");
 
     // ---- workspace_members (first user of each ws is owner) ----
@@ -207,7 +321,12 @@ async fn main() -> anyhow::Result<()> {
             wm_count += 1;
         }
     }
-    copy_in(&pool, "COPY workspace_members (workspace_id,user_id,role,removed_at) FROM STDIN", buf).await?;
+    copy_in(
+        &pool,
+        "COPY workspace_members (workspace_id,user_id,role,removed_at) FROM STDIN",
+        buf,
+    )
+    .await?;
     println!("stress_seed: {wm_count} workspace_members");
 
     // ---- projects ----
@@ -235,7 +354,12 @@ async fn main() -> anyhow::Result<()> {
             pm_count += 1;
         }
     }
-    copy_in(&pool, "COPY project_members (project_id,user_id,workspace_id,role,removed_at) FROM STDIN", buf).await?;
+    copy_in(
+        &pool,
+        "COPY project_members (project_id,user_id,workspace_id,role,removed_at) FROM STDIN",
+        buf,
+    )
+    .await?;
     println!("stress_seed: {pm_count} project_members");
 
     // ---- tags (the realistic UI/CORE/BUG/... vocabulary, per project) ----
@@ -243,14 +367,25 @@ async fn main() -> anyhow::Result<()> {
     for (p, &(pid, _w)) in projects.iter().enumerate() {
         for (t, &tid) in proj_tags[p].iter().enumerate() {
             let (title, color) = TAG_VOCAB[t];
-            buf.push_str(&format!("{tid}\t{pid}\t{title}\t{color}\t{}\n", now.to_rfc3339()));
+            buf.push_str(&format!(
+                "{tid}\t{pid}\t{title}\t{color}\t{}\n",
+                now.to_rfc3339()
+            ));
         }
     }
-    copy_in(&pool, "COPY tags (id,project_id,title,color,created_at) FROM STDIN", buf).await?;
+    copy_in(
+        &pool,
+        "COPY tags (id,project_id,title,color,created_at) FROM STDIN",
+        buf,
+    )
+    .await?;
     println!("stress_seed: {} tags", projects.len() * TAG_VOCAB.len());
 
     // ---- tasks (300k rows, streamed via COPY) + task<->tag links ----
-    println!("stress_seed: seeding {} tasks...", projects.len() * TASKS_PER_PROJECT);
+    println!(
+        "stress_seed: seeding {} tasks...",
+        projects.len() * TASKS_PER_PROJECT
+    );
     let task_started = Instant::now();
     let mut conn = pool.acquire().await?;
     let mut copy = conn
@@ -352,7 +487,12 @@ async fn main() -> anyhow::Result<()> {
     );
 
     // task_tags must wait until the tasks COPY has committed (FK).
-    copy_in(&pool, "COPY task_tags (task_id,tag_id) FROM STDIN", tag_links).await?;
+    copy_in(
+        &pool,
+        "COPY task_tags (task_id,tag_id) FROM STDIN",
+        tag_links,
+    )
+    .await?;
     println!("stress_seed: {total_links} task-tag links");
 
     // ---- load-test sessions (one per user, tagged user_agent='loadtest') ----
@@ -371,14 +511,22 @@ async fn main() -> anyhow::Result<()> {
             session_count += 1;
         }
     }
-    copy_in(&pool, "COPY sessions (id,user_id,user_agent,created_at,expires_at,session_group_id) FROM STDIN", buf).await?;
+    copy_in(
+        &pool,
+        "COPY sessions (id,user_id,user_agent,created_at,expires_at,session_group_id) FROM STDIN",
+        buf,
+    )
+    .await?;
     println!("stress_seed: {session_count} load-test sessions (user_agent='loadtest')");
 
     // ---- Maya dev user (browse the stress env without Google auth) ----
     ensure_maya(&pool).await?;
     println!("stress_seed: Maya dev user ensured ({MAYA_EMAIL})");
 
-    println!("stress_seed: DONE in {:.1}s", started.elapsed().as_secs_f64());
+    println!(
+        "stress_seed: DONE in {:.1}s",
+        started.elapsed().as_secs_f64()
+    );
     Ok(())
 }
 
@@ -449,10 +597,14 @@ fn esc(s: &str) -> String {
 
 fn rand_sort_key(rng: &mut StdRng) -> String {
     const CH: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-    (0..6).map(|_| CH[rng.gen_range(0..CH.len())] as char).collect()
+    (0..6)
+        .map(|_| CH[rng.gen_range(0..CH.len())] as char)
+        .collect()
 }
 
 fn rand_token(rng: &mut StdRng) -> String {
     const CH: &[u8] = b"0123456789abcdef";
-    (0..40).map(|_| CH[rng.gen_range(0..CH.len())] as char).collect()
+    (0..40)
+        .map(|_| CH[rng.gen_range(0..CH.len())] as char)
+        .collect()
 }

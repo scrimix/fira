@@ -42,7 +42,10 @@ pub async fn is_workspace_owner(
     workspace_id: Uuid,
     user_id: Uuid,
 ) -> sqlx::Result<bool> {
-    Ok(workspace_role(pool, workspace_id, user_id).await?.as_deref() == Some("owner"))
+    Ok(workspace_role(pool, workspace_id, user_id)
+        .await?
+        .as_deref()
+        == Some("owner"))
 }
 
 /// Whether the caller has project-edit authority: an explicit `owner` or
@@ -95,7 +98,10 @@ pub async fn list_user_workspaces(pool: &PgPool, user_id: Uuid) -> sqlx::Result<
     .await?;
     let mut by_ws: HashMap<Uuid, Vec<WorkspaceMember>> = HashMap::new();
     for (ws, user, role) in rows {
-        by_ws.entry(ws).or_default().push(WorkspaceMember { user_id: user, role });
+        by_ws.entry(ws).or_default().push(WorkspaceMember {
+            user_id: user,
+            role,
+        });
     }
     for w in &mut workspaces {
         if let Some(m) = by_ws.remove(&w.id) {
@@ -152,7 +158,10 @@ pub async fn create_workspace_tx(
         id,
         title: title.to_string(),
         is_personal,
-        members: vec![WorkspaceMember { user_id: creator_id, role: "owner".into() }],
+        members: vec![WorkspaceMember {
+            user_id: creator_id,
+            role: "owner".into(),
+        }],
     })
 }
 
@@ -179,7 +188,10 @@ pub async fn ensure_personal_workspace(
     let title = if user_name.trim().is_empty() {
         "Personal".to_string()
     } else {
-        format!("{}'s workspace", user_name.split_whitespace().next().unwrap_or(user_name))
+        format!(
+            "{}'s workspace",
+            user_name.split_whitespace().next().unwrap_or(user_name)
+        )
     };
     let ws = create_workspace_tx(&mut tx, user_id, &title, true).await?;
     tx.commit().await?;
@@ -215,9 +227,16 @@ pub async fn rename_workspace_tx(
     .bind(title)
     .fetch_optional(&mut **tx)
     .await?;
-    let Some((id, title, is_personal)) = row else { return Ok(None); };
+    let Some((id, title, is_personal)) = row else {
+        return Ok(None);
+    };
     let members = list_workspace_members_tx(tx, id).await?;
-    Ok(Some(Workspace { id, title, is_personal, members }))
+    Ok(Some(Workspace {
+        id,
+        title,
+        is_personal,
+        members,
+    }))
 }
 
 async fn list_workspace_members_tx(
@@ -232,7 +251,10 @@ async fn list_workspace_members_tx(
     .bind(workspace_id)
     .fetch_all(&mut **tx)
     .await?;
-    Ok(rows.into_iter().map(|(user_id, role)| WorkspaceMember { user_id, role }).collect())
+    Ok(rows
+        .into_iter()
+        .map(|(user_id, role)| WorkspaceMember { user_id, role })
+        .collect())
 }
 
 /// Replace the active member set of a workspace. `desired` is a list of
@@ -246,19 +268,22 @@ pub async fn set_workspace_members_tx(
     actor_id: Uuid,
     desired: &[(Uuid, String)],
 ) -> sqlx::Result<Option<Workspace>> {
-    let row: Option<(Uuid, String, bool)> = sqlx::query_as(
-        "SELECT id, title, is_personal FROM workspaces WHERE id = $1",
-    )
-    .bind(workspace_id)
-    .fetch_optional(&mut **tx)
-    .await?;
-    let Some((id, title, is_personal)) = row else { return Ok(None); };
+    let row: Option<(Uuid, String, bool)> =
+        sqlx::query_as("SELECT id, title, is_personal FROM workspaces WHERE id = $1")
+            .bind(workspace_id)
+            .fetch_optional(&mut **tx)
+            .await?;
+    let Some((id, title, is_personal)) = row else {
+        return Ok(None);
+    };
 
     // Personal workspaces don't have managed membership — the single owner
     // is fixed at creation. Refuse to touch their member set.
     if is_personal {
         return Ok(Some(Workspace {
-            id, title, is_personal,
+            id,
+            title,
+            is_personal,
             members: list_workspace_members_tx(tx, id).await?,
         }));
     }
@@ -293,7 +318,9 @@ pub async fn set_workspace_members_tx(
     .await?;
 
     Ok(Some(Workspace {
-        id, title, is_personal,
+        id,
+        title,
+        is_personal,
         members: list_workspace_members_tx(tx, id).await?,
     }))
 }
@@ -353,7 +380,8 @@ pub async fn list_project_members_tx(
     .bind(project_id)
     .fetch_all(&mut **tx)
     .await?;
-    Ok(rows.into_iter()
+    Ok(rows
+        .into_iter()
         .map(|(user_id, role)| crate::models::ProjectMember { user_id, role })
         .collect())
 }
@@ -369,13 +397,14 @@ pub async fn remove_workspace_member_tx(
     workspace_id: Uuid,
     user_id: Uuid,
 ) -> sqlx::Result<Option<(Workspace, Vec<Uuid>)>> {
-    let row: Option<(Uuid, String, bool)> = sqlx::query_as(
-        "SELECT id, title, is_personal FROM workspaces WHERE id = $1",
-    )
-    .bind(workspace_id)
-    .fetch_optional(&mut **tx)
-    .await?;
-    let Some((id, title, is_personal)) = row else { return Ok(None); };
+    let row: Option<(Uuid, String, bool)> =
+        sqlx::query_as("SELECT id, title, is_personal FROM workspaces WHERE id = $1")
+            .bind(workspace_id)
+            .fetch_optional(&mut **tx)
+            .await?;
+    let Some((id, title, is_personal)) = row else {
+        return Ok(None);
+    };
     sqlx::query(
         "UPDATE workspace_members
          SET removed_at = now()
@@ -388,7 +417,9 @@ pub async fn remove_workspace_member_tx(
     let affected_projects = soft_remove_project_members_tx(tx, id, &[user_id]).await?;
     Ok(Some((
         Workspace {
-            id, title, is_personal,
+            id,
+            title,
+            is_personal,
             members: list_workspace_members_tx(tx, id).await?,
         },
         affected_projects,
@@ -414,24 +445,24 @@ pub async fn set_workspace_member_role_tx(
     if updated.rows_affected() == 0 {
         return Ok(None);
     }
-    let row: Option<(Uuid, String, bool)> = sqlx::query_as(
-        "SELECT id, title, is_personal FROM workspaces WHERE id = $1",
-    )
-    .bind(workspace_id)
-    .fetch_optional(&mut **tx)
-    .await?;
-    let Some((id, title, is_personal)) = row else { return Ok(None); };
+    let row: Option<(Uuid, String, bool)> =
+        sqlx::query_as("SELECT id, title, is_personal FROM workspaces WHERE id = $1")
+            .bind(workspace_id)
+            .fetch_optional(&mut **tx)
+            .await?;
+    let Some((id, title, is_personal)) = row else {
+        return Ok(None);
+    };
     Ok(Some(Workspace {
-        id, title, is_personal,
+        id,
+        title,
+        is_personal,
         members: list_workspace_members_tx(tx, id).await?,
     }))
 }
 
 /// Users in a workspace, used by the project editor's Members picker.
-pub async fn list_users_in_workspace(
-    pool: &PgPool,
-    workspace_id: Uuid,
-) -> sqlx::Result<Vec<User>> {
+pub async fn list_users_in_workspace(pool: &PgPool, workspace_id: Uuid) -> sqlx::Result<Vec<User>> {
     sqlx::query_as(
         "SELECT u.id, u.email, u.name, u.initials
          FROM users u
@@ -484,10 +515,7 @@ pub async fn list_users_in_scope(
     .await
 }
 
-pub async fn list_projects_in_scope(
-    pool: &PgPool,
-    scope: &[Uuid],
-) -> sqlx::Result<Vec<Project>> {
+pub async fn list_projects_in_scope(pool: &PgPool, scope: &[Uuid]) -> sqlx::Result<Vec<Project>> {
     if scope.is_empty() {
         return Ok(vec![]);
     }
@@ -508,7 +536,10 @@ pub async fn list_projects_in_scope(
     .await?;
     let mut by_project: HashMap<Uuid, Vec<ProjectMember>> = HashMap::new();
     for (pid, uid, role) in rows {
-        by_project.entry(pid).or_default().push(ProjectMember { user_id: uid, role });
+        by_project
+            .entry(pid)
+            .or_default()
+            .push(ProjectMember { user_id: uid, role });
     }
     for p in &mut projects {
         if let Some(m) = by_project.remove(&p.id) {
@@ -522,10 +553,12 @@ pub async fn list_epics_in_scope(pool: &PgPool, scope: &[Uuid]) -> sqlx::Result<
     if scope.is_empty() {
         return Ok(vec![]);
     }
-    sqlx::query_as("SELECT id, project_id, title FROM epics WHERE project_id = ANY($1) ORDER BY title")
-        .bind(scope)
-        .fetch_all(pool)
-        .await
+    sqlx::query_as(
+        "SELECT id, project_id, title FROM epics WHERE project_id = ANY($1) ORDER BY title",
+    )
+    .bind(scope)
+    .fetch_all(pool)
+    .await
 }
 
 pub async fn list_sprints_in_scope(pool: &PgPool, scope: &[Uuid]) -> sqlx::Result<Vec<Sprint>> {
@@ -559,28 +592,29 @@ pub async fn list_tasks_in_scope(pool: &PgPool, scope: &[Uuid]) -> sqlx::Result<
     let task_ids: Vec<Uuid> = tasks.iter().map(|t| t.id).collect();
     // Sequential, not `try_join!`: keep this to one pool connection at a
     // time so a bootstrap (which calls this) never fans out connections.
-    let (subs, tag_links, attachments): (Vec<Subtask>, Vec<(Uuid, Uuid)>, Vec<Attachment>) = if task_ids.is_empty() {
-        (vec![], vec![], vec![])
-    } else {
-        let subs: Vec<Subtask> = sqlx::query_as(
-            "SELECT id, task_id, title, done, sort_key FROM subtasks
+    let (subs, tag_links, attachments): (Vec<Subtask>, Vec<(Uuid, Uuid)>, Vec<Attachment>) =
+        if task_ids.is_empty() {
+            (vec![], vec![], vec![])
+        } else {
+            let subs: Vec<Subtask> = sqlx::query_as(
+                "SELECT id, task_id, title, done, sort_key FROM subtasks
              WHERE task_id = ANY($1) ORDER BY sort_key",
-        )
-        .bind(&task_ids)
-        .fetch_all(pool)
-        .await?;
-        let tag_links: Vec<(Uuid, Uuid)> =
-            sqlx::query_as("SELECT task_id, tag_id FROM task_tags WHERE task_id = ANY($1)")
-                .bind(&task_ids)
-                .fetch_all(pool)
-                .await?;
-        let attachments: Vec<Attachment> =
+            )
+            .bind(&task_ids)
+            .fetch_all(pool)
+            .await?;
+            let tag_links: Vec<(Uuid, Uuid)> =
+                sqlx::query_as("SELECT task_id, tag_id FROM task_tags WHERE task_id = ANY($1)")
+                    .bind(&task_ids)
+                    .fetch_all(pool)
+                    .await?;
+            let attachments: Vec<Attachment> =
             sqlx::query_as("SELECT id, task_id, filename, storage_path, content_type, size, created_at FROM attachments WHERE task_id = ANY($1)")
             .bind(&task_ids)
             .fetch_all(pool)
             .await?;
-        (subs, tag_links, attachments)
-    };
+            (subs, tag_links, attachments)
+        };
     let mut by_task: HashMap<Uuid, Vec<Subtask>> = HashMap::new();
     for s in subs {
         by_task.entry(s.task_id).or_default().push(s);
@@ -591,7 +625,10 @@ pub async fn list_tasks_in_scope(pool: &PgPool, scope: &[Uuid]) -> sqlx::Result<
     }
     let mut attachments_by_task: HashMap<Uuid, Vec<Attachment>> = HashMap::new();
     for attachment in attachments {
-        attachments_by_task.entry(attachment.task_id).or_default().push(attachment);
+        attachments_by_task
+            .entry(attachment.task_id)
+            .or_default()
+            .push(attachment);
     }
     for t in &mut tasks {
         if let Some(s) = by_task.remove(&t.id) {
@@ -628,14 +665,13 @@ pub async fn get_task(pool: &PgPool, task_id: Uuid) -> sqlx::Result<Option<Task>
         .await?;
         task.subtasks = subtasks;
 
-        let tag_ids: Vec<Uuid> =
-            sqlx::query_as("SELECT tag_id FROM task_tags WHERE task_id = $1")
-                .bind(task.id)
-                .fetch_all(pool)
-                .await?
-                .into_iter()
-                .map(|(tag_id,)| tag_id)
-                .collect();
+        let tag_ids: Vec<Uuid> = sqlx::query_as("SELECT tag_id FROM task_tags WHERE task_id = $1")
+            .bind(task.id)
+            .fetch_all(pool)
+            .await?
+            .into_iter()
+            .map(|(tag_id,)| tag_id)
+            .collect();
         task.tag_ids = tag_ids;
 
         let attachments: Vec<Attachment> = sqlx::query_as(
@@ -715,7 +751,10 @@ pub async fn create_project_tx(
         source: "local".to_string(),
         description: None,
         external_url_template: None,
-        members: vec![ProjectMember { user_id: owner_id, role: "owner".into() }],
+        members: vec![ProjectMember {
+            user_id: owner_id,
+            role: "owner".into(),
+        }],
     })
 }
 
@@ -747,17 +786,31 @@ pub async fn update_project_tx(
          WHERE id = $1
          RETURNING id, workspace_id, title, icon, color, source, description, external_url_template",
     );
-    let mut q = sqlx::query_as::<_, (Uuid, Uuid, String, String, String, String, Option<String>, Option<String>)>(&sql)
-        .bind(project_id)
-        .bind(title)
-        .bind(icon)
-        .bind(color);
+    let mut q = sqlx::query_as::<
+        _,
+        (
+            Uuid,
+            Uuid,
+            String,
+            String,
+            String,
+            String,
+            Option<String>,
+            Option<String>,
+        ),
+    >(&sql)
+    .bind(project_id)
+    .bind(title)
+    .bind(icon)
+    .bind(color);
     if external_url_template.is_some() {
         q = q.bind(eut_value);
     }
     let row = q.fetch_optional(&mut **tx).await?;
 
-    let Some((id, workspace_id, title, icon, color, source, description, external_url_template)) = row else {
+    let Some((id, workspace_id, title, icon, color, source, description, external_url_template)) =
+        row
+    else {
         return Ok(None);
     };
 
@@ -778,7 +831,13 @@ pub async fn update_project_tx(
         source,
         description,
         external_url_template,
-        members: members_rows.into_iter().map(|(u, r)| ProjectMember { user_id: u, role: r }).collect(),
+        members: members_rows
+            .into_iter()
+            .map(|(u, r)| ProjectMember {
+                user_id: u,
+                role: r,
+            })
+            .collect(),
     }))
 }
 
@@ -804,12 +863,11 @@ pub async fn project_owner_and_workspace(
     pool: &PgPool,
     project_id: Uuid,
 ) -> sqlx::Result<Option<(Uuid, Option<Uuid>)>> {
-    let row: Option<(Uuid, Option<Uuid>)> = sqlx::query_as(
-        "SELECT workspace_id, owner_id FROM projects WHERE id = $1",
-    )
-    .bind(project_id)
-    .fetch_optional(pool)
-    .await?;
+    let row: Option<(Uuid, Option<Uuid>)> =
+        sqlx::query_as("SELECT workspace_id, owner_id FROM projects WHERE id = $1")
+            .bind(project_id)
+            .fetch_optional(pool)
+            .await?;
     Ok(row)
 }
 
@@ -841,7 +899,16 @@ pub async fn set_project_members_tx(
     desired: &[(Uuid, String)],
     allow_role_change: bool,
 ) -> sqlx::Result<Option<Project>> {
-    let row: Option<(Uuid, Uuid, String, String, String, String, Option<String>, Option<String>)> = sqlx::query_as(
+    let row: Option<(
+        Uuid,
+        Uuid,
+        String,
+        String,
+        String,
+        String,
+        Option<String>,
+        Option<String>,
+    )> = sqlx::query_as(
         "SELECT id, workspace_id, title, icon, color, source, description, external_url_template
          FROM projects WHERE id = $1",
     )
@@ -849,7 +916,9 @@ pub async fn set_project_members_tx(
     .fetch_optional(&mut **tx)
     .await?;
 
-    let Some((id, workspace_id, title, icon, color, source, description, external_url_template)) = row else {
+    let Some((id, workspace_id, title, icon, color, source, description, external_url_template)) =
+        row
+    else {
         return Ok(None);
     };
 
@@ -882,8 +951,7 @@ pub async fn set_project_members_tx(
     .bind(id)
     .fetch_all(&mut **tx)
     .await?;
-    let existing_role: std::collections::HashMap<Uuid, String> =
-        existing.into_iter().collect();
+    let existing_role: std::collections::HashMap<Uuid, String> = existing.into_iter().collect();
 
     for (uid, role_in) in &want {
         let role = if allow_role_change {
@@ -937,7 +1005,13 @@ pub async fn set_project_members_tx(
         source,
         description,
         external_url_template,
-        members: members_rows.into_iter().map(|(u, r)| ProjectMember { user_id: u, role: r }).collect(),
+        members: members_rows
+            .into_iter()
+            .map(|(u, r)| ProjectMember {
+                user_id: u,
+                role: r,
+            })
+            .collect(),
     }))
 }
 
@@ -976,16 +1050,23 @@ pub async fn list_gcal_for_user(pool: &PgPool, user_id: Uuid) -> sqlx::Result<Ve
 /// All links involving the caller (pending sent + received + accepted),
 /// projected from the caller's perspective.
 pub async fn list_user_links(pool: &PgPool, user_id: Uuid) -> sqlx::Result<Vec<UserLink>> {
-    let rows: Vec<(Uuid, Uuid, Uuid, Uuid, String, DateTime<Utc>, Option<DateTime<Utc>>)> =
-        sqlx::query_as(
-            "SELECT id, user_a_id, user_b_id, requested_by, status, created_at, accepted_at
+    let rows: Vec<(
+        Uuid,
+        Uuid,
+        Uuid,
+        Uuid,
+        String,
+        DateTime<Utc>,
+        Option<DateTime<Utc>>,
+    )> = sqlx::query_as(
+        "SELECT id, user_a_id, user_b_id, requested_by, status, created_at, accepted_at
              FROM user_links
              WHERE user_a_id = $1 OR user_b_id = $1
              ORDER BY created_at DESC",
-        )
-        .bind(user_id)
-        .fetch_all(pool)
-        .await?;
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await?;
     Ok(rows
         .into_iter()
         .map(|(id, a, b, req, status, created_at, accepted_at)| {
@@ -997,7 +1078,14 @@ pub async fn list_user_links(pool: &PgPool, user_id: Uuid) -> sqlx::Result<Vec<U
             } else {
                 "received".to_string()
             };
-            UserLink { id, partner_id, status, direction, created_at, accepted_at }
+            UserLink {
+                id,
+                partner_id,
+                status,
+                direction,
+                created_at,
+                accepted_at,
+            }
         })
         .collect())
 }
@@ -1085,9 +1173,19 @@ pub async fn list_workspace_invites(
     user_email: &str,
 ) -> sqlx::Result<Vec<crate::models::WorkspaceInvite>> {
     let canon = canonical_email(user_email);
-    let rows: Vec<(Uuid, Uuid, String, String, String, String, Uuid, String, String, DateTime<Utc>)> =
-        sqlx::query_as(
-            "SELECT i.id, i.workspace_id, w.title, i.email, i.role, i.status,
+    let rows: Vec<(
+        Uuid,
+        Uuid,
+        String,
+        String,
+        String,
+        String,
+        Uuid,
+        String,
+        String,
+        DateTime<Utc>,
+    )> = sqlx::query_as(
+        "SELECT i.id, i.workspace_id, w.title, i.email, i.role, i.status,
                     i.invited_by, u.name, u.email, i.created_at
              FROM workspace_invites i
              JOIN workspaces w ON w.id = i.workspace_id
@@ -1095,29 +1193,46 @@ pub async fn list_workspace_invites(
              WHERE i.status = 'pending'
                AND (i.invited_by = $1 OR i.email = $2)
              ORDER BY i.created_at DESC",
-        )
-        .bind(user_id)
-        .bind(&canon)
-        .fetch_all(pool)
-        .await?;
+    )
+    .bind(user_id)
+    .bind(&canon)
+    .fetch_all(pool)
+    .await?;
     Ok(rows
         .into_iter()
-        .map(|(id, workspace_id, workspace_title, email, role, status, invited_by, invited_by_name, invited_by_email, created_at)| {
-            let direction = if invited_by == user_id { "sent" } else { "received" };
-            crate::models::WorkspaceInvite {
+        .map(
+            |(
                 id,
                 workspace_id,
                 workspace_title,
                 email,
                 role,
                 status,
-                direction: direction.to_string(),
                 invited_by,
                 invited_by_name,
                 invited_by_email,
                 created_at,
-            }
-        })
+            )| {
+                let direction = if invited_by == user_id {
+                    "sent"
+                } else {
+                    "received"
+                };
+                crate::models::WorkspaceInvite {
+                    id,
+                    workspace_id,
+                    workspace_title,
+                    email,
+                    role,
+                    status,
+                    direction: direction.to_string(),
+                    invited_by,
+                    invited_by_name,
+                    invited_by_email,
+                    created_at,
+                }
+            },
+        )
         .collect())
 }
 
@@ -1257,12 +1372,11 @@ pub async fn accept_workspace_invite_tx(
     // Pull workspace + role from the row we just updated, then insert
     // into workspace_members. ON CONFLICT covers the rare case where the
     // user was added through some other path between create and accept.
-    let row: (Uuid, String) = sqlx::query_as(
-        "SELECT workspace_id, role FROM workspace_invites WHERE id = $1",
-    )
-    .bind(invite_id)
-    .fetch_one(&mut **tx)
-    .await?;
+    let row: (Uuid, String) =
+        sqlx::query_as("SELECT workspace_id, role FROM workspace_invites WHERE id = $1")
+            .bind(invite_id)
+            .fetch_one(&mut **tx)
+            .await?;
     // ON CONFLICT path covers two cases: (a) the user was added through
     // some other route between invite-create and accept, and (b) — the
     // common one — they were a member previously, got removed (which
@@ -1291,12 +1405,11 @@ pub async fn list_workspace_member_ids(
     pool: &PgPool,
     workspace_id: Uuid,
 ) -> sqlx::Result<Vec<Uuid>> {
-    let rows: Vec<(Uuid,)> = sqlx::query_as(
-        "SELECT user_id FROM workspace_members WHERE workspace_id = $1",
-    )
-    .bind(workspace_id)
-    .fetch_all(pool)
-    .await?;
+    let rows: Vec<(Uuid,)> =
+        sqlx::query_as("SELECT user_id FROM workspace_members WHERE workspace_id = $1")
+            .bind(workspace_id)
+            .fetch_all(pool)
+            .await?;
     Ok(rows.into_iter().map(|(id,)| id).collect())
 }
 
@@ -1318,10 +1431,7 @@ pub async fn accepted_partner_id(pool: &PgPool, user_id: Uuid) -> sqlx::Result<O
 /// Linked partner's blocks across **every** workspace they belong to.
 /// Linking is mutual consent to share the calendar — the workspace
 /// scope rule that gates everything else doesn't apply here.
-pub async fn list_blocks_for_user(
-    pool: &PgPool,
-    user_id: Uuid,
-) -> sqlx::Result<Vec<TimeBlock>> {
+pub async fn list_blocks_for_user(pool: &PgPool, user_id: Uuid) -> sqlx::Result<Vec<TimeBlock>> {
     sqlx::query_as(
         "SELECT id, task_id, user_id, start_at, end_at, state
          FROM time_blocks WHERE user_id = $1 ORDER BY start_at",
@@ -1467,12 +1577,11 @@ pub async fn get_user_settings(
     pool: &PgPool,
     user_id: Uuid,
 ) -> sqlx::Result<crate::models::UserSettings> {
-    let row: Option<(Option<String>,)> = sqlx::query_as(
-        "SELECT account_badge FROM user_settings WHERE user_id = $1",
-    )
-    .bind(user_id)
-    .fetch_optional(pool)
-    .await?;
+    let row: Option<(Option<String>,)> =
+        sqlx::query_as("SELECT account_badge FROM user_settings WHERE user_id = $1")
+            .bind(user_id)
+            .fetch_optional(pool)
+            .await?;
     let account_badge = row.and_then(|(b,)| b);
     // Connection state lives on a separate table; fetch alongside so the
     // bootstrap response carries everything the AccountSettings modal
@@ -1535,7 +1644,7 @@ pub async fn are_linked(pool: &PgPool, a: Uuid, b: Uuid) -> sqlx::Result<bool> {
 
 pub async fn insert_attachment(
     tx: &mut Transaction<'_, Postgres>,
-    attachment: Attachment
+    attachment: Attachment,
 ) -> sqlx::Result<()> {
     sqlx::query(
         "INSERT INTO attachments (id, task_id, filename, storage_path, content_type, size)
@@ -1548,7 +1657,8 @@ pub async fn insert_attachment(
     .bind(attachment.storage_path)
     .bind(&attachment.content_type)
     .bind(&attachment.size)
-    .execute(&mut **tx).await?;
+    .execute(&mut **tx)
+    .await?;
 
     Ok(())
 }
@@ -1563,15 +1673,21 @@ pub async fn get_attachment(pool: &PgPool, file_id: Uuid) -> sqlx::Result<Attach
     .await
 }
 
-pub async fn delete_attachment(tx: &mut Transaction<'_, Postgres>, file_id: Uuid) -> sqlx::Result<bool> {
+pub async fn delete_attachment(
+    tx: &mut Transaction<'_, Postgres>,
+    file_id: Uuid,
+) -> sqlx::Result<bool> {
     let res = sqlx::query("DELETE FROM attachments WHERE id = $1")
-    .bind(file_id)
-    .execute(&mut **tx)
-    .await?;
+        .bind(file_id)
+        .execute(&mut **tx)
+        .await?;
     Ok(res.rows_affected() > 0)
 }
 
-pub async fn list_attachments_for_task(tx: &mut Transaction<'_, Postgres>, task_id: Uuid) -> sqlx::Result<Vec<Attachment>> {
+pub async fn list_attachments_for_task(
+    tx: &mut Transaction<'_, Postgres>,
+    task_id: Uuid,
+) -> sqlx::Result<Vec<Attachment>> {
     sqlx::query_as(
         "SELECT id, task_id, filename, storage_path, content_type, size, created_at
          FROM attachments WHERE task_id = $1 ORDER BY created_at",
@@ -1581,10 +1697,13 @@ pub async fn list_attachments_for_task(tx: &mut Transaction<'_, Postgres>, task_
     .await
 }
 
-pub async fn delete_attachments_for_task(tx: &mut Transaction<'_, Postgres>, task_id: Uuid) -> sqlx::Result<bool> {
+pub async fn delete_attachments_for_task(
+    tx: &mut Transaction<'_, Postgres>,
+    task_id: Uuid,
+) -> sqlx::Result<bool> {
     let res = sqlx::query("DELETE FROM attachments WHERE task_id = $1")
-    .bind(task_id)
-    .execute(&mut **tx)
-    .await?;
+        .bind(task_id)
+        .execute(&mut **tx)
+        .await?;
     Ok(res.rows_affected() > 0)
 }

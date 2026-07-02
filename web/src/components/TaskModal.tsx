@@ -1,5 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import ReactMarkdown from 'react-markdown';
+import remarkBreaks from 'remark-breaks';
+import remarkGfm from 'remark-gfm';
 import { ArrowLeft, Check, Copy, Download, PanelRightClose, PanelRightOpen, Paperclip, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { useFira } from '../store';
 import { useIsMobile } from '../hooks';
@@ -13,6 +16,30 @@ import type { Section, Status, Tag, Attachment, Task, User, UUID } from '../type
 import { api } from '@/api';
 
 interface Props { taskId: string }
+
+const ACCEPT_FILES = "image/*,video/*,.pdf,.txt,.zip,.tar,.md,.markdown,.mdx,.log,.csv,.json,.xml," + 
+  ".doc,.docx,.xls,.xlsx,.ppt,.pptx,.py,.cpp,.cc,.cxx,.c,.h,.hpp,.rs,.go,.java,.kt,.cs"+
+  ",.swift,.php,.rb,.sh,.sql,.yml,.yaml,.ts,.tsx,.js,.jsx,.css,.scss,.html";
+
+const TEXT_EXTENSIONS = new Set([
+  'txt','log','csv','json','xml','yml','yaml','toml','ini','env',
+  'ts','tsx','js','jsx','mjs','cjs','py','rb','go','rs','c','h','cpp',
+  'hpp','cc','cxx','cs','java','kt','kts','swift','php','sh','bash',
+  'zsh','sql','css','scss','less','html','htm','vue','svelte',
+]);
+const MARKDOWN_EXTENSIONS = new Set(['md', 'markdown', 'mdx']);
+
+function previewKind(a: Attachment): 'image' | 'pdf' | 'markdown' | 'text' | 'other' {
+  const ct = a.content_type || '';
+  if (ct.startsWith('image/')) return 'image';
+  if (ct === 'application/pdf') return 'pdf';
+  const ext = a.filename.split('.').pop()?.toLowerCase() ?? '';
+  if (MARKDOWN_EXTENSIONS.has(ext)) return 'markdown';
+  if (ct.startsWith('text/') || ct === 'application/json' || TEXT_EXTENSIONS.has(ext)) {
+    return 'text';
+  }
+  return 'other';
+}
 
 export function TaskModal({ taskId }: Props) {
   const task = useFira((s) => s.tasks.find((t) => t.id === taskId) ?? null);
@@ -59,6 +86,22 @@ export function TaskModal({ taskId }: Props) {
   const [attachmentForDelete, setDeleteAttachment] = useState<Attachment | null>(null);
   const deleteAttachment = useFira((s) => s.deleteAttachment);
   const pollChanges = useFira((s) => s.pollChanges);
+  const [previewText, setPreviewText] = useState<string | null>(null);
+  useEffect(() => {
+    setPreviewText(null);
+    if (!attachmentPreview) return;
+    const kind = previewKind(attachmentPreview.a);
+    if (kind !== 'text' && kind !== 'markdown') return;
+
+    let cancelled = false;
+    fetch(attachmentPreview.content)
+      .then((r) => r.text())
+      .then((t) => { if (!cancelled) setPreviewText(t); })
+      .catch(() => { if (!cancelled) setPreviewText('Could not load preview.'); });
+
+    return () => { cancelled = true; };
+  }, [attachmentPreview]);
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
 
   const isMobile = useIsMobile();
 
@@ -188,10 +231,11 @@ export function TaskModal({ taskId }: Props) {
 
             <SectionHeading
               title="Attachments"
-              trailing={AddAttachmentButton({task})}
+              trailing={AddAttachmentButton({task, setError: setAttachmentError})}
             />
             <AttachmentList
               attachments={task.attachments}
+              error={attachmentError}
               onDownload={async (attachment) => {
                 let content = await api.getAttachmentBlobUrl(attachment.id);
                 api.triggerDownloadAttachment(attachment, content);
@@ -385,19 +429,46 @@ export function TaskModal({ taskId }: Props) {
           </button>
         </div>
         <div className="attachment-preview-body">
-          {isImagePreview ? (
-            <img
-              src={attachmentPreview?.content}
-              alt={attachmentPreview?.a?.filename ?? 'Attachment preview'}
-              className="attachment-preview-asset attachment-preview-image"
-            />
-          ) : (
-            <embed
-              src={attachmentPreview?.content}
-              title={attachmentPreview?.a?.filename ?? 'Attachment preview'}
-              className="attachment-preview-asset attachment-preview-iframe"
-            />
-          )}
+          {(() => {
+            const kind = attachmentPreview ? previewKind(attachmentPreview.a) : 'other';
+            if (kind === 'image') {
+              return (
+                <img
+                  src={attachmentPreview?.content}
+                  alt={attachmentPreview?.a?.filename ?? 'Attachment preview'}
+                  className="attachment-preview-asset attachment-preview-image"
+                />
+              );
+            }
+            if (kind === 'markdown') {
+              return (
+                <div className="desc-md attachment-preview-markdown">
+                  {previewText != null ? (
+                    <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>
+                      {previewText}
+                    </ReactMarkdown>
+                  ) : 'Loading…'}
+                </div>
+              );
+            }
+            if (kind === 'text') {
+              return (
+                <pre className="attachment-preview-text">
+                  <code>{previewText ?? 'Loading…'}</code>
+                </pre>
+              );
+            }
+            if (kind === 'pdf') {
+              return (
+                <embed
+                  src={attachmentPreview?.content}
+                  title={attachmentPreview?.a?.filename ?? 'Attachment preview'}
+                  className="attachment-preview-asset attachment-preview-iframe"
+                />
+              );
+            }
+            return <div className="attachment-preview-unsupported">No preview available for this file type — use the download button instead.</div>;
+          })()}
         </div>
       </div>
     </div>
@@ -660,18 +731,26 @@ function DescriptionEditor({ taskId, value, onSave }: {
   const ref = useRef<HTMLTextAreaElement>(null);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
+  const pendingScrollRef = useRef<{scrollTop: number; scrollLeft: number} | null>(null);
 
   useEffect(() => {
     setEditing(false);
     setDraft(value);
   }, [taskId, value]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (editing && ref.current) {
-      ref.current.focus();
       const ta = ref.current;
+      const scrollContainer =
+        (ta.closest('.modal-main') as HTMLElement | null) ??
+        (ta.closest('.modal') as HTMLElement | null);
+      const prevScrollTop = pendingScrollRef.current?.scrollTop ?? scrollContainer?.scrollTop ?? 0;
+      const prevScrollLeft = pendingScrollRef.current?.scrollLeft ?? scrollContainer?.scrollLeft ?? 0;
+      pendingScrollRef.current = null;
+
+      ta.focus({ preventScroll: true });
       ta.setSelectionRange(ta.value.length, ta.value.length);
-      autosize(ta);
+      autosize(ta, { scrollTop: prevScrollTop, scrollLeft: prevScrollLeft });
     }
   }, [editing]);
 
@@ -684,10 +763,24 @@ function DescriptionEditor({ taskId, value, onSave }: {
     return (
       <div
         className="desc-md"
-        onClick={() => setEditing(true)}
+        onClick={(e) => {
+          const clickedLink = (e.target as HTMLElement | null)?.closest('a');
+          if (!clickedLink) {
+            const scrollContainer = document.querySelector('.modal-main') as HTMLElement | null;
+            pendingScrollRef.current = {
+              scrollTop: scrollContainer?.scrollTop ?? 0,
+              scrollLeft: scrollContainer?.scrollLeft ?? 0,
+            };
+            setEditing(true);
+          }
+        }}
         data-empty={!value}
       >
-        {value || 'No description. Click to edit.'}
+        {value ? (
+          <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>
+            {value}
+          </ReactMarkdown>
+        ) : 'No description. Click to edit.'}
       </div>
     );
   }
@@ -707,9 +800,31 @@ function DescriptionEditor({ taskId, value, onSave }: {
   );
 }
 
-function autosize(ta: HTMLTextAreaElement) {
+function autosize(ta: HTMLTextAreaElement, restoreScroll?: {scrollTop: number; scrollLeft: number}) {
+  const scrollContainer =
+    (ta.closest('.modal-main') as HTMLElement | null) ??
+    (ta.closest('.modal') as HTMLElement | null);
+  const prevParentScrollTop = restoreScroll?.scrollTop ?? scrollContainer?.scrollTop ?? 0;
+  const prevParentScrollLeft = restoreScroll?.scrollLeft ?? scrollContainer?.scrollLeft ?? 0;
+  const prevCursorTop = ta.scrollTop;
+  const prevCursorLeft = ta.scrollLeft;
+  const prevSelectionStart = ta.selectionStart;
+  const prevSelectionEnd = ta.selectionEnd;
+
   ta.style.height = 'auto';
-  ta.style.height = `${ta.scrollHeight}px`;
+  ta.style.height = `${Math.max(ta.scrollHeight, 150)}px`;
+
+  requestAnimationFrame(() => {
+    if (scrollContainer) {
+      scrollContainer.scrollTop = prevParentScrollTop;
+      scrollContainer.scrollLeft = prevParentScrollLeft;
+    }
+    ta.scrollTop = prevCursorTop;
+    ta.scrollLeft = prevCursorLeft;
+    if (prevSelectionStart != null && prevSelectionEnd != null) {
+      ta.setSelectionRange(prevSelectionStart, prevSelectionEnd);
+    }
+  });
 }
 
 // Build a markdown rendering of the task suitable for pasting into Notion,
@@ -767,34 +882,54 @@ function CopyMarkdownButton({ task }: { task: Task }) {
   );
 }
 
-function AddAttachmentButton({ task }: { task: Task }) {
-  const addAttachment = useFira((s) => s.addAttachment);
-  const onInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0)
-      return;
-    const file = files[0];
-    addAttachment(task.id, file);
-  }
-  return (
-    <label className="task-attachment-label" title="Add attachment">
-      <Paperclip size={13} strokeWidth={2} />
-    <input
-      id="task-attachment-input"
-      type="file"
-      accept="image/*,video/*,.pdf,.txt,.zip,.tar,.md,.log,.csv,.json,.xml,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
-      style={{ display: 'none' }}
-      onChange={onInput}
-     />
-    </label>
-  )
+const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024; // 10 MB
+
+function formatBytes(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${Math.ceil(bytes / 1024)} KB`;
 }
 
-function AttachmentList({ attachments, onDownload, onDelete, onPreview }: 
+function AddAttachmentButton({ task, setError }: { task: Task, setError: (err: string | null) => void }) {
+  const addAttachment = useFira((s) => s.addAttachment);
+
+  const onInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    const file = files[0];
+
+    if (file.size > MAX_ATTACHMENT_BYTES) {
+      setError(`"${file.name}" is ${formatBytes(file.size)} — max is ${formatBytes(MAX_ATTACHMENT_BYTES)}.`);
+      e.target.value = ''; // reset so re-picking the same file re-fires onChange
+      return;
+    }
+
+    setError(null);
+    addAttachment(task.id, file);
+    e.target.value = ''; // reset so re-picking the same file (e.g. after a swap) re-fires onChange
+  };
+
+  return (
+    <span className="task-attachment-wrap">
+      <label className="task-attachment-label" title="Add attachment">
+        <Paperclip size={13} strokeWidth={2} />
+        <input
+          id="task-attachment-input"
+          type="file"
+          accept={ACCEPT_FILES}
+          style={{ display: 'none' }}
+          onChange={onInput}
+        />
+      </label>
+    </span>
+  );
+}
+
+function AttachmentList({ attachments, onDownload, onDelete, onPreview, error }: 
   { attachments: Array<Attachment>;
     onDownload: (attachment: Attachment) => void,
     onDelete: (attachment: Attachment) => void,
-    onPreview: (attachment: Attachment) => void }) {
+    onPreview: (attachment: Attachment) => void,
+    error: string | null }) {
   return (
     <div>
       {attachments.length === 0 ? (
@@ -803,6 +938,7 @@ function AttachmentList({ attachments, onDownload, onDelete, onPreview }:
         <AttachmentRow key={a.id} attachment={a}
           onDownload={() => onDownload(a)} onPreview={() => onPreview(a)} onDelete={() => onDelete(a)} />
       ))}
+      {error && <span className="task-attachment-error">{error}</span>}
     </div>
   );
 }

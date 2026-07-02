@@ -213,8 +213,17 @@ const modalH5: React.CSSProperties = {
 };
 
 function autosize(ta: HTMLTextAreaElement) {
+  const parent = ta.closest('.modal-main') as HTMLElement | null;
+  const prevParentScrollTop = parent?.scrollTop ?? 0;
+  const prevTextareaScrollTop = ta.scrollTop;
+
   ta.style.height = 'auto';
-  ta.style.height = `${ta.scrollHeight}px`;
+  ta.style.height = `${Math.max(ta.scrollHeight, 96)}px`;
+
+  requestAnimationFrame(() => {
+    ta.scrollTop = prevTextareaScrollTop;
+    if (parent) parent.scrollTop = prevParentScrollTop;
+  });
 }
 
 function DraftEstimateEditor({ text, onChange, invalid }: {
