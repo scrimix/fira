@@ -1366,6 +1366,33 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
 .attachment-item:hover .attachment-item-btn { opacity: 1; }
 .attachment-item .attachment-item-btn:hover { color: var(--danger); }
 
+.attachment-preview-text {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 16px 20px;
+  overflow: auto;
+  box-sizing: border-box;
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--paper);
+}
+.attachment-preview-markdown {
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  box-sizing: border-box;
+  padding: 16px 20px;
+  background: var(--paper);
+}
+.attachment-preview-unsupported {
+  color: var(--ink-4);
+  padding: 20px;
+}
+
 .est-bar {
   height: 6px;
   background: var(--paper-3);

@@ -17,6 +17,30 @@ import { api } from '@/api';
 
 interface Props { taskId: string }
 
+const ACCEPT_FILES = "image/*,video/*,.pdf,.txt,.zip,.tar,.md,.markdown,.mdx,.log,.csv,.json,.xml," + 
+  ".doc,.docx,.xls,.xlsx,.ppt,.pptx,.py,.cpp,.cc,.cxx,.c,.h,.hpp,.rs,.go,.java,.kt,.cs"+
+  ",.swift,.php,.rb,.sh,.sql,.yml,.yaml,.ts,.tsx,.js,.jsx,.css,.scss,.html";
+
+const TEXT_EXTENSIONS = new Set([
+  'txt','log','csv','json','xml','yml','yaml','toml','ini','env',
+  'ts','tsx','js','jsx','mjs','cjs','py','rb','go','rs','c','h','cpp',
+  'hpp','cc','cxx','cs','java','kt','kts','swift','php','sh','bash',
+  'zsh','sql','css','scss','less','html','htm','vue','svelte',
+]);
+const MARKDOWN_EXTENSIONS = new Set(['md', 'markdown', 'mdx']);
+
+function previewKind(a: Attachment): 'image' | 'pdf' | 'markdown' | 'text' | 'other' {
+  const ct = a.content_type || '';
+  if (ct.startsWith('image/')) return 'image';
+  if (ct === 'application/pdf') return 'pdf';
+  const ext = a.filename.split('.').pop()?.toLowerCase() ?? '';
+  if (MARKDOWN_EXTENSIONS.has(ext)) return 'markdown';
+  if (ct.startsWith('text/') || ct === 'application/json' || TEXT_EXTENSIONS.has(ext)) {
+    return 'text';
+  }
+  return 'other';
+}
+
 export function TaskModal({ taskId }: Props) {
   const task = useFira((s) => s.tasks.find((t) => t.id === taskId) ?? null);
   const project = useFira((s) =>
@@ -62,6 +86,21 @@ export function TaskModal({ taskId }: Props) {
   const [attachmentForDelete, setDeleteAttachment] = useState<Attachment | null>(null);
   const deleteAttachment = useFira((s) => s.deleteAttachment);
   const pollChanges = useFira((s) => s.pollChanges);
+  const [previewText, setPreviewText] = useState<string | null>(null);
+  useEffect(() => {
+    setPreviewText(null);
+    if (!attachmentPreview) return;
+    const kind = previewKind(attachmentPreview.a);
+    if (kind !== 'text' && kind !== 'markdown') return;
+
+    let cancelled = false;
+    fetch(attachmentPreview.content)
+      .then((r) => r.text())
+      .then((t) => { if (!cancelled) setPreviewText(t); })
+      .catch(() => { if (!cancelled) setPreviewText('Could not load preview.'); });
+
+    return () => { cancelled = true; };
+  }, [attachmentPreview]);
 
   const isMobile = useIsMobile();
 
@@ -388,19 +427,46 @@ export function TaskModal({ taskId }: Props) {
           </button>
         </div>
         <div className="attachment-preview-body">
-          {isImagePreview ? (
-            <img
-              src={attachmentPreview?.content}
-              alt={attachmentPreview?.a?.filename ?? 'Attachment preview'}
-              className="attachment-preview-asset attachment-preview-image"
-            />
-          ) : (
-            <embed
-              src={attachmentPreview?.content}
-              title={attachmentPreview?.a?.filename ?? 'Attachment preview'}
-              className="attachment-preview-asset attachment-preview-iframe"
-            />
-          )}
+          {(() => {
+            const kind = attachmentPreview ? previewKind(attachmentPreview.a) : 'other';
+            if (kind === 'image') {
+              return (
+                <img
+                  src={attachmentPreview?.content}
+                  alt={attachmentPreview?.a?.filename ?? 'Attachment preview'}
+                  className="attachment-preview-asset attachment-preview-image"
+                />
+              );
+            }
+            if (kind === 'markdown') {
+              return (
+                <div className="desc-md attachment-preview-markdown">
+                  {previewText != null ? (
+                    <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>
+                      {previewText}
+                    </ReactMarkdown>
+                  ) : 'Loading…'}
+                </div>
+              );
+            }
+            if (kind === 'text') {
+              return (
+                <pre className="attachment-preview-text">
+                  <code>{previewText ?? 'Loading…'}</code>
+                </pre>
+              );
+            }
+            if (kind === 'pdf') {
+              return (
+                <embed
+                  src={attachmentPreview?.content}
+                  title={attachmentPreview?.a?.filename ?? 'Attachment preview'}
+                  className="attachment-preview-asset attachment-preview-iframe"
+                />
+              );
+            }
+            return <div className="attachment-preview-unsupported">No preview available for this file type — use the download button instead.</div>;
+          })()}
         </div>
       </div>
     </div>
@@ -829,7 +895,7 @@ function AddAttachmentButton({ task }: { task: Task }) {
     <input
       id="task-attachment-input"
       type="file"
-      accept="image/*,video/*,.pdf,.txt,.zip,.tar,.md,.log,.csv,.json,.xml,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
+      accept={ACCEPT_FILES}
       style={{ display: 'none' }}
       onChange={onInput}
      />
