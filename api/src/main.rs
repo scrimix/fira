@@ -494,9 +494,14 @@ async fn main() -> anyhow::Result<()> {
         .route("/ops", post(ops::post_ops))
         .route("/changes", get(ops::get_changes))
         .route("/ws", get(ws::ws_handler))
-        .route("/ws/user", get(ws::user_ws_handler))
-        .route("/attachments/upload/:task_id", post(attachments::upload_attachment)).layer(DefaultBodyLimit::max(10 * 1024 * 1024))
-        .route("/attachments/:file_id", get(attachments::get_attachment).delete(attachments::delete_attachment));
+        .route("/ws/user", get(ws::user_ws_handler));
+
+    let attachments_router = Router::new()
+        .route("/upload/:task_id", post(attachments::upload_attachment))
+        .layer(DefaultBodyLimit::max(10 * 1024 * 1024))
+        .route("/:file_id", get(attachments::get_attachment).delete(attachments::delete_attachment));
+
+    let api = api.nest("/attachments", attachments_router);
 
     #[cfg(feature = "dev_auth")]
     let api = api

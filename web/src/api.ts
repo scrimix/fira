@@ -35,7 +35,14 @@ async function parseJsonResponse<T>(res: Response): Promise<T> {
     } catch { /* body read failed; fall through to default message */ }
     throw new HttpError(res.status, res.url, msg);
   }
-  return res.json() as Promise<T>;
+  if (res.status === 204) {
+    return undefined as unknown as T;
+  }
+  const text = await res.text();
+  if (text.length === 0) {
+    return undefined as unknown as T;
+  }
+  return JSON.parse(text) as T;
 }
 
 async function parseBlobResponse(res: Response): Promise<Blob> {
