@@ -867,7 +867,7 @@
   width: min(1080px, 92vw);
   max-height: 88vh;
   max-height: 88dvh;
-  height: min(88vh, 960px);
+  height: min(88vh, 1080px);
   background: var(--paper);
   border: 1px solid var(--rule-3);
   display: flex; flex-direction: column;
@@ -1393,6 +1393,16 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
   padding: 20px;
 }
 
+.task-attachment-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.task-attachment-error {
+  font-size: calc(11px * var(--fs-scale));
+  color: var(--danger);
+}
+
 .est-bar {
   height: 6px;
   background: var(--paper-3);
@@ -1652,6 +1662,7 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
 .confirm-modal {
   width: min(420px, 92vw);
   max-height: none;
+  height: auto;
 }
 .confirm-body {
   padding: 18px 22px 8px;

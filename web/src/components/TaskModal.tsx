@@ -101,6 +101,7 @@ export function TaskModal({ taskId }: Props) {
 
     return () => { cancelled = true; };
   }, [attachmentPreview]);
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
 
   const isMobile = useIsMobile();
 
@@ -230,10 +231,11 @@ export function TaskModal({ taskId }: Props) {
 
             <SectionHeading
               title="Attachments"
-              trailing={AddAttachmentButton({task})}
+              trailing={AddAttachmentButton({task, setError: setAttachmentError})}
             />
             <AttachmentList
               attachments={task.attachments}
+              error={attachmentError}
               onDownload={async (attachment) => {
                 let content = await api.getAttachmentBlobUrl(attachment.id);
                 api.triggerDownloadAttachment(attachment, content);
@@ -880,34 +882,54 @@ function CopyMarkdownButton({ task }: { task: Task }) {
   );
 }
 
-function AddAttachmentButton({ task }: { task: Task }) {
-  const addAttachment = useFira((s) => s.addAttachment);
-  const onInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0)
-      return;
-    const file = files[0];
-    addAttachment(task.id, file);
-  }
-  return (
-    <label className="task-attachment-label" title="Add attachment">
-      <Paperclip size={13} strokeWidth={2} />
-    <input
-      id="task-attachment-input"
-      type="file"
-      accept={ACCEPT_FILES}
-      style={{ display: 'none' }}
-      onChange={onInput}
-     />
-    </label>
-  )
+const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024; // 10 MB
+
+function formatBytes(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${Math.ceil(bytes / 1024)} KB`;
 }
 
-function AttachmentList({ attachments, onDownload, onDelete, onPreview }: 
+function AddAttachmentButton({ task, setError }: { task: Task, setError: (err: string | null) => void }) {
+  const addAttachment = useFira((s) => s.addAttachment);
+
+  const onInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    const file = files[0];
+
+    if (file.size > MAX_ATTACHMENT_BYTES) {
+      setError(`"${file.name}" is ${formatBytes(file.size)} — max is ${formatBytes(MAX_ATTACHMENT_BYTES)}.`);
+      e.target.value = ''; // reset so re-picking the same file re-fires onChange
+      return;
+    }
+
+    setError(null);
+    addAttachment(task.id, file);
+    e.target.value = ''; // reset so re-picking the same file (e.g. after a swap) re-fires onChange
+  };
+
+  return (
+    <span className="task-attachment-wrap">
+      <label className="task-attachment-label" title="Add attachment">
+        <Paperclip size={13} strokeWidth={2} />
+        <input
+          id="task-attachment-input"
+          type="file"
+          accept={ACCEPT_FILES}
+          style={{ display: 'none' }}
+          onChange={onInput}
+        />
+      </label>
+    </span>
+  );
+}
+
+function AttachmentList({ attachments, onDownload, onDelete, onPreview, error }: 
   { attachments: Array<Attachment>;
     onDownload: (attachment: Attachment) => void,
     onDelete: (attachment: Attachment) => void,
-    onPreview: (attachment: Attachment) => void }) {
+    onPreview: (attachment: Attachment) => void,
+    error: string | null }) {
   return (
     <div>
       {attachments.length === 0 ? (
@@ -916,6 +938,7 @@ function AttachmentList({ attachments, onDownload, onDelete, onPreview }:
         <AttachmentRow key={a.id} attachment={a}
           onDownload={() => onDownload(a)} onPreview={() => onPreview(a)} onDelete={() => onDelete(a)} />
       ))}
+      {error && <span className="task-attachment-error">{error}</span>}
     </div>
   );
 }
