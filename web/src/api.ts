@@ -123,7 +123,8 @@ function getAttachmentUrl(attachment_id: UUID): string {
   const params = new URLSearchParams();
   if (activeWorkspaceId) params.append('workspace_id', activeWorkspaceId);
   const query = params.toString();
-  return `/api/attachments/${attachment_id}${query ? '?' + query : ''}`;
+  const path = `/api/attachments/${attachment_id}${query ? '?' + query : ''}`;
+  return `${window.location.origin}${path}`;
 }
 
 export interface OpResult {

@@ -272,9 +272,13 @@ export function TaskModal({ taskId }: Props) {
                 let content = await api.getAttachmentBlobUrl(attachment.id);
                 api.triggerDownloadAttachment(attachment, content);
               }}
-              onCopyLink={(attachment) => {
+              onCopyLink={async (attachment) => {
                 const url = api.getAttachmentUrl(attachment.id);
-                navigator.clipboard.writeText(url);
+                try {
+                  await navigator.clipboard.writeText(url);
+                } catch {
+                  // Clipboard unavailable (insecure context / denied) — fail silently.
+                }
               }}
               onDelete={(attachment) => setDeleteAttachment(attachment)}
               onPreview={async (attachment) => {
@@ -322,7 +326,7 @@ export function TaskModal({ taskId }: Props) {
               }
             />
             {taskBlocks.length === 0 ? (
-              <div className="tm-section-empty">No blocks yet.</div>
+              <div className="tm-section-empty"></div>
             ) : taskBlocks.map(({ b, start_min, dur_min }) => (
                 <BlockRow
                   key={b.id}
@@ -993,7 +997,7 @@ function AddAttachmentButton({ task, setError }: { task: Task, setError: (err: s
 function AttachmentList({ attachments, onDownload, onCopyLink, onDelete, onPreview, error }: 
   { attachments: Array<Attachment>;
     onDownload: (attachment: Attachment) => void,
-    onCopyLink: (attachment: Attachment) => void,
+    onCopyLink: (attachment: Attachment) => Promise<void> | void,
     onDelete: (attachment: Attachment) => void,
     onPreview: (attachment: Attachment) => void,
     error: string | null }) {
@@ -1011,7 +1015,19 @@ function AttachmentList({ attachments, onDownload, onCopyLink, onDelete, onPrevi
 }
 
 function AttachmentRow({ attachment, onDownload, onCopyLink, onPreview, onDelete }:
-  { attachment: Attachment; onDownload: () => void; onCopyLink: () => void; onPreview: () => void; onDelete: () => void }) {
+  { attachment: Attachment; onDownload: () => void; onCopyLink: () => Promise<void> | void; onPreview: () => void; onDelete: () => void }) {
+  const [copied, setCopied] = useState(false);
+
+  const onCopy = async () => {
+    try {
+      await onCopyLink();
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Fail silently, mirroring the task link copy handling.
+    }
+  };
+
   return (
     <div className="attachment-item">
       <span className="attachment-item-text" onClick={onPreview}>
@@ -1020,8 +1036,13 @@ function AttachmentRow({ attachment, onDownload, onCopyLink, onPreview, onDelete
       <button className="tm-section-btn attachment-item-btn" onClick={onDownload} title="Download">
         <Download size={14} strokeWidth={1.75} />
       </button>
-      <button className="tm-section-btn attachment-item-btn" onClick={onCopyLink} title="Copy link">
-        <Link size={14} strokeWidth={1.75} />
+      <button
+        className="tm-section-btn attachment-item-btn"
+        data-copied={copied || undefined}
+        onClick={onCopy}
+        title={copied ? 'Copied' : 'Copy link'}
+      >
+        {copied ? <Check size={14} strokeWidth={2} /> : <Link size={14} strokeWidth={1.75} />}
       </button>
       <button className="tm-section-btn attachment-item-btn" data-danger onClick={onDelete} title="Remove">
         <X size={14} strokeWidth={1.75} />
