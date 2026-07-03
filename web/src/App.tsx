@@ -1,5 +1,6 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useFira } from './store';
+import { buildTaskLink, parseTaskLink } from './deeplink';
 import { openNudgeSocket, openUserSocket } from './ws';
 import { Sidebar } from './components/Sidebar';
 import { TopBar } from './components/TopBar';
@@ -75,6 +76,66 @@ export default function App() {
   useEffect(() => {
     hydrate();
   }, [hydrate]);
+
+  // ─── Task deep links ──────────────────────────────────────────────────
+  // The open task is mirrored in a hash URL (`#/w/<ws>/t/<task>`) so a task
+  // is shareable, refresh-safe, and back-button dismissable. Three effects
+  // keep store ⇄ URL in sync; pushState/replaceState don't fire hashchange
+  // or popstate, so writing the URL never re-triggers the readers below.
+
+  // Initial load: once bootstrap is ready and auth is confirmed, honor the
+  // task hash in the address bar. Store the original page-load hash in a ref
+  // to avoid any intermediate mutation or React refresh race from changing it.
+  const initialTaskHashRef = useRef(parseTaskLink(window.location.hash));
+  const deepLinkedRef = useRef(false);
+  useEffect(() => {
+    if (!authChecked || !loaded || deepLinkedRef.current) return;
+    deepLinkedRef.current = true;
+    const parsed = initialTaskHashRef.current;
+    if (parsed) void useFira.getState().openTaskByDeepLink(parsed.workspaceId, parsed.taskId);
+  }, [authChecked, loaded]);
+
+  // Back/forward (and manual hash edits, pasted links into the running app):
+  // reconcile the open task to whatever the URL now says.
+  useEffect(() => {
+    const onNav = () => {
+      const parsed = parseTaskLink(window.location.hash);
+      const cur = useFira.getState().openTaskId;
+      if (parsed && parsed.taskId !== cur) {
+        void useFira.getState().openTaskByDeepLink(parsed.workspaceId, parsed.taskId);
+      } else if (!parsed && cur) {
+        useFira.getState().openTask(null);
+      }
+    };
+    window.addEventListener('popstate', onNav);
+    window.addEventListener('hashchange', onNav);
+    return () => {
+      window.removeEventListener('popstate', onNav);
+      window.removeEventListener('hashchange', onNav);
+    };
+  }, []);
+
+  // Store → URL. Opening a task pushes a history entry (so Back closes the
+  // modal); closing replaces it away (no dangling entry). Skips the first
+  // run so a fresh deep-link load doesn't clobber its own hash before the
+  // initial-load effect above gets to read it.
+  // Depends on openTaskId only: the workspace is read at commit time via
+  // getState(), so a deep-link-driven workspace switch (which leaves
+  // openTaskId null until the task actually opens) can't run this mid-flight
+  // and clobber the hash.
+  const urlSyncMountedRef = useRef(false);
+  useEffect(() => {
+    if (!urlSyncMountedRef.current) { urlSyncMountedRef.current = true; return; }
+    const parsed = parseTaskLink(window.location.hash);
+    if (openTaskId) {
+      if (!parsed || parsed.taskId !== openTaskId) {
+        const ws = useFira.getState().activeWorkspaceId;
+        window.history.pushState(null, '', buildTaskLink(ws, openTaskId));
+      }
+    } else if (parsed) {
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
+  }, [openTaskId]);
 
   // Outbox push: fast cadence so locally-queued mutations hit the server
   // within 2s of the user making the change. Without this, the slow read-side

@@ -14,6 +14,7 @@ import {
 } from '../time';
 import type { Section, Status, Tag, Attachment, Task, User, UUID } from '../types';
 import { api } from '@/api';
+import { buildTaskLink } from '../deeplink';
 
 interface Props { taskId: string }
 
@@ -163,6 +164,7 @@ export function TaskModal({ taskId }: Props) {
           <span style={{ width: 10, height: 10, background: project.color, display: 'inline-block' }} />
           <span className="ext">{project.title}</span>
           <span className="grow" />
+          <CopyTaskLinkButton taskId={task.id} />
           <button
             className="icon-btn modal-head-danger"
             onClick={() => setConfirmingDelete(true)}
@@ -900,6 +902,36 @@ function CopyMarkdownButton({ task }: { task: Task }) {
       title={copied ? 'Copied' : 'Copy title, description, and subtasks as markdown'}
     >
       {copied ? <Check size={14} strokeWidth={2} /> : <Copy size={14} strokeWidth={1.75} />}
+    </button>
+  );
+}
+
+// Copies a shareable deep link to this task (hash URL encoding the active
+// workspace + task id). Lives in the modal header next to Delete — the
+// "task-level actions" cluster. Uses the header's .icon-btn idiom.
+function CopyTaskLinkButton({ taskId }: { taskId: UUID }) {
+  const activeWorkspaceId = useFira((s) => s.activeWorkspaceId);
+  const [copied, setCopied] = useState(false);
+  const onClick = async () => {
+    try {
+      await navigator.clipboard.writeText(buildTaskLink(activeWorkspaceId, taskId));
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Clipboard unavailable (insecure context / denied) — fail silently,
+      // same posture as the copy-as-markdown button.
+    }
+  };
+  return (
+    <button
+      className="icon-btn"
+      onClick={onClick}
+      title={copied ? 'Link copied' : 'Copy link to this task'}
+      aria-label="Copy link to this task"
+    >
+      {copied
+        ? <Check size={15} strokeWidth={2} />
+        : <Link size={15} strokeWidth={1.75} />}
     </button>
   );
 }

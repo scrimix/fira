@@ -289,6 +289,11 @@ interface FiraState {
   soloProjectFilter: (id: UUID) => void;
   setInboxFilter: (patch: Partial<InboxFilter>) => void;
   openTask: (id: UUID | null) => void;
+  /// Open a task from a shareable deep link. Switches to the task's
+  /// workspace first when the link points elsewhere (re-bootstrapping that
+  /// workspace's data), aligns the inbox to the task's project, then opens
+  /// the modal. Surfaces a toast when the task can't be reached.
+  openTaskByDeepLink: (workspaceId: UUID | null, taskId: UUID) => Promise<void>;
   openCreate: (initial?: Partial<{
     project_id: UUID | null;
     section: 'now' | 'later';
@@ -1540,6 +1545,38 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
   }),
   setInboxFilter: (patch) => set((s) => ({ inboxFilter: { ...s.inboxFilter, ...patch } })),
   openTask: (id) => set({ openTaskId: id, creatingDraft: id ? null : get().creatingDraft }),
+  openTaskByDeepLink: async (workspaceId, taskId) => {
+    // Switch workspace first when the link points at one we're not in but
+    // belong to — switchWorkspace re-bootstraps that workspace's tasks so
+    // the lookup below can find the target. Unknown/foreign workspace ids
+    // fall through to the not-found toast.
+    if (workspaceId && workspaceId !== get().activeWorkspaceId) {
+      const ws = get().workspaces.find((w) => w.id === workspaceId);
+      if (ws) {
+        try {
+          await get().switchWorkspace(workspaceId);
+        } catch {
+          get().showToast("Couldn't open that task — failed to load its workspace.", 'error');
+          return;
+        }
+      }
+    }
+    const task = get().tasks.find((t) => t.id === taskId);
+    if (!task) {
+      get().showToast(
+        "That task link couldn't be opened — it may have been deleted, or you may not have access.",
+        'error',
+      );
+      return;
+    }
+    // Align the inbox behind the modal to the task's project so closing the
+    // modal leaves the user in the right context.
+    if (get().inboxFilter.project_id !== task.project_id
+        && get().projects.some((p) => p.id === task.project_id)) {
+      get().setInboxFilter({ project_id: task.project_id });
+    }
+    get().openTask(taskId);
+  },
   openCreate: (initial) => set((s) => ({
     creatingDraft: {
       // No fallback to the active inbox filter or the first project: the
