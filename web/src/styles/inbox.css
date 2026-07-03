@@ -1184,10 +1184,11 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
   line-height: 1.55;
   color: var(--ink-2);
   white-space: normal;
-  /* Negative left margin cancels the 6px left padding so the rendered
-   * text left-aligns with the section heading (the padding still gives
-   * the hover/edit box its inset) — same trick as .modal-subtasks. */
-  margin: 6px 0 14px -6px;
+  /* Negative side margins cancel the 6px horizontal padding so the
+   * rendered text spans the full content width — left edge flush with the
+   * section heading, right edge flush with the heading's copy/edit buttons.
+   * The padding still gives the hover/edit box its inset. */
+  margin: 6px -6px 14px;
   outline: none;
   min-height: 1.55em;
   cursor: default;
@@ -1316,15 +1317,12 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
   width: 100%;
   box-sizing: border-box;
   white-space: pre-wrap;
-  /* Reset the read-mode negative margin: in read mode it pulls the hover
-   * background's 6px padding back so prose still aligns with surrounding
-   * content; in edit mode the bordered box is visible, so the negative
-   * margin makes it stick out 6px to the left of neighboring fields.
-   * Also drop the read-mode 14px bottom margin: the textarea is
-   * inline-block so it doesn't collapse with the next heading's top
-   * margin, and 14 + 18 = 32px reads as dead space below the box. */
-  margin-left: 0;
-  margin-bottom: 0;
+  /* Reset the read-mode negative side margins: the bordered edit box aligns
+   * flush with the heading (its border would otherwise stick out 6px each
+   * side). Also drop the read-mode 14px bottom margin: the textarea is
+   * inline-block so it doesn't collapse with the next heading's top margin,
+   * and 14 + 18 = 32px reads as dead space below the box. */
+  margin: 6px 0 0 0;
   resize: none;
   /* Autosize sets the height to scrollHeight on every keystroke, so the
    * scrollbar should never be needed. Hide it outright — without this,
