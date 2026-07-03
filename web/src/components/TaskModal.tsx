@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
-import { ArrowLeft, Check, Copy, Download, Link, PanelRightClose, PanelRightOpen, Paperclip, Pencil, Plus, Trash2, X } from 'lucide-react';
+import { ArrowLeft, Check, ClockPlus, Copy, Download, Link, Loader2, PanelRightClose, PanelRightOpen, Paperclip, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { useFira } from '../store';
 import { useIsMobile } from '../hooks';
 import { ConfirmDelete } from './ConfirmDelete';
@@ -28,13 +28,17 @@ const TEXT_EXTENSIONS = new Set([
   'zsh','sql','css','scss','less','html','htm','vue','svelte',
 ]);
 const MARKDOWN_EXTENSIONS = new Set(['md', 'markdown', 'mdx']);
+const VIDEO_EXTENSIONS = new Set(['mp4', 'webm', 'ogv', 'ogg', 'mov', 'm4v']);
 
-function previewKind(a: Attachment): 'image' | 'pdf' | 'markdown' | 'text' | 'other' {
+function previewKind(a: Attachment): 'image' | 'video' | 'pdf' | 'markdown' | 'text' | 'other' {
   const ct = a.content_type || '';
   if (ct.startsWith('image/')) return 'image';
+  if (ct.startsWith('video/')) return 'video';
   if (ct === 'application/pdf') return 'pdf';
   const ext = a.filename.split('.').pop()?.toLowerCase() ?? '';
   if (MARKDOWN_EXTENSIONS.has(ext)) return 'markdown';
+  // Fallback for uploads that arrived without a content_type.
+  if (VIDEO_EXTENSIONS.has(ext)) return 'video';
   if (ct.startsWith('text/') || ct === 'application/json' || TEXT_EXTENSIONS.has(ext)) {
     return 'text';
   }
@@ -71,6 +75,10 @@ export function TaskModal({ taskId }: Props) {
   const deleteBlock = useFira((s) => s.deleteBlock);
   const upsertBlock = useFira((s) => s.upsertBlock);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  // Description edit mode is lifted here so the Pencil button in the
+  // section heading can toggle it — the editor itself no longer enters
+  // edit mode on a body click.
+  const [descEditing, setDescEditing] = useState(false);
   // Sidebar collapsible — gives the description / subtasks / time-blocks
   // pane the full modal width, which matters most on phones where the
   // 220 px sidebar otherwise eats two-thirds of the viewport. Default
@@ -102,6 +110,8 @@ export function TaskModal({ taskId }: Props) {
     return () => { cancelled = true; };
   }, [attachmentPreview]);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
+  // Reset description edit mode when the modal is reused for another task.
+  useEffect(() => { setDescEditing(false); }, [taskId]);
 
   const isMobile = useIsMobile();
 
@@ -207,10 +217,30 @@ export function TaskModal({ taskId }: Props) {
               </>
             )}
 
-            <SectionHeading title="Description" trailing={<CopyMarkdownButton task={task} />} />
+            <SectionHeading
+              title="Description"
+              trailing={
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  {!descEditing && (
+                    <button
+                      type="button"
+                      className="tm-section-btn"
+                      onClick={() => setDescEditing(true)}
+                      title="Edit description"
+                      aria-label="Edit description"
+                    >
+                      <Pencil size={14} strokeWidth={1.75} />
+                    </button>
+                  )}
+                  <CopyMarkdownButton task={task} />
+                </span>
+              }
+            />
             <DescriptionEditor
               taskId={task.id}
               value={task.description_md}
+              editing={descEditing}
+              setEditing={setDescEditing}
               onSave={(v) => setTaskDescription(task.id, v)}
             />
 
@@ -257,7 +287,7 @@ export function TaskModal({ taskId }: Props) {
               trailing={
                 meId ? (
                   <button
-                    className="tm-block-add"
+                    className="tm-section-btn"
                     type="button"
                     onClick={() => {
                       // New block defaults: assignee = me, ends at the
@@ -282,8 +312,9 @@ export function TaskModal({ taskId }: Props) {
                       });
                     }}
                     title="Add a 1h block ending now"
+                    aria-label="Add time block"
                   >
-                    <Plus size={13} strokeWidth={1.75} /> Time
+                    <ClockPlus size={14} strokeWidth={1.75} />
                   </button>
                 ) : undefined
               }
@@ -462,6 +493,15 @@ export function TaskModal({ taskId }: Props) {
                 </pre>
               );
             }
+            if (kind === 'video') {
+              return (
+                <video
+                  src={attachmentPreview?.content}
+                  controls
+                  className="attachment-preview-asset attachment-preview-video"
+                />
+              );
+            }
             if (kind === 'pdf') {
               return (
                 <embed
@@ -617,12 +657,13 @@ function BlockRow({
         {state}
       </span>
       <button
-        className="icon-btn tm-block-del"
+        className="tm-section-btn tm-block-del"
+        data-danger
         onClick={onDelete}
         title="Delete block"
         aria-label="Delete block"
       >
-        <Trash2 size={13} strokeWidth={1.75} />
+        <Trash2 size={14} strokeWidth={1.75} />
       </button>
     </div>
   );
@@ -727,20 +768,20 @@ function TitleEditor({ value, onSave }: { value: string; onSave: (v: string) => 
   );
 }
 
-function DescriptionEditor({ taskId, value, onSave }: {
+function DescriptionEditor({ taskId, value, editing, setEditing, onSave }: {
   taskId: string;
   value: string;
+  editing: boolean;
+  setEditing: (v: boolean) => void;
   onSave: (v: string) => void;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
-  const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
-  const pendingScrollRef = useRef<{scrollTop: number; scrollLeft: number} | null>(null);
 
-  useEffect(() => {
-    setEditing(false);
-    setDraft(value);
-  }, [taskId, value]);
+  // Keep the draft synced with the store while *not* editing, so an
+  // external update (or task switch) refreshes it without clobbering an
+  // in-flight edit.
+  useEffect(() => { if (!editing) setDraft(value); }, [taskId, value, editing]);
 
   useLayoutEffect(() => {
     if (editing && ref.current) {
@@ -748,9 +789,8 @@ function DescriptionEditor({ taskId, value, onSave }: {
       const scrollContainer =
         (ta.closest('.modal-main') as HTMLElement | null) ??
         (ta.closest('.modal') as HTMLElement | null);
-      const prevScrollTop = pendingScrollRef.current?.scrollTop ?? scrollContainer?.scrollTop ?? 0;
-      const prevScrollLeft = pendingScrollRef.current?.scrollLeft ?? scrollContainer?.scrollLeft ?? 0;
-      pendingScrollRef.current = null;
+      const prevScrollTop = scrollContainer?.scrollTop ?? 0;
+      const prevScrollLeft = scrollContainer?.scrollLeft ?? 0;
 
       ta.focus({ preventScroll: true });
       ta.setSelectionRange(ta.value.length, ta.value.length);
@@ -765,26 +805,12 @@ function DescriptionEditor({ taskId, value, onSave }: {
 
   if (!editing) {
     return (
-      <div
-        className="desc-md"
-        onClick={(e) => {
-          const clickedLink = (e.target as HTMLElement | null)?.closest('a');
-          if (!clickedLink) {
-            const scrollContainer = document.querySelector('.modal-main') as HTMLElement | null;
-            pendingScrollRef.current = {
-              scrollTop: scrollContainer?.scrollTop ?? 0,
-              scrollLeft: scrollContainer?.scrollLeft ?? 0,
-            };
-            setEditing(true);
-          }
-        }}
-        data-empty={!value}
-      >
+      <div className="desc-md" data-empty={!value}>
         {value ? (
           <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>
             {value}
           </ReactMarkdown>
-        ) : 'No description. Click to edit.'}
+        ) : 'No description. Use the edit icon to add one.'}
       </div>
     );
   }
@@ -868,20 +894,12 @@ function CopyMarkdownButton({ task }: { task: Task }) {
   return (
     <button
       type="button"
+      className="tm-section-btn"
+      data-copied={copied || undefined}
       onClick={onClick}
       title={copied ? 'Copied' : 'Copy title, description, and subtasks as markdown'}
-      style={{
-        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-        width: 20, height: 20,
-        padding: 0,
-        color: copied ? 'var(--done)' : 'var(--ink-2)',
-        background: 'transparent',
-        border: 0,
-        cursor: 'pointer',
-        transition: 'color 120ms ease',
-      }}
     >
-      {copied ? <Check size={13} strokeWidth={2} /> : <Copy size={12} strokeWidth={1.5} />}
+      {copied ? <Check size={14} strokeWidth={2} /> : <Copy size={14} strokeWidth={1.75} />}
     </button>
   );
 }
@@ -895,32 +913,44 @@ function formatBytes(bytes: number): string {
 
 function AddAttachmentButton({ task, setError }: { task: Task, setError: (err: string | null) => void }) {
   const addAttachment = useFira((s) => s.addAttachment);
+  const [uploading, setUploading] = useState(false);
 
-  const onInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const onInput = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
     const file = files[0];
+    e.target.value = ''; // reset so re-picking the same file (e.g. after a swap) re-fires onChange
 
     if (file.size > MAX_ATTACHMENT_BYTES) {
       setError(`"${file.name}" is ${formatBytes(file.size)} — max is ${formatBytes(MAX_ATTACHMENT_BYTES)}.`);
-      e.target.value = ''; // reset so re-picking the same file re-fires onChange
       return;
     }
 
     setError(null);
-    addAttachment(task.id, file);
-    e.target.value = ''; // reset so re-picking the same file (e.g. after a swap) re-fires onChange
+    setUploading(true);
+    try {
+      await addAttachment(task.id, file);
+    } finally {
+      setUploading(false);
+    }
   };
 
   return (
     <span className="task-attachment-wrap">
-      <label className="task-attachment-label" title="Add attachment">
-        <Paperclip size={13} strokeWidth={2} />
+      <label
+        className="task-attachment-label tm-section-btn"
+        data-uploading={uploading || undefined}
+        title={uploading ? 'Uploading…' : 'Add attachment'}
+      >
+        {uploading
+          ? <Loader2 size={14} strokeWidth={2} className="attachment-spin" />
+          : <Paperclip size={14} strokeWidth={1.75} />}
         <input
           id="task-attachment-input"
           type="file"
           accept={ACCEPT_FILES}
           style={{ display: 'none' }}
+          disabled={uploading}
           onChange={onInput}
         />
       </label>
@@ -955,13 +985,13 @@ function AttachmentRow({ attachment, onDownload, onCopyLink, onPreview, onDelete
       <span className="attachment-item-text" onClick={onPreview}>
         {attachment.filename}
       </span>
-      <button className="attachment-item-btn" onClick={onDownload} title="Download">
-        <Download size={13} strokeWidth={1.75} />
+      <button className="tm-section-btn attachment-item-btn" onClick={onDownload} title="Download">
+        <Download size={14} strokeWidth={1.75} />
       </button>
-      <button className="attachment-item-btn" onClick={onCopyLink} title="Copy link">
-        <Link size={13} strokeWidth={1.75} />
+      <button className="tm-section-btn attachment-item-btn" onClick={onCopyLink} title="Copy link">
+        <Link size={14} strokeWidth={1.75} />
       </button>
-      <button className="attachment-item-btn" onClick={onDelete} title="Remove">
+      <button className="tm-section-btn attachment-item-btn" data-danger onClick={onDelete} title="Remove">
         <X size={14} strokeWidth={1.75} />
       </button>
     </div>
@@ -1046,7 +1076,19 @@ export function SubtaskList({
   };
 
   return (
-    <div className="modal-subtasks">
+    <div
+      className="modal-subtasks"
+      // Container-level drop target: the gaps between rows aren't covered
+      // by any SubtaskRow, so without this the cursor flickers to the
+      // "no-drop" glyph there and a release lands nowhere. Keep the whole
+      // list droppable and commit against the last-hovered row marker.
+      onDragOver={draggedId ? (e) => {
+        if (!e.dataTransfer.types.includes('text/plain')) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+      } : undefined}
+      onDrop={draggedId ? (e) => { e.preventDefault(); commitReorder(); } : undefined}
+    >
       {subtasks.map((s) => (
         <SubtaskRow
           key={s.id}
@@ -1068,6 +1110,10 @@ export function SubtaskList({
           )}
           onDragLeave={() => { /* keep last marker until pointer enters another row */ }}
           onDrop={commitReorder}
+          // Always fires on the drag source when the gesture ends, even on
+          // a cancelled/off-target release — the reliable place to clear
+          // the dragged id and drop marker so the blue line can't stick.
+          onDragEnd={() => { setDraggedId(null); setDropAt(null); }}
           onGripTouchStart={onGripTouchStart}
           onGripTouchMove={onGripTouchMove}
           onGripTouchEnd={onGripTouchEnd}
@@ -1085,7 +1131,7 @@ export function SubtaskList({
 function SubtaskRow({
   id, title, done, autoEdit, onAutoEditConsumed, onEnterAdd,
   onToggle, onSave, onDelete,
-  onDragStart, onDragOver, onDragLeave, onDrop,
+  onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd,
   onGripTouchStart, onGripTouchMove, onGripTouchEnd,
   dropMark,
 }: {
@@ -1102,6 +1148,7 @@ function SubtaskRow({
   onDragOver: (id: string, pos: 'before' | 'after') => void;
   onDragLeave: () => void;
   onDrop: () => void;
+  onDragEnd: () => void;
   onGripTouchStart: (id: string) => void;
   onGripTouchMove: (clientX: number, clientY: number) => void;
   onGripTouchEnd: () => void;
@@ -1220,16 +1267,19 @@ function SubtaskRow({
         e.dataTransfer.setData('text/plain', id);
         onDragStart(id);
       }}
-      onDragEnd={() => setDragOnHandle(false)}
+      onDragEnd={() => { setDragOnHandle(false); onDragEnd(); }}
       onDragOver={(e) => {
         if (!e.dataTransfer.types.includes('text/plain')) return;
         e.preventDefault();
+        // Explicit move effect keeps the cursor from flickering to the
+        // "no-drop" (blocked) glyph while hovering a valid row.
+        e.dataTransfer.dropEffect = 'move';
         const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
         const pos: 'before' | 'after' = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
         onDragOver(id, pos);
       }}
       onDragLeave={onDragLeave}
-      onDrop={(e) => { e.preventDefault(); onDrop(); }}
+      onDrop={(e) => { e.preventDefault(); e.stopPropagation(); onDrop(); }}
       onPointerDown={onRowPointerDown}
       onPointerMove={onRowPointerMove}
       onPointerUp={(e) => { if (e.pointerType === 'touch') finishRowTouch(); }}
@@ -1306,7 +1356,7 @@ function SubtaskRow({
           {title}
         </span>
       )}
-      <button className="subtask-del" onClick={onDelete} title="Remove">
+      <button className="tm-section-btn subtask-del" data-danger onClick={onDelete} title="Remove">
         <X size={14} strokeWidth={1.75} />
       </button>
     </div>

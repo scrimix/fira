@@ -5,6 +5,7 @@ import { useLongPress } from '../useLongPress';
 import { useIsMobile } from '../hooks';
 import { fmtMin, taskCompletedMin, taskPlannedMin, taskTimeLeft } from '../time';
 import { ProjectIcon } from './ProjectIcon';
+import { ConfirmDelete } from './ConfirmDelete';
 import type { Tag, Task, TimeBlock, Section, UUID } from '../types';
 
 const byKey = (a: Task, b: Task) => a.sort_key.localeCompare(b.sort_key);
@@ -57,6 +58,10 @@ export function InboxView() {
   const [dropTarget, setDropTarget] = useState<Section | null>(null);
   const [assigneeDropTarget, setAssigneeDropTarget] = useState<UUID | null>(null);
   const [rowDropAt, setRowDropAt] = useState<{ id: UUID; pos: 'before' | 'after' | 'merge' } | null>(null);
+  // A merge is destructive (the source task is consumed and deleted), so
+  // a drop onto the "merge" zone stages it here and waits for explicit
+  // confirmation rather than firing immediately.
+  const [pendingMerge, setPendingMerge] = useState<{ sourceId: UUID; targetId: UUID } | null>(null);
   // Per-task subtask-list visibility. Default is collapsed for every task —
   // the inbox now treats subtasks like Notion-style nested bullets that
   // expand on demand. When `addSubtask` / Tab-demote produce a new subtask
@@ -353,10 +358,7 @@ export function InboxView() {
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const pos = resolveRowDropPos(e.clientY, rect);
     if (pos === 'merge' && draggedId !== target.id) {
-      mergeTaskInto(draggedId, target.id);
-      // Auto-expand so the user sees what they just merged into the
-      // target — mirrors the Tab-demote handler's expansion behavior.
-      setExpandedSubs((p) => ({ ...p, [target.id]: true }));
+      setPendingMerge({ sourceId: draggedId as UUID, targetId: target.id as UUID });
     } else {
       applyTaskMove(draggedId, target, pos === 'before');
     }
@@ -484,8 +486,7 @@ export function InboxView() {
       const target = tasks.find((t) => t.id === dropAt.id);
       if (target) {
         if (dropAt.pos === 'merge' && dragged !== target.id) {
-          mergeTaskInto(dragged, target.id);
-          setExpandedSubs((p) => ({ ...p, [target.id]: true }));
+          setPendingMerge({ sourceId: dragged as UUID, targetId: target.id as UUID });
         } else {
           applyTaskMove(dragged, target, dropAt.pos === 'before');
         }
@@ -951,6 +952,34 @@ export function InboxView() {
           )}
         </div>
       </div>
+      {pendingMerge && (() => {
+        const source = tasks.find((t) => t.id === pendingMerge.sourceId);
+        const target = tasks.find((t) => t.id === pendingMerge.targetId);
+        // A task vanished between the drop and the confirm (deleted /
+        // synced away) — nothing safe to merge, so drop the prompt.
+        if (!source || !target) { setPendingMerge(null); return null; }
+        return (
+          <ConfirmDelete
+            title="Merge tasks?"
+            confirmLabel="Merge"
+            body={
+              <p>
+                <strong>{source.title}</strong> will be folded into{' '}
+                <strong>{target.title}</strong> — its subtasks, description, and
+                time are carried over, then it's removed. This can't be undone.
+              </p>
+            }
+            onCancel={() => setPendingMerge(null)}
+            onConfirm={() => {
+              mergeTaskInto(pendingMerge.sourceId, pendingMerge.targetId);
+              // Auto-expand so the user sees what they just merged into
+              // the target — mirrors the Tab-demote handler's behavior.
+              setExpandedSubs((p) => ({ ...p, [pendingMerge.targetId]: true }));
+              setPendingMerge(null);
+            }}
+          />
+        );
+      })()}
     </div>
   );
 }

@@ -873,6 +873,13 @@
   display: flex; flex-direction: column;
   overflow: clip;
 }
+/* The small utility modals (account, project, workspace, invite, link)
+ * share the base .modal class but have little content — the fixed
+ * height above blows them up to 88vh of empty space. Let them size to
+ * their content instead, still capped by .modal's max-height. */
+.modal.np-modal {
+  height: auto;
+}
 /* On phones the modal needs to leave room for both Safari toolbars,
  * not just take 88 % of the *layout* viewport (which is taller than
  * what's visible). Cap it tighter and use the dynamic viewport unit. */
@@ -974,6 +981,11 @@
   height: auto;
   object-fit: contain;
 }
+.attachment-preview-video {
+  width: auto;
+  height: auto;
+  object-fit: contain;
+}
 .attachment-preview-iframe {
   width: 100%;
   height: 100%;
@@ -1009,6 +1021,38 @@
 .tm-section-h-trailing {
   margin-left: auto;
   align-self: center;
+}
+/* Unified action button for the task-modal section headings — description
+ * edit + copy-as-markdown, add-attachment, add-time-block. One size, one
+ * hover, mirroring the app-wide .icon-btn idiom (muted → ink on hover with
+ * a soft background) so every trailing affordance behaves identically. */
+.tm-section-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  color: var(--ink-3);
+  background: transparent;
+  border: 0;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: color 120ms ease, background 120ms ease;
+}
+.tm-section-btn:hover { color: var(--ink); background: var(--paper-3); }
+/* Destructive variant — keeps the shared geometry/background but signals
+ * a remove/delete with a red icon on hover (e.g. block/attachment delete). */
+.tm-section-btn[data-danger]:hover { color: var(--danger); }
+/* Transient "copied" confirmation on the markdown button. */
+.tm-section-btn[data-copied],
+.tm-section-btn[data-copied]:hover { color: var(--done); background: transparent; }
+/* In-flight attachment upload — inert while the spinner runs. */
+.tm-section-btn[data-uploading],
+.tm-section-btn[data-uploading]:hover {
+  color: var(--ink-3);
+  background: transparent;
+  cursor: default;
 }
 /* Time-block rows in the task modal. Wide: avatar | date | time | dur
  * | state on one line. Narrow (≤ ~520px main pane): two lines, with
@@ -1068,18 +1112,9 @@
   color: var(--ink-4);
   white-space: nowrap;
 }
-.tm-block-del {
-  grid-area: del;
-  width: calc(20px * var(--fs-scale));
-  height: calc(20px * var(--fs-scale));
-  color: var(--ink-4);
-  display: inline-grid;
-  place-items: center;
-  border-radius: 2px;
-}
-@media (hover: hover) {
-  .tm-block-del:hover { color: var(--danger); background: var(--paper-2); }
-}
+/* Geometry + idle/hover come from .tm-section-btn (danger cue via
+ * data-danger); this only pins the button to the row grid. */
+.tm-block-del { grid-area: del; }
 /* Click-to-edit cells: read state is a span that hints at editability
  * via a soft underline on hover, edit state is a native input matching
  * the surrounding mono-tabular column. */
@@ -1112,23 +1147,6 @@
   min-width: 0;
 }
 input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
-.tm-block-add {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-family: var(--font-mono);
-  font-size: calc(11px * var(--fs-scale));
-  color: var(--ink-3);
-  cursor: pointer;
-  padding: 2px 6px;
-  border: 1px dashed var(--rule-2);
-  border-radius: 2px;
-  text-transform: none;
-  letter-spacing: 0;
-}
-@media (hover: hover) {
-  .tm-block-add:hover { color: var(--accent); border-color: var(--accent); }
-}
 .tm-block-row[data-state="planned"] .tm-block-state { color: var(--accent); }
 .tm-block-row[data-state="completed"] .tm-block-state { color: var(--done); }
 .tm-block-warn {
@@ -1166,7 +1184,10 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
   line-height: 1.55;
   color: var(--ink-2);
   white-space: normal;
-  margin: 6px 0 14px;
+  /* Negative left margin cancels the 6px left padding so the rendered
+   * text left-aligns with the section heading (the padding still gives
+   * the hover/edit box its inset) — same trick as .modal-subtasks. */
+  margin: 6px 0 14px -6px;
   outline: none;
   min-height: 1.55em;
   cursor: default;
@@ -1181,12 +1202,17 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
 .desc-md li { margin: 0.2em 0; }
 .desc-md blockquote {
   margin: 0 0 0.7em;
-  padding-left: 0.8em;
+  padding: 0.5em 0.9em;
   border-left: 4px solid var(--rule-2);
   color: var(--ink-2);
   background: var(--paper-2);
   font-size: 0.95em;
 }
+/* The inner paragraph carries its own 0.7em bottom margin, which stacked
+ * on the padding and made the bottom read heavier than the top. Drop the
+ * outer margins of the first/last children so the padding is symmetric. */
+.desc-md blockquote > *:first-child { margin-top: 0; }
+.desc-md blockquote > *:last-child { margin-bottom: 0; }
 .desc-md h1, .desc-md h2, .desc-md h3, .desc-md h4, .desc-md h5, .desc-md h6 {
   margin: 0.8em 0 0.4em;
   font-weight: 600;
@@ -1316,10 +1342,11 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
   background: var(--paper);
 }
 
-.task-attachment-label {
-  cursor: pointer;
+/* Layout/hover come from .tm-section-btn; the spinner reuses the
+ * sync-pill keyframes (defined in globals.css, loaded first). */
+.attachment-spin {
+  animation: sync-pill-spin 1s linear infinite;
 }
-.task-attachment-label:hover { color: var(--danger); }
 
 .attachment-list {
   font-size: var(--fs-sm);
@@ -1352,21 +1379,16 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
   cursor: pointer;
   text-decoration: underline;
 }
+/* Geometry + hover come from .tm-section-btn; the row only adds the
+ * right-alignment and the reveal-on-row-hover behavior. */
 .attachment-item .attachment-item-btn {
   margin-left: auto;
-  width: 18px; height: 18px;
-  display: inline-flex; align-items: center; justify-content: center;
-  color: var(--ink-2);
-  background: transparent;
-  border: 0;
-  border-radius: 3px;
-  cursor: pointer;
   opacity: 0;
-  transition: opacity 80ms ease, color 80ms ease, background 80ms ease;
+  transition: opacity 80ms ease, color 120ms ease, background 120ms ease;
 }
-.attachment-item .attachment-item-btn:hover { background: var(--paper-3); }
-.attachment-item:hover .attachment-item-btn { opacity: 1; }
-.attachment-item .attachment-item-btn:hover { color: var(--danger); }
+.attachment-item .attachment-item-btn ~ .attachment-item-btn { margin-left: 0; }
+.attachment-item:hover .attachment-item-btn,
+.attachment-item .attachment-item-btn:focus-visible { opacity: 1; }
 
 .attachment-preview-text {
   width: 100%;
@@ -1528,22 +1550,15 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
   color: var(--ink);
   padding: 0;
 }
+/* Geometry + danger hover come from .tm-section-btn / [data-danger]; the
+ * row only adds right-alignment and reveal-on-row-hover. */
 .subtask-edit .subtask-del {
   margin-left: auto;
-  width: 18px; height: 18px;
-  display: inline-flex; align-items: center; justify-content: center;
-  color: var(--ink-3);
-  background: transparent;
-  border: 0;
-  border-radius: 3px;
-  cursor: pointer;
   opacity: 0;
-  padding: 0;
-  transition: opacity 80ms ease, color 80ms ease, background 80ms ease;
+  transition: opacity 80ms ease, color 120ms ease, background 120ms ease;
 }
-.subtask-edit .subtask-del:hover { background: var(--paper-3); }
-.subtask-edit:hover .subtask-del { opacity: 1; }
-.subtask-edit .subtask-del:hover { color: var(--danger); }
+.subtask-edit:hover .subtask-del,
+.subtask-edit .subtask-del:focus-visible { opacity: 1; }
 
 .subtask .subtask-grip {
   width: 14px; height: 14px;
@@ -1577,8 +1592,12 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
   background: var(--accent);
   pointer-events: none;
 }
-.subtask[data-drop-mark="before"]::before { top: -1px; }
-.subtask[data-drop-mark="after"]::after  { bottom: -1px; }
+/* Rows are spaced by the .modal-subtasks flex `gap` (2px). Centering the
+ * 2px marker inside that gap makes "after row N" and "before row N+1" land
+ * on the exact same line, instead of on opposite edges of the gap (which
+ * read as the indicator jumping a couple of pixels across the midpoint). */
+.subtask[data-drop-mark="before"]::before { top: -2px; }
+.subtask[data-drop-mark="after"]::after  { bottom: -2px; }
 .subtask-edit[data-done="true"] .subtask-edit-input,
 .subtask-edit[data-done="true"] .sname {
   text-decoration: line-through;
