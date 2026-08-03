@@ -7,6 +7,7 @@ import { BrandMark } from './BrandMark';
 export function Sidebar() {
   const view = useFira((s) => s.view);
   const projects = useFira((s) => s.projects);
+  const meId = useFira((s) => s.meId);
   const setView = useFira((s) => s.setView);
   const openCreateProject = useFira((s) => s.openCreateProject);
   const role = useFira((s) => s.myWorkspaceRole);
@@ -29,6 +30,12 @@ export function Sidebar() {
   // to a workspace — stays with the workspace owner.
   const canCreateProject = role === 'owner';
   const canEditWorkspace = role === 'owner';
+  const isInactiveForMe = (p: (typeof projects)[number]) =>
+    p.members.find((m) => m.user_id === meId)?.role === 'inactive';
+  // Inactive projects go to the bottom
+  const orderedProjects = [...projects].sort((a, b) =>
+    Number(isInactiveForMe(a)) - Number(isInactiveForMe(b)),
+  );
 
   return (
     <>
@@ -46,18 +53,20 @@ export function Sidebar() {
           <Inbox size={16} strokeWidth={1.75} />
         </button>
         <div style={{ height: 16 }} />
-        {projects.map((p) => {
+        {orderedProjects.map((p) => {
           const active = showProjectActive && p.id === activeProjectId;
+          const inactive = isInactiveForMe(p);
           return (
             <button
               key={p.id}
               className="nav-btn nav-proj"
               data-proj-active={active}
+              data-proj-inactive={inactive}
               style={active ? { ['--proj-color' as string]: p.color } : undefined}
-              title={p.title}
+              title={inactive ? `${p.title} (inactive)` : p.title}
               onClick={() => { setView('inbox', p.id); close(); }}
             >
-              <ProjectIcon name={p.icon} color={p.color} size={16} />
+              <ProjectIcon name={p.icon} color={inactive ? 'var(--ink-4)' : p.color} size={16} />
             </button>
           );
         })}

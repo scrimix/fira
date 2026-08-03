@@ -1751,7 +1751,12 @@ function CalRail({ onDragTask, onTouchSchedule, allocByProject }: {
     railTouchRef.current = null;
   };
 
-  const groups: Array<{ project: Project; tasks: Task[] }> = projects
+  // A project where the viewer's own membership is 'inactive' drops out of the list
+  const railProjects = projects.filter((p) =>
+    p.members.find((m) => m.user_id === activePersonId)?.role !== 'inactive',
+  );
+
+  const groups: Array<{ project: Project; tasks: Task[] }> = railProjects
     .filter((p) => projectFilter[p.id] !== false)
     .map((p) => ({
       project: p,
@@ -1818,7 +1823,7 @@ function CalRail({ onDragTask, onTouchSchedule, allocByProject }: {
               : <ChevronRight size={11} strokeWidth={1.75} />}
             <span>Projects</span>
           </button>
-          {projectsOpen && projects.map((p) => {
+          {projectsOpen && railProjects.map((p) => {
             const dimmed = projectFilter[p.id] === false;
             const alloc = allocByProject.find((a) => a.project.id === p.id);
             return (

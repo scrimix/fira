@@ -121,6 +121,7 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
    as "selected" without competing with the accent stripe used by
    Calendar/Inbox. Tone matches that project's blocks on the calendar. */
 .sidebar .nav-proj { position: relative; }
+.sidebar .nav-proj[data-proj-inactive="true"] { opacity: 0.45; }
 .sidebar .nav-proj[data-proj-active="true"]::after {
   content: '';
   position: absolute;
