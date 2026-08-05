@@ -1671,8 +1671,8 @@ pub async fn get_workspace_jira_status(
     user_id: Uuid,
     workspace_id: Uuid,
 ) -> sqlx::Result<crate::models::JiraStatus> {
-    let cred: Option<(String, Option<String>)> = sqlx::query_as(
-        "SELECT email, last_sync_error FROM jira_credentials
+    let cred: Option<(String, Option<String>, bool)> = sqlx::query_as(
+        "SELECT email, last_sync_error, auto_sync_new_blocks FROM jira_credentials
          WHERE user_id = $1 AND workspace_id = $2",
     )
     .bind(user_id)
@@ -1680,15 +1680,17 @@ pub async fn get_workspace_jira_status(
     .fetch_optional(pool)
     .await?;
     Ok(match cred {
-        Some((email, last_sync_error)) => crate::models::JiraStatus {
+        Some((email, last_sync_error, auto_sync_new_blocks)) => crate::models::JiraStatus {
             connected: true,
             email: Some(email),
             last_sync_error,
+            auto_sync_new_blocks,
         },
         None => crate::models::JiraStatus {
             connected: false,
             email: None,
             last_sync_error: None,
+            auto_sync_new_blocks: false,
         },
     })
 }

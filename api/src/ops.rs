@@ -311,12 +311,39 @@ async fn apply_one(
     };
     let kind = op.kind_str().to_string();
     // Captured before `op` moves into apply_payload below — used after
-    // commit to fire a background Jira worklog resync for blocks that were
-    // already pushed. First push is manual-only (see jira.rs); this only
-    // keeps an existing worklog in sync with further edits.
+    // commit to fire background Jira work. These reads run against `pool`
+    // directly, outside the mutation transaction below: it's a best-effort
+    // snapshot for a fire-and-forget follow-up call, not something that
+    // needs to be transactionally consistent with the write it follows.
+    //
+    // block_update_id: resyncs a worklog that was already pushed. First
+    // push is manual-only (see jira.rs); this only keeps it in sync with
+    // further edits.
     let block_update_id: Option<Uuid> = match &op {
         Op::BlockUpdate { block_id, .. } => Some(*block_id),
         _ => None,
+    };
+    // block_create_id: makes the *first* push for a brand-new block, but
+    // only if its owner opted into auto-sync (see
+    // `jira::auto_sync_new_block_if_enabled`) — everyone else still relies
+    // on the manual "Log to Jira" button for that first push.
+    let block_create_id: Option<Uuid> = match &op {
+        Op::BlockCreate { block } => Some(block.id),
+        _ => None,
+    };
+    // pending_worklog_deletes: a block/task delete may be orphaning a Jira
+    // worklog. Looked up now because the row(s) needed to find it won't
+    // exist after apply_payload's delete goes through below.
+    let pending_worklog_deletes: Vec<crate::jira::PendingWorklogDelete> = match &op {
+        Op::BlockDelete { block_id } => crate::jira::pending_worklog_delete(pool, *block_id)
+            .await
+            .unwrap_or(None)
+            .into_iter()
+            .collect(),
+        Op::TaskDelete { task_id } => crate::jira::pending_worklog_deletes_for_task(pool, *task_id)
+            .await
+            .unwrap_or_default(),
+        _ => Vec::new(),
     };
 
     let result: anyhow::Result<ApplyOutcome> = (async {
@@ -370,6 +397,18 @@ async fn apply_one(
             let pool = pool.clone();
             tokio::spawn(async move {
                 crate::jira::resync_block_if_linked(&pool, workspace_id, block_id).await;
+            });
+        }
+        if let Some(block_id) = block_create_id {
+            let pool = pool.clone();
+            tokio::spawn(async move {
+                crate::jira::auto_sync_new_block_if_enabled(&pool, workspace_id, block_id).await;
+            });
+        }
+        for job in pending_worklog_deletes {
+            let pool = pool.clone();
+            tokio::spawn(async move {
+                crate::jira::delete_worklog_if_linked(&pool, workspace_id, job).await;
             });
         }
     }

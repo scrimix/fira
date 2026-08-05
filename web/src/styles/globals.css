@@ -1099,6 +1099,9 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
 .account-row {
   display: flex; align-items: flex-start; gap: 12px;
 }
+/* Section-title label stacked above its on/off toggle, same idiom as the
+ * section headings above. */
+.account-toggle-row { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
 .account-row-text {
   margin: 0;
   font-size: calc(12px * var(--fs-scale));

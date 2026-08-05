@@ -49,6 +49,11 @@ pub struct JiraStatus {
     /// Last error from a Jira write (issue create / worklog push, added in
     /// later sprints). Always `None` today — nothing populates it yet.
     pub last_sync_error: Option<String>,
+    /// Whether a newly created time block for a Jira-linked task gets its
+    /// worklog pushed automatically, instead of waiting for the manual
+    /// "Log to Jira" click. Defaults off; toggled via `POST
+    /// /api/jira/auto_sync`.
+    pub auto_sync_new_blocks: bool,
 }
 
 #[derive(Debug, Serialize, sqlx::FromRow)]

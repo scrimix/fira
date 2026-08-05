@@ -265,6 +265,7 @@ export interface JiraStatus {
   connected: boolean;
   email: string | null;
   last_sync_error: string | null;
+  auto_sync_new_blocks: boolean;
 }
 
 export interface Bootstrap {

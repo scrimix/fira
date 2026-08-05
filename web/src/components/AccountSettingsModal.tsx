@@ -26,8 +26,10 @@ export function AccountSettingsModal() {
   const disconnectGcal = useFira((s) => s.disconnectGcal);
   const jiraConnected = useFira((s) => s.jiraConnected);
   const jiraEmail = useFira((s) => s.jiraEmail);
+  const jiraAutoSyncNewBlocks = useFira((s) => s.jiraAutoSyncNewBlocks);
   const connectJira = useFira((s) => s.connectJira);
   const disconnectJira = useFira((s) => s.disconnectJira);
+  const setJiraAutoSync = useFira((s) => s.setJiraAutoSync);
   // Jira is scoped to the active workspace (site URL lives on the
   // workspace, not the account) — the section title and gating below key
   // off whichever workspace the user is currently in.
@@ -320,9 +322,11 @@ export function AccountSettingsModal() {
               siteConfigured={!!activeWorkspace?.jira_site_url}
               connected={jiraConnected}
               email={jiraEmail}
+              autoSyncNewBlocks={jiraAutoSyncNewBlocks}
               playgroundMode={playgroundMode}
               onConnect={connectJira}
               onDisconnect={disconnectJira}
+              onSetAutoSync={setJiraAutoSync}
             />
           </Section>
 
@@ -374,12 +378,16 @@ interface JiraSectionProps {
   siteConfigured: boolean;
   connected: boolean;
   email: string | null;
+  autoSyncNewBlocks: boolean;
   playgroundMode: boolean;
   onConnect: (email: string, apiToken: string) => Promise<void>;
   onDisconnect: () => Promise<void>;
+  onSetAutoSync: (enabled: boolean) => Promise<void>;
 }
 
-function JiraSection({ siteConfigured, connected, email, playgroundMode, onConnect, onDisconnect }: JiraSectionProps) {
+function JiraSection({
+  siteConfigured, connected, email, autoSyncNewBlocks, playgroundMode, onConnect, onDisconnect, onSetAutoSync,
+}: JiraSectionProps) {
   const [formEmail, setFormEmail] = useState('');
   const [apiToken, setApiToken] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -396,19 +404,51 @@ function JiraSection({ siteConfigured, connected, email, playgroundMode, onConne
 
   if (connected) {
     return (
-      <div className="account-row">
-        <button
-          className="btn account-stub-btn"
-          onClick={() => { void onDisconnect(); }}
-          disabled={playgroundMode}
-          title={playgroundMode ? 'Not available in playground' : 'Disconnect Jira'}
-        >
-          <Ticket size={13} strokeWidth={1.75} /> Disconnect
-        </button>
-        <p className="account-row-text account-row-muted">
-          Connected{email ? <> as <strong>{email}</strong></> : null}. Time you log against a
-          Jira-linked task can be pushed there once that lands.
-        </p>
+      <div className="account-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
+        <div className="account-row" style={{ padding: 0 }}>
+          <button
+            className="btn account-stub-btn"
+            onClick={() => { void onDisconnect(); }}
+            disabled={playgroundMode}
+            title={playgroundMode ? 'Not available in playground' : 'Disconnect Jira'}
+          >
+            <Ticket size={13} strokeWidth={1.75} /> Disconnect
+          </button>
+          <p className="account-row-text account-row-muted">
+            Connected{email ? <> as <strong>{email}</strong></> : null}. Time you log against a
+            Jira-linked task can be pushed there once that lands.
+          </p>
+        </div>
+        <div className="account-toggle-row">
+          <span className="account-section-h">Auto Sync New Blocks</span>
+          <div
+            className="inbox-tag-filter-mode"
+            role="group"
+            aria-label="Auto sync new blocks"
+            title={playgroundMode
+              ? 'Not available in playground'
+              : 'Automatically log new time blocks on Jira-linked tasks, instead of waiting for the manual "Log to Jira" click'}
+          >
+            <button
+              type="button"
+              className="inbox-tag-filter-mode-seg"
+              data-active={autoSyncNewBlocks || undefined}
+              onClick={() => { void onSetAutoSync(true); }}
+              disabled={playgroundMode}
+            >
+              on
+            </button>
+            <button
+              type="button"
+              className="inbox-tag-filter-mode-seg"
+              data-active={!autoSyncNewBlocks || undefined}
+              onClick={() => { void onSetAutoSync(false); }}
+              disabled={playgroundMode}
+            >
+              off
+            </button>
+          </div>
+        </div>
       </div>
     );
   }

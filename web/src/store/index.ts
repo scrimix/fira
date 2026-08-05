@@ -224,6 +224,10 @@ interface FiraState {
   jiraConnected: boolean;
   jiraEmail: string | null;
   jiraLastSyncError: string | null;
+  // Whether a newly created time block on a Jira-linked task gets pushed
+  // automatically instead of waiting for the manual "Log to Jira" click.
+  // Toggled by `setJiraAutoSync`.
+  jiraAutoSyncNewBlocks: boolean;
   // Discriminated union — one modal serves both create and edit. null = closed.
   projectModal: { kind: 'new' } | { kind: 'edit'; id: UUID } | null;
   // Transient notifications. Auto-dismissed after a few seconds; the user
@@ -338,6 +342,7 @@ interface FiraState {
   disconnectGcal: () => Promise<void>;
   connectJira: (email: string, apiToken: string) => Promise<void>;
   disconnectJira: () => Promise<void>;
+  setJiraAutoSync: (enabled: boolean) => Promise<void>;
   dismissToast: (id: string) => void;
   addProject: (input: { title: string; icon: string; color: string }) => Promise<Project>;
   updateProject: (
@@ -853,6 +858,7 @@ function applyBootstrap(
     jiraConnected: data.jira?.connected ?? false,
     jiraEmail: data.jira?.email ?? null,
     jiraLastSyncError: data.jira?.last_sync_error ?? null,
+    jiraAutoSyncNewBlocks: data.jira?.auto_sync_new_blocks ?? false,
     cursor: data.cursor ?? 0,
     appliedOpIds: new Map(),
     outbox: [],
@@ -930,6 +936,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
   jiraConnected: false,
   jiraEmail: null,
   jiraLastSyncError: null,
+  jiraAutoSyncNewBlocks: false,
   view: 'calendar',
   selectedPersonIds: [],
   activePersonId: null,
@@ -1077,6 +1084,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
         jiraConnected: data.jira?.connected ?? false,
         jiraEmail: data.jira?.email ?? null,
         jiraLastSyncError: data.jira?.last_sync_error ?? null,
+        jiraAutoSyncNewBlocks: data.jira?.auto_sync_new_blocks ?? false,
         // Cursor advances to the bootstrap watermark; the appliedOpIds
         // dedup map is reset because it's now scoped to a fresh window.
         cursor: data.cursor ?? s.cursor,
@@ -1816,15 +1824,38 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     // Let the error bubble — the form needs it to show "Jira auth
     // failed: ..." inline rather than as a toast the user might miss.
     const res = await api.connectJira(email, apiToken);
-    set({ jiraConnected: res.connected, jiraEmail: res.email, jiraLastSyncError: null });
+    set({
+      jiraConnected: res.connected,
+      jiraEmail: res.email,
+      jiraLastSyncError: null,
+      jiraAutoSyncNewBlocks: res.auto_sync_new_blocks,
+    });
   },
   disconnectJira: async () => {
     if (get().playgroundMode) return;
     try {
       await api.disconnectJira();
-      set({ jiraConnected: false, jiraEmail: null, jiraLastSyncError: null });
+      set({
+        jiraConnected: false,
+        jiraEmail: null,
+        jiraLastSyncError: null,
+        jiraAutoSyncNewBlocks: false,
+      });
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Failed to disconnect';
+      get().showToast(msg);
+    }
+  },
+  setJiraAutoSync: async (enabled) => {
+    if (get().playgroundMode) return;
+    // Optimistic — this is a plain preference flip, not a Jira API call,
+    // so there's nothing worth waiting on round-trip before reflecting it.
+    set({ jiraAutoSyncNewBlocks: enabled });
+    try {
+      await api.setJiraAutoSync(enabled);
+    } catch (e) {
+      set({ jiraAutoSyncNewBlocks: !enabled });
+      const msg = e instanceof Error ? e.message : 'Failed to update auto-sync setting';
       get().showToast(msg);
     }
   },
@@ -2427,6 +2458,12 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
       start_at: new Date(newStart).toISOString(),
       end_at: new Date(newStart + dur).toISOString(),
       state: 'planned',
+      // A duplicate is a new block server-side (block.create ignores these
+      // fields on insert) — carrying the original's over here would show
+      // it as already-synced/errored in the UI before anything was ever
+      // pushed for it.
+      jira_worklog_id: null,
+      jira_sync_error: null,
     };
     set((s) => ({
       blocks: [...s.blocks, newBlock],
@@ -2496,10 +2533,10 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     gcalConnected: s.gcalConnected,
     gcalEmail: s.gcalEmail,
     gcalLastSyncError: s.gcalLastSyncError,
-    // jiraConnected/jiraEmail/jiraLastSyncError intentionally omitted —
-    // unlike gcal these are workspace-scoped, so persisting them across
-    // reloads would flash the previous workspace's connection state before
-    // the next hydrate's Bootstrap.jira overwrites it.
+    // jiraConnected/jiraEmail/jiraLastSyncError/jiraAutoSyncNewBlocks
+    // intentionally omitted — unlike gcal these are workspace-scoped, so
+    // persisting them across reloads would flash the previous workspace's
+    // connection state before the next hydrate's Bootstrap.jira overwrites it.
     view: s.view,
   // partialize is loosely typed — zustand expects S but we're returning a
   // subset of fields. Cast through unknown is the canonical workaround.

@@ -553,6 +553,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/gcal/disconnect", post(gcal::disconnect))
         .route("/jira/connect", post(jira::connect))
         .route("/jira/disconnect", post(jira::disconnect))
+        .route("/jira/auto_sync", post(jira::set_auto_sync))
         .route("/jira/projects/:key", get(jira::resolve_project))
         .route("/jira/epics", get(jira::list_epics))
         .route("/jira/tasks/:task_id", post(jira::push_task))

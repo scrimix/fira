@@ -46,6 +46,7 @@ pub struct ConnectRequest {
 pub struct JiraStatusResponse {
     pub connected: bool,
     pub email: Option<String>,
+    pub auto_sync_new_blocks: bool,
 }
 
 /// `POST /api/jira/connect` — validates the pasted credentials against
@@ -77,10 +78,12 @@ pub async fn connect(
         .await
         .map_err(|e| ApiError::BadRequest(format!("Jira auth failed: {e}")))?;
 
-    upsert_credentials(&s.pool, ctx.user.id, ctx.workspace_id, &email, &api_token).await?;
+    let auto_sync_new_blocks =
+        upsert_credentials(&s.pool, ctx.user.id, ctx.workspace_id, &email, &api_token).await?;
     Ok(Json(JiraStatusResponse {
         connected: true,
         email: Some(email),
+        auto_sync_new_blocks,
     }))
 }
 
@@ -98,6 +101,43 @@ pub async fn disconnect(
         .execute(&s.pool)
         .await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+pub struct SetAutoSyncRequest {
+    pub enabled: bool,
+}
+
+/// `POST /api/jira/auto_sync` — toggles whether a newly created time block
+/// on a Jira-linked task gets its worklog pushed automatically (see
+/// `ops::apply_one`'s `block.create` handling), instead of waiting for the
+/// manual "Log to Jira" click. Requires an existing connection — there's
+/// no row to flip the flag on otherwise.
+pub async fn set_auto_sync(
+    State(s): State<AppState>,
+    ctx: AuthCtx,
+    Json(body): Json<SetAutoSyncRequest>,
+) -> ApiResult<Json<JiraStatusResponse>> {
+    let updated: Option<(String,)> = sqlx::query_as(
+        "UPDATE jira_credentials SET auto_sync_new_blocks = $3
+         WHERE user_id = $1 AND workspace_id = $2
+         RETURNING email",
+    )
+    .bind(ctx.user.id)
+    .bind(ctx.workspace_id)
+    .bind(body.enabled)
+    .fetch_optional(&s.pool)
+    .await?;
+    let Some((email,)) = updated else {
+        return Err(ApiError::BadRequest(
+            "connect your Jira account first".into(),
+        ));
+    };
+    Ok(Json(JiraStatusResponse {
+        connected: true,
+        email: Some(email),
+        auto_sync_new_blocks: body.enabled,
+    }))
 }
 
 async fn verify_credentials(site_url: &str, email: &str, api_token: &str) -> Result<(), String> {
@@ -138,28 +178,32 @@ pub async fn load_credentials(
     Ok(row.map(|(email, api_token)| StoredCredentials { email, api_token }))
 }
 
+/// Returns the row's `auto_sync_new_blocks` — untouched by this upsert, so
+/// this just reports back whatever a prior connection had it set to (or
+/// the column default, `false`, on a brand-new connection).
 async fn upsert_credentials(
     pool: &PgPool,
     user_id: Uuid,
     workspace_id: Uuid,
     email: &str,
     api_token: &str,
-) -> sqlx::Result<()> {
-    sqlx::query(
+) -> sqlx::Result<bool> {
+    let (auto_sync_new_blocks,): (bool,) = sqlx::query_as(
         "INSERT INTO jira_credentials (user_id, workspace_id, email, api_token, last_sync_error)
          VALUES ($1, $2, $3, $4, NULL)
          ON CONFLICT (user_id, workspace_id) DO UPDATE
              SET email = EXCLUDED.email,
                  api_token = EXCLUDED.api_token,
-                 last_sync_error = NULL",
+                 last_sync_error = NULL
+         RETURNING auto_sync_new_blocks",
     )
     .bind(user_id)
     .bind(workspace_id)
     .bind(email)
     .bind(api_token)
-    .execute(pool)
+    .fetch_one(pool)
     .await?;
-    Ok(())
+    Ok(auto_sync_new_blocks)
 }
 
 // ---- project mapping / issue create ----
@@ -729,4 +773,134 @@ pub async fn resync_block_if_linked(pool: &PgPool, workspace_id: Uuid, block_id:
     if let Err(e) = push_block_worklog(pool, workspace_id, block_id).await {
         tracing::warn!("jira worklog resync failed for block {block_id}: {e}");
     }
+}
+
+/// Fire-and-forget hook called from `ops::apply_one` after a `block.create`
+/// op commits. Unlike `resync_block_if_linked` (which only ever touches a
+/// worklog that already exists), this can make the *first* push — but only
+/// when the block's owner opted into `jira_credentials.auto_sync_new_blocks`
+/// (see `jira::set_auto_sync`); everyone else still pushes manually via the
+/// "Log to Jira" button.
+pub async fn auto_sync_new_block_if_enabled(pool: &PgPool, workspace_id: Uuid, block_id: Uuid) {
+    let row: Option<(bool, bool)> = sqlx::query_as(
+        "SELECT t.external_id IS NOT NULL, COALESCE(jc.auto_sync_new_blocks, false)
+         FROM time_blocks b
+         JOIN tasks t ON t.id = b.task_id
+         LEFT JOIN jira_credentials jc ON jc.user_id = b.user_id AND jc.workspace_id = $2
+         WHERE b.id = $1",
+    )
+    .bind(block_id)
+    .bind(workspace_id)
+    .fetch_optional(pool)
+    .await
+    .unwrap_or(None);
+    let Some((task_linked, auto_sync_enabled)) = row else {
+        return;
+    };
+    if !task_linked || !auto_sync_enabled {
+        return;
+    }
+    if let Err(e) = push_block_worklog(pool, workspace_id, block_id).await {
+        tracing::warn!("jira worklog auto-sync failed for block {block_id}: {e}");
+    }
+}
+
+// ---- time-block worklog delete ----
+
+/// What's needed to delete a worklog after the time block it came from is
+/// already gone from our DB — looked up by `pending_worklog_delete` while
+/// the row still exists, then carried across the delete for the caller to
+/// act on afterwards.
+pub struct PendingWorklogDelete {
+    pub issue_key: String,
+    pub worklog_id: String,
+    pub owner_id: Uuid,
+}
+
+/// Looks up the Jira worklog (if any) tied to a time block. Called from
+/// `ops::apply_one` *before* the `block.delete` op runs — reads straight
+/// from `pool` rather than the op's own transaction since this is a
+/// best-effort snapshot for a fire-and-forget follow-up call, same posture
+/// as `resync_block_if_linked`.
+pub async fn pending_worklog_delete(
+    pool: &PgPool,
+    block_id: Uuid,
+) -> sqlx::Result<Option<PendingWorklogDelete>> {
+    let row: Option<(String, String, Uuid)> = sqlx::query_as(
+        "SELECT t.external_id, b.jira_worklog_id, b.user_id
+         FROM time_blocks b
+         JOIN tasks t ON t.id = b.task_id
+         WHERE b.id = $1 AND b.jira_worklog_id IS NOT NULL AND t.external_id IS NOT NULL",
+    )
+    .bind(block_id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(|(issue_key, worklog_id, owner_id)| PendingWorklogDelete {
+        issue_key,
+        worklog_id,
+        owner_id,
+    }))
+}
+
+/// Same lookup as `pending_worklog_delete`, but for every block under a
+/// task at once — called from `ops::apply_one` before the `task.delete`
+/// op's FK cascade removes them along with the task.
+pub async fn pending_worklog_deletes_for_task(
+    pool: &PgPool,
+    task_id: Uuid,
+) -> sqlx::Result<Vec<PendingWorklogDelete>> {
+    let rows: Vec<(String, String, Uuid)> = sqlx::query_as(
+        "SELECT t.external_id, b.jira_worklog_id, b.user_id
+         FROM time_blocks b
+         JOIN tasks t ON t.id = b.task_id
+         WHERE b.task_id = $1 AND b.jira_worklog_id IS NOT NULL AND t.external_id IS NOT NULL",
+    )
+    .bind(task_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|(issue_key, worklog_id, owner_id)| PendingWorklogDelete {
+            issue_key,
+            worklog_id,
+            owner_id,
+        })
+        .collect())
+}
+
+/// Fire-and-forget hook called after a `block.delete` op commits, for a
+/// block that had a Jira worklog. Same posture as `resync_block_if_linked`:
+/// never block the request path on Jira's latency/availability, just log a
+/// warning on failure — the local delete has already committed either way,
+/// so there's no `jira_sync_error` field left to report against.
+pub async fn delete_worklog_if_linked(pool: &PgPool, workspace_id: Uuid, job: PendingWorklogDelete) {
+    if let Err(e) = delete_worklog(pool, workspace_id, &job).await {
+        tracing::warn!(
+            "jira worklog delete failed for issue {} worklog {}: {e}",
+            job.issue_key,
+            job.worklog_id
+        );
+    }
+}
+
+async fn delete_worklog(pool: &PgPool, workspace_id: Uuid, job: &PendingWorklogDelete) -> Result<(), String> {
+    let jc = require_workspace_jira(pool, job.owner_id, workspace_id)
+        .await
+        .map_err(|e| e.to_string())?;
+    let client = reqwest::Client::new();
+    let res = client
+        .delete(format!(
+            "{}/rest/api/3/issue/{}/worklog/{}",
+            jc.site_url, job.issue_key, job.worklog_id
+        ))
+        .basic_auth(&jc.email, Some(&jc.api_token))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    // A worklog that's already gone (manually deleted in Jira, or a retry
+    // of this same cleanup) still counts as a successful delete.
+    if !res.status().is_success() && res.status() != reqwest::StatusCode::NOT_FOUND {
+        return Err(format!("Jira returned {}", res.status()));
+    }
+    Ok(())
 }

@@ -240,8 +240,17 @@ export const api = {
   /// Validates the pasted email/token against Jira before the server
   /// persists them. Throws (HttpError) on a bad pair.
   connectJira: (email: string, api_token: string) =>
-    req<{ connected: boolean; email: string | null }>('POST', '/jira/connect', { email, api_token }),
+    req<{ connected: boolean; email: string | null; auto_sync_new_blocks: boolean }>(
+      'POST', '/jira/connect', { email, api_token },
+    ),
   disconnectJira: () => req<void>('POST', '/jira/disconnect'),
+  /// Toggles whether a newly created time block on a Jira-linked task gets
+  /// its worklog pushed automatically, instead of waiting for the manual
+  /// "Log to Jira" click.
+  setJiraAutoSync: (enabled: boolean) =>
+    req<{ connected: boolean; email: string | null; auto_sync_new_blocks: boolean }>(
+      'POST', '/jira/auto_sync', { enabled },
+    ),
   /// Resolves a Jira project by key — used by the project-settings field
   /// to confirm the key exists and show its name before saving.
   resolveJiraProject: (key: string) =>
