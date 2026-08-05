@@ -41,6 +41,10 @@ export interface Workspace {
   id: UUID;
   title: string;
   is_personal: boolean;
+  /// Shared Jira Cloud site for this workspace, e.g.
+  /// `https://your-domain.atlassian.net`. `null` = Jira not configured.
+  /// Owner-editable in WorkspaceModal.
+  jira_site_url: string | null;
   members: WorkspaceMember[];
 }
 
@@ -61,6 +65,9 @@ export interface Project {
   /// task's `external_id`. Null means no tracker — bare external_ids show
   /// as plain text instead of links.
   external_url_template: string | null;
+  /// Jira project key (e.g. `FIR`) this project pushes issues to, within
+  /// the workspace's configured Jira site. Null = doesn't push to Jira.
+  jira_project_key: string | null;
   members: ProjectMember[];
 }
 
@@ -148,6 +155,10 @@ export interface TimeBlock {
   start_at: string; // ISO
   end_at: string;
   state: BlockState;
+  /// Jira worklog id once this block has been pushed. Null = never pushed.
+  jira_worklog_id: string | null;
+  /// Last error from a push/resync attempt. Null on success or never tried.
+  jira_sync_error: string | null;
 }
 
 export interface GcalEvent {
@@ -244,6 +255,18 @@ export interface UserSettings {
   gcal_last_sync_error: string | null;
 }
 
+/// Caller's Jira connection status *within the active workspace*. Unlike
+/// gcal (account-wide), Jira is scoped per-(user, workspace) — the site
+/// itself is a workspace setting (`Workspace.jira_site_url`), so the same
+/// person can be connected differently per workspace. Lives on
+/// `Bootstrap`, not `UserSettings`, because it varies with the active
+/// workspace.
+export interface JiraStatus {
+  connected: boolean;
+  email: string | null;
+  last_sync_error: string | null;
+}
+
 export interface Bootstrap {
   users: User[];
   projects: Project[];
@@ -259,4 +282,6 @@ export interface Bootstrap {
   cursor: number;
   /// Caller's account-scoped settings.
   settings: UserSettings;
+  /// Caller's Jira connection status for this workspace.
+  jira: JiraStatus;
 }

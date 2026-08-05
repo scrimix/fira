@@ -36,6 +36,21 @@ pub struct UserSettings {
     pub gcal_last_sync_error: Option<String>,
 }
 
+/// A connected user's Jira status *within the caller's active workspace*.
+/// Unlike gcal (account-wide), Jira is scoped per-(user, workspace) — the
+/// site itself is a workspace setting (`Workspace.jira_site_url`), so the
+/// same person can be connected differently (or not at all) in different
+/// workspaces. Lives on `Bootstrap`, not `UserSettings`, because it varies
+/// with `X-Workspace-Id`.
+#[derive(Debug, Serialize)]
+pub struct JiraStatus {
+    pub connected: bool,
+    pub email: Option<String>,
+    /// Last error from a Jira write (issue create / worklog push, added in
+    /// later sprints). Always `None` today — nothing populates it yet.
+    pub last_sync_error: Option<String>,
+}
+
 #[derive(Debug, Serialize, sqlx::FromRow)]
 pub struct Project {
     pub id: Uuid,
@@ -48,6 +63,10 @@ pub struct Project {
     /// URL template for the manual issue-link feature. `{key}` is replaced
     /// with the task's `external_id`. NULL = no tracker configured.
     pub external_url_template: Option<String>,
+    /// Jira project key (e.g. `FIR`) this project pushes issues to, within
+    /// the workspace's configured Jira site (`Workspace.jira_site_url`).
+    /// NULL = this project doesn't push to Jira.
+    pub jira_project_key: Option<String>,
     #[sqlx(skip)]
     pub members: Vec<ProjectMember>,
 }
@@ -64,6 +83,10 @@ pub struct Workspace {
     pub id: Uuid,
     pub title: String,
     pub is_personal: bool,
+    /// Shared Jira Cloud site for this workspace, e.g.
+    /// `https://your-domain.atlassian.net`. `None` = Jira not configured
+    /// for this workspace. Owner-editable (see `workspaces::rename`).
+    pub jira_site_url: Option<String>,
     #[sqlx(skip)]
     pub members: Vec<WorkspaceMember>,
 }
@@ -161,6 +184,12 @@ pub struct TimeBlock {
     pub start_at: DateTime<Utc>,
     pub end_at: DateTime<Utc>,
     pub state: String,
+    /// Jira worklog id once this block has been pushed. `None` = never
+    /// pushed. Set by `jira::push_block_worklog`, both the manual "Log to
+    /// Jira" action and the background resync after `block.update`.
+    pub jira_worklog_id: Option<String>,
+    /// Last error from a push/resync attempt. Cleared on success.
+    pub jira_sync_error: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow, Clone)]

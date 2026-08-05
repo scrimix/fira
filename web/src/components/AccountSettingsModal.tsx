@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Calendar, Link, X } from 'lucide-react';
+import { Calendar, Link, Ticket, X } from 'lucide-react';
 import { useFira } from '../store';
 import { api, gcalConnectUrl, loginUrl } from '../api';
 import type { AccountSummary } from '../types';
@@ -24,6 +24,14 @@ export function AccountSettingsModal() {
   const gcalEmail = useFira((s) => s.gcalEmail);
   const gcalLastSyncError = useFira((s) => s.gcalLastSyncError);
   const disconnectGcal = useFira((s) => s.disconnectGcal);
+  const jiraConnected = useFira((s) => s.jiraConnected);
+  const jiraEmail = useFira((s) => s.jiraEmail);
+  const connectJira = useFira((s) => s.connectJira);
+  const disconnectJira = useFira((s) => s.disconnectJira);
+  // Jira is scoped to the active workspace (site URL lives on the
+  // workspace, not the account) — the section title and gating below key
+  // off whichever workspace the user is currently in.
+  const activeWorkspace = useFira((s) => s.workspaces.find((w) => w.id === s.activeWorkspaceId));
   const playgroundMode = useFira((s) => s.playgroundMode);
   // The linked partner with a live session in this browser's group, if
   // any. Server-side `/auth/accounts` already requires both gates
@@ -307,6 +315,17 @@ export function AccountSettingsModal() {
             </div>
           </Section>
 
+          <Section title={`Jira${activeWorkspace ? ` — ${activeWorkspace.title}` : ''}`}>
+            <JiraSection
+              siteConfigured={!!activeWorkspace?.jira_site_url}
+              connected={jiraConnected}
+              email={jiraEmail}
+              playgroundMode={playgroundMode}
+              onConnect={connectJira}
+              onDisconnect={disconnectJira}
+            />
+          </Section>
+
           <Section title="Mode badge">
             <div className="account-row">
               <BadgePicker />
@@ -345,6 +364,112 @@ function switchTargetLabel(a: AccountSummary): string {
   if (a.account_badge === 'personal') return 'Personal';
   if (a.account_badge === 'work') return 'Work';
   return a.name;
+}
+
+// Jira connect/disconnect. Unlike the gcal section this is a plain form,
+// not a redirect — Jira Cloud's REST API takes a per-user email + API
+// token (Basic Auth), so "connecting" is just validating and storing that
+// pair server-side (see docs/sprints/28-jira-integration-base.md).
+interface JiraSectionProps {
+  siteConfigured: boolean;
+  connected: boolean;
+  email: string | null;
+  playgroundMode: boolean;
+  onConnect: (email: string, apiToken: string) => Promise<void>;
+  onDisconnect: () => Promise<void>;
+}
+
+function JiraSection({ siteConfigured, connected, email, playgroundMode, onConnect, onDisconnect }: JiraSectionProps) {
+  const [formEmail, setFormEmail] = useState('');
+  const [apiToken, setApiToken] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (!siteConfigured) {
+    return (
+      <p className="account-row-text account-row-muted">
+        This workspace hasn't configured a Jira site yet. Ask the workspace owner to
+        set one in workspace settings.
+      </p>
+    );
+  }
+
+  if (connected) {
+    return (
+      <div className="account-row">
+        <button
+          className="btn account-stub-btn"
+          onClick={() => { void onDisconnect(); }}
+          disabled={playgroundMode}
+          title={playgroundMode ? 'Not available in playground' : 'Disconnect Jira'}
+        >
+          <Ticket size={13} strokeWidth={1.75} /> Disconnect
+        </button>
+        <p className="account-row-text account-row-muted">
+          Connected{email ? <> as <strong>{email}</strong></> : null}. Time you log against a
+          Jira-linked task can be pushed there once that lands.
+        </p>
+      </div>
+    );
+  }
+
+  const trimmedEmail = formEmail.trim();
+  const trimmedToken = apiToken.trim();
+  const canSubmit = trimmedEmail.length > 0 && trimmedToken.length > 0 && !submitting && !playgroundMode;
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!canSubmit) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      await onConnect(trimmedEmail, trimmedToken);
+      setApiToken('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to connect');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <form className="account-row" onSubmit={submit} style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
+      <p className="account-row-text account-row-muted" style={{ margin: 0 }}>
+        Connect your own Jira account with an API token from{' '}
+        <strong>id.atlassian.com/manage-profile/security/api-tokens</strong>. Per-user, on
+        purpose — Jira attributes logged time to whoever's token made the call.
+      </p>
+      <input
+        className="user-search"
+        type="email"
+        autoComplete="email"
+        spellCheck={false}
+        value={formEmail}
+        onChange={(e) => setFormEmail(e.target.value)}
+        placeholder="you@example.com"
+        disabled={playgroundMode || submitting}
+      />
+      <input
+        className="user-search"
+        type="password"
+        autoComplete="off"
+        spellCheck={false}
+        value={apiToken}
+        onChange={(e) => setApiToken(e.target.value)}
+        placeholder="API token"
+        disabled={playgroundMode || submitting}
+      />
+      <button
+        type="submit"
+        className="btn account-stub-btn"
+        disabled={!canSubmit}
+        title={playgroundMode ? 'Not available in playground' : 'Connect Jira'}
+      >
+        <Ticket size={13} strokeWidth={1.75} /> {submitting ? 'Connecting…' : 'Connect'}
+      </button>
+      {error && <p className="account-row-text account-row-warn" style={{ margin: 0 }}>{error}</p>}
+    </form>
+  );
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {

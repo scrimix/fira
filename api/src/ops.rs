@@ -310,6 +310,14 @@ async fn apply_one(
         Err(e) => return Err((op_id, e.into())),
     };
     let kind = op.kind_str().to_string();
+    // Captured before `op` moves into apply_payload below — used after
+    // commit to fire a background Jira worklog resync for blocks that were
+    // already pushed. First push is manual-only (see jira.rs); this only
+    // keeps an existing worklog in sync with further edits.
+    let block_update_id: Option<Uuid> = match &op {
+        Op::BlockUpdate { block_id, .. } => Some(*block_id),
+        _ => None,
+    };
 
     let result: anyhow::Result<ApplyOutcome> = (async {
         let mut tx = pool.begin().await?;
@@ -353,6 +361,18 @@ async fn apply_one(
         Ok(ApplyOutcome::Applied)
     })
     .await;
+
+    // Fire-and-forget: never let Jira's latency/availability sit on the
+    // critical path of an /ops response. Same posture as gcal's background
+    // sync from bootstrap.
+    if matches!(result, Ok(ApplyOutcome::Applied)) {
+        if let Some(block_id) = block_update_id {
+            let pool = pool.clone();
+            tokio::spawn(async move {
+                crate::jira::resync_block_if_linked(&pool, workspace_id, block_id).await;
+            });
+        }
+    }
 
     match result {
         Ok(o) => Ok((op_id, o)),

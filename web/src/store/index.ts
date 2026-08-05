@@ -215,6 +215,15 @@ interface FiraState {
   // on `invalid_grant:` to render Reconnect; other prefixes render a
   // muted retry hint.
   gcalLastSyncError: string | null;
+  // Jira connection state, scoped to the active workspace (unlike gcal,
+  // which is account-wide) — hydrated fresh from `Bootstrap.jira` on every
+  // workspace switch, not persisted across reloads. Toggled by
+  // `connectJira` / `disconnectJira` (a plain form submit, not an OAuth
+  // redirect — Jira uses per-(user, workspace) API tokens, see
+  // docs/sprints/28-jira-integration-base.md).
+  jiraConnected: boolean;
+  jiraEmail: string | null;
+  jiraLastSyncError: string | null;
   // Discriminated union — one modal serves both create and edit. null = closed.
   projectModal: { kind: 'new' } | { kind: 'edit'; id: UUID } | null;
   // Transient notifications. Auto-dismissed after a few seconds; the user
@@ -243,7 +252,7 @@ interface FiraState {
   // user-channel WS nudge after any membership/role/title/delete change.
   reloadWorkspaces: () => Promise<void>;
   createWorkspace: (title: string) => Promise<Workspace>;
-  renameWorkspace: (id: UUID, title: string) => Promise<Workspace>;
+  renameWorkspace: (id: UUID, title: string, jiraSiteUrl?: string | null) => Promise<Workspace>;
   setWorkspaceMembers: (
     id: UUID,
     members: { user_id: UUID; role: WorkspaceRole }[],
@@ -327,6 +336,8 @@ interface FiraState {
   closeAccountModal: () => void;
   setAccountBadge: (b: 'personal' | 'work' | null) => void;
   disconnectGcal: () => Promise<void>;
+  connectJira: (email: string, apiToken: string) => Promise<void>;
+  disconnectJira: () => Promise<void>;
   dismissToast: (id: string) => void;
   addProject: (input: { title: string; icon: string; color: string }) => Promise<Project>;
   updateProject: (
@@ -336,8 +347,13 @@ interface FiraState {
       icon: string;
       color: string;
       external_url_template: string | null;
+      jira_project_key: string | null;
     }>,
   ) => Promise<Project>;
+  resolveJiraProject: (key: string) => Promise<{ key: string; name: string }>;
+  listJiraEpics: (projectKey: string) => Promise<{ key: string; summary: string }[]>;
+  pushTaskToJira: (taskId: UUID, epicKey?: string | null) => Promise<void>;
+  pushBlockToJira: (blockId: UUID) => Promise<void>;
   // Member changes are their own op (`project.set_members`) — separate from
   // visual edits — so the apply path can treat removal-from-project as a
   // dedicated event and drop project state cleanly.
@@ -834,6 +850,9 @@ function applyBootstrap(
     gcalConnected: data.settings?.gcal_connected ?? false,
     gcalEmail: data.settings?.gcal_email ?? null,
     gcalLastSyncError: data.settings?.gcal_last_sync_error ?? null,
+    jiraConnected: data.jira?.connected ?? false,
+    jiraEmail: data.jira?.email ?? null,
+    jiraLastSyncError: data.jira?.last_sync_error ?? null,
     cursor: data.cursor ?? 0,
     appliedOpIds: new Map(),
     outbox: [],
@@ -908,6 +927,9 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
   gcalConnected: false,
   gcalEmail: null,
   gcalLastSyncError: null,
+  jiraConnected: false,
+  jiraEmail: null,
+  jiraLastSyncError: null,
   view: 'calendar',
   selectedPersonIds: [],
   activePersonId: null,
@@ -1052,6 +1074,9 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
         gcalConnected: data.settings?.gcal_connected ?? false,
         gcalEmail: data.settings?.gcal_email ?? null,
         gcalLastSyncError: data.settings?.gcal_last_sync_error ?? null,
+        jiraConnected: data.jira?.connected ?? false,
+        jiraEmail: data.jira?.email ?? null,
+        jiraLastSyncError: data.jira?.last_sync_error ?? null,
         // Cursor advances to the bootstrap watermark; the appliedOpIds
         // dedup map is reset because it's now scoped to a fresh window.
         cursor: data.cursor ?? s.cursor,
@@ -1162,6 +1187,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
           id: crypto.randomUUID(),
           title,
           is_personal: false,
+          jira_site_url: null,
           members: meId ? [{ user_id: meId, role: 'owner' }] : [],
         }
       : await api.createWorkspace(title);
@@ -1170,12 +1196,12 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     return ws;
   },
 
-  renameWorkspace: async (id, title) => {
+  renameWorkspace: async (id, title, jiraSiteUrl) => {
     const playground = get().playgroundMode;
     const existing = get().workspaces.find((w) => w.id === id);
     const ws: Workspace = playground && existing
-      ? { ...existing, title }
-      : await api.renameWorkspace(id, title);
+      ? { ...existing, title, ...(jiraSiteUrl !== undefined ? { jira_site_url: jiraSiteUrl } : {}) }
+      : await api.renameWorkspace(id, title, jiraSiteUrl);
     set((s) => ({ workspaces: s.workspaces.map((w) => w.id === id ? ws : w) }));
     return ws;
   },
@@ -1785,6 +1811,58 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
       get().showToast(msg);
     }
   },
+  connectJira: async (email, apiToken) => {
+    if (get().playgroundMode) return;
+    // Let the error bubble — the form needs it to show "Jira auth
+    // failed: ..." inline rather than as a toast the user might miss.
+    const res = await api.connectJira(email, apiToken);
+    set({ jiraConnected: res.connected, jiraEmail: res.email, jiraLastSyncError: null });
+  },
+  disconnectJira: async () => {
+    if (get().playgroundMode) return;
+    try {
+      await api.disconnectJira();
+      set({ jiraConnected: false, jiraEmail: null, jiraLastSyncError: null });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Failed to disconnect';
+      get().showToast(msg);
+    }
+  },
+  // Not available in playground — both hit the real Jira API through the
+  // server, and there's nothing sensible to fake for "does this key exist
+  // on your Jira site" or "here are your epics".
+  resolveJiraProject: (key) => api.resolveJiraProject(key),
+  listJiraEpics: (projectKey) => api.listJiraEpics(projectKey),
+  pushTaskToJira: async (taskId, epicKey) => {
+    const res = await api.pushTaskToJira(taskId, epicKey);
+    set((s) => ({
+      tasks: s.tasks.map((t) => t.id === taskId
+        ? { ...t, external_id: res.external_id, external_url: res.external_url }
+        : t),
+    }));
+  },
+  // Single-click action, no extra input needed (unlike the task push's
+  // epic picker) — logs against whatever Jira issue the task is already
+  // linked to. Catches its own errors: sets jira_sync_error locally so the
+  // row's status indicator reflects it immediately, same field the
+  // background resync (server-side, after block.update) would set via a
+  // synthesized op if this were a later resync instead of the first push.
+  pushBlockToJira: async (blockId) => {
+    try {
+      const res = await api.pushBlockToJira(blockId);
+      set((s) => ({
+        blocks: s.blocks.map((b) => b.id === blockId
+          ? { ...b, jira_worklog_id: res.jira_worklog_id, jira_sync_error: null }
+          : b),
+      }));
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Failed to log to Jira';
+      set((s) => ({
+        blocks: s.blocks.map((b) => b.id === blockId ? { ...b, jira_sync_error: msg } : b),
+      }));
+      get().showToast(msg);
+    }
+  },
 
   addProject: async (input) => {
     // Project create is rare and deliberate — a synchronous round-trip is
@@ -1801,6 +1879,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
           source: 'local',
           description: null,
           external_url_template: null,
+          jira_project_key: null,
           members: meId ? [{ user_id: meId, role: 'owner' }] : [],
         }
       : await api.createProject(input);
@@ -1839,6 +1918,9 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
           ...(patch.color !== undefined ? { color: patch.color } : {}),
           ...(patch.external_url_template !== undefined
             ? { external_url_template: patch.external_url_template }
+            : {}),
+          ...(patch.jira_project_key !== undefined
+            ? { jira_project_key: patch.jira_project_key }
             : {}),
         }
       : await api.updateProject(id, patch);
@@ -2154,6 +2236,11 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
         start_at: block.start_at,
         end_at: block.end_at,
         state: block.state,
+        // New block identity (see comment above) — any Jira worklog link
+        // stays with the old, soon-to-be-deleted block id rather than
+        // following the merge. Re-push manually if needed.
+        jira_worklog_id: null,
+        jira_sync_error: null,
       });
     }
     // 7. Drop the source. Cascades remove its old blocks server-side;
@@ -2409,6 +2496,10 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     gcalConnected: s.gcalConnected,
     gcalEmail: s.gcalEmail,
     gcalLastSyncError: s.gcalLastSyncError,
+    // jiraConnected/jiraEmail/jiraLastSyncError intentionally omitted —
+    // unlike gcal these are workspace-scoped, so persisting them across
+    // reloads would flash the previous workspace's connection state before
+    // the next hydrate's Bootstrap.jira overwrites it.
     view: s.view,
   // partialize is loosely typed — zustand expects S but we're returning a
   // subset of fields. Cast through unknown is the canonical workaround.

@@ -1062,8 +1062,8 @@
  * onto its own wrapped line. */
 .tm-block-row {
   display: grid;
-  grid-template-columns: 20px auto 1fr auto auto auto;
-  grid-template-areas: "ava date time dur state del";
+  grid-template-columns: 20px auto 1fr auto auto auto auto;
+  grid-template-areas: "ava date time dur state jira del";
   column-gap: 10px;
   row-gap: 2px;
   padding: 4px 0;
@@ -1115,6 +1115,15 @@
 /* Geometry + idle/hover come from .tm-section-btn (danger cue via
  * data-danger); this only pins the button to the row grid. */
 .tm-block-del { grid-area: del; }
+/* Jira worklog sync status. Idle (never pushed) keeps the default
+ * .tm-section-btn muted color; "ok" (already synced) and "error" (last
+ * push/resync failed) get a tone so the row communicates state at a
+ * glance, same idiom as the sync pill's tone-by-data-attribute. */
+.tm-block-jira { grid-area: jira; }
+.tm-block-jira[data-tone="ok"] { color: var(--done); }
+.tm-block-jira[data-tone="ok"]:hover { color: var(--done); background: var(--paper-3); }
+.tm-block-jira[data-tone="error"] { color: var(--danger); }
+.tm-block-jira[data-tone="error"]:hover { color: var(--danger); background: var(--paper-3); }
 /* Click-to-edit cells: read state is a span that hints at editability
  * via a soft underline on hover, edit state is a native input matching
  * the surrounding mono-tabular column. */

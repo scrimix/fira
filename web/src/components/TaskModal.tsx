@@ -3,10 +3,11 @@ import { createPortal } from 'react-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
-import { ArrowLeft, Check, ClockPlus, Copy, Download, Link, Loader2, PanelRightClose, PanelRightOpen, Paperclip, Pencil, Plus, Trash2, X } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Check, ClockPlus, Copy, Download, Link, Loader2, PanelRightClose, PanelRightOpen, Paperclip, Pencil, Plus, Ticket, Trash2, X } from 'lucide-react';
 import { useFira } from '../store';
 import { useIsMobile } from '../hooks';
 import { ConfirmDelete } from './ConfirmDelete';
+import { Select } from './Select';
 import {
   fmtMin, fmtClockShort, parseEstimate,
   taskCompletedMin, taskPlannedMin, taskTimeLeft,
@@ -75,6 +76,7 @@ export function TaskModal({ taskId }: Props) {
   const updateBlock = useFira((s) => s.updateBlock);
   const deleteBlock = useFira((s) => s.deleteBlock);
   const upsertBlock = useFira((s) => s.upsertBlock);
+  const pushBlockToJira = useFira((s) => s.pushBlockToJira);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   // Description edit mode is lifted here so the Pencil button in the
   // section heading can toggle it — the editor itself no longer enters
@@ -315,6 +317,8 @@ export function TaskModal({ taskId }: Props) {
                         start_at: start.toISOString(),
                         end_at: end.toISOString(),
                         state: 'planned',
+                        jira_worklog_id: null,
+                        jira_sync_error: null,
                       });
                     }}
                     title="Add a 1h block ending now"
@@ -340,6 +344,10 @@ export function TaskModal({ taskId }: Props) {
                   meId={meId}
                   onSave={(patch) => updateBlock(b.id, patch)}
                   onDelete={() => deleteBlock(b.id)}
+                  jiraLinked={!!(project.jira_project_key && task.external_id)}
+                  jiraWorklogId={b.jira_worklog_id}
+                  jiraSyncError={b.jira_sync_error}
+                  onPushJira={() => pushBlockToJira(b.id)}
                 />
               ))}
           </div>
@@ -404,6 +412,9 @@ export function TaskModal({ taskId }: Props) {
                 onSaveLabel={(v) => setTaskExternalId(task.id, v)}
                 onSaveUrl={(v) => setTaskExternalUrl(task.id, v)}
               />
+              {project.jira_project_key && !task.external_id && (
+                <JiraPushControl key={task.id} taskId={task.id} jiraProjectKey={project.jira_project_key} />
+              )}
             </div>
             <div className="field">
               <h5>Section</h5>
@@ -551,6 +562,7 @@ function SectionHeading({ title, hint, trailing }: {
 function BlockRow({
   startAt, state, userId, startMin, durMin, taskDone,
   users, meId, onSave, onDelete,
+  jiraLinked, jiraWorklogId, jiraSyncError, onPushJira,
 }: {
   startAt: string;
   state: 'planned' | 'completed';
@@ -562,7 +574,25 @@ function BlockRow({
   meId: UUID | null;
   onSave: (patch: { start_at?: string; end_at?: string }) => void;
   onDelete: () => void;
+  // Jira worklog sync — only rendered when the task is linked to a Jira
+  // issue (project has a key + task has an external_id). Reruns of
+  // onPushJira after the first (jiraWorklogId already set) update the
+  // existing worklog rather than creating a duplicate.
+  jiraLinked: boolean;
+  jiraWorklogId: string | null;
+  jiraSyncError: string | null;
+  onPushJira: () => Promise<void>;
 }) {
+  const [jiraPushing, setJiraPushing] = useState(false);
+  const pushJira = async () => {
+    if (jiraPushing) return;
+    setJiraPushing(true);
+    try {
+      await onPushJira();
+    } finally {
+      setJiraPushing(false);
+    }
+  };
   const stale = taskDone && state === 'planned';
   const startDate = new Date(startAt);
   const dateLabel = `${MONTH_ABBR[startDate.getMonth()]} ${startDate.getDate()}`;
@@ -662,6 +692,29 @@ function BlockRow({
         )}
         {state}
       </span>
+      {jiraLinked && (
+        <button
+          className="tm-section-btn tm-block-jira"
+          data-tone={jiraSyncError ? 'error' : jiraWorklogId ? 'ok' : undefined}
+          onClick={pushJira}
+          disabled={jiraPushing}
+          title={
+            jiraPushing
+              ? 'Logging to Jira…'
+              : jiraSyncError
+                ? `Sync failed: ${jiraSyncError} — click to retry`
+                : jiraWorklogId
+                  ? 'Synced to Jira — click to re-sync'
+                  : 'Log this block to Jira'
+          }
+        >
+          {jiraPushing
+            ? <Loader2 size={12} strokeWidth={1.75} className="sync-pill-spin" />
+            : jiraSyncError
+              ? <AlertTriangle size={12} strokeWidth={1.75} />
+              : <Ticket size={12} strokeWidth={1.75} />}
+        </button>
+      )}
       <button
         className="tm-section-btn tm-block-del"
         data-danger
@@ -1740,6 +1793,119 @@ function ExternalLinkEditor({ label, url, resolvedUrl, hasTemplate, onSaveLabel,
       <button className="icon-btn" onClick={() => setEditing(true)} title="Edit">
         <Pencil size={12} strokeWidth={1.75} />
       </button>
+    </div>
+  );
+}
+
+// "Create in Jira" affordance — only rendered when the project has a Jira
+// project key configured and the task has no issue link yet (once pushed,
+// the result lands in external_id/external_url and ExternalLinkEditor takes
+// over the display, same as a manually-pasted link). Just a trigger button;
+// the epic picker + confirm lives in its own modal (JiraCreateIssueModal)
+// rather than expanding inline in the narrow sidebar field.
+function JiraPushControl({ taskId, jiraProjectKey }: { taskId: UUID; jiraProjectKey: string }) {
+  const jiraConnected = useFira((s) => s.jiraConnected);
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button
+        className="btn"
+        onClick={() => setOpen(true)}
+        title={jiraConnected ? 'Create a Jira issue for this task' : 'Connect Jira in Account Settings first'}
+        disabled={!jiraConnected}
+        style={{ marginTop: 6 }}
+      >
+        <Ticket size={12} strokeWidth={1.75} /> Create in Jira
+      </button>
+      {open && (
+        <JiraCreateIssueModal
+          taskId={taskId}
+          jiraProjectKey={jiraProjectKey}
+          onClose={() => setOpen(false)}
+        />
+      )}
+    </>
+  );
+}
+
+// Standalone modal: pick an epic (optional) and confirm the Jira issue
+// create. Epics load lazily on mount, not preloaded on the field itself —
+// most tasks never get pushed, so there's no reason to hit Jira's search
+// endpoint until the user actually opens this.
+function JiraCreateIssueModal({ taskId, jiraProjectKey, onClose }: {
+  taskId: UUID;
+  jiraProjectKey: string;
+  onClose: () => void;
+}) {
+  const listJiraEpics = useFira((s) => s.listJiraEpics);
+  const pushTaskToJira = useFira((s) => s.pushTaskToJira);
+  const [epics, setEpics] = useState<{ key: string; summary: string }[]>([]);
+  const [loadingEpics, setLoadingEpics] = useState(true);
+  const [epicKey, setEpicKey] = useState('');
+  const [pushing, setPushing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    listJiraEpics(jiraProjectKey)
+      .then((res) => { if (!cancelled) setEpics(res); })
+      .catch((e) => { if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load epics'); })
+      .finally(() => { if (!cancelled) setLoadingEpics(false); });
+    return () => { cancelled = true; };
+  }, [jiraProjectKey, listJiraEpics]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [onClose]);
+
+  const confirm = async () => {
+    setPushing(true);
+    setError(null);
+    try {
+      await pushTaskToJira(taskId, epicKey || null);
+      onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to create Jira issue');
+      setPushing(false);
+    }
+  };
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal np-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head">
+          <span className="ext">Create in Jira</span>
+          <span className="grow" />
+          <button className="icon-btn" onClick={onClose} title="Close (Esc)" aria-label="Close">
+            <X size={15} strokeWidth={1.75} />
+          </button>
+        </div>
+        <div className="np-body">
+          <label className="np-label">Epic</label>
+          <Select
+            value={epicKey}
+            onChange={setEpicKey}
+            disabled={loadingEpics || pushing}
+            options={[
+              { value: '', label: loadingEpics ? 'Loading epics…' : 'No epic' },
+              ...epics.map((e) => ({ value: e.key, label: `${e.key} — ${e.summary}` })),
+            ]}
+          />
+          {error && <div className="np-error">{error}</div>}
+          <div className="np-actions">
+            <button className="btn" onClick={onClose} disabled={pushing}>Cancel</button>
+            <button
+              className="btn np-create"
+              onClick={confirm}
+              disabled={pushing || loadingEpics}
+            >
+              {pushing ? 'Creating…' : 'Create'}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

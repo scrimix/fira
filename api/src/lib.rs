@@ -14,6 +14,7 @@ pub mod ensure_scope;
 pub mod error;
 pub mod gcal;
 pub mod invites;
+pub mod jira;
 pub mod links;
 pub mod models;
 pub mod ops;
@@ -63,6 +64,9 @@ pub struct Bootstrap {
     /// Caller's account-scoped settings (personal/work badge, etc.).
     /// Always present — empty defaults if the user has never saved any.
     pub settings: models::UserSettings,
+    /// Caller's Jira connection status *for this workspace* — see
+    /// `models::JiraStatus` for why this isn't folded into `settings`.
+    pub jira: models::JiraStatus,
 }
 
 /// Run the same set of queries `/api/bootstrap` runs, scoped to the given
@@ -100,6 +104,7 @@ pub async fn load_bootstrap(
     let workspace_invites = db::list_workspace_invites(pool, user_id, &user_email.0).await?;
     let cursor = ops::current_cursor(pool).await?;
     let settings = db::get_user_settings(pool, user_id).await?;
+    let jira = db::get_workspace_jira_status(pool, user_id, workspace_id).await?;
     Ok(Bootstrap {
         users,
         projects,
@@ -113,5 +118,6 @@ pub async fn load_bootstrap(
         workspace_invites,
         cursor,
         settings,
+        jira,
     })
 }

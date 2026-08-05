@@ -36,6 +36,7 @@ export function WorkspaceModal({ workspace }: Props) {
   const canDelete = isEdit && !workspace!.is_personal && myRole === 'owner';
 
   const [title, setTitle] = useState(workspace?.title ?? '');
+  const [jiraSiteUrl, setJiraSiteUrl] = useState(workspace?.jira_site_url ?? '');
   // Member list is read straight from the workspace prop — no local
   // staging, no bulk-set-on-save. Each membership mutation hits the
   // server immediately:
@@ -70,16 +71,25 @@ export function WorkspaceModal({ workspace }: Props) {
   const trimmed = title.trim();
   const valid = trimmed.length > 0 && trimmed.length <= 80;
   const titleDirty = !isEdit || trimmed !== workspace!.title;
-  const dirty = titleDirty;
+  const trimmedJiraSiteUrl = jiraSiteUrl.trim();
+  const jiraSiteUrlDirty = isEdit && trimmedJiraSiteUrl !== (workspace!.jira_site_url ?? '');
+  const jiraSiteUrlValid = trimmedJiraSiteUrl === ''
+    || trimmedJiraSiteUrl.startsWith('http://')
+    || trimmedJiraSiteUrl.startsWith('https://');
+  const dirty = titleDirty || jiraSiteUrlDirty;
 
   const submit = async () => {
-    if (!valid || submitting || !dirty) return;
+    if (!valid || !jiraSiteUrlValid || submitting || !dirty) return;
     setSubmitting(true);
     setError(null);
     try {
       if (isEdit) {
-        if (titleDirty) {
-          await renameWorkspace(workspace!.id, trimmed);
+        if (titleDirty || jiraSiteUrlDirty) {
+          await renameWorkspace(
+            workspace!.id,
+            trimmed,
+            jiraSiteUrlDirty ? (trimmedJiraSiteUrl || null) : undefined,
+          );
         }
         close();
       } else {
@@ -145,6 +155,27 @@ export function WorkspaceModal({ workspace }: Props) {
               if (e.key === 'Escape') close();
             }}
           />
+
+          {isEdit && myRole === 'owner' && (
+            <>
+              <label className="np-label" style={{ marginTop: 18 }}>Jira site</label>
+              <input
+                className="user-search"
+                type="url"
+                spellCheck={false}
+                value={jiraSiteUrl}
+                onChange={(e) => setJiraSiteUrl(e.target.value)}
+                placeholder="https://your-domain.atlassian.net"
+              />
+              <p className="np-hint">
+                Lets members connect their own Jira API token in Account Settings.
+                Leave blank if this workspace doesn't use Jira.
+              </p>
+              {!jiraSiteUrlValid && (
+                <div className="np-error">Must start with http:// or https://</div>
+              )}
+            </>
+          )}
 
           {showMembers && (
             <>

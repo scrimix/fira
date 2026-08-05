@@ -78,6 +78,8 @@ export function TaskModalDraft({ draft }: Props) {
         start_at: draft.block.start_at,
         end_at: draft.block.end_at,
         state: 'planned',
+        jira_worklog_id: null,
+        jira_sync_error: null,
       });
     }
     closeCreate();

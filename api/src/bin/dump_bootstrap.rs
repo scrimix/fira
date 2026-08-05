@@ -81,8 +81,8 @@ async fn main() -> anyhow::Result<()> {
             .context("seeded user not found")?;
     // Workspace + members. Match the shape the SPA's `Workspace` type expects
     // (id, title, is_personal, members[]).
-    let (id, title, is_personal): (uuid::Uuid, String, bool) =
-        sqlx::query_as("SELECT id, title, is_personal FROM workspaces WHERE id = $1")
+    let (id, title, is_personal, jira_site_url): (uuid::Uuid, String, bool, Option<String>) =
+        sqlx::query_as("SELECT id, title, is_personal, jira_site_url FROM workspaces WHERE id = $1")
             .bind(workspace_id)
             .fetch_one(&pool)
             .await
@@ -99,6 +99,7 @@ async fn main() -> anyhow::Result<()> {
         id,
         title,
         is_personal,
+        jira_site_url,
         members,
     };
 

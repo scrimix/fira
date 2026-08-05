@@ -75,7 +75,7 @@ pub async fn has_project_lead_authority(
 /// rows are hidden). Sorted by personal first, then title.
 pub async fn list_user_workspaces(pool: &PgPool, user_id: Uuid) -> sqlx::Result<Vec<Workspace>> {
     let mut workspaces: Vec<Workspace> = sqlx::query_as(
-        "SELECT w.id, w.title, w.is_personal
+        "SELECT w.id, w.title, w.is_personal, w.jira_site_url
          FROM workspaces w
          JOIN workspace_members wm ON wm.workspace_id = w.id
          WHERE wm.user_id = $1 AND wm.removed_at IS NULL
@@ -158,6 +158,7 @@ pub async fn create_workspace_tx(
         id,
         title: title.to_string(),
         is_personal,
+        jira_site_url: None,
         members: vec![WorkspaceMember {
             user_id: creator_id,
             role: "owner".into(),
@@ -218,16 +219,26 @@ pub async fn rename_workspace_tx(
     tx: &mut Transaction<'_, Postgres>,
     workspace_id: Uuid,
     title: &str,
+    // None = leave unchanged. Some(Some(s)) = set to s. Some(None) = clear.
+    // Same three-state convention as `update_project_tx`'s
+    // `external_url_template`.
+    jira_site_url: Option<Option<&str>>,
 ) -> sqlx::Result<Option<Workspace>> {
-    let row: Option<(Uuid, String, bool)> = sqlx::query_as(
-        "UPDATE workspaces SET title = $2 WHERE id = $1
-         RETURNING id, title, is_personal",
-    )
-    .bind(workspace_id)
-    .bind(title)
-    .fetch_optional(&mut **tx)
-    .await?;
-    let Some((id, title, is_personal)) = row else {
+    let (jira_set, jira_value): (&str, Option<&str>) = match jira_site_url {
+        None => ("jira_site_url", None),
+        Some(v) => ("$3", v),
+    };
+    let sql = format!(
+        "UPDATE workspaces SET title = $2, jira_site_url = {jira_set} WHERE id = $1
+         RETURNING id, title, is_personal, jira_site_url",
+    );
+    let row: Option<(Uuid, String, bool, Option<String>)> = sqlx::query_as(&sql)
+        .bind(workspace_id)
+        .bind(title)
+        .bind(jira_value)
+        .fetch_optional(&mut **tx)
+        .await?;
+    let Some((id, title, is_personal, jira_site_url)) = row else {
         return Ok(None);
     };
     let members = list_workspace_members_tx(tx, id).await?;
@@ -235,6 +246,7 @@ pub async fn rename_workspace_tx(
         id,
         title,
         is_personal,
+        jira_site_url,
         members,
     }))
 }
@@ -268,12 +280,13 @@ pub async fn set_workspace_members_tx(
     actor_id: Uuid,
     desired: &[(Uuid, String)],
 ) -> sqlx::Result<Option<Workspace>> {
-    let row: Option<(Uuid, String, bool)> =
-        sqlx::query_as("SELECT id, title, is_personal FROM workspaces WHERE id = $1")
-            .bind(workspace_id)
-            .fetch_optional(&mut **tx)
-            .await?;
-    let Some((id, title, is_personal)) = row else {
+    let row: Option<(Uuid, String, bool, Option<String>)> = sqlx::query_as(
+        "SELECT id, title, is_personal, jira_site_url FROM workspaces WHERE id = $1",
+    )
+    .bind(workspace_id)
+    .fetch_optional(&mut **tx)
+    .await?;
+    let Some((id, title, is_personal, jira_site_url)) = row else {
         return Ok(None);
     };
 
@@ -284,6 +297,7 @@ pub async fn set_workspace_members_tx(
             id,
             title,
             is_personal,
+            jira_site_url,
             members: list_workspace_members_tx(tx, id).await?,
         }));
     }
@@ -321,6 +335,7 @@ pub async fn set_workspace_members_tx(
         id,
         title,
         is_personal,
+        jira_site_url,
         members: list_workspace_members_tx(tx, id).await?,
     }))
 }
@@ -397,12 +412,13 @@ pub async fn remove_workspace_member_tx(
     workspace_id: Uuid,
     user_id: Uuid,
 ) -> sqlx::Result<Option<(Workspace, Vec<Uuid>)>> {
-    let row: Option<(Uuid, String, bool)> =
-        sqlx::query_as("SELECT id, title, is_personal FROM workspaces WHERE id = $1")
-            .bind(workspace_id)
-            .fetch_optional(&mut **tx)
-            .await?;
-    let Some((id, title, is_personal)) = row else {
+    let row: Option<(Uuid, String, bool, Option<String>)> = sqlx::query_as(
+        "SELECT id, title, is_personal, jira_site_url FROM workspaces WHERE id = $1",
+    )
+    .bind(workspace_id)
+    .fetch_optional(&mut **tx)
+    .await?;
+    let Some((id, title, is_personal, jira_site_url)) = row else {
         return Ok(None);
     };
     sqlx::query(
@@ -420,6 +436,7 @@ pub async fn remove_workspace_member_tx(
             id,
             title,
             is_personal,
+            jira_site_url,
             members: list_workspace_members_tx(tx, id).await?,
         },
         affected_projects,
@@ -445,18 +462,20 @@ pub async fn set_workspace_member_role_tx(
     if updated.rows_affected() == 0 {
         return Ok(None);
     }
-    let row: Option<(Uuid, String, bool)> =
-        sqlx::query_as("SELECT id, title, is_personal FROM workspaces WHERE id = $1")
-            .bind(workspace_id)
-            .fetch_optional(&mut **tx)
-            .await?;
-    let Some((id, title, is_personal)) = row else {
+    let row: Option<(Uuid, String, bool, Option<String>)> = sqlx::query_as(
+        "SELECT id, title, is_personal, jira_site_url FROM workspaces WHERE id = $1",
+    )
+    .bind(workspace_id)
+    .fetch_optional(&mut **tx)
+    .await?;
+    let Some((id, title, is_personal, jira_site_url)) = row else {
         return Ok(None);
     };
     Ok(Some(Workspace {
         id,
         title,
         is_personal,
+        jira_site_url,
         members: list_workspace_members_tx(tx, id).await?,
     }))
 }
@@ -520,7 +539,7 @@ pub async fn list_projects_in_scope(pool: &PgPool, scope: &[Uuid]) -> sqlx::Resu
         return Ok(vec![]);
     }
     let mut projects: Vec<Project> = sqlx::query_as(
-        "SELECT id, workspace_id, title, icon, color, source, description, external_url_template
+        "SELECT id, workspace_id, title, icon, color, source, description, external_url_template, jira_project_key
          FROM projects WHERE id = ANY($1) ORDER BY title",
     )
     .bind(scope)
@@ -751,6 +770,7 @@ pub async fn create_project_tx(
         source: "local".to_string(),
         description: None,
         external_url_template: None,
+        jira_project_key: None,
         members: vec![ProjectMember {
             user_id: owner_id,
             role: "owner".into(),
@@ -770,21 +790,34 @@ pub async fn update_project_tx(
     color: Option<&str>,
     // None = leave unchanged. Some(Some(s)) = set to s. Some(None) = clear.
     external_url_template: Option<Option<&str>>,
+    jira_project_key: Option<Option<&str>>,
 ) -> sqlx::Result<Option<Project>> {
-    // Three-state for nullable field: build the SET clause dynamically so
-    // a JSON `null` clears the column while an absent field leaves it.
-    let (eut_set, eut_value): (&str, Option<&str>) = match external_url_template {
-        None => ("external_url_template", None),
-        Some(v) => ("$5", v),
+    // Three-state for each nullable field: build the SET clause dynamically
+    // so a JSON `null` clears the column while an absent field leaves it.
+    // Placeholder numbers are assigned in order of presence since either
+    // field may be absent independently.
+    let mut next_idx = 5;
+    let (eut_set, eut_value): (String, Option<&str>) = match external_url_template {
+        None => ("external_url_template".to_string(), None),
+        Some(v) => {
+            let placeholder = format!("${next_idx}");
+            next_idx += 1;
+            (placeholder, v)
+        }
+    };
+    let (jpk_set, jpk_value): (String, Option<&str>) = match jira_project_key {
+        None => ("jira_project_key".to_string(), None),
+        Some(v) => (format!("${next_idx}"), v),
     };
     let sql = format!(
         "UPDATE projects SET
             title = COALESCE($2, title),
             icon  = COALESCE($3, icon),
             color = COALESCE($4, color),
-            external_url_template = {eut_set}
+            external_url_template = {eut_set},
+            jira_project_key = {jpk_set}
          WHERE id = $1
-         RETURNING id, workspace_id, title, icon, color, source, description, external_url_template",
+         RETURNING id, workspace_id, title, icon, color, source, description, external_url_template, jira_project_key",
     );
     let mut q = sqlx::query_as::<
         _,
@@ -797,6 +830,7 @@ pub async fn update_project_tx(
             String,
             Option<String>,
             Option<String>,
+            Option<String>,
         ),
     >(&sql)
     .bind(project_id)
@@ -806,10 +840,22 @@ pub async fn update_project_tx(
     if external_url_template.is_some() {
         q = q.bind(eut_value);
     }
+    if jira_project_key.is_some() {
+        q = q.bind(jpk_value);
+    }
     let row = q.fetch_optional(&mut **tx).await?;
 
-    let Some((id, workspace_id, title, icon, color, source, description, external_url_template)) =
-        row
+    let Some((
+        id,
+        workspace_id,
+        title,
+        icon,
+        color,
+        source,
+        description,
+        external_url_template,
+        jira_project_key,
+    )) = row
     else {
         return Ok(None);
     };
@@ -831,6 +877,7 @@ pub async fn update_project_tx(
         source,
         description,
         external_url_template,
+        jira_project_key,
         members: members_rows
             .into_iter()
             .map(|(u, r)| ProjectMember {
@@ -908,16 +955,26 @@ pub async fn set_project_members_tx(
         String,
         Option<String>,
         Option<String>,
+        Option<String>,
     )> = sqlx::query_as(
-        "SELECT id, workspace_id, title, icon, color, source, description, external_url_template
+        "SELECT id, workspace_id, title, icon, color, source, description, external_url_template, jira_project_key
          FROM projects WHERE id = $1",
     )
     .bind(project_id)
     .fetch_optional(&mut **tx)
     .await?;
 
-    let Some((id, workspace_id, title, icon, color, source, description, external_url_template)) =
-        row
+    let Some((
+        id,
+        workspace_id,
+        title,
+        icon,
+        color,
+        source,
+        description,
+        external_url_template,
+        jira_project_key,
+    )) = row
     else {
         return Ok(None);
     };
@@ -1005,6 +1062,7 @@ pub async fn set_project_members_tx(
         source,
         description,
         external_url_template,
+        jira_project_key,
         members: members_rows
             .into_iter()
             .map(|(u, r)| ProjectMember {
@@ -1024,7 +1082,7 @@ pub async fn list_blocks_in_scope(pool: &PgPool, scope: &[Uuid]) -> sqlx::Result
         return Ok(vec![]);
     }
     sqlx::query_as(
-        "SELECT b.id, b.task_id, b.user_id, b.start_at, b.end_at, b.state
+        "SELECT b.id, b.task_id, b.user_id, b.start_at, b.end_at, b.state, b.jira_worklog_id, b.jira_sync_error
          FROM time_blocks b
          JOIN tasks t ON t.id = b.task_id
          WHERE t.project_id = ANY($1)
@@ -1433,7 +1491,7 @@ pub async fn accepted_partner_id(pool: &PgPool, user_id: Uuid) -> sqlx::Result<O
 /// scope rule that gates everything else doesn't apply here.
 pub async fn list_blocks_for_user(pool: &PgPool, user_id: Uuid) -> sqlx::Result<Vec<TimeBlock>> {
     sqlx::query_as(
-        "SELECT id, task_id, user_id, start_at, end_at, state
+        "SELECT id, task_id, user_id, start_at, end_at, state, jira_worklog_id, jira_sync_error
          FROM time_blocks WHERE user_id = $1 ORDER BY start_at",
     )
     .bind(user_id)
@@ -1484,7 +1542,7 @@ pub async fn list_blocks_in_workspace_for_user(
     user_id: Uuid,
 ) -> sqlx::Result<Vec<TimeBlock>> {
     sqlx::query_as(
-        "SELECT b.id, b.task_id, b.user_id, b.start_at, b.end_at, b.state
+        "SELECT b.id, b.task_id, b.user_id, b.start_at, b.end_at, b.state, b.jira_worklog_id, b.jira_sync_error
          FROM time_blocks b
          JOIN tasks t ON t.id = b.task_id
          JOIN projects p ON p.id = t.project_id
@@ -1528,7 +1586,7 @@ pub async fn list_blocks_in_work_workspaces_for_user(
     user_id: Uuid,
 ) -> sqlx::Result<Vec<TimeBlock>> {
     sqlx::query_as(
-        "SELECT b.id, b.task_id, b.user_id, b.start_at, b.end_at, b.state
+        "SELECT b.id, b.task_id, b.user_id, b.start_at, b.end_at, b.state, b.jira_worklog_id, b.jira_sync_error
          FROM time_blocks b
          JOIN tasks t ON t.id = b.task_id
          JOIN projects p ON p.id = t.project_id
@@ -1602,6 +1660,52 @@ pub async fn get_user_settings(
         gcal_email,
         gcal_last_sync_error,
     })
+}
+
+/// The caller's Jira connection status *within one workspace* — unlike
+/// gcal this isn't account-wide, since the Jira site itself is a
+/// workspace setting (`workspaces.jira_site_url`) and the same person can
+/// be connected differently per workspace.
+pub async fn get_workspace_jira_status(
+    pool: &PgPool,
+    user_id: Uuid,
+    workspace_id: Uuid,
+) -> sqlx::Result<crate::models::JiraStatus> {
+    let cred: Option<(String, Option<String>)> = sqlx::query_as(
+        "SELECT email, last_sync_error FROM jira_credentials
+         WHERE user_id = $1 AND workspace_id = $2",
+    )
+    .bind(user_id)
+    .bind(workspace_id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(match cred {
+        Some((email, last_sync_error)) => crate::models::JiraStatus {
+            connected: true,
+            email: Some(email),
+            last_sync_error,
+        },
+        None => crate::models::JiraStatus {
+            connected: false,
+            email: None,
+            last_sync_error: None,
+        },
+    })
+}
+
+/// The Jira site configured for a workspace, or `None` if unset. Used by
+/// `jira::connect` to validate against the right site and by
+/// issue-create/worklog-push in later sprints.
+pub async fn workspace_jira_site_url(
+    pool: &PgPool,
+    workspace_id: Uuid,
+) -> sqlx::Result<Option<String>> {
+    let row: Option<(Option<String>,)> =
+        sqlx::query_as("SELECT jira_site_url FROM workspaces WHERE id = $1")
+            .bind(workspace_id)
+            .fetch_optional(pool)
+            .await?;
+    Ok(row.and_then(|(u,)| u))
 }
 
 /// Upsert the caller's account-scoped settings. Today only the

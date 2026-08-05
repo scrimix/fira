@@ -30,6 +30,7 @@ export function ProjectModal({ project }: Props) {
   const close = useFira((s) => s.closeProjectModal);
   const addProject = useFira((s) => s.addProject);
   const updateProject = useFira((s) => s.updateProject);
+  const resolveJiraProject = useFira((s) => s.resolveJiraProject);
   const setProjectMembers = useFira((s) => s.setProjectMembers);
   const deleteProject = useFira((s) => s.deleteProject);
   const showToast = useFira((s) => s.showToast);
@@ -57,6 +58,10 @@ export function ProjectModal({ project }: Props) {
   const [icon, setIcon] = useState(project?.icon || DEFAULT_ICON);
   const [color, setColor] = useState(project?.color || COLORS[0].hex);
   const [urlTemplate, setUrlTemplate] = useState(project?.external_url_template ?? '');
+  const [jiraProjectKey, setJiraProjectKey] = useState(project?.jira_project_key ?? '');
+  const [jiraResolvedName, setJiraResolvedName] = useState<string | null>(null);
+  const [jiraResolving, setJiraResolving] = useState(false);
+  const [jiraResolveError, setJiraResolveError] = useState<string | null>(null);
   // Members are owner-locked: meId (the project owner / "you" row) is
   // implicit and not in this set. Each row carries (user_id, role).
   const [members, setMembers] = useState<ProjectMember[]>(initialMembers);
@@ -83,15 +88,19 @@ export function ProjectModal({ project }: Props) {
 
   const trimmed = title.trim();
   const trimmedUrl = urlTemplate.trim();
+  const trimmedJiraKey = jiraProjectKey.trim().toUpperCase();
   const valid = trimmed.length > 0 && trimmed.length <= 80;
   const membersDirty = isEdit && !memberListEqual(members, initialMembers);
   const initialUrl = project?.external_url_template ?? '';
   const urlDirty = isEdit && trimmedUrl !== initialUrl;
+  const initialJiraKey = project?.jira_project_key ?? '';
+  const jiraKeyDirty = isEdit && trimmedJiraKey !== initialJiraKey;
   const dirty = !isEdit || (
     trimmed !== project!.title
     || icon !== project!.icon
     || color !== project!.color
     || urlDirty
+    || jiraKeyDirty
     || membersDirty
   );
 
@@ -104,13 +113,15 @@ export function ProjectModal({ project }: Props) {
         const visualDirty = trimmed !== project!.title
           || icon !== project!.icon
           || color !== project!.color
-          || urlDirty;
+          || urlDirty
+          || jiraKeyDirty;
         if (visualDirty) {
           await updateProject(project!.id, {
             title: trimmed,
             icon,
             color,
             ...(urlDirty ? { external_url_template: trimmedUrl || null } : {}),
+            ...(jiraKeyDirty ? { jira_project_key: trimmedJiraKey || null } : {}),
           });
         }
         if (membersDirty) {
@@ -217,6 +228,49 @@ export function ProjectModal({ project }: Props) {
                 {trimmedUrl && !trimmedUrl.includes('{key}')
                   ? 'Tip: include {key} where the issue id should go.'
                   : 'Tasks with an issue id render as a link via this template.'}
+              </div>
+
+              <label className="np-label">Jira project key</label>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <input
+                  className="np-title"
+                  style={{ flex: 1 }}
+                  value={jiraProjectKey}
+                  onChange={(e) => {
+                    setJiraProjectKey(e.target.value);
+                    setJiraResolvedName(null);
+                    setJiraResolveError(null);
+                  }}
+                  placeholder="FIR"
+                  spellCheck={false}
+                />
+                <button
+                  type="button"
+                  className="btn"
+                  disabled={!trimmedJiraKey || jiraResolving}
+                  onClick={async () => {
+                    setJiraResolving(true);
+                    setJiraResolveError(null);
+                    setJiraResolvedName(null);
+                    try {
+                      const res = await resolveJiraProject(trimmedJiraKey);
+                      setJiraResolvedName(res.name);
+                    } catch (e) {
+                      setJiraResolveError(e instanceof Error ? e.message : 'Failed to resolve');
+                    } finally {
+                      setJiraResolving(false);
+                    }
+                  }}
+                >
+                  {jiraResolving ? 'Checking…' : 'Check'}
+                </button>
+              </div>
+              <div className="np-hint">
+                {jiraResolveError
+                  ? jiraResolveError
+                  : jiraResolvedName
+                    ? `Resolved: ${jiraResolvedName}`
+                    : 'Lets members create Jira issues from tasks in this project.'}
               </div>
 
               <label className="np-label">Members</label>

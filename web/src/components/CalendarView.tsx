@@ -731,6 +731,8 @@ export function CalendarView() {
       start_at,
       end_at,
       state: 'planned',
+      jira_worklog_id: null,
+      jira_sync_error: null,
     });
   };
 
@@ -768,6 +770,8 @@ export function CalendarView() {
       user_id: userId,
       start_at, end_at,
       state: 'planned',
+      jira_worklog_id: null,
+      jira_sync_error: null,
     });
   };
 

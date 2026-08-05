@@ -63,6 +63,19 @@ pub async fn create(
 #[derive(Deserialize)]
 pub struct UpdateWorkspace {
     pub title: String,
+    /// Three-state: absent = leave alone, null = clear, string = set.
+    /// Same manual deserializer trick `main.rs`'s `UpdateProject` uses for
+    /// `external_url_template` — no `serde_with` dependency for one field.
+    #[serde(default, deserialize_with = "deserialize_explicit_option")]
+    pub jira_site_url: Option<Option<String>>,
+}
+
+fn deserialize_explicit_option<'de, D>(d: D) -> Result<Option<Option<String>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let v: Option<String> = Option::deserialize(d)?;
+    Ok(Some(v))
 }
 
 pub async fn rename(
@@ -80,8 +93,21 @@ pub async fn rename(
     if title.is_empty() || title.len() > 80 {
         return Err(ApiError::BadRequest("invalid title".into()));
     }
+    // Trim + collapse empty-string-to-null so the UI can clear the field by
+    // sending "" without knowing about JSON null.
+    let jira_site_url: Option<Option<&str>> = body
+        .jira_site_url
+        .as_ref()
+        .map(|v| v.as_deref().map(str::trim).filter(|s| !s.is_empty()));
+    if let Some(Some(url)) = jira_site_url {
+        if url.len() > 512 || !(url.starts_with("http://") || url.starts_with("https://")) {
+            return Err(ApiError::BadRequest(
+                "jira_site_url must be an http(s) URL ≤ 512 chars".into(),
+            ));
+        }
+    }
     let mut tx = s.pool.begin().await?;
-    let ws = db::rename_workspace_tx(&mut tx, id, title)
+    let ws = db::rename_workspace_tx(&mut tx, id, title, jira_site_url)
         .await?
         .ok_or(ApiError::NotFound)?;
     let payload = serde_json::json!({ "kind": "workspace.update", "workspace": &ws });

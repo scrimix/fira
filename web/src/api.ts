@@ -169,13 +169,15 @@ export const api = {
     req<import('./types').Project>('POST', '/projects', input),
   updateProject: (
     id: string,
-    // external_url_template is intentionally `string | null` (not optional):
-    // null clears the field, string sets, omitting the key leaves it alone.
+    // external_url_template / jira_project_key are intentionally
+    // `string | null` (not optional): null clears the field, string sets,
+    // omitting the key leaves it alone.
     patch: Partial<{
       title: string;
       icon: string;
       color: string;
       external_url_template: string | null;
+      jira_project_key: string | null;
     }>,
   ) => req<import('./types').Project>('PATCH', `/projects/${id}`, patch),
   setProjectMembers: (
@@ -186,8 +188,13 @@ export const api = {
   listMyWorkspaces: () => req<Workspace[]>('GET', '/workspaces'),
   createWorkspace: (title: string) =>
     req<Workspace>('POST', '/workspaces', { title }),
-  renameWorkspace: (id: string, title: string) =>
-    req<Workspace>('PATCH', `/workspaces/${id}`, { title }),
+  // jira_site_url is intentionally `string | null` (not optional): null
+  // clears the field, string sets, omitting the key leaves it alone.
+  renameWorkspace: (id: string, title: string, jira_site_url?: string | null) =>
+    req<Workspace>('PATCH', `/workspaces/${id}`, {
+      title,
+      ...(jira_site_url !== undefined ? { jira_site_url } : {}),
+    }),
   setWorkspaceMembers: (
     id: string,
     members: { user_id: string; role: WorkspaceRole }[],
@@ -230,6 +237,31 @@ export const api = {
   patchMySettings: (patch: { account_badge?: 'personal' | 'work' | null }) =>
     req<import('./types').UserSettings>('PATCH', '/me/settings', patch),
   disconnectGcal: () => req<void>('POST', '/gcal/disconnect'),
+  /// Validates the pasted email/token against Jira before the server
+  /// persists them. Throws (HttpError) on a bad pair.
+  connectJira: (email: string, api_token: string) =>
+    req<{ connected: boolean; email: string | null }>('POST', '/jira/connect', { email, api_token }),
+  disconnectJira: () => req<void>('POST', '/jira/disconnect'),
+  /// Resolves a Jira project by key — used by the project-settings field
+  /// to confirm the key exists and show its name before saving.
+  resolveJiraProject: (key: string) =>
+    req<{ key: string; name: string }>('GET', `/jira/projects/${encodeURIComponent(key)}`),
+  /// Epics in one Jira project, newest first, for the "create in Jira"
+  /// epic picker.
+  listJiraEpics: (projectKey: string) =>
+    req<{ key: string; summary: string }[]>('GET', `/jira/epics?project_key=${encodeURIComponent(projectKey)}`),
+  /// Creates a Jira issue for an existing task and returns the resulting
+  /// external_id/external_url (same fields the manual issue-link editor
+  /// writes) so the caller can merge them into local task state directly.
+  pushTaskToJira: (taskId: string, epicKey?: string | null) =>
+    req<{ external_id: string; external_url: string }>('POST', `/jira/tasks/${taskId}`, {
+      epic_key: epicKey ?? undefined,
+    }),
+  /// Creates (first push) or updates (every push after) a Jira worklog for
+  /// a time block. Returns the worklog id so the caller can merge it into
+  /// local block state directly.
+  pushBlockToJira: (blockId: string) =>
+    req<{ jira_worklog_id: string }>('POST', `/jira/blocks/${blockId}`),
 
   uploadAttachment,
   getAttachmentBlobUrl,

@@ -16,7 +16,7 @@ use fira_api::{
     auth::{self, AuthConfig, AuthCtx},
     db,
     error::{self, ApiResult},
-    gcal, invites, links, load_bootstrap,
+    gcal, invites, jira, links, load_bootstrap,
     models::*,
     ops,
     pubsub::{self, Hub},
@@ -157,6 +157,10 @@ struct UpdateProject {
     /// that crate in; the manual deserializer below does the same job.
     #[serde(default, deserialize_with = "deserialize_explicit_option")]
     external_url_template: Option<Option<String>>,
+    /// Same three-state convention. Jira project key within the
+    /// workspace's configured Jira site.
+    #[serde(default, deserialize_with = "deserialize_explicit_option")]
+    jira_project_key: Option<Option<String>>,
 }
 
 // Disambiguates "field missing" (None) from "field is JSON null"
@@ -202,6 +206,17 @@ async fn update_project(
     if let Some(Some(t)) = eut {
         validate_url_template(t)?;
     }
+    let jira_project_key: Option<Option<&str>> = body
+        .jira_project_key
+        .as_ref()
+        .map(|v| v.as_deref().map(str::trim).filter(|s| !s.is_empty()));
+    if let Some(Some(k)) = jira_project_key {
+        if k.len() > 64 {
+            return Err(error::ApiError::BadRequest(
+                "jira_project_key is too long".into(),
+            ));
+        }
+    }
     let mut tx = s.pool.begin().await?;
     let project = db::update_project_tx(
         &mut tx,
@@ -210,6 +225,7 @@ async fn update_project(
         body.icon.as_deref(),
         body.color.as_deref(),
         eut,
+        jira_project_key,
     )
     .await?
     .ok_or(error::ApiError::NotFound)?;
@@ -535,6 +551,12 @@ async fn main() -> anyhow::Result<()> {
         .route("/gcal/connect", get(gcal::connect))
         .route("/gcal/callback", get(gcal::callback))
         .route("/gcal/disconnect", post(gcal::disconnect))
+        .route("/jira/connect", post(jira::connect))
+        .route("/jira/disconnect", post(jira::disconnect))
+        .route("/jira/projects/:key", get(jira::resolve_project))
+        .route("/jira/epics", get(jira::list_epics))
+        .route("/jira/tasks/:task_id", post(jira::push_task))
+        .route("/jira/blocks/:block_id", post(jira::push_block))
         .route("/bootstrap", get(bootstrap))
         .route("/projects", get(projects).post(create_project))
         .route(
