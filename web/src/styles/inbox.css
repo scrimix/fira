@@ -1115,10 +1115,12 @@
 /* Geometry + idle/hover come from .tm-section-btn (danger cue via
  * data-danger); this only pins the button to the row grid. */
 .tm-block-del { grid-area: del; }
-/* Jira worklog sync status. Idle (never pushed) keeps the default
- * .tm-section-btn muted color; "ok" (already synced) and "error" (last
- * push/resync failed) get a tone so the row communicates state at a
- * glance, same idiom as the sync pill's tone-by-data-attribute. */
+/* Jira worklog sync status. Idle (never pushed) renders a sync-arrows
+ * icon in the default .tm-section-btn muted color; "ok" (already synced)
+ * swaps to a ticket icon in --done green and "error" (last push/resync
+ * failed) swaps to a warning icon in --danger red — shape *and* color
+ * differ between states so it doesn't rely on a green-vs-muted color
+ * distinction alone (too subtle at 12px, esp. at a glance). */
 .tm-block-jira { grid-area: jira; }
 .tm-block-jira[data-tone="ok"] { color: var(--done); }
 .tm-block-jira[data-tone="ok"]:hover { color: var(--done); background: var(--paper-3); }

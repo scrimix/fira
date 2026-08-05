@@ -175,6 +175,11 @@ export function CalendarView() {
   const stepBack = () => isMobile ? setDayOffset(dayOffset - 1) : setWeekOffset(weekOffset - 1);
   const stepForward = () => isMobile ? setDayOffset(dayOffset + 1) : setWeekOffset(weekOffset + 1);
   const stepToday = () => isMobile ? setDayOffset(0) : setWeekOffset(0);
+  // Pure display filter over already-loaded blocks — unlike showLinked/
+  // showPersonal/showWork this doesn't gate a separate data source, so it
+  // lives as local state rather than in the store.
+  const [showLoggedOnly, setShowLoggedOnly] = useState(false);
+
   // Bump every minute (aligned to the wall-clock minute boundary) so
   // `nowMin` and `todayDayIndex()` re-evaluate and the "now" line plus
   // the today-column highlight track real time. Deliberately doesn't
@@ -613,9 +618,11 @@ export function CalendarView() {
     return myBlocks.filter((b) => {
       const t = tasks.find((x) => x.id === b.task_id);
       if (!t) return false;
-      return projectFilter[t.project_id] !== false;
+      if (projectFilter[t.project_id] === false) return false;
+      if (showLoggedOnly && !b.jira_worklog_id) return false;
+      return true;
     });
-  }, [myBlocks, tasks, projectFilter]);
+  }, [myBlocks, tasks, projectFilter, showLoggedOnly]);
   const placed = useMemo(
     () => placeBlocks(visibleBlocks, tasks, projects, gridAnchor),
     [visibleBlocks, tasks, projects, gridAnchor],
@@ -832,6 +839,16 @@ export function CalendarView() {
               {showWork ? 'Hide work' : 'Show work'}
             </button>
           )}
+          <button
+            className="link-toggle"
+            data-active={showLoggedOnly || undefined}
+            onClick={() => setShowLoggedOnly(!showLoggedOnly)}
+            title={showLoggedOnly
+              ? 'Show all blocks'
+              : 'Show only blocks already logged to Jira'}
+          >
+            {showLoggedOnly ? 'Hide logged only' : 'Show logged only'}
+          </button>
           {/* Desktop: inline at the right end of the toolbar, sharing
            * the line with Today / user picker / link toggles. CSS
            * hides this copy on phone widths in favor of the strip

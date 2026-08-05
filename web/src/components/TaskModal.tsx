@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
-import { AlertTriangle, ArrowLeft, Check, ClockPlus, Copy, Download, Link, Loader2, PanelRightClose, PanelRightOpen, Paperclip, Pencil, Plus, Ticket, Trash2, X } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Check, ClockPlus, Copy, Download, Link, Loader2, PanelRightClose, PanelRightOpen, Paperclip, Pencil, Plus, RefreshCw, Ticket, Trash2, X } from 'lucide-react';
 import { useFira } from '../store';
 import { useIsMobile } from '../hooks';
 import { ConfirmDelete } from './ConfirmDelete';
@@ -712,7 +712,9 @@ function BlockRow({
             ? <Loader2 size={12} strokeWidth={1.75} className="sync-pill-spin" />
             : jiraSyncError
               ? <AlertTriangle size={12} strokeWidth={1.75} />
-              : <Ticket size={12} strokeWidth={1.75} />}
+              : jiraWorklogId
+                ? <Ticket size={12} strokeWidth={1.75} />
+                : <RefreshCw size={12} strokeWidth={1.75} />}
         </button>
       )}
       <button
