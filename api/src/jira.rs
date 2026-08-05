@@ -384,9 +384,19 @@ pub async fn push_task(
         ));
     };
 
-    let created = create_issue(&jc, &project_key, &title, body.epic_key.as_deref())
-        .await
-        .map_err(|e| ApiError::BadRequest(format!("Jira issue create failed: {e}")))?;
+    let task_link = format!(
+        "{}/#/w/{}/t/{}",
+        s.auth.app_base_url, ctx.workspace_id, task_id
+    );
+    let created = create_issue(
+        &jc,
+        &project_key,
+        &title,
+        body.epic_key.as_deref(),
+        &task_link,
+    )
+    .await
+    .map_err(|e| ApiError::BadRequest(format!("Jira issue create failed: {e}")))?;
     let external_url = format!("{}/browse/{}", jc.site_url, created.key);
 
     sqlx::query(
@@ -447,11 +457,27 @@ async fn create_issue(
     project_key: &str,
     summary: &str,
     epic_key: Option<&str>,
+    task_link: &str,
 ) -> Result<CreatedIssue, String> {
+    // Some Jira projects require a non-empty description, so every issue we
+    // create gets at least a link back to the Fira task it came from.
+    let description = serde_json::json!({
+        "type": "doc",
+        "version": 1,
+        "content": [{
+            "type": "paragraph",
+            "content": [{
+                "type": "text",
+                "text": "View this task in Fira \u{2192}",
+                "marks": [{ "type": "link", "attrs": { "href": task_link } }],
+            }],
+        }],
+    });
     let mut fields = serde_json::json!({
         "project": { "key": project_key },
         "summary": summary,
         "issuetype": { "name": "Task" },
+        "description": description,
     });
     // `parent` is Jira Cloud's unified-hierarchy epic link field (works for
     // both team-managed and company-managed projects since the 2022

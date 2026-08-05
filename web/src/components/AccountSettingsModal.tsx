@@ -415,11 +415,18 @@ function JiraSection({ siteConfigured, connected, email, playgroundMode, onConne
 
   const trimmedEmail = formEmail.trim();
   const trimmedToken = apiToken.trim();
-  const canSubmit = trimmedEmail.length > 0 && trimmedToken.length > 0 && !submitting && !playgroundMode;
+  // Only submitting/playground blocks the button itself — a missing
+  // email or token is instead caught in `submit` with a visible error,
+  // rather than leaving the button silently disabled with no explanation.
+  const submitDisabled = submitting || playgroundMode;
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canSubmit) return;
+    if (submitDisabled) return;
+    if (!trimmedEmail || !trimmedToken) {
+      setError('Enter both your email and API token to connect.');
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -462,7 +469,7 @@ function JiraSection({ siteConfigured, connected, email, playgroundMode, onConne
       <button
         type="submit"
         className="btn account-stub-btn"
-        disabled={!canSubmit}
+        disabled={submitDisabled}
         title={playgroundMode ? 'Not available in playground' : 'Connect Jira'}
       >
         <Ticket size={13} strokeWidth={1.75} /> {submitting ? 'Connecting…' : 'Connect'}
