@@ -154,6 +154,31 @@ async fn verify_credentials(site_url: &str, email: &str, api_token: &str) -> Res
     Ok(())
 }
 
+/// The Atlassian account id behind a set of credentials. Jira identifies
+/// users by opaque `accountId` everywhere in the v3 API — email isn't
+/// accepted as an assignee reference (GDPR-era change), so anything that
+/// needs to name the connected user has to resolve it through `/myself`
+/// first.
+async fn account_id(jc: &WorkspaceJiraContext) -> Result<String, String> {
+    #[derive(Deserialize)]
+    struct Myself {
+        #[serde(rename = "accountId")]
+        account_id: String,
+    }
+    let client = reqwest::Client::new();
+    let res = client
+        .get(format!("{}/rest/api/3/myself", jc.site_url))
+        .basic_auth(&jc.email, Some(&jc.api_token))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !res.status().is_success() {
+        return Err(format!("Jira returned {}", res.status()));
+    }
+    let me: Myself = res.json().await.map_err(|e| e.to_string())?;
+    Ok(me.account_id)
+}
+
 /// A connected user's stored credentials for one workspace — read by
 /// issue-create / worklog-push handlers in later sprints so every
 /// outbound call authenticates as the acting user, not a shared account.
@@ -517,11 +542,18 @@ async fn create_issue(
             }],
         }],
     });
+    // Assign to the connected user rather than leaving `assignee` unset,
+    // which makes Jira fall back to the project's default assignee (often
+    // a lead nobody intended). The credentials here are the caller's own
+    // per-user token, so `/myself` is exactly the person who pressed
+    // "create in Jira".
+    let assignee_account_id = account_id(jc).await?;
     let mut fields = serde_json::json!({
         "project": { "key": project_key },
         "summary": summary,
         "issuetype": { "name": "Task" },
         "description": description,
+        "assignee": { "accountId": assignee_account_id },
     });
     // `parent` is Jira Cloud's unified-hierarchy epic link field (works for
     // both team-managed and company-managed projects since the 2022
