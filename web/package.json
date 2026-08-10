@@ -12,7 +12,8 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -b --noEmit",
-    "playground:dump": "cd ../api && cargo run --quiet --bin dump-bootstrap > ../web/src/playground/bootstrap.json && echo 'wrote web/src/playground/bootstrap.json'"
+    "playground:dump": "cd ../api && cargo run --quiet --bin dump-bootstrap > ../web/src/playground/bootstrap.json && echo 'wrote web/src/playground/bootstrap.json'",
+    "visual-check": "node scripts/visual-check.mjs"
   },
   "dependencies": {
     "lucide-react": "^1.14.0",
@@ -27,6 +28,7 @@
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
+    "playwright": "^1.62.1",
     "typescript": "^5.6.3",
     "vite": "^5.4.11"
   }

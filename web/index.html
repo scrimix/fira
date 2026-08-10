@@ -2,6 +2,23 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
+    <script>
+      // Prevents a flash of the wrong theme: read the persisted theme
+      // straight out of localStorage (bypassing React/Zustand, which
+      // hydrate async) and set data-theme before first paint. Runtime
+      // theme changes are kept in sync afterward by the useFira.subscribe()
+      // call in store/index.ts.
+      (function () {
+        try {
+          var raw = localStorage.getItem('fira:store-v1');
+          var parsed = raw && JSON.parse(raw);
+          var theme = parsed && parsed.state && parsed.state.theme;
+          if (theme && theme !== 'classic') {
+            document.documentElement.setAttribute('data-theme', theme);
+          }
+        } catch (e) { /* private mode / corrupt JSON — fall back to classic */ }
+      })();
+    </script>
     <!-- <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" /> -->
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
     <meta name="theme-color" content="#18181B" />

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Calendar, Link, Ticket, X } from 'lucide-react';
 import { useFira } from '../store';
 import { api, gcalConnectUrl, loginUrl } from '../api';
-import type { AccountSummary } from '../types';
+import type { AccountSummary, Theme } from '../types';
 
 // Account settings: container for personal-account stuff that isn't
 // workspace-scoped. Replaces the topbar's two-avatar + link-button
@@ -339,6 +339,12 @@ export function AccountSettingsModal() {
             </div>
           </Section>
 
+          <Section title="Appearance">
+            <div className="account-row">
+              <ThemePicker />
+            </div>
+          </Section>
+
           <div className="np-actions account-actions">
             <button className="btn np-danger" onClick={() => { close(); logout(); }}>
               Log out
@@ -569,5 +575,58 @@ function BadgePicker() {
         work
       </button>
     </div>
+  );
+}
+
+// Generic segmented-choice control. Same visual idiom as BadgePicker
+// above, reused here for any small enumerated account preference.
+// `options` order is render order.
+function SegmentedPicker<T extends string>({
+  value, options, onChange, ariaLabel, className,
+}: {
+  value: T;
+  options: { value: T; label: string; title?: string }[];
+  onChange: (v: T) => void;
+  ariaLabel: string;
+  className?: string;
+}) {
+  return (
+    <div
+      className={`list-tag-filter-mode${className ? ` ${className}` : ''}`}
+      role="group"
+      aria-label={ariaLabel}
+    >
+      {options.map((opt) => (
+        <button
+          key={opt.value}
+          type="button"
+          className="list-tag-filter-mode-seg"
+          data-active={value === opt.value || undefined}
+          onClick={() => onChange(opt.value)}
+          title={opt.title ?? opt.label}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// Theme picker — two options today (classic/dark); modern-white and
+// modern-dark land here later as more entries in `options`.
+function ThemePicker() {
+  const value = useFira((s) => s.theme);
+  const setTheme = useFira((s) => s.setTheme);
+  return (
+    <SegmentedPicker<Theme>
+      className="account-theme-picker"
+      ariaLabel="Theme"
+      value={value}
+      onChange={setTheme}
+      options={[
+        { value: 'classic', label: 'classic', title: 'Classic (paper white)' },
+        { value: 'dark', label: 'dark', title: 'Dark' },
+      ]}
+    />
   );
 }

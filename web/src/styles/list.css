@@ -101,6 +101,12 @@
   font-size: calc(22px * var(--fs-scale));
   line-height: 1;
 }
+/* The component also sets `color` inline (higher specificity than the
+ * rule above), so `filter` is the only hook left to dim it for dark
+ * mode. */
+:root[data-theme="dark"] .list-proj-head .icon {
+  filter: saturate(0.7) brightness(0.86);
+}
 /* Right-side cluster: meta text, edit, archive. Centered against each
  * other so the icon-only edit button sits on the same line as the text in
  * its neighbours, regardless of font baselines. align-self: baseline anchors
@@ -243,6 +249,9 @@
 .list-tag-filter-chip[data-on] {
   opacity: 1;
   background: color-mix(in srgb, var(--tag-color, var(--rule-2)) 12%, var(--paper));
+}
+:root[data-theme="dark"] .list-tag-filter-chip[data-on] {
+  background: color-mix(in srgb, var(--tag-color, var(--rule-2)) 26%, var(--paper));
 }
 .list-tag-filter-clear {
   font-family: var(--font-mono);
@@ -663,6 +672,10 @@
   opacity: 1;
   background: color-mix(in srgb, var(--tag-color, var(--rule-2)) 14%, var(--paper));
   border-color: color-mix(in srgb, var(--tag-color, var(--rule-2)) 60%, var(--paper));
+}
+:root[data-theme="dark"] .task-trail[data-has-filter] .tag-chip[data-match] {
+  background: color-mix(in srgb, var(--tag-color, var(--rule-2)) 28%, var(--paper));
+  border-color: color-mix(in srgb, var(--tag-color, var(--rule-2)) 72%, var(--paper));
 }
 .task-trail .tag-chip-more {
   color: var(--ink-4);
@@ -1447,6 +1460,12 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
 .est-bar .seg-planned {
   background: color-mix(in oklab, var(--proj-color, var(--ink)) 30%, var(--paper-3));
   height: 100%;
+}
+:root[data-theme="dark"] .est-bar .seg-spent {
+  background: color-mix(in oklab, var(--proj-color, var(--ink)) 62%, var(--paper-3));
+}
+:root[data-theme="dark"] .est-bar .seg-planned {
+  background: color-mix(in oklab, var(--proj-color, var(--ink)) 45%, var(--paper-3));
 }
 .est-meta {
   display: flex; gap: 12px;

@@ -48,6 +48,50 @@
   --fs-xxl: calc(24px * var(--fs-scale));
 }
 
+/* Dark theme — same editorial-utilitarian structure as :root (classic),
+ * cyan "now" accent kept but brightened so it still pops against a dark
+ * paper. Only color tokens are overridden; typography/spacing tokens
+ * are theme-agnostic and inherited from :root. Extending to a future
+ * theme (e.g. "modern-dark") is: add another
+ * `:root[data-theme="modern-dark"] { ... }` block below this one — no
+ * other file needs to change. */
+:root[data-theme="dark"] {
+  /* Dark grey, not near-black — a true near-black paper made every
+   * saturated project/tag/accent color read as neon by simultaneous
+   * contrast, and made the muted ink tiers (below) nearly invisible. */
+  --paper: #1E1E23;
+  --paper-2: #26262C;
+  --paper-3: #2F2F36;
+  --rule: #35353D;
+  --rule-2: #43434C;
+  --rule-3: #58585F;
+
+  /* Softer than a literal near-white: --ink also fills "inverted" solid
+   * elements (active toggle segments, the self-avatar, primary buttons'
+   * hover states) — a pure ~93%-lightness white there reads as blown
+   * out against the near-black paper. This value keeps body text crisp
+   * while calming those fills down. */
+  --ink: #DCDCDA;
+  --ink-2: #B7B7BC;
+  --ink-3: #9C9CA3;
+  --ink-4: #76767D;
+
+  /* Reuse classic's exact accent rather than a brighter cyan — it's
+   * already validated to read as an accent (not neon) and to work with
+   * white button text; a brighter dark-mode-only cyan needed dark text
+   * for contrast, which broke the button's white-on-accent look. */
+  --accent: #0891B2;
+  --accent-fg: #FFFFFF;
+  --accent-soft: #0F2A32;
+  --accent-line: #4FC7E3;
+  --focus-line: #1CA6C4;
+
+  --done: #5FAE79;
+  --warn: #E0A039;
+  --danger: #F26363;
+  --recurring: #A99BD6;
+}
+
 * { box-sizing: border-box; }
 html, body, #root { margin: 0; padding: 0; height: 100%; }
 body {
@@ -131,6 +175,9 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   background: var(--proj-color);
   border-radius: 1px;
   opacity: 0.85;
+}
+:root[data-theme="dark"] .sidebar .nav-proj[data-proj-active="true"]::after {
+  background: color-mix(in oklab, var(--proj-color) 78%, var(--paper));
 }
 .topbar .title-icon {
   margin-right: -2px;
@@ -224,6 +271,7 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   border-color: var(--warn);
 }
 .account-badge-picker { flex: none; }
+.account-theme-picker { flex: none; }
 /* Mobile menu trigger — replaces the Fira/wordmark crumb on phones and
  * toggles the sidebar slide-over. Sized to be a comfortable touch target
  * (36px square) without dominating the topbar. */
@@ -302,6 +350,12 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
 .avatar[data-me="true"] {
   background: var(--ink); color: var(--paper); border-color: var(--ink);
 }
+
+/* Small inline project-color indicator, used wherever a task modal
+ * shows the owning project without the full icon (modal head, project
+ * field, attachment preview head). Background is set inline per-project. */
+.proj-dot { width: 10px; height: 10px; display: inline-block; flex-shrink: 0; }
+:root[data-theme="dark"] .proj-dot { filter: saturate(0.7) brightness(0.86); }
 
 .login-shell {
   height: 100vh;
@@ -550,6 +604,19 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   text-transform: uppercase;
   font-size: calc(9px * var(--fs-scale));
 }
+:root[data-theme="dark"] .np-error {
+  border-color: #5A2A2A;
+  background: #2A1414;
+}
+:root[data-theme="dark"] .np-warn {
+  border-color: #5C4A26;
+  background: #2A2211;
+  color: #E8CD8C;
+}
+:root[data-theme="dark"] .np-warn-tag {
+  background: #E8CD8C;
+  color: #2A2211;
+}
 
 /* Members editor: stacked rows with an inline "Add member" trigger that
  * opens a popover beneath. Removal is intentionally two-step (× arms a
@@ -687,6 +754,12 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   color: var(--ink-2);
   line-height: 1.2;
 }
+/* The 35% mix above reads as a crisp-but-faint outline against light
+ * paper; against dark paper the same ratio nearly disappears, so dark
+ * mode gets a higher percentage to land at a comparable visibility. */
+:root[data-theme="dark"] .tag-chip {
+  border-color: color-mix(in srgb, var(--tag-color, var(--rule-2)) 58%, var(--paper));
+}
 .tag-chip-title {
   white-space: nowrap;
   max-width: 140px;
@@ -697,6 +770,9 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
  * derived from `--tag-color` should win over the default rule color. */
 .chip.tag-chip {
   border-color: color-mix(in srgb, var(--tag-color, var(--rule-2)) 35%, var(--paper));
+}
+:root[data-theme="dark"] .chip.tag-chip {
+  border-color: color-mix(in srgb, var(--tag-color, var(--rule-2)) 58%, var(--paper));
 }
 .tag-chip-x {
   display: inline-flex; align-items: center; justify-content: center;
@@ -776,11 +852,20 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   color: var(--ink-2);
   cursor: pointer;
 }
+:root[data-theme="dark"] .tag-editor-row-btn {
+  border-color: color-mix(in srgb, var(--tag-color, var(--rule-2)) 58%, var(--paper));
+}
 .tag-editor-row-btn:hover {
   background: color-mix(in srgb, var(--tag-color, var(--rule-2)) 8%, var(--paper));
 }
 .tag-editor-row-btn[data-on] {
   background: color-mix(in srgb, var(--tag-color, var(--rule-2)) 12%, var(--paper));
+}
+:root[data-theme="dark"] .tag-editor-row-btn:hover {
+  background: color-mix(in srgb, var(--tag-color, var(--rule-2)) 20%, var(--paper));
+}
+:root[data-theme="dark"] .tag-editor-row-btn[data-on] {
+  background: color-mix(in srgb, var(--tag-color, var(--rule-2)) 26%, var(--paper));
 }
 .tag-editor-row-title {
   flex: 1;
@@ -1228,6 +1313,14 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   border-color: #E8C9A1;
   background: #FAF1E0;
 }
+:root[data-theme="dark"] .sync-pill[data-tone="error"] {
+  border-color: #5A2A2A;
+  background: #2A1414;
+}
+:root[data-theme="dark"] .sync-pill[data-tone="offline"] {
+  border-color: #55431F;
+  background: #241C0C;
+}
 .sync-pill-spin {
   animation: sync-pill-spin 1s linear infinite;
 }
@@ -1325,6 +1418,7 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
 .sync-popover-action:hover { color: var(--ink); background: var(--paper-3); }
 .sync-popover-danger { color: var(--danger); border-color: #E8B6B6; }
 .sync-popover-danger:hover { color: var(--paper); background: var(--danger); }
+:root[data-theme="dark"] .sync-popover-danger { border-color: #5A2A2A; }
 .sync-popover-list {
   max-height: 240px;
   overflow-y: auto;

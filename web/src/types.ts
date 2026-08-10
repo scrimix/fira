@@ -235,6 +235,13 @@ export interface WorkCalendar {
   tasks: LinkedTask[];
 }
 
+/// Available UI color themes. Extending with a new theme: add the value
+/// here, add a matching `:root[data-theme="..."]` block in globals.css,
+/// widen the DB CHECK constraint (new migration) and VALID_THEMES in
+/// the API, and add one more option to ThemePicker in
+/// AccountSettingsModal.tsx.
+export type Theme = 'classic' | 'dark';
+
 /// Per-user, account-scoped settings. Independent of workspace.
 /// Populated from `/api/bootstrap.settings` and updated via
 /// `PATCH /api/me/settings`.
@@ -242,6 +249,8 @@ export interface UserSettings {
   /// Personal/work mode badge shown next to the topbar avatar. Null
   /// when the user hasn't picked one.
   account_badge: 'personal' | 'work' | null;
+  /// UI color theme. Always populated (server defaults to 'classic').
+  theme: Theme;
   /// True iff the user has an active Google Calendar connection.
   /// Drives the AccountSettings modal's connected/disconnected UI.
   gcal_connected: boolean;

@@ -163,7 +163,7 @@ export function TaskModal({ taskId }: Props) {
       <div className="modal" onClick={(e) => e.stopPropagation()}
           style={{ display: attachmentPreview == null ? 'flex' : 'none', ['--proj-color' as string]: project.color }}>
         <div className="modal-head">
-          <span style={{ width: 10, height: 10, background: project.color, display: 'inline-block' }} />
+          <span className="proj-dot" style={{ background: project.color }} />
           <span className="ext">{project.title}</span>
           <span className="grow" />
           <CopyTaskLinkButton taskId={task.id} />
@@ -354,7 +354,7 @@ export function TaskModal({ taskId }: Props) {
           <div className="modal-side">
             <Field label="Project" value={
               <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span style={{ width: 10, height: 10, background: project.color, display: 'inline-block' }} />
+                <span className="proj-dot" style={{ background: project.color }} />
                 {project.title}
               </span>
             } />
@@ -467,7 +467,7 @@ export function TaskModal({ taskId }: Props) {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="modal-head">
-          <span style={{ width: 10, height: 10, background: project.color, display: 'inline-block' }} />
+          <span className="proj-dot" style={{ background: project.color }} />
           <span className="ext">{project.title} / {task.title} / {attachmentPreview?.a?.filename}</span>
           <span className="grow" />
           <button className="icon-btn" title="Close (Esc)" aria-label="Close" onClick={() => {

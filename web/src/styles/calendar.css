@@ -407,7 +407,20 @@
    * matches the rail-task → calendar drag flow. */
   touch-action: pan-y;
 }
+/* Dark theme: the light-mode ratios above were tuned against a near-white
+ * paper, where a fully-saturated 1px/3px border reads as a crisp accent
+ * next to a pale 14%-mix fill. Against dark paper the same numbers invert
+ * the relationship — the raw border glows neon while the barely-tinted
+ * fill goes nearly invisible — so dark gets its own, recalibrated mix. */
+:root[data-theme="dark"] .tblock {
+  border-color: color-mix(in oklab, var(--proj-color, var(--ink)) 60%, var(--paper));
+  background: color-mix(in oklab, var(--proj-color, var(--ink)) 30%, var(--paper));
+  border-left-color: color-mix(in oklab, var(--proj-color, var(--ink)) 82%, var(--paper));
+}
 .tblock:hover { box-shadow: 0 0 0 1px var(--proj-color, var(--ink)); z-index: 3; border-radius: 3px; }
+:root[data-theme="dark"] .tblock:hover {
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--proj-color, var(--ink)) 60%, var(--paper));
+}
 /* Overlap stripe — thin colored bar on the right edge of an active
  * block, scoped (via inline `top` + `height`) to exactly the time
  * span where an underlay (linked / personal / work / gcal block)
@@ -433,6 +446,9 @@
 .tblock[data-state="completed"] {
   background: color-mix(in oklab, var(--proj-color, var(--ink)) 22%, var(--paper));
 }
+:root[data-theme="dark"] .tblock[data-state="completed"] {
+  background: color-mix(in oklab, var(--proj-color, var(--ink)) 44%, var(--paper));
+}
 .tblock[data-state="completed"] .tb-title { text-decoration: line-through; opacity: 0.65; }
 /* Task is done AND this specific block already happened (completed) — muted
    to read as archived. No diagonal hatch (gcal events already use that
@@ -442,6 +458,9 @@
   border-color: color-mix(in oklab, var(--proj-color, var(--ink)) 50%, var(--paper-2));
   border-left-color: color-mix(in oklab, var(--proj-color, var(--ink)) 60%, var(--paper-2));
   opacity: 0.75;
+}
+:root[data-theme="dark"] .tblock[data-task-done="true"][data-state="completed"] {
+  background: color-mix(in oklab, var(--proj-color, var(--ink)) 18%, var(--paper));
 }
 .tblock[data-task-done="true"][data-state="completed"] .tb-title {
   text-decoration: line-through;
@@ -482,6 +501,9 @@
   border-left-color: color-mix(in oklab, var(--proj-color, var(--ink)) 60%, var(--paper-2));
   opacity: 0.75;
 }
+:root[data-theme="dark"] .tblock[data-task-recurring="true"][data-state="completed"] {
+  background: color-mix(in oklab, var(--proj-color, var(--ink)) 18%, var(--paper));
+}
 .tblock[data-task-recurring="true"][data-state="completed"] .tb-title {
   text-decoration: line-through;
   color: var(--ink-3);
@@ -507,6 +529,9 @@
   opacity: 0.85;
   z-index: 10;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18), 0 0 0 1px var(--proj-color, var(--ink));
+}
+:root[data-theme="dark"] .tblock[data-dragging="true"] {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4), 0 0 0 1px color-mix(in oklab, var(--proj-color, var(--ink)) 60%, var(--paper));
 }
 .tblock[data-active="true"] {
   box-shadow: 0 0 0 2px var(--accent);
@@ -582,6 +607,9 @@
   z-index: 6;
   transition: transform 100ms ease-out, box-shadow 100ms ease-out;
 }
+:root[data-theme="dark"] .tblock[data-pressing="true"] {
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4), 0 0 0 1px color-mix(in oklab, var(--proj-color, var(--ink)) 60%, var(--paper));
+}
 .tb-action {
   /* Scale with --fs-scale so the row tracks user readability the same
    * way every other Fira surface does. The icons inside scale via
@@ -641,6 +669,9 @@
    * belt-and-braces guard so an accidental drag on the popup chrome
    * doesn't trigger the block's drag effect. */
   touch-action: none;
+}
+:root[data-theme="dark"] .tb-popup {
+  border-color: color-mix(in oklab, var(--proj-color, var(--rule-2)) 60%, var(--paper));
 }
 
 .tb-resize {
@@ -825,6 +856,9 @@
   /* Override the colored left stripe the regular .tblock gets — keep
    * the project hint subtle so personal blocks dominate the eye. */
 }
+:root[data-theme="dark"] .tblock-linked {
+  background: color-mix(in oklab, var(--proj-color, var(--ink-3)) 28%, var(--paper));
+}
 .tblock-linked .tb-title { color: var(--ink-2); }
 .tblock-linked .tb-meta { color: var(--ink-3); }
 .tblock-linked:hover {
@@ -848,6 +882,11 @@
   border: 1px solid color-mix(in oklab, var(--proj-color, var(--ink-3)) 35%, var(--rule-2));
   border-left: 3px solid color-mix(in oklab, var(--proj-color, var(--ink-3)) 65%, var(--rule-3));
 }
+:root[data-theme="dark"] .tblock-personal {
+  background: color-mix(in oklab, var(--proj-color, var(--ink-3)) 22%, var(--paper));
+  border-color: color-mix(in oklab, var(--proj-color, var(--ink-3)) 55%, var(--rule-2));
+  border-left-color: color-mix(in oklab, var(--proj-color, var(--ink-3)) 80%, var(--rule-3));
+}
 .tblock-personal .tb-title { color: var(--ink-2); }
 .tblock-personal .tb-meta { color: var(--ink-3); }
 .tblock-personal:hover { opacity: 0.9; z-index: 1; }
@@ -865,6 +904,11 @@
   background: color-mix(in oklab, var(--proj-color, var(--ink-3)) 10%, var(--paper));
   border: 1px solid color-mix(in oklab, var(--proj-color, var(--ink-3)) 35%, var(--rule-2));
   border-right: 3px solid color-mix(in oklab, var(--proj-color, var(--ink-3)) 65%, var(--rule-3));
+}
+:root[data-theme="dark"] .tblock-work {
+  background: color-mix(in oklab, var(--proj-color, var(--ink-3)) 22%, var(--paper));
+  border-color: color-mix(in oklab, var(--proj-color, var(--ink-3)) 55%, var(--rule-2));
+  border-right-color: color-mix(in oklab, var(--proj-color, var(--ink-3)) 80%, var(--rule-3));
 }
 .tblock-work .tb-title { color: var(--ink-2); }
 .tblock-work .tb-meta { color: var(--ink-3); }
@@ -1063,6 +1107,7 @@
   border-bottom: 1px solid var(--rule);
 }
 .rail-group-head .swatch { width: 8px; height: 8px; }
+:root[data-theme="dark"] .rail-group-head .swatch { filter: saturate(0.7) brightness(0.85); }
 .rail-group-head .pname { color: var(--ink-2); font-weight: 500; }
 .rail-group-head .pcount { margin-left: auto; color: var(--ink-4); font-weight: 400; }
 
@@ -1157,6 +1202,10 @@
 }
 .rail-fill-spent { height: 100%; }
 .rail-fill-planned { height: 100%; }
+/* Both set their raw project color via inline style, so `filter` (not
+ * `background`) is the only way to dim them for dark mode. */
+:root[data-theme="dark"] .rail-fill-spent { filter: saturate(0.7) brightness(0.82); }
+:root[data-theme="dark"] .rail-fill-planned { filter: saturate(0.7) brightness(0.9); }
 .rail-fill-over {
   height: 100%;
   background: repeating-linear-gradient(
