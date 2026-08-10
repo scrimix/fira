@@ -415,7 +415,10 @@
 :root[data-theme="dark"] .tblock {
   border-color: color-mix(in oklab, var(--proj-color, var(--ink)) 60%, var(--paper));
   background: color-mix(in oklab, var(--proj-color, var(--ink)) 30%, var(--paper));
-  border-left-color: color-mix(in oklab, var(--proj-color, var(--ink)) 82%, var(--paper));
+  /* Left stripe stays the full raw color (matching classic) rather than
+   * a muted mix — it's the block's main color identifier, and against
+   * the now-visible 30%-mix fill a dimmed stripe read as barely there. */
+  border-left-color: var(--proj-color, var(--ink));
 }
 .tblock:hover { box-shadow: 0 0 0 1px var(--proj-color, var(--ink)); z-index: 3; border-radius: 3px; }
 :root[data-theme="dark"] .tblock:hover {
@@ -446,8 +449,16 @@
 .tblock[data-state="completed"] {
   background: color-mix(in oklab, var(--proj-color, var(--ink)) 22%, var(--paper));
 }
+/* Completed also fades the title (strikethrough + 0.65 opacity, below) —
+ * the background should follow that same "done, fading" language rather
+ * than fight it. Classic's own completed background is a few points
+ * *more* saturated than a normal block's (22% vs 14%), which is barely
+ * visible against light paper; carrying that same ratio into dark mode
+ * at 2x the percentage made it read as distinctly *brighter*, the
+ * opposite of what "completed" should look like. Dark gets a background
+ * dimmer than the base block instead. */
 :root[data-theme="dark"] .tblock[data-state="completed"] {
-  background: color-mix(in oklab, var(--proj-color, var(--ink)) 44%, var(--paper));
+  background: color-mix(in oklab, var(--proj-color, var(--ink)) 18%, var(--paper));
 }
 .tblock[data-state="completed"] .tb-title { text-decoration: line-through; opacity: 0.65; }
 /* Task is done AND this specific block already happened (completed) — muted

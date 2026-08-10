@@ -32,38 +32,31 @@ await page.goto(URL);
 await page.waitForSelector('button.login-playground', { timeout: 15000 });
 await page.click('button.login-playground');
 await page.waitForSelector('.avatar', { timeout: 15000 });
-await page.screenshot({ path: shot('app-classic') });
 
 await page.click('button[aria-label="Account settings"]');
 await page.waitForSelector('text=Appearance', { timeout: 10000 });
-await page.screenshot({ path: shot('account-modal-classic') });
-
 await page.click('button:has-text("dark")');
 await page.waitForTimeout(300);
-await page.screenshot({ path: shot('account-modal-dark') });
-
 await page.click('button[aria-label="Close"]');
 await page.waitForTimeout(300);
 await page.screenshot({ path: shot('app-dark') });
 
 // Zoom into the calendar time-block area for a close look at the
-// outline/fill relationship (the thing most recently fixed).
+// left-stripe accent.
 const grid = page.locator('.cal-grid-wrap, .cal-grid').first();
 if (await grid.count()) {
   await grid.screenshot({ path: shot('calendar-blocks-dark') }).catch(() => {});
 }
 
-// List view: project icon + tag chip colors. Open a project from the
-// sidebar's project list (clicking its title navigates to the doc-style
-// list view for that project).
-await page.click('text=Atlas').catch(() => {});
+// Open a project's list view (sidebar project row) to see the tag
+// filter chips up top.
+await page.click('.sidebar .nav-proj', { timeout: 5000 }).catch(() => {});
 await page.waitForTimeout(500);
 await page.screenshot({ path: shot('list-view-dark') });
-
-// Open a task to see the tag-chip / project-dot colors in the modal.
-await page.click('text=OAuth refresh token rotation').catch(() => {});
-await page.waitForTimeout(500);
-await page.screenshot({ path: shot('task-modal-dark') });
+const tagFilter = page.locator('.list-tag-filter').first();
+if (await tagFilter.count()) {
+  await tagFilter.screenshot({ path: shot('list-tag-filter-dark') }).catch(() => {});
+}
 
 await browser.close();
 console.log(`Screenshots written to ${OUT_DIR}/`);

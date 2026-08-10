@@ -246,6 +246,11 @@
   transition: opacity 80ms ease;
 }
 .list-tag-filter-chip:hover { opacity: 0.85; }
+/* 0.55 fades a dark-on-light chip toward a still-legible grey; against
+ * dark paper the same opacity fades a light-on-dark chip toward
+ * near-invisible instead, since it's blending down rather than up. */
+:root[data-theme="dark"] .list-tag-filter-chip { opacity: 0.75; }
+:root[data-theme="dark"] .list-tag-filter-chip:hover { opacity: 0.95; }
 .list-tag-filter-chip[data-on] {
   opacity: 1;
   background: color-mix(in srgb, var(--tag-color, var(--rule-2)) 12%, var(--paper));
@@ -675,7 +680,7 @@
 }
 :root[data-theme="dark"] .task-trail[data-has-filter] .tag-chip[data-match] {
   background: color-mix(in srgb, var(--tag-color, var(--rule-2)) 28%, var(--paper));
-  border-color: color-mix(in srgb, var(--tag-color, var(--rule-2)) 72%, var(--paper));
+  border-color: color-mix(in oklab, var(--tag-color, var(--rule-2)) 52%, var(--ink-3));
 }
 .task-trail .tag-chip-more {
   color: var(--ink-4);

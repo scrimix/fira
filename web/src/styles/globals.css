@@ -754,11 +754,14 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   color: var(--ink-2);
   line-height: 1.2;
 }
-/* The 35% mix above reads as a crisp-but-faint outline against light
- * paper; against dark paper the same ratio nearly disappears, so dark
- * mode gets a higher percentage to land at a comparable visibility. */
+/* Tag hexes are deep, muted "700-level" colors chosen to read against
+ * white paper — mixing more of the *same dark hue* into an already-dark
+ * paper (as a bare percentage bump would) can't make it vivid, since
+ * neither end of that mix is light. Mixing toward --ink-3 instead lifts
+ * the tint enough to read clearly without going full "300/400"-bright —
+ * a mid-grey anchor (vs --ink's near-white) keeps it muted. */
 :root[data-theme="dark"] .tag-chip {
-  border-color: color-mix(in srgb, var(--tag-color, var(--rule-2)) 58%, var(--paper));
+  border-color: color-mix(in oklab, var(--tag-color, var(--rule-2)) 48%, var(--ink-3));
 }
 .tag-chip-title {
   white-space: nowrap;
@@ -772,7 +775,7 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   border-color: color-mix(in srgb, var(--tag-color, var(--rule-2)) 35%, var(--paper));
 }
 :root[data-theme="dark"] .chip.tag-chip {
-  border-color: color-mix(in srgb, var(--tag-color, var(--rule-2)) 58%, var(--paper));
+  border-color: color-mix(in oklab, var(--tag-color, var(--rule-2)) 48%, var(--ink-3));
 }
 .tag-chip-x {
   display: inline-flex; align-items: center; justify-content: center;
@@ -853,7 +856,7 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   cursor: pointer;
 }
 :root[data-theme="dark"] .tag-editor-row-btn {
-  border-color: color-mix(in srgb, var(--tag-color, var(--rule-2)) 58%, var(--paper));
+  border-color: color-mix(in oklab, var(--tag-color, var(--rule-2)) 48%, var(--ink-3));
 }
 .tag-editor-row-btn:hover {
   background: color-mix(in srgb, var(--tag-color, var(--rule-2)) 8%, var(--paper));
