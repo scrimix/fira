@@ -26,7 +26,7 @@
   /* Sage / forest. Less saturated than Tailwind green-700 so the ticked
    * time block reads as "done" without shouting next to the paper /
    * ink editorial neutrals. Also feeds the chip[data-tone="done"]
-   * tone and the inbox time-block done state. */
+   * tone and the list time-block done state. */
   --done: #4D7C5A;
   --warn: #B45309;
   --danger: #B91C1C;
@@ -67,7 +67,7 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   grid-template-columns: 56px 1fr;
   /* `100dvh` tracks the *visible* viewport — on iOS Safari that means
    * the layout size shrinks when the URL bar / bottom toolbar is
-   * showing, so the inbox/calendar bottom isn't permanently hidden
+   * showing, so the list/calendar bottom isn't permanently hidden
    * under those toolbars. Fall back to `100vh` for older browsers. */
   height: 100vh;
   height: 100dvh;
@@ -77,7 +77,7 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
    * = black-translucent makes the status bar overlay content). The
    * viewport-fit=cover meta exposes these env() values; with
    * box-sizing: border-box, padding shrinks the content area so the
-   * topbar lands below the notch and the calendar / inbox don't run
+   * topbar lands below the notch and the calendar / list don't run
    * under the home indicator. Browser-tab mode reports zero insets,
    * so this is a no-op there. */
   padding-top: env(safe-area-inset-top);
@@ -119,7 +119,7 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
 /* Active project: a faint underline in the project's own color, just
    under the icon. No background fill, no frame — quiet enough to read
    as "selected" without competing with the accent stripe used by
-   Calendar/Inbox. Tone matches that project's blocks on the calendar. */
+   Calendar/List. Tone matches that project's blocks on the calendar. */
 .sidebar .nav-proj { position: relative; }
 .sidebar .nav-proj[data-proj-inactive="true"] { opacity: 0.45; }
 .sidebar .nav-proj[data-proj-active="true"]::after {
@@ -666,7 +666,7 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   align-items: center;
   gap: 4px;
 }
-/* Same dimensions / typography as the inbox-row .chip — tag chips look
+/* Same dimensions / typography as the list-row .chip — tag chips look
  * like every other chip in the app, just with a tag-color outline. */
 .tag-chip {
   display: inline-flex;
@@ -693,7 +693,7 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* When `.tag-chip` is layered onto an inbox-row `.chip`, the outline
+/* When `.tag-chip` is layered onto an list-row `.chip`, the outline
  * derived from `--tag-color` should win over the default rule color. */
 .chip.tag-chip {
   border-color: color-mix(in srgb, var(--tag-color, var(--rule-2)) 35%, var(--paper));

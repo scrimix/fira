@@ -454,10 +454,10 @@ function MembersEditor({
                   menuMinWidth={180}
                   onChange={(v) => onRoleChange(u.id, v)}
                   options={[
-                    { value: 'owner', label: 'owner', hint: 'hidden from inbox unless tasks assigned' },
+                    { value: 'owner', label: 'owner', hint: 'hidden from list unless tasks assigned' },
                     { value: 'lead', label: 'lead', hint: 'edits project + members' },
                     { value: 'member', label: 'member', hint: 'works tasks' },
-                    { value: 'inactive', label: 'inactive', hint: 'hidden from inbox unless tasks assigned' },
+                    { value: 'inactive', label: 'inactive', hint: 'hidden from list unless tasks assigned' },
                   ]}
                 />
               ) : (

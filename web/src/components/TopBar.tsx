@@ -9,7 +9,7 @@ import { WorkspaceSwitcher } from './WorkspaceSwitcher';
 export function TopBar() {
   const view = useFira((s) => s.view);
   const project = useFira((s) =>
-    s.projects.find((p) => p.id === s.inboxFilter.project_id) ?? null
+    s.projects.find((p) => p.id === s.listFilter.project_id) ?? null
   );
   const weekOffset = useFira((s) => s.weekOffset);
   const me = useFira((s) => s.users.find((u) => u.id === s.meId) ?? null);
@@ -22,7 +22,7 @@ export function TopBar() {
   const isMobile = useIsMobile();
 
   // The calendar's own toolbar (prev / today / next + day-of-month numbers)
-  // already tells the user what range they're looking at, and the inbox's
+  // already tells the user what range they're looking at, and the list's
   // own page header repeats the project title above the task list. On
   // phones we suppress the topbar title in both views to claw back
   // horizontal room — without it the Log out button was getting pushed
@@ -31,7 +31,7 @@ export function TopBar() {
     ? ''
     : view === 'calendar'
       ? `Week of ${fmtWeekRange(weekStartFor(weekOffset))}`
-      : project?.title ?? 'Inbox';
+      : project?.title ?? 'List';
 
   return (
     <div className="topbar">
@@ -52,7 +52,7 @@ export function TopBar() {
       )}
       <WorkspaceSwitcher />
       <span className="crumb-sep">/</span>
-      {view === 'inbox' && project && !isMobile && (
+      {view === 'list' && project && !isMobile && (
         <ProjectIcon
           name={project.icon}
           color={project.color}

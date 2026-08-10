@@ -139,7 +139,7 @@ pub struct Task {
     pub spent_min: i32,
     pub sort_key: String,
     /// Creation wallclock. Set on INSERT (`DEFAULT now()`) and never
-    /// touched after. Used by the web inbox to sort the Done section
+    /// touched after. Used by the web list to sort the Done section
     /// newest-first — approximate (it's "newest task in Done", not
     /// "most recently finished"), but stable across edits.
     pub created_at: DateTime<Utc>,
@@ -149,7 +149,7 @@ pub struct Task {
     pub created_by: Option<Uuid>,
     /// Wallclock when the task transitioned into status='done'. Cleared
     /// when the task moves back out of done. Nullable: NULL means the
-    /// task hasn't finished. Used by the inbox's Done section to sort
+    /// task hasn't finished. Used by the list's Done section to sort
     /// newest-finished-first; client falls back to `created_at` when
     /// `finished_at` is missing.
     pub finished_at: Option<DateTime<Utc>>,

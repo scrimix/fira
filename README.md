@@ -11,7 +11,7 @@ That's the architectural feature current task tools don't have.
 
 The product is two screens over a single shared task model:
 
-- **Inbox** — a sectioned document (Now / Later / Done), per project.
+- **List** — a sectioned document (Now / Later / Done), per project.
   Capture, prioritize by manual ordering, group by assignee for shared
   projects. Not a board.
 - **Calendar** — your week colored by project. Drag a task from the
@@ -21,7 +21,7 @@ The product is two screens over a single shared task model:
 
 The user we optimize for is a senior IC split across 3–5 projects, who
 needs to see their *own* week colored by project. Standup behavior
-comes free from the same data: scrub the inbox by date, see who
+comes free from the same data: scrub the list by date, see who
 finished what.
 
 This repo is Postgres + Rust API + React/TS web app.

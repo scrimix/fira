@@ -132,7 +132,7 @@ export interface Task {
   created_by: UUID | null;
   /// ISO timestamp of when the task transitioned into status='done'.
   /// Cleared when the task moves out of done. Server-managed via the
-  /// `task.tick` / `task.set_status` ops. Used by the inbox to sort
+  /// `task.tick` / `task.set_status` ops. Used by the list to sort
   /// the Done section newest-finished-first; falls back to `created_at`
   /// when null.
   finished_at: string | null;

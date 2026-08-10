@@ -10,17 +10,17 @@ import type { Tag, Task, TimeBlock, Section, UUID } from '../types';
 
 const byKey = (a: Task, b: Task) => a.sort_key.localeCompare(b.sort_key);
 
-export function InboxView() {
+export function ListView() {
   const tasks = useFira((s) => s.tasks);
   const blocks = useFira((s) => s.blocks);
   const projects = useFira((s) => s.projects);
   const allTags = useFira((s) => s.tags);
   const users = useFira((s) => s.users);
   const meId = useFira((s) => s.meId);
-  const inboxFilter = useFira((s) => s.inboxFilter);
-  const setInboxFilter = useFira((s) => s.setInboxFilter);
-  const showInboxTimes = useFira((s) => s.showInboxTimes);
-  const setShowInboxTimes = useFira((s) => s.setShowInboxTimes);
+  const listFilter = useFira((s) => s.listFilter);
+  const setListFilter = useFira((s) => s.setListFilter);
+  const showListTimes = useFira((s) => s.showListTimes);
+  const setShowListTimes = useFira((s) => s.setShowListTimes);
   const tickTask = useFira((s) => s.tickTask);
   const tickSubtask = useFira((s) => s.tickSubtask);
   const setSubtaskTitle = useFira((s) => s.setSubtaskTitle);
@@ -41,10 +41,10 @@ export function InboxView() {
   const myWorkspaceRole = useFira((s) => s.myWorkspaceRole);
   const canCreateProject = myWorkspaceRole === 'owner';
 
-  const project = projects.find((p) => p.id === inboxFilter.project_id);
+  const project = projects.find((p) => p.id === listFilter.project_id);
   // Workspace owner can edit any project; project leads/owners (the
   // per-project role 'owner' carries the same edit power as 'lead', it
-  // just controls inbox visibility) can edit theirs. Members and outsiders
+  // just controls list visibility) can edit theirs. Members and outsiders
   // see no pencil.
   const myProjectMembership = project?.members.find((m) => m.user_id === meId) ?? null;
   const canEditThisProject = myWorkspaceRole === 'owner'
@@ -63,7 +63,7 @@ export function InboxView() {
   // confirmation rather than firing immediately.
   const [pendingMerge, setPendingMerge] = useState<{ sourceId: UUID; targetId: UUID } | null>(null);
   // Per-task subtask-list visibility. Default is collapsed for every task —
-  // the inbox now treats subtasks like Notion-style nested bullets that
+  // the list now treats subtasks like Notion-style nested bullets that
   // expand on demand. When `addSubtask` / Tab-demote produce a new subtask
   // we auto-expand the parent so the user sees what they just created.
   const [expandedSubs, setExpandedSubs] = useState<Record<UUID, boolean>>({});
@@ -87,7 +87,7 @@ export function InboxView() {
   // refs / cleanup effect themselves don't depend on `project`; they
   // just need to be declared in stable order.
   const desktopDragIdRef = useRef<UUID | null>(null);
-  const inboxScrollRef = useRef<HTMLDivElement>(null);
+  const listScrollRef = useRef<HTMLDivElement>(null);
   const dragScrollStopRef = useRef<(() => void) | null>(null);
   const dragCursorRef = useRef<{ x: number; y: number } | null>(null);
   const touchDraggedRef = useRef<UUID | null>(null);
@@ -118,21 +118,21 @@ export function InboxView() {
     //     to ping an admin (membership in a workspace doesn't imply
     //     project access; that has to be granted explicitly)
     return (
-      <div className="inbox">
-        <div className="inbox-doc inbox-empty">
+      <div className="list">
+        <div className="list-doc list-empty">
           {projects.length > 0 ? (
-            <p className="inbox-empty-msg">Pick a project from the sidebar.</p>
+            <p className="list-empty-msg">Pick a project from the sidebar.</p>
           ) : canCreateProject ? (
-            <div className="inbox-empty-cta">
-              <p className="inbox-empty-msg">This workspace has no projects yet.</p>
-              <button className="inbox-empty-link" onClick={openCreateProject}>
+            <div className="list-empty-cta">
+              <p className="list-empty-msg">This workspace has no projects yet.</p>
+              <button className="list-empty-link" onClick={openCreateProject}>
                 Create your first project
               </button>
             </div>
           ) : (
-            <div className="inbox-empty-cta">
-              <p className="inbox-empty-msg">You're not a member of any project.</p>
-              <p className="inbox-empty-sub">
+            <div className="list-empty-cta">
+              <p className="list-empty-msg">You're not a member of any project.</p>
+              <p className="list-empty-sub">
                 Ask a workspace admin to add you to one.
               </p>
             </div>
@@ -146,10 +146,10 @@ export function InboxView() {
   // Apply the tag + assignee filter to every section in one place so
   // reorder / assignee / archive helpers (which still operate on
   // `projectTasks`) see only the filtered slice.
-  const tagFilter = inboxFilter.tag_ids;
-  const tagMode = inboxFilter.tag_mode;
+  const tagFilter = listFilter.tag_ids;
+  const tagMode = listFilter.tag_mode;
   // Default `all` covers persisted state from before this field existed.
-  const assigneeScope = inboxFilter.assignee_scope ?? 'all';
+  const assigneeScope = listFilter.assignee_scope ?? 'all';
   const projectTasks = allProjectTasks.filter((t) => {
     if (assigneeScope === 'me' && t.assignee_id !== meId) return false;
     if (tagFilter.length > 0) {
@@ -251,7 +251,7 @@ export function InboxView() {
   // empty-state early return — see the block right after the useState
   // declarations.)
   const startEdgeScroll = (mode: 'drag' | 'touch') => {
-    const container = inboxScrollRef.current;
+    const container = listScrollRef.current;
     if (!container) return;
     dragScrollStopRef.current?.();
     dragCursorRef.current = null;
@@ -514,12 +514,12 @@ export function InboxView() {
   // `data-subtask-id` on every .subtask gives the lookup a stable
   // anchor; the autoEdit handoff drives focus into the resolved row.
   const navigateFrom = (currentEl: HTMLElement | null, dir: 'up' | 'down') => {
-    const root = inboxScrollRef.current;
+    const root = listScrollRef.current;
     if (!root || !currentEl) return false;
     // The chain spans every editable stop in document order: task
     // rows, subtask rows, *and* the per-section / per-assignee
     // "Add task…" rows. Section walking happens for free because all
-    // sections live in the same .inbox container — collapsed
+    // sections live in the same .list container — collapsed
     // sections / subtask groups aren't in the DOM, so they're
     // skipped naturally.
     const rows = Array.from(
@@ -662,9 +662,9 @@ export function InboxView() {
   };
 
   return (
-    <div className="inbox" ref={inboxScrollRef} data-suspend-hover={hoverSuspended || undefined}>
-      <div className="inbox-doc" style={{ ['--proj-color' as string]: project.color }}>
-        <div className="inbox-proj-head">
+    <div className="list" ref={listScrollRef} data-suspend-hover={hoverSuspended || undefined}>
+      <div className="list-doc" style={{ ['--proj-color' as string]: project.color }}>
+        <div className="list-proj-head">
           <span className="icon" style={{ color: project.color }}>
             <ProjectIcon name={project.icon} color={project.color} size={20} strokeWidth={1.6} />
           </span>
@@ -675,12 +675,12 @@ export function InboxView() {
             </span>
             <button
               className="icon-btn proj-edit-btn time-toggle-btn"
-              onClick={() => setShowInboxTimes(!showInboxTimes)}
-              data-off={!showInboxTimes || undefined}
-              title={showInboxTimes ? 'Hide time labels' : 'Show time labels'}
-              aria-label={showInboxTimes ? 'Hide time labels' : 'Show time labels'}
+              onClick={() => setShowListTimes(!showListTimes)}
+              data-off={!showListTimes || undefined}
+              title={showListTimes ? 'Hide time labels' : 'Show time labels'}
+              aria-label={showListTimes ? 'Hide time labels' : 'Show time labels'}
             >
-              {showInboxTimes
+              {showListTimes
                 ? <Clock size={14} strokeWidth={1.75} />
                 : <ClockFading size={14} strokeWidth={1.75} />}
             </button>
@@ -701,19 +701,19 @@ export function InboxView() {
           </div>
         </div>
 
-        <InboxTagFilter
+        <ListTagFilter
           projectId={project.id}
           allTags={allTags}
-          tagIds={inboxFilter.tag_ids}
-          mode={inboxFilter.tag_mode}
+          tagIds={listFilter.tag_ids}
+          mode={listFilter.tag_mode}
           scope={assigneeScope}
-          onChange={(tag_ids) => setInboxFilter({ tag_ids })}
-          onModeChange={(tag_mode) => setInboxFilter({ tag_mode })}
-          onScopeChange={(assignee_scope) => setInboxFilter({ assignee_scope })}
+          onChange={(tag_ids) => setListFilter({ tag_ids })}
+          onModeChange={(tag_mode) => setListFilter({ tag_mode })}
+          onScopeChange={(assignee_scope) => setListFilter({ assignee_scope })}
         />
 
-        {showInboxTimes && (
-          <div className="totals inbox-totals" aria-label="Filtered totals">
+        {showListTimes && (
+          <div className="totals list-totals" aria-label="Filtered totals">
             <span className="totals-done"><strong>{fmtMin(totalDone)}</strong> done</span>
             <span className="totals-planned"><strong>{fmtMin(totalPlanned)}</strong> planned</span>
             <span className="totals-total"><strong>{fmtMin(totalAll)}</strong> total</span>
@@ -732,7 +732,7 @@ export function InboxView() {
             <h2>Now</h2>
             <SectionCount value={nowTasks.length} />
             <span className="rule" />
-            {showInboxTimes && <span className="est" title="estimated time">{fmtMin(nowEst)}</span>}
+            {showListTimes && <span className="est" title="estimated time">{fmtMin(nowEst)}</span>}
             <span className="count" style={{ fontFamily: 'var(--font-mono)' }}>week of apr 27</span>
           </div>
           {!collapsed.now && (
@@ -877,7 +877,7 @@ export function InboxView() {
             <h2>Later</h2>
             <SectionCount value={laterTasks.length} />
             <span className="rule" />
-            {showInboxTimes && <span className="est" title="estimated time">{fmtMin(laterEst)}</span>}
+            {showListTimes && <span className="est" title="estimated time">{fmtMin(laterEst)}</span>}
             <span className="count" style={{ fontFamily: 'var(--font-mono)' }}>parking lot</span>
           </div>
           {!collapsed.later && (
@@ -899,7 +899,7 @@ export function InboxView() {
             <h2>Recurring</h2>
             <SectionCount value={recurringTasks.length} />
             <span className="rule" />
-            {showInboxTimes && <span className="est" title="estimated time">{fmtMin(recurringEst)}</span>}
+            {showListTimes && <span className="est" title="estimated time">{fmtMin(recurringEst)}</span>}
             <span className="count" style={{ fontFamily: 'var(--font-mono)' }}>ongoing</span>
           </div>
           {!collapsed.recurring && (
@@ -921,7 +921,7 @@ export function InboxView() {
             <h2>Someday</h2>
             <SectionCount value={somedayTasks.length} />
             <span className="rule" />
-            {showInboxTimes && <span className="est" title="estimated time">{fmtMin(somedayEst)}</span>}
+            {showListTimes && <span className="est" title="estimated time">{fmtMin(somedayEst)}</span>}
             <span className="count" style={{ fontFamily: 'var(--font-mono)' }}>maybe</span>
           </div>
           {!collapsed.someday && (
@@ -941,7 +941,7 @@ export function InboxView() {
             <h2>Done</h2>
             <SectionCount value={doneTasks.length} />
             <span className="rule" />
-            {showInboxTimes && <span className="est" title="completed time">{fmtMin(doneDone)}</span>}
+            {showListTimes && <span className="est" title="completed time">{fmtMin(doneDone)}</span>}
             <span className="count" style={{ fontFamily: 'var(--font-mono)' }}>archive</span>
           </div>
           {!collapsed.done && (
@@ -985,7 +985,7 @@ export function InboxView() {
 }
 
 // Section header count that pulses (color + scale + glow) on every
-// change. Skips the initial mount so navigating into the inbox doesn't
+// change. Skips the initial mount so navigating into the list doesn't
 // flash all four counts at once. Re-keys the span on each change so the
 // CSS animation restarts cleanly even when the value bounces during
 // the previous animation.
@@ -1065,7 +1065,7 @@ function AddTaskRow({ onAdd, placeholder = 'Add task…', onNavigate }: {
   );
 }
 
-function InboxSubtaskRow({
+function ListSubtaskRow({
   id, title, done, autoEdit, allowInlineEdit,
   onToggle, onSave, onDelete, onAutoEditConsumed, onEnterAdd, onShiftTabPromote,
   onNavigate, onShiftMove,
@@ -1177,7 +1177,7 @@ function InboxSubtaskRow({
           onClick={(e) => {
             // Desktop: click the subtask body to edit. Mobile falls
             // through to the parent row's open-modal handler so the
-            // inbox's typing UX stays desktop-only (no "tab" key on
+            // list's typing UX stays desktop-only (no "tab" key on
             // phones, see the original brief).
             if (!allowInlineEdit) return;
             e.stopPropagation();
@@ -1241,8 +1241,8 @@ function TaskRow({
   const [dragOnHandle, setDragOnHandle] = useState(false);
   const isMobile = useIsMobile();
   const tags = useFira((s) => s.tags);
-  const filterIds = useFira((s) => s.inboxFilter.tag_ids);
-  const showInboxTimes = useFira((s) => s.showInboxTimes);
+  const filterIds = useFira((s) => s.listFilter.tag_ids);
+  const showListTimes = useFira((s) => s.showListTimes);
   const filterSet = useMemo(() => new Set(filterIds), [filterIds]);
   // Reorder so any tag matching the active filter floats to the front of
   // the row's chip list — that way the 3-chip cap always shows the
@@ -1381,7 +1381,7 @@ function TaskRow({
            // there — clicking surrounding row body still pops the
            // modal, matching pre-inline-edit behavior.
            if (el.closest('.task-check, .sc, .task-grip, .task-toggle')) return;
-           if (el.closest('.inbox-title-input, .subtask-edit-input')) return;
+           if (el.closest('.list-title-input, .subtask-edit-input')) return;
            onOpen(task.id);
          }}>
       {/* Two drag paths, split by input type:
@@ -1411,7 +1411,7 @@ function TaskRow({
           {editingTitle ? (
             <textarea
               ref={titleRef}
-              className="inbox-title-input"
+              className="list-title-input"
               rows={1}
               value={titleDraft}
               onChange={(e) => setTitleDraft(e.target.value)}
@@ -1540,7 +1540,7 @@ function TaskRow({
         {expanded && task.subtasks.length > 0 && (
           <div className="subtasks">
             {task.subtasks.map((s) => (
-              <InboxSubtaskRow
+              <ListSubtaskRow
                 key={s.id}
                 id={s.id}
                 title={s.title}
@@ -1576,7 +1576,7 @@ function TaskRow({
         // nor an ext-id to render — same data-driven hide we had
         // before, just extended to consider the new ext-id slot.
         if (isMobile && trailTagIds.length === 0) return null;
-        if (!isMobile && trailTagIds.length === 0 && !showExtId && !showInboxTimes) return null;
+        if (!isMobile && trailTagIds.length === 0 && !showExtId && !showListTimes) return null;
         return (
           <div className="task-trail" data-has-filter={filterSet.size > 0 || undefined}>
             {showExtId && (
@@ -1610,7 +1610,7 @@ function TaskRow({
                 +{trailMore}
               </span>
             )}
-            {!isMobile && showInboxTimes && (
+            {!isMobile && showListTimes && (
               task.estimate_min != null && left != null ? (
                 left < 0 ? (
                   <span className="left-est" data-over="true">{fmtMin(-left)} over</span>
@@ -1633,7 +1633,7 @@ function TaskRow({
 // / Done. Always renders the Me/All scope pill; the tag chips section
 // hides itself when the project has no tags so empty chips don't show
 // up as visual noise.
-function InboxTagFilter({
+function ListTagFilter({
   projectId, allTags, tagIds, mode, scope,
   onChange, onModeChange, onScopeChange,
 }: {
@@ -1665,16 +1665,16 @@ function InboxTagFilter({
   const hasTags = projectTags.length > 0;
 
   return (
-    <div className="inbox-tag-filter">
+    <div className="list-tag-filter">
       {hasTags && (
-        <div className="inbox-tag-filter-chips">
+        <div className="list-tag-filter-chips">
           {projectTags.map((t) => {
             const on = selected.has(t.id);
             return (
               <button
                 key={t.id}
                 type="button"
-                className="chip tag-chip inbox-tag-filter-chip"
+                className="chip tag-chip list-tag-filter-chip"
                 data-on={on || undefined}
                 style={{ ['--tag-color' as string]: t.color }}
                 onClick={() => toggle(t.id)}
@@ -1691,11 +1691,11 @@ function InboxTagFilter({
        * tag, OR/AND yields the same set — the toggle still works, just
        * has no visible effect until a second tag is added. Clear is a
        * safe no-op when nothing is selected. */}
-      <div className="inbox-tag-filter-controls">
-        <div className="inbox-tag-filter-mode" role="group" aria-label="Assignee scope">
+      <div className="list-tag-filter-controls">
+        <div className="list-tag-filter-mode" role="group" aria-label="Assignee scope">
           <button
             type="button"
-            className="inbox-tag-filter-mode-seg"
+            className="list-tag-filter-mode-seg"
             data-active={scope === 'all' || undefined}
             onClick={() => onScopeChange('all')}
             title="Show every task in this project"
@@ -1704,7 +1704,7 @@ function InboxTagFilter({
           </button>
           <button
             type="button"
-            className="inbox-tag-filter-mode-seg"
+            className="list-tag-filter-mode-seg"
             data-active={scope === 'me' || undefined}
             onClick={() => onScopeChange('me')}
             title="Show only tasks assigned to me"
@@ -1714,10 +1714,10 @@ function InboxTagFilter({
         </div>
         {hasTags && (
           <>
-            <div className="inbox-tag-filter-mode" role="group" aria-label="Tag match mode">
+            <div className="list-tag-filter-mode" role="group" aria-label="Tag match mode">
               <button
                 type="button"
-                className="inbox-tag-filter-mode-seg"
+                className="list-tag-filter-mode-seg"
                 data-active={mode === 'or' || undefined}
                 onClick={() => onModeChange('or')}
                 title="Match tasks with any selected tag"
@@ -1726,7 +1726,7 @@ function InboxTagFilter({
               </button>
               <button
                 type="button"
-                className="inbox-tag-filter-mode-seg"
+                className="list-tag-filter-mode-seg"
                 data-active={mode === 'and' || undefined}
                 onClick={() => onModeChange('and')}
                 title="Match tasks with every selected tag"
@@ -1736,7 +1736,7 @@ function InboxTagFilter({
             </div>
             <button
               type="button"
-              className="inbox-tag-filter-clear"
+              className="list-tag-filter-clear"
               onClick={clear}
               disabled={tagIds.length === 0}
               title="Clear tag filter"

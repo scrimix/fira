@@ -15,13 +15,13 @@ a discrete scheduled work session attached to a real task on a real day.
 A task accrues N blocks across the week; the plan is the set of blocks
 on the calendar; reality is the set of blocks marked complete. Capture
 happens in a sectioned document (Now / Later / Someday / Done), not a board.
-Prioritization is manual ordering. The product is two screens — Inbox
+Prioritization is manual ordering. The product is two screens — List
 and Calendar — over a single shared task model, scoped by **workspace**
 (the company-level tenant) and project.
 
 The user we optimize for is a senior IC split across 3–5 projects, who
 needs to see their *own* week colored by project. Standup-friendly
-behavior comes free from the same data: scrub the inbox by date, see
+behavior comes free from the same data: scrub the list by date, see
 who finished what.
 
 The app is live at <https://usefira.app>.
@@ -89,7 +89,7 @@ applied in order on boot via `sqlx::migrate!`).
 | `projects`         | id, title, icon, color, source (`local`/`jira`/`notion`), `owner_id`, `external_url_template`, `workspace_id NOT NULL`. |
 | `project_members`  | M:N user↔project, `workspace_id` mirrored from parent project by trigger, `role text check (role in ('owner','lead','member','inactive'))`, `removed_at` for soft-delete. Composite FK `(workspace_id, user_id) → workspace_members(workspace_id, user_id)` makes it structurally impossible to add a user to a project who isn't in the workspace. |
 | `epics`            | unit of work bigger than a task, smaller than a project. |
-| `sprints`          | time-boxed; `active` flag drives the inbox's sprint filter. |
+| `sprints`          | time-boxed; `active` flag drives the list's sprint filter. |
 | `tasks`            | section (`now`/`later`/`recurring`/`someday`/`done`), status, estimate, assignee, sort_key, optional `external_id`, optional per-task `external_url`. |
 | `tags`             | per-project, identity-bearing label: `(id, project_id, title, color)`. Case-insensitive unique on `(project_id, lower(title))`. Renaming is a `set_title` op against the row, no rewrite of attached tasks. |
 | `task_tags`        | M:N task ↔ tag, PK `(task_id, tag_id)`, FK cascades on tag delete. |
@@ -109,7 +109,7 @@ applied in order on boot via `sqlx::migrate!`).
 - **Project role** (`project_members.role`):
   `owner` | `lead` | `member` | `inactive`. Workspace owners get
   `owner` on every project (auto-backfilled by migration 0012). `owner`
-  and `inactive` are *passive* — hidden from inbox assignee groups
+  and `inactive` are *passive* — hidden from list assignee groups
   unless they have a Now task assigned to them. `lead` can edit the
   project but not delete it; only the workspace owner can promote to
   `lead` or change project roles. `member` is the default.
@@ -383,7 +383,7 @@ the breadcrumb collapses to a hamburger and the trio prunes to sync
 pill + Log out (avatar shown, link button hidden).
 
 **Sidebar** (web/src/components/Sidebar.tsx). 56 px icon-rail width on
-desktop. Order: brand → Calendar / Inbox toggle → project icons →
+desktop. Order: brand → Calendar / List toggle → project icons →
 `+ New project` (workspace owner only) → spacer → settings cog
 (workspace owner only). On phones the sidebar is a slide-over behind
 the topbar hamburger.
@@ -403,7 +403,7 @@ the topbar hamburger.
   filter, with silent-blocker dot, **All/My toggle** (All shows every
   project task, including Later, non-yours dimmed and prefixed with
   `↗`), **title filter** (matches title or `external_id`), sort
-  matches the inbox (Now first, then sort_key).
+  matches the list (Now first, then sort_key).
 - **Drag from rail onto a day column** to create a block
   (`block.create`).
 - **Drag-to-move blocks** across days/times (`block.update`).
@@ -420,7 +420,7 @@ the topbar hamburger.
   personal-workspace blocks (left project-color stripe, opacity 0.7).
   Both overlays are full-column-width, lower z-index, read-only.
 
-**Inbox view** ([web/src/components/InboxView.tsx](../web/src/components/InboxView.tsx)):
+**List view** ([web/src/components/ListView.tsx](../web/src/components/ListView.tsx)):
 - Per-project document. Project switcher in left sidebar.
 - Now / Later / Recurring / Someday / Done sections. Now is grouped by
   assignee when the project has >1 member; the caller's group floats
@@ -449,18 +449,18 @@ the topbar hamburger.
   active-filter tags regardless of how the task was tagged. With
   an active filter, unmatched chips fade to opacity 0.45 and
   matched chips get a stronger color-mix outline.
-- **Sticky tag filter strip** (sprint 21) at the top of the inbox
+- **Sticky tag filter strip** (sprint 21) at the top of the list
   scroll container: chip toggles for every project tag, a 2-segment
   OR/AND mode pill, and a Clear button. Both controls are always
   rendered (Clear goes `disabled` at zero selection) so toggling
   chips doesn't cause the strip to jump. Chips inside the strip are
   sorted by title length descending so longer chips lead each row
   and shorter ones slot into the trailing whitespace. Filter state
-  (`tag_ids`, `tag_mode`) lives on `inboxFilter` and is persisted
+  (`tag_ids`, `tag_mode`) lives on `listFilter` and is persisted
   via `partialize`. Phantom ids are pruned on bootstrap and on
   `tag.delete`.
 - **Quick-add seeds the active filter** (sprint 21): a task created
-  through any inbox add-row attaches `inboxFilter.tag_ids` so it
+  through any list add-row attaches `listFilter.tag_ids` so it
   doesn't immediately disappear from the row it was typed into.
 
 **Task modal** ([web/src/components/TaskModal.tsx](../web/src/components/TaskModal.tsx)):
@@ -557,15 +557,15 @@ hand-porting.
 ### 7.6 Mobile specifics
 
 - **Viewport**: `width=device-width, initial-scale=1, viewport-fit=cover`.
-- **Dynamic viewport units** (`100dvh`) so inbox / calendar / modal
+- **Dynamic viewport units** (`100dvh`) so list / calendar / modal
   don't hide under iOS Safari toolbars.
 - **3-day calendar centered on today** with single-day prev/next
   stepping on phones; 7-day grid stays on desktop.
 - **Slide-over sidebar** behind a hamburger in the topbar; the icon
   rail is hidden on phones.
-- **Inbox row decluttered** to grip · check · title. Subtasks blend
+- **List row decluttered** to grip · check · title. Subtasks blend
   into the parent row.
-- **Touch drag** end-to-end: inbox task + subtask reorder (long-press
+- **Touch drag** end-to-end: list task + subtask reorder (long-press
   220 ms or grip), time block move/resize, rail-task → calendar
   scheduling on tablets, calendar block tap-to-reveal-then-tap-to-open.
   Shared [`useLongPress`](../web/src/useLongPress.ts) hook.
@@ -577,10 +577,10 @@ hand-porting.
 ### 7.7 Not yet
 
 - Drag-to-create on calendar grid (free-draw a block on empty space)
-- Inline editing of title / estimate in the inbox row (modal works)
-- Filter chips (epic / sprint / status) on the inbox toolbar
+- Inline editing of title / estimate in the list row (modal works)
+- Filter chips (epic / sprint / status) on the list toolbar
 - Compare mode (two people side-by-side)
-- Date scope on inbox (today / this week / a date)
+- Date scope on list (today / this week / a date)
 - Recurring template / instance model (the section bucket exists; per-cycle instance auto-spawn does not)
 - Snapshots / replay
 - Real Jira / Notion / GCal sync — `external_id` + `external_url` are

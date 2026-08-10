@@ -136,6 +136,7 @@ export function CalendarView() {
     const ws = s.workspaces.find((w) => w.id === s.activeWorkspaceId);
     return ws ? !ws.is_personal : false;
   });
+  const jiraConnected = useFira((s) => s.jiraConnected);
   const projectFilter = useFira((s) => s.projectFilter);
   const selectedPersonIds = useFira((s) => s.selectedPersonIds);
   const activePersonId = useFira((s) => s.activePersonId);
@@ -179,6 +180,12 @@ export function CalendarView() {
   // showPersonal/showWork this doesn't gate a separate data source, so it
   // lives as local state rather than in the store.
   const [showLoggedOnly, setShowLoggedOnly] = useState(false);
+  // "Logged" means "has a Jira worklog", so the filter is meaningless
+  // without a Jira connection — the toggle is hidden below. Gate the
+  // predicate on the same flag as well: leaving it on while switching to
+  // a workspace without Jira would hide every block with no visible
+  // control to turn it back off.
+  const loggedOnly = showLoggedOnly && jiraConnected;
 
   // Bump every minute (aligned to the wall-clock minute boundary) so
   // `nowMin` and `todayDayIndex()` re-evaluate and the "now" line plus
@@ -316,7 +323,7 @@ export function CalendarView() {
 
   // Long-press gating for touch — without it, any finger that lands on a
   // block blocks calendar scroll (since the drag captures the gesture).
-  // 220 ms hold matches the inbox row pattern. A scroll-cancel threshold
+  // 220 ms hold matches the list row pattern. A scroll-cancel threshold
   // (8 px before the timer fires) lets vertical pans through to the
   // calendar grid below.
   const BLOCK_HOLD_MS = 220;
@@ -619,10 +626,10 @@ export function CalendarView() {
       const t = tasks.find((x) => x.id === b.task_id);
       if (!t) return false;
       if (projectFilter[t.project_id] === false) return false;
-      if (showLoggedOnly && !b.jira_worklog_id) return false;
+      if (loggedOnly && !b.jira_worklog_id) return false;
       return true;
     });
-  }, [myBlocks, tasks, projectFilter, showLoggedOnly]);
+  }, [myBlocks, tasks, projectFilter, loggedOnly]);
   const placed = useMemo(
     () => placeBlocks(visibleBlocks, tasks, projects, gridAnchor),
     [visibleBlocks, tasks, projects, gridAnchor],
@@ -839,16 +846,18 @@ export function CalendarView() {
               {showWork ? 'Hide work' : 'Show work'}
             </button>
           )}
-          <button
-            className="link-toggle"
-            data-active={showLoggedOnly || undefined}
-            onClick={() => setShowLoggedOnly(!showLoggedOnly)}
-            title={showLoggedOnly
-              ? 'Show all blocks'
-              : 'Show only blocks already logged to Jira'}
-          >
-            {showLoggedOnly ? 'Hide logged only' : 'Show logged only'}
-          </button>
+          {jiraConnected && (
+            <button
+              className="link-toggle"
+              data-active={showLoggedOnly || undefined}
+              onClick={() => setShowLoggedOnly(!showLoggedOnly)}
+              title={showLoggedOnly
+                ? 'Show all blocks'
+                : 'Show only blocks already logged to Jira'}
+            >
+              {showLoggedOnly ? 'Hide logged only' : 'Show logged only'}
+            </button>
+          )}
           {/* Desktop: inline at the right end of the toolbar, sharing
            * the line with Today / user picker / link toggles. CSS
            * hides this copy on phone widths in favor of the strip
@@ -1641,7 +1650,7 @@ function CalRail({ onDragTask, onTouchSchedule, allocByProject }: {
   // / cancel. Drives `data-pressing="true"` on the rail-task.
   const [pressingRailTaskId, setPressingRailTaskId] = useState<UUID | null>(null);
 
-  // Long-press → drag flow for the rail on touch. Mirrors the inbox
+  // Long-press → drag flow for the rail on touch. Mirrors the list
   // pattern: a 220ms hold locks the row; a fast move within the hold
   // window cancels and lets the rail pan as a normal scroll. Once
   // locked, a non-passive document touchmove preventDefaults the page
@@ -1781,9 +1790,9 @@ function CalRail({ onDragTask, onTouchSchedule, allocByProject }: {
     .filter((p) => projectFilter[p.id] !== false)
     .map((p) => ({
       project: p,
-      // Match the inbox order so the rail reads the same way: section
+      // Match the list order so the rail reads the same way: section
       // first (Now before Later), then sort_key within each section. The
-      // inbox is the source of truth users curate against; the rail
+      // list is the source of truth users curate against; the rail
       // diverging from it makes drag-to-calendar feel unpredictable.
       tasks: tasks
         .filter((t) =>

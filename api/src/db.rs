@@ -747,7 +747,7 @@ pub async fn create_project_tx(
 
     // Project creation is gated to workspace owners, so the creator is the
     // workspace owner — they get the per-project 'owner' row, which is
-    // hidden from inbox assignee groups by default until they up-rank
+    // hidden from list assignee groups by default until they up-rank
     // themselves or get tasks assigned. workspace_id on project_members is
     // filled in by the BEFORE-INSERT trigger.
     sqlx::query(

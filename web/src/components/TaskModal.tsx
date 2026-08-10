@@ -1150,7 +1150,7 @@ export function SubtaskList({
   };
 
   // Touch-only pointer-events flow on the grip — same shape as the
-  // inbox task-grip drag. setPointerCapture so subsequent moves come
+  // list task-grip drag. setPointerCapture so subsequent moves come
   // back to the grip even when the finger leaves the row.
   const touchDraggedRef = useRef<string | null>(null);
   const touchDropAtRef = useRef<{ id: string; pos: 'before' | 'after' } | null>(null);
@@ -1290,7 +1290,7 @@ function SubtaskRow({
     setEditing(false);
   };
 
-  // Long-press-to-drag anywhere on the row. Same shape as the inbox
+  // Long-press-to-drag anywhere on the row. Same shape as the list
   // version: pointer events drive pre-lock state, but once locked we
   // attach a non-passive document touchmove listener — the only way
   // iOS Safari lets us suppress scroll mid-gesture.

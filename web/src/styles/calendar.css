@@ -1078,7 +1078,7 @@
    * The long-press handler in CalendarView attaches a non-passive document
    * touchmove listener once the press fires and preventDefaults from there
    * (iOS Safari only respects non-passive listeners for blocking scroll
-   * mid-gesture). Same pattern as the inbox row long-press. */
+   * mid-gesture). Same pattern as the list row long-press. */
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;

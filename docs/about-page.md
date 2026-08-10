@@ -88,9 +88,9 @@ Most people run their work across three apps and a memory. Tasks in Jira. Calend
 
 The tools that try to fix this overcorrect. Notion holds every detail and becomes a graveyard of nested pages. Apple Notes stays fast but loses half the picture. Akiflow and Motion integrate with the other apps you're already drowning in.
 
-Fira holds the whole picture through one model. Tasks accrue work sessions across the week as time blocks on a calendar. The inbox and the calendar are the same data, two views. Personal time and teammates' weeks overlay the same grid. The simplicity isn't from leaving things out — it's from putting things in the right shape.
+Fira holds the whole picture through one model. Tasks accrue work sessions across the week as time blocks on a calendar. The list and the calendar are the same data, two views. Personal time and teammates' weeks overlay the same grid. The simplicity isn't from leaving things out — it's from putting things in the right shape.
 
-*Visual: hero — inbox + calendar side by side; one task captured, dragged onto Tuesday, resized.*
+*Visual: hero — list + calendar side by side; one task captured, dragged onto Tuesday, resized.*
 
 ---
 
@@ -118,7 +118,7 @@ In Fira a task accrues N blocks across the week. Time spent is the sum of comple
 
 When capture takes eight fields, ideas land in Apple Notes, Slack DMs, four different docs. They re-emerge weeks later as a gut punch.
 
-Fira's inbox is one document per project, sectioned **Now / Later / Someday / Done**. Type and it lands. No required project, no estimate, no modal stack. Things don't disappear — they sit one section away. Triage is dragging Later → Now when Now needs more. The structure is the prioritization.
+Fira's list is one document per project, sectioned **Now / Later / Someday / Done**. Type and it lands. No required project, no estimate, no modal stack. Things don't disappear — they sit one section away. Triage is dragging Later → Now when Now needs more. The structure is the prioritization.
 
 **Callout:** *"I'll do it tomorrow." — tomorrow.*
 
@@ -135,14 +135,14 @@ Fira's inbox is one document per project, sectioned **Now / Later / Someday / Do
 It's the one where you keep finding the next right thing without re-reading the whole list. Fira filters by default and on demand.
 
 - **Sections** push noise out of sight without losing it. Later sits below Now; you don't see it until you scroll.
-- **Project switcher** scopes the inbox to one project. **Person switcher** picks whose week the calendar shows.
-- **Tag filters** carve scope further. Tags are bounds you invent: `?` for unsure, `v1` for committed scope, `auth` for a component. Filter by `v1` and the inbox condenses to scope-to-ship, with planned and remaining hours summed at the top.
+- **Project switcher** scopes the list to one project. **Person switcher** picks whose week the calendar shows.
+- **Tag filters** carve scope further. Tags are bounds you invent: `?` for unsure, `v1` for committed scope, `auth` for a component. Filter by `v1` and the list condenses to scope-to-ship, with planned and remaining hours summed at the top.
 
 The page in front of you is the page you need. Everything else is one click away.
 
 **Callout:** *Out of sight isn't out of mind when it's one tab away.*
 
-*Animation: full project → filter by `v1` → inbox condenses → "11.5h left" totals at the top.*
+*Animation: full project → filter by `v1` → list condenses → "11.5h left" totals at the top.*
 
 ---
 
@@ -191,7 +191,7 @@ Adjustment is the primary motion of the app, not a recovery move.
 
 Each task shows planned, spent, and left, totaled live from its blocks. A task with five completed sessions against an estimate of two isn't a failure — it's information. A task in progress for weeks is a signal. The last 20% really is another 80%, and you'll see it accumulating before the deadline does.
 
-For a retro or a defense, scrub the inbox by date: who finished what, where blocks landed vs. where they were planned. History isn't a separate report — it's the same data played back.
+For a retro or a defense, scrub the list by date: who finished what, where blocks landed vs. where they were planned. History isn't a separate report — it's the same data played back.
 
 **Callout:** *A task in-progress for weeks is a signal.*
 

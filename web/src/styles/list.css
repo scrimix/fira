@@ -1,4 +1,4 @@
-.inbox {
+.list {
   height: calc(100vh - 44px);
   height: calc(100dvh - 44px);
   overflow: auto;
@@ -8,7 +8,7 @@
    * as the scrollbar appears / disappears. */
   scrollbar-gutter: stable;
 }
-.inbox-doc {
+.list-doc {
   max-width: 880px;
   margin: 0 auto;
   padding: 24px 48px 80px;
@@ -19,11 +19,11 @@
  * trailing `auto` column, but the left only loses a few pixels for the
  * grip + check (which together total ~32px). */
 @media (max-width: 700px) {
-  .inbox-doc { padding: 16px 8px 80px; }
+  .list-doc { padding: 16px 8px 80px; }
   /* Project header runs out of horizontal room with tasks/members count
    * + Archive button on a 360px screen — drop the count, the action is
    * what the user came here for. */
-  .inbox-proj-head .meta { display: none; }
+  .list-proj-head .meta { display: none; }
   /* Mobile keeps a single tag chip in the trail column when the task
    * has tags, so leave a small right gutter; the +N spillover sits
    * beside it. With no tags the column stays empty and there's no
@@ -32,7 +32,7 @@
   .task-row { padding-right: 6px; }
   .task-add { padding-right: 0; }
 }
-.inbox-empty {
+.list-empty {
   min-height: calc(100dvh - 44px - 24px);
   display: flex;
   flex-direction: column;
@@ -40,23 +40,23 @@
   justify-content: center;
   gap: 8px;
 }
-.inbox-empty-cta {
+.list-empty-cta {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 6px;
 }
-.inbox-empty-msg {
+.list-empty-msg {
   margin: 0;
   font-size: var(--fs-md);
   color: var(--ink-2);
 }
-.inbox-empty-sub {
+.list-empty-sub {
   margin: 0;
   font-size: var(--fs-sm);
   color: var(--ink-3);
 }
-.inbox-empty-link {
+.list-empty-link {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -68,8 +68,8 @@
   padding: 2px 0;
   cursor: pointer;
 }
-.inbox-empty-link:hover { color: var(--ink); border-bottom-color: var(--ink-3); }
-.inbox-proj-head {
+.list-empty-link:hover { color: var(--ink); border-bottom-color: var(--ink-3); }
+.list-proj-head {
   display: flex; align-items: baseline; gap: 12px;
   margin: 6px 0 24px;
   padding-bottom: 12px;
@@ -80,18 +80,18 @@
  * underneath. The strip's `border-bottom` provides the single rule
  * between header zone and the Now section, instead of two parallel
  * rules with a 24px gap. */
-.inbox-proj-head:has(+ .inbox-tag-filter) {
+.list-proj-head:has(+ .list-tag-filter) {
   margin-bottom: 0;
   padding-bottom: 8px;
   border-bottom: 0;
 }
-.inbox-proj-head h1 {
+.list-proj-head h1 {
   margin: 0;
   font-size: var(--fs-xxl);
   font-weight: 500;
   letter-spacing: -0.02em;
 }
-.inbox-proj-head .icon {
+.list-proj-head .icon {
   display: inline-flex;
   align-self: center;
   color: var(--proj-color);
@@ -106,29 +106,29 @@
  * its neighbours, regardless of font baselines. align-self: baseline anchors
  * the whole cluster to the h1's baseline so meta still reads correctly with
  * the title. */
-.inbox-proj-head .proj-actions {
+.list-proj-head .proj-actions {
   margin-left: auto;
   display: inline-flex;
   align-items: center;
   gap: 10px;
   align-self: baseline;
 }
-.inbox-proj-head .proj-actions .proj-edit-btn + .proj-edit-btn {
+.list-proj-head .proj-actions .proj-edit-btn + .proj-edit-btn {
   margin-left: -8px;
 }
-.inbox-proj-head .meta {
+.list-proj-head .meta {
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
   color: var(--ink-3);
   letter-spacing: 0.04em;
 }
-.inbox-proj-head .proj-edit-btn {
+.list-proj-head .proj-edit-btn {
   width: auto; min-width: 22px; height: 24px;
   padding: 0 4px;
   color: var(--ink-3);
   border: 1px solid transparent;
 }
-.inbox-proj-head .proj-edit-btn:hover {
+.list-proj-head .proj-edit-btn:hover {
   color: var(--ink);
   background: var(--paper-3);
   border-color: var(--rule-2);
@@ -138,13 +138,13 @@
  * when "off". Drawing the × inside the icon's own SVG keeps the
  * strokes crisp at 14×14 — the previous CSS pseudo-element slash
  * read as a foreign rule pasted on top. */
-.inbox-proj-head .time-toggle-btn[data-off] {
+.list-proj-head .time-toggle-btn[data-off] {
   /* Mixed against ink-4 (cool grey) instead of paper-3 (warm beige)
    * so the result stays in the red family rather than drifting toward
    * terracotta/orange. 65% danger keeps it muted without going pink. */
   color: color-mix(in oklab, var(--danger) 65%, var(--ink-4));
 }
-.inbox-proj-head .archive-btn {
+.list-proj-head .archive-btn {
   height: 24px;
   padding: 0 10px;
   font-size: var(--fs-xs);
@@ -161,17 +161,17 @@
   white-space: nowrap;
   flex-shrink: 0;
 }
-.inbox-proj-head .archive-btn:not([disabled]) {
+.list-proj-head .archive-btn:not([disabled]) {
   color: var(--ink-2);
 }
-.inbox-proj-head .archive-btn:not([disabled]):hover {
+.list-proj-head .archive-btn:not([disabled]):hover {
   color: var(--ink);
 }
-.inbox-proj-head .archive-btn[disabled] {
+.list-proj-head .archive-btn[disabled] {
   cursor: not-allowed;
   opacity: 0.5;
 }
-.inbox-proj-head .archive-btn .archive-count {
+.list-proj-head .archive-btn .archive-count {
   font-variant-numeric: tabular-nums;
   background: var(--ink);
   color: var(--paper);
@@ -180,10 +180,10 @@
   font-size: calc(10px * var(--fs-scale));
 }
 
-/* Tag filter strip — sticks to the top of the inbox scroll container
+/* Tag filter strip — sticks to the top of the list scroll container
  * so the active selection stays visible as the user scrolls through
  * Now / Later / Done. Hidden when the project has no tags. */
-.inbox-tag-filter {
+.list-tag-filter {
   position: sticky;
   top: 0;
   z-index: 4;
@@ -206,17 +206,17 @@
  * numbers — otherwise the tag filter's 12px margin compounds with
  * the totals' 8px padding-top to create ~20px above the text while
  * only 8px sits below, reading as off-balance. */
-.inbox-tag-filter:has(+ .inbox-totals) {
+.list-tag-filter:has(+ .list-totals) {
   margin-bottom: 0;
 }
-.inbox-tag-filter-chips {
+.list-tag-filter-chips {
   display: flex;
   align-items: center;
   gap: 4px;
   flex-wrap: wrap;
   min-width: 0;
 }
-.inbox-tag-filter-controls {
+.list-tag-filter-controls {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -225,7 +225,7 @@
  * a vertical stripe on the right with proper spacing instead of
  * cramping against the wrapped chip column. */
 @media (max-width: 700px) {
-  .inbox-tag-filter-controls {
+  .list-tag-filter-controls {
     flex-direction: column;
     align-items: stretch;
     gap: 4px;
@@ -234,17 +234,17 @@
 /* Filter chips reuse `.chip.tag-chip` typography. Off state stays
  * dim (low-saturation outline only); on state fills with the same
  * color-mix wash the dropdown row uses for selection feedback. */
-.inbox-tag-filter-chip {
+.list-tag-filter-chip {
   cursor: pointer;
   opacity: 0.55;
   transition: opacity 80ms ease;
 }
-.inbox-tag-filter-chip:hover { opacity: 0.85; }
-.inbox-tag-filter-chip[data-on] {
+.list-tag-filter-chip:hover { opacity: 0.85; }
+.list-tag-filter-chip[data-on] {
   opacity: 1;
   background: color-mix(in srgb, var(--tag-color, var(--rule-2)) 12%, var(--paper));
 }
-.inbox-tag-filter-clear {
+.list-tag-filter-clear {
   font-family: var(--font-mono);
   font-size: calc(10px * var(--fs-scale));
   letter-spacing: 0.04em;
@@ -257,8 +257,8 @@
   cursor: pointer;
   flex: none;
 }
-.inbox-tag-filter-clear:hover:not(:disabled) { color: var(--ink); border-color: var(--ink-3); }
-.inbox-tag-filter-clear:disabled {
+.list-tag-filter-clear:hover:not(:disabled) { color: var(--ink); border-color: var(--ink-3); }
+.list-tag-filter-clear:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
@@ -266,12 +266,12 @@
  * is filled with --ink so the current mode is visually unambiguous;
  * clicking the *other* segment switches mode. Borders collapse
  * between segments so they read as one control. */
-.inbox-tag-filter-mode {
+.list-tag-filter-mode {
   display: inline-flex;
   flex: none;
   height: 18px;
 }
-.inbox-tag-filter-mode-seg {
+.list-tag-filter-mode-seg {
   font-family: var(--font-mono);
   font-size: calc(10px * var(--fs-scale));
   letter-spacing: 0.04em;
@@ -283,22 +283,22 @@
   height: 18px;
   cursor: pointer;
 }
-.inbox-tag-filter-mode-seg + .inbox-tag-filter-mode-seg { border-left: 0; }
-.inbox-tag-filter-mode-seg:hover { color: var(--ink); }
-.inbox-tag-filter-mode-seg[data-active] {
+.list-tag-filter-mode-seg + .list-tag-filter-mode-seg { border-left: 0; }
+.list-tag-filter-mode-seg:hover { color: var(--ink); }
+.list-tag-filter-mode-seg[data-active] {
   background: var(--ink);
   border-color: var(--ink);
   color: var(--paper);
   cursor: default;
 }
-.inbox-tag-filter-mode-seg[data-active]:hover { color: var(--paper); }
+.list-tag-filter-mode-seg[data-active]:hover { color: var(--paper); }
 
 /* Roll-up of time totals for the currently filtered task set. Sits
  * directly under the tag filter strip so the numbers read as a
  * consequence of the filter above. Visual language reuses the
  * calendar's `.totals` (mono digits, color per slot); this rule
  * only handles position and the divider underneath. */
-.inbox-totals {
+.list-totals {
   flex-wrap: wrap;
   justify-content: center;
   padding: 8px 0;
@@ -445,10 +445,10 @@
    * highlight the wrong row, making it look like focus stuck below the
    * dragged task. Suppress the hover styling until the user nudges the
    * cursor (handled in JS). */
-  .inbox[data-suspend-hover] .task-row:hover {
+  .list[data-suspend-hover] .task-row:hover {
     background: transparent;
   }
-  .inbox[data-suspend-hover] .task-row:hover .task-grip { opacity: 0; }
+  .list[data-suspend-hover] .task-row:hover .task-grip { opacity: 0; }
 }
 /* Long-press feedback: scale + accent outline + glow when the row's
  * hold timer fires, mirroring `.tblock[data-pressing]` so the lock
@@ -587,7 +587,7 @@
   min-width: 1ch;
 }
 /* Per-task subtask-list toggle. Only rendered when the task has at
- * least one subtask; click flips the inbox's per-row expanded state.
+ * least one subtask; click flips the list's per-row expanded state.
  * Sized to sit naturally next to the title without nudging the row
  * grid. The data-expanded attribute lets the chevron firm up its
  * color when open, matching the section caret idiom. */
@@ -621,7 +621,7 @@
 /* Inline title editor — desktop only. Mirrors .task-add-input's shape
  * (textarea sized as a single line via line-height + min-height) so
  * the cursor lands exactly where the static .task-title text was. */
-.inbox-title-input {
+.list-title-input {
   flex: 1;
   min-width: 0;
   font: inherit;
@@ -785,7 +785,7 @@
   margin: 3px 0 0;
   display: flex; flex-direction: column; gap: 0;
 }
-/* Inbox subtask rows: same font as task rows (so they read as
+/* List subtask rows: same font as task rows (so they read as
  * first-class siblings during the Tab-demote typing flow) but
  * tighter vertical padding so the inner list is denser than the
  * outer task list. Modal subtasks still use the shared .subtask

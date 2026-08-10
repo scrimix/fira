@@ -422,7 +422,7 @@ function JiraSection({
         <div className="account-toggle-row">
           <span className="account-section-h">Auto Sync New Blocks</span>
           <div
-            className="inbox-tag-filter-mode"
+            className="list-tag-filter-mode"
             role="group"
             aria-label="Auto sync new blocks"
             title={playgroundMode
@@ -431,7 +431,7 @@ function JiraSection({
           >
             <button
               type="button"
-              className="inbox-tag-filter-mode-seg"
+              className="list-tag-filter-mode-seg"
               data-active={autoSyncNewBlocks || undefined}
               onClick={() => { void onSetAutoSync(true); }}
               disabled={playgroundMode}
@@ -440,7 +440,7 @@ function JiraSection({
             </button>
             <button
               type="button"
-              className="inbox-tag-filter-mode-seg"
+              className="list-tag-filter-mode-seg"
               data-active={!autoSyncNewBlocks || undefined}
               onClick={() => { void onSetAutoSync(false); }}
               disabled={playgroundMode}
@@ -529,7 +529,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 // Segmented picker for the personal/work badge. Same visual idiom as
-// the inbox `or/and` and `me/all` pills, scoped to the account modal.
+// the list `or/and` and `me/all` pills, scoped to the account modal.
 // Three states — none (clear), personal, work — so the user can opt
 // out entirely without hiding the control.
 function BadgePicker() {
@@ -537,13 +537,13 @@ function BadgePicker() {
   const setBadge = useFira((s) => s.setAccountBadge);
   return (
     <div
-      className="inbox-tag-filter-mode account-badge-picker"
+      className="list-tag-filter-mode account-badge-picker"
       role="group"
       aria-label="Mode badge"
     >
       <button
         type="button"
-        className="inbox-tag-filter-mode-seg"
+        className="list-tag-filter-mode-seg"
         data-active={value === null || undefined}
         onClick={() => setBadge(null)}
         title="No badge"
@@ -552,7 +552,7 @@ function BadgePicker() {
       </button>
       <button
         type="button"
-        className="inbox-tag-filter-mode-seg"
+        className="list-tag-filter-mode-seg"
         data-active={value === 'personal' || undefined}
         onClick={() => setBadge('personal')}
         title="Personal mode"
@@ -561,7 +561,7 @@ function BadgePicker() {
       </button>
       <button
         type="button"
-        className="inbox-tag-filter-mode-seg"
+        className="list-tag-filter-mode-seg"
         data-active={value === 'work' || undefined}
         onClick={() => setBadge('work')}
         title="Work mode"

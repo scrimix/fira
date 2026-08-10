@@ -5,7 +5,7 @@ import { openNudgeSocket, openUserSocket } from './ws';
 import { Sidebar } from './components/Sidebar';
 import { TopBar } from './components/TopBar';
 import { CalendarView } from './components/CalendarView';
-import { InboxView } from './components/InboxView';
+import { ListView } from './components/ListView';
 import { TaskModal } from './components/TaskModal';
 import { TaskModalDraft } from './components/TaskModalDraft';
 import { ProjectModal } from './components/ProjectModal';
@@ -276,7 +276,7 @@ export default function App() {
         if (!sticky) useFira.getState().closeLinkModal();
       }
       if (e.key === 'g') useFira.getState().setView('calendar');
-      if (e.key === 'i') useFira.getState().setView('inbox');
+      if (e.key === 'i') useFira.getState().setView('list');
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -319,7 +319,7 @@ export default function App() {
       <Sidebar />
       <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
         <TopBar />
-        {view === 'calendar' ? <CalendarView /> : <InboxView />}
+        {view === 'calendar' ? <CalendarView /> : <ListView />}
       </div>
       {openTaskId && <TaskModal taskId={openTaskId} />}
       {creatingDraft && !openTaskId && <TaskModalDraft draft={creatingDraft} />}

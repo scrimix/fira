@@ -1,4 +1,4 @@
-import { CalendarDays, Inbox, Settings } from 'lucide-react';
+import { CalendarDays, List, Settings } from 'lucide-react';
 import { useFira } from '../store';
 import { useIsMobile } from '../hooks';
 import { ProjectIcon } from './ProjectIcon';
@@ -19,12 +19,12 @@ export function Sidebar() {
   // On mobile, every nav action should also close the slide-over so the
   // user lands on the destination view without an extra tap-outside step.
   const close = () => { if (isMobile) setSidebarOpen(false); };
-  // The "active project" is whichever one the inbox is filtered to. We only
-  // surface the highlight while the inbox view is open — on the calendar,
+  // The "active project" is whichever one the list is filtered to. We only
+  // surface the highlight while the list view is open — on the calendar,
   // every project is in scope simultaneously so a single-project highlight
   // would lie about the visible content.
-  const activeProjectId = useFira((s) => s.inboxFilter.project_id);
-  const showProjectActive = view === 'inbox';
+  const activeProjectId = useFira((s) => s.listFilter.project_id);
+  const showProjectActive = view === 'list';
   // Project create is owner-only. Leads administer existing projects
   // (rename, set members) but resource allocation — adding new projects
   // to a workspace — stays with the workspace owner.
@@ -48,9 +48,9 @@ export function Sidebar() {
                 onClick={() => { setView('calendar'); close(); }} title="Calendar (G)">
           <CalendarDays size={16} strokeWidth={1.75} />
         </button>
-        <button className="nav-btn" data-active={view === 'inbox'}
-                onClick={() => { setView('inbox'); close(); }} title="Inbox (I)">
-          <Inbox size={16} strokeWidth={1.75} />
+        <button className="nav-btn" data-active={view === 'list'}
+                onClick={() => { setView('list'); close(); }} title="List (I)">
+          <List size={16} strokeWidth={1.75} />
         </button>
         <div style={{ height: 16 }} />
         {orderedProjects.map((p) => {
@@ -64,7 +64,7 @@ export function Sidebar() {
               data-proj-inactive={inactive}
               style={active ? { ['--proj-color' as string]: p.color } : undefined}
               title={inactive ? `${p.title} (inactive)` : p.title}
-              onClick={() => { setView('inbox', p.id); close(); }}
+              onClick={() => { setView('list', p.id); close(); }}
             >
               <ProjectIcon name={p.icon} color={inactive ? 'var(--ink-4)' : p.color} size={16} />
             </button>

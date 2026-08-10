@@ -33,7 +33,7 @@ export type SyncStatus =
 const SYNC_BATCH_SIZE = 50;
 
 // Per-account "last view" snapshot. Lets a fast account switch land
-// the user where they were instead of their personal-workspace inbox.
+// the user where they were instead of their personal-workspace list.
 //
 // Keyed by `meId` rather than written into the shared `fira:store-v1`
 // blob — the shared blob is wiped on switch (otherwise the previous
@@ -41,8 +41,8 @@ const SYNC_BATCH_SIZE = 50;
 // One key per user means each account keeps its own breadcrumb.
 type LastView = {
   workspaceId: UUID | null;
-  view: 'calendar' | 'inbox';
-  projectId: UUID | null; // inboxFilter.project_id
+  view: 'calendar' | 'list';
+  projectId: UUID | null; // listFilter.project_id
 };
 
 const lastViewKey = (userId: UUID) => `fira:lastView:${userId}`;
@@ -57,30 +57,35 @@ function loadLastView(userId: UUID): LastView | null {
   try {
     const raw = localStorage.getItem(lastViewKey(userId));
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<LastView>;
+    const parsed = JSON.parse(raw) as Partial<Omit<LastView, 'view'>> & { view?: string };
+    // The list view was called "inbox" until the rename; breadcrumbs
+    // written by an older build still say so. Map instead of rejecting,
+    // or everyone who was last on the list lands on the calendar once.
+    // Safe to drop once no live client is on a pre-rename build.
+    const view = parsed.view === 'inbox' ? 'list' : parsed.view;
     // Defensive: future-proof against shape drift. If the stored blob
     // is missing required fields, ignore it rather than half-applying.
-    if (parsed.view !== 'calendar' && parsed.view !== 'inbox') return null;
+    if (view !== 'calendar' && view !== 'list') return null;
     return {
       workspaceId: parsed.workspaceId ?? null,
-      view: parsed.view,
+      view,
       projectId: parsed.projectId ?? null,
     };
   } catch { return null; }
 }
 
-interface InboxFilter {
+interface ListFilter {
   project_id: UUID | null;
   epic_id: UUID | null;
   sprint_id: UUID | 'active' | 'all' | 'none';
   status: 'open' | 'all' | 'in_progress' | 'todo' | 'done';
   assignee_id: UUID | 'all' | null;
-  /// Assignee scope toggle in the inbox toolbar. `'all'` (default)
+  /// Assignee scope toggle in the list toolbar. `'all'` (default)
   /// renders every project task; `'me'` keeps only tasks assigned to
-  /// the caller. Persisted with the rest of `inboxFilter`.
+  /// the caller. Persisted with the rest of `listFilter`.
   assignee_scope: 'me' | 'all';
   /// Subset of project tag ids to filter by. Empty = no tag filter applied.
-  /// Persisted across reloads alongside the rest of inboxFilter.
+  /// Persisted across reloads alongside the rest of listFilter.
   tag_ids: UUID[];
   /// 'or' (default): a task matches if it has any selected tag.
   /// 'and': a task must carry every selected tag.
@@ -136,7 +141,7 @@ interface FiraState {
   // The caller's role in the active workspace — drives UI gating.
   myWorkspaceRole: WorkspaceRole | null;
   workspaceModal: { kind: 'new' } | { kind: 'edit'; id: UUID } | null;
-  view: 'calendar' | 'inbox';
+  view: 'calendar' | 'list';
   // Pinned set of people the user can flip between, like browser tabs.
   selectedPersonIds: UUID[];
   // The currently-viewed person (must be in selectedPersonIds).
@@ -151,7 +156,7 @@ interface FiraState {
   // and ignores this flag.
   sidebarOpen: boolean;
   projectFilter: Record<UUID, boolean>;
-  inboxFilter: InboxFilter;
+  listFilter: ListFilter;
   openTaskId: UUID | null;
   creatingDraft: {
     project_id: UUID | null;
@@ -190,12 +195,12 @@ interface FiraState {
   workBlocks: TimeBlock[];
   workTasks: LinkedTask[];
   showWork: boolean;
-  // Inbox time-label toggle. When false, the .inbox-totals row, the
+  // List time-label toggle. When false, the .list-totals row, the
   // per-section estimate badges in section heads, and the per-row
   // "Xh left / over / no est" labels are all hidden — useful when the
   // user wants to focus on the work itself instead of the meter.
   // Calendar's ambient time tracking is unaffected.
-  showInboxTimes: boolean;
+  showListTimes: boolean;
   linkModalOpen: boolean;
   // Account settings modal — a container for the link affordance plus
   // (eventually) personal preferences and gcal connection. Replaces the
@@ -288,7 +293,7 @@ interface FiraState {
   // Apply a remote op — upsert-tolerant for create kinds so an echo of an
   // op the local client already created does nothing.
   applyRemoteOp: (entry: ChangeEntry) => void;
-  setView: (v: 'calendar' | 'inbox', projectId?: UUID) => void;
+  setView: (v: 'calendar' | 'list', projectId?: UUID) => void;
   addPerson: (id: UUID) => void;
   removePerson: (id: UUID) => void;
   setActivePerson: (id: UUID) => void;
@@ -300,11 +305,11 @@ interface FiraState {
   // blocks. Double-clicking again on the already-solo'd project
   // restores all-visible. No-op for projects that don't exist.
   soloProjectFilter: (id: UUID) => void;
-  setInboxFilter: (patch: Partial<InboxFilter>) => void;
+  setListFilter: (patch: Partial<ListFilter>) => void;
   openTask: (id: UUID | null) => void;
   /// Open a task from a shareable deep link. Switches to the task's
   /// workspace first when the link points elsewhere (re-bootstrapping that
-  /// workspace's data), aligns the inbox to the task's project, then opens
+  /// workspace's data), aligns the list to the task's project, then opens
   /// the modal. Surfaces a toast when the task can't be reached.
   openTaskByDeepLink: (workspaceId: UUID | null, taskId: UUID) => Promise<void>;
   openCreate: (initial?: Partial<{
@@ -328,7 +333,7 @@ interface FiraState {
   acceptWorkspaceInvite: (id: UUID) => Promise<void>;
   declineWorkspaceInvite: (id: UUID) => Promise<void>;
   loadLinkedCalendar: () => Promise<void>;
-  setShowInboxTimes: (v: boolean) => void;
+  setShowListTimes: (v: boolean) => void;
   setShowLinked: (v: boolean) => void;
   loadPersonalCalendar: () => Promise<void>;
   setShowPersonal: (v: boolean) => void;
@@ -380,7 +385,7 @@ interface FiraState {
   setTaskTags: (taskId: UUID, tagIds: UUID[]) => void;
   addTask: (projectId: UUID, section: Section, title: string, assigneeId?: UUID | null, tagIds?: UUID[]) => UUID | null;
   /// Insert a sibling task immediately after `afterTaskId` in the same
-  /// project / section / assignee group. Empty title allowed (the inbox
+  /// project / section / assignee group. Empty title allowed (the list
   /// inline-edit flow seeds an empty row that the user types into).
   addTaskAfter: (afterTaskId: UUID, title?: string) => UUID | null;
   tickTask: (taskId: UUID) => void;
@@ -397,7 +402,7 @@ interface FiraState {
   /// Merge `sourceId` into `targetId`: source's title joins as a new
   /// subtask under target; source's own subtasks become flat subtasks
   /// of target; description / estimate / tags / time blocks are
-  /// merged per the inbox brief; source is deleted. No-op when ids
+  /// merged per the list brief; source is deleted. No-op when ids
   /// match or projects differ.
   mergeTaskInto: (sourceId: UUID, targetId: UUID) => void;
   addSubtask: (taskId: UUID, title: string, afterId?: UUID) => UUID | null;
@@ -664,16 +669,16 @@ function applyOpToState(s: FiraState, op: AnyOpKind): Partial<FiraState> {
     case 'tag.delete':
       // Server cascades task_tags via FK; mirror that here so any task
       // chip that referenced this tag disappears the moment the op lands.
-      // Also strip the deleted id from the active inbox filter so the
+      // Also strip the deleted id from the active list filter so the
       // toolbar doesn't render a chip for a tag that no longer exists.
       return {
         tags: s.tags.filter((t) => t.id !== op.tag_id),
         tasks: s.tasks.map((t) => t.tag_ids.includes(op.tag_id)
           ? { ...t, tag_ids: t.tag_ids.filter((id) => id !== op.tag_id) }
           : t),
-        inboxFilter: s.inboxFilter.tag_ids.includes(op.tag_id)
-          ? { ...s.inboxFilter, tag_ids: s.inboxFilter.tag_ids.filter((id) => id !== op.tag_id) }
-          : s.inboxFilter,
+        listFilter: s.listFilter.tag_ids.includes(op.tag_id)
+          ? { ...s.listFilter, tag_ids: s.listFilter.tag_ids.filter((id) => id !== op.tag_id) }
+          : s.listFilter,
       };
     case 'task.set_tags':
       return {
@@ -722,9 +727,9 @@ function applyOpToState(s: FiraState, op: AnyOpKind): Partial<FiraState> {
         );
         const { [op.project_id]: _drop, ...remainingFilter } = s.projectFilter;
         const nextProjects = s.projects.filter((p) => p.id !== op.project_id);
-        const inboxFilter = s.inboxFilter.project_id === op.project_id
-          ? { ...s.inboxFilter, project_id: nextProjects[0]?.id ?? null }
-          : s.inboxFilter;
+        const listFilter = s.listFilter.project_id === op.project_id
+          ? { ...s.listFilter, project_id: nextProjects[0]?.id ?? null }
+          : s.listFilter;
         return {
           projects: nextProjects,
           tasks: s.tasks.filter((t) => t.project_id !== op.project_id),
@@ -732,7 +737,7 @@ function applyOpToState(s: FiraState, op: AnyOpKind): Partial<FiraState> {
           sprints: s.sprints.filter((sp) => sp.project_id !== op.project_id),
           blocks: s.blocks.filter((b) => !droppedTaskIds.has(b.task_id)),
           projectFilter: remainingFilter,
-          inboxFilter,
+          listFilter,
           openTaskId: s.openTaskId && droppedTaskIds.has(s.openTaskId)
             ? null
             : s.openTaskId,
@@ -755,9 +760,9 @@ function applyOpToState(s: FiraState, op: AnyOpKind): Partial<FiraState> {
       );
       const { [op.project_id]: _drop, ...remainingFilter } = s.projectFilter;
       const nextProjects = s.projects.filter((p) => p.id !== op.project_id);
-      const inboxFilter = s.inboxFilter.project_id === op.project_id
-        ? { ...s.inboxFilter, project_id: nextProjects[0]?.id ?? null }
-        : s.inboxFilter;
+      const listFilter = s.listFilter.project_id === op.project_id
+        ? { ...s.listFilter, project_id: nextProjects[0]?.id ?? null }
+        : s.listFilter;
       return {
         projects: nextProjects,
         tasks: s.tasks.filter((t) => t.project_id !== op.project_id),
@@ -765,7 +770,7 @@ function applyOpToState(s: FiraState, op: AnyOpKind): Partial<FiraState> {
         sprints: s.sprints.filter((sp) => sp.project_id !== op.project_id),
         blocks: s.blocks.filter((b) => !droppedTaskIds.has(b.task_id)),
         projectFilter: remainingFilter,
-        inboxFilter,
+        listFilter,
         openTaskId: s.openTaskId && droppedTaskIds.has(s.openTaskId)
           ? null
           : s.openTaskId,
@@ -821,7 +826,7 @@ const reviver = (_k: string, v: unknown) => {
 
 /// Apply a fresh bootstrap response (real or playground) into the store.
 /// Called from both hydrate paths so the bootstrap → state derivation
-/// (projectFilter init, inboxFilter defaults, view selection by project
+/// (projectFilter init, listFilter defaults, view selection by project
 /// count, role lookup) lives in one place.
 function applyBootstrap(
   set: (partial: Partial<FiraState>) => void,
@@ -869,22 +874,22 @@ function applyBootstrap(
     selectedPersonIds: [me.id],
     activePersonId: me.id,
     projectFilter,
-    inboxFilter: {
-      ...get().inboxFilter,
+    listFilter: {
+      ...get().listFilter,
       project_id: firstProject,
       assignee_id: me.id,
       // Drop persisted tag ids that no longer exist so the toolbar
       // doesn't carry phantoms after a peer deleted a tag offline.
-      tag_ids: get().inboxFilter.tag_ids.filter(
+      tag_ids: get().listFilter.tag_ids.filter(
         (id) => (data.tags ?? []).some((t) => t.id === id),
       ),
     },
-    // Empty workspace lands on inbox: that view's empty state has the
+    // Empty workspace lands on list: that view's empty state has the
     // owner-aware "Create your first project" / "ask an admin" CTA.
     // Calendar can't usefully render with zero projects. Otherwise
     // respect the persisted view preference so a refresh doesn't yank
-    // the user out of inbox back into calendar.
-    view: data.projects.length === 0 ? 'inbox' : get().view,
+    // the user out of list back into calendar.
+    view: data.projects.length === 0 ? 'list' : get().view,
   });
 }
 
@@ -926,7 +931,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
   workBlocks: [],
   workTasks: [],
   showWork: false,
-  showInboxTimes: false,
+  showListTimes: false,
   linkModalOpen: false,
   accountModalOpen: false,
   accountBadge: null,
@@ -947,7 +952,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
   projectModal: null,
   toasts: [],
   projectFilter: {},
-  inboxFilter: {
+  listFilter: {
     project_id: null,
     epic_id: null,
     sprint_id: 'active',
@@ -1003,7 +1008,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
       const data: Bootstrap = await api.bootstrap();
       applyBootstrap(set, get, data, me, active, workspaces, false);
       // Restore view + project AFTER applyBootstrap so we override its
-      // defaults (which would otherwise force inbox view on empty
+      // defaults (which would otherwise force list view on empty
       // workspaces and reset project_id to the first project). Skip
       // if the saved project no longer exists in the bootstrapped
       // data, to avoid filtering on a phantom.
@@ -1012,10 +1017,10 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
           ? data.projects.some((p) => p.id === lastView.projectId)
           : false;
         set((s) => ({
-          view: data.projects.length === 0 ? 'inbox' : lastView.view,
-          inboxFilter: projectExists
-            ? { ...s.inboxFilter, project_id: lastView.projectId }
-            : s.inboxFilter,
+          view: data.projects.length === 0 ? 'list' : lastView.view,
+          listFilter: projectExists
+            ? { ...s.listFilter, project_id: lastView.projectId }
+            : s.listFilter,
         }));
       }
     } catch (e) {
@@ -1091,10 +1096,10 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
         appliedOpIds: new Map(),
         lastSyncedAt: Date.now(),
         // Mirror applyBootstrap's tag-id pruning so a peer-deleted tag
-        // can't leave a phantom in the inbox filter.
-        inboxFilter: {
-          ...s.inboxFilter,
-          tag_ids: s.inboxFilter.tag_ids.filter(
+        // can't leave a phantom in the list filter.
+        listFilter: {
+          ...s.listFilter,
+          tag_ids: s.listFilter.tag_ids.filter(
             (id) => (data.tags ?? []).some((t) => t.id === id),
           ),
         },
@@ -1534,7 +1539,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
 
   setView: (v, projectId) => set((s) => ({
     view: v,
-    inboxFilter: projectId ? { ...s.inboxFilter, project_id: projectId } : s.inboxFilter,
+    listFilter: projectId ? { ...s.listFilter, project_id: projectId } : s.listFilter,
   })),
   addPerson: (id) => set((s) => ({
     selectedPersonIds: s.selectedPersonIds.includes(id)
@@ -1577,7 +1582,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     }
     return { projectFilter: next };
   }),
-  setInboxFilter: (patch) => set((s) => ({ inboxFilter: { ...s.inboxFilter, ...patch } })),
+  setListFilter: (patch) => set((s) => ({ listFilter: { ...s.listFilter, ...patch } })),
   openTask: (id) => set({ openTaskId: id, creatingDraft: id ? null : get().creatingDraft }),
   openTaskByDeepLink: async (workspaceId, taskId) => {
     // Switch workspace first when the link points at one we're not in but
@@ -1603,17 +1608,17 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
       );
       return;
     }
-    // Align the inbox behind the modal to the task's project so closing the
+    // Align the list behind the modal to the task's project so closing the
     // modal leaves the user in the right context.
-    if (get().inboxFilter.project_id !== task.project_id
+    if (get().listFilter.project_id !== task.project_id
         && get().projects.some((p) => p.id === task.project_id)) {
-      get().setInboxFilter({ project_id: task.project_id });
+      get().setListFilter({ project_id: task.project_id });
     }
     get().openTask(taskId);
   },
   openCreate: (initial) => set((s) => ({
     creatingDraft: {
-      // No fallback to the active inbox filter or the first project: the
+      // No fallback to the active list filter or the first project: the
       // Draft button should make the caller pick explicitly. Easy
       // mis-targeting otherwise — you draft "from Atlas" and it lands in
       // Atlas before you even glance at the project field.
@@ -1767,7 +1772,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
   },
 
   setShowLinked: (v) => set({ showLinked: v }),
-  setShowInboxTimes: (v) => set({ showInboxTimes: v }),
+  setShowListTimes: (v) => set({ showListTimes: v }),
 
   loadPersonalCalendar: async () => {
     if (get().playgroundMode) return;
@@ -1920,7 +1925,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
       // applyRemoteOp) before this REST response resolves. If
       // applyRemoteOp wins, the project is already in `s.projects`;
       // appending again would mint a duplicate React key (same id, two
-      // entries) and the inbox renders blank until reload. Match the
+      // entries) and the list renders blank until reload. Match the
       // pattern every other create handler already uses.
       const exists = s.projects.some((p) => p.id === project.id);
       return {
@@ -1928,10 +1933,10 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
           ? s.projects
           : [...s.projects, project].sort((a, b) => a.title.localeCompare(b.title)),
         projectFilter: { ...s.projectFilter, [project.id]: true },
-        // Switch into the new project's inbox so the user lands
+        // Switch into the new project's list so the user lands
         // somewhere useful instead of an empty calendar.
-        view: 'inbox',
-        inboxFilter: { ...s.inboxFilter, project_id: project.id },
+        view: 'list',
+        listFilter: { ...s.listFilter, project_id: project.id },
         projectModal: null,
       };
     });
@@ -2024,7 +2029,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
       external_url: null,
       estimate_min: null,
       spent_min: 0,
-      // Auto-attach any tags the caller passes (inbox uses this to seed
+      // Auto-attach any tags the caller passes (list uses this to seed
       // a fresh task with the active filter so it doesn't immediately
       // disappear from the list it was just typed into). Defaults to
       // empty when omitted. Tag ids are validated server-side against
@@ -2314,9 +2319,9 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     tasks: s.tasks.map((t) => t.tag_ids.includes(tagId)
       ? { ...t, tag_ids: t.tag_ids.filter((id) => id !== tagId) }
       : t),
-    inboxFilter: s.inboxFilter.tag_ids.includes(tagId)
-      ? { ...s.inboxFilter, tag_ids: s.inboxFilter.tag_ids.filter((id) => id !== tagId) }
-      : s.inboxFilter,
+    listFilter: s.listFilter.tag_ids.includes(tagId)
+      ? { ...s.listFilter, tag_ids: s.listFilter.tag_ids.filter((id) => id !== tagId) }
+      : s.listFilter,
     ...pushOp(s, { kind: 'tag.delete', tag_id: tagId }),
   })),
 
@@ -2524,11 +2529,11 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     showLinked: s.showLinked,
     showPersonal: s.showPersonal,
     showWork: s.showWork,
-    // showInboxTimes intentionally omitted — the inbox should default to
+    // showListTimes intentionally omitted — the list should default to
     // hidden timings every session. Persisting "on" across reloads
     // surprised users who had toggled it in a one-off planning session
     // and didn't expect every later visit to show estimates.
-    inboxFilter: s.inboxFilter,
+    listFilter: s.listFilter,
     accountBadge: s.accountBadge,
     gcalConnected: s.gcalConnected,
     gcalEmail: s.gcalEmail,
@@ -2547,6 +2552,10 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     // workspace so the very first request after reload carries the
     // X-Workspace-Id header even before /me runs.
     if (state.activeWorkspaceId) setActiveWorkspaceId(state.activeWorkspaceId);
+    // Same rename fixup as loadLastView: a blob written by a pre-rename
+    // build persists view: 'inbox', which matches neither branch and
+    // leaves the sidebar with nothing highlighted.
+    if ((state.view as string) === 'inbox') state.view = 'list';
     // Heal tasks persisted before create-op normalization existed: an
     // applied remote `task.create` with a partial payload could leave a
     // task with no `sort_key`, which crashes every section sort. Cheap to
@@ -2559,7 +2568,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
 // short-circuits unless the snapshot fields actually moved — saves a
 // localStorage write on each keystroke / drag / sync tick. The point is
 // that a fast account switch reloads to wherever the user just was,
-// not to their personal-workspace inbox.
+// not to their personal-workspace list.
 //
 // Skipped in playground mode (no real account to key on) and while the
 // store is still empty (meId not set yet means hydrate hasn't landed).
@@ -2576,7 +2585,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
       meId: s.meId,
       ws: s.activeWorkspaceId,
       view: s.view,
-      project: s.inboxFilter.project_id,
+      project: s.listFilter.project_id,
     };
     if (
       next.meId === prev.meId
@@ -2588,7 +2597,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     saveLastView(s.meId, {
       workspaceId: s.activeWorkspaceId,
       view: s.view,
-      projectId: s.inboxFilter.project_id,
+      projectId: s.listFilter.project_id,
     });
   });
 }
