@@ -1144,9 +1144,11 @@
 
 .rail-task {
   padding: calc(7px * var(--density)) calc(var(--gutter-x) - var(--scrollbar-w)) calc(7px * var(--density)) var(--gutter-x);
-  /* One rule per task is a lot of hairline in a tall rail; the group
-   * heads above still carry the structure. Classic keeps them. */
-  border-bottom: 1px solid var(--rule-chrome);
+  /* Kept in both styles: a task with no estimate has no progress bar
+   * under it, so without this the rows have nothing separating them and
+   * run together — worst on the light paper. The group's own closing
+   * rule is what was making the rail look over-lined; that one is gone. */
+  border-bottom: 1px solid var(--rule);
   display: flex;
   align-items: flex-start;
   gap: 8px;
