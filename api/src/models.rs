@@ -11,8 +11,9 @@ pub struct User {
 }
 
 /// Per-user, account-scoped settings. Independent of workspace.
-/// `account_badge` (personal/work mode chip) and `theme` (UI color
-/// theme) are wired up today; future preferences land on this same row.
+/// `account_badge` (personal/work mode chip), `theme` (UI color theme)
+/// and `ui_style` (shape/density) are wired up today; future preferences
+/// land on this same row.
 #[derive(Debug, Serialize, sqlx::FromRow)]
 pub struct UserSettings {
     /// `personal` or `work`, or NULL when the user hasn't picked yet.
@@ -20,6 +21,9 @@ pub struct UserSettings {
     /// UI color theme. Always populated (DB column defaults to 'classic'),
     /// so unlike account_badge this is a plain String, not Option<String>.
     pub theme: String,
+    /// UI shape/density style — orthogonal to `theme`, which only picks
+    /// the palette. Always populated (DB column defaults to 'classic').
+    pub ui_style: String,
     /// Whether the user has connected their Google Calendar. Sourced from
     /// the presence of a row in `gcal_credentials` (not stored on the
     /// settings row itself), but reported here so the AccountSettings

@@ -1,8 +1,8 @@
 .calendar {
   display: grid;
   grid-template-columns: 1fr 320px;
-  height: calc(100vh - 44px);
-  height: calc(100dvh - 44px);
+  height: calc(100vh - var(--topbar-h));
+  height: calc(100dvh - var(--topbar-h));
   overflow: hidden;
 }
 /* Tablet portrait: collapse the rail's fixed column to give the calendar
@@ -23,12 +23,11 @@
   overflow: hidden;
 }
 .cal-toolbar {
-  height: 36px;
-  border-bottom: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule-chrome);
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 12px;
+  gap: var(--bar-gap);
+  padding: var(--bar-pad-t) var(--gutter-x) var(--bar-pad-b);
   font-family: var(--font-mono);
   font-size: var(--fs-sm);
 }
@@ -39,8 +38,11 @@
   display: inline-flex;
   align-items: stretch;
   border: 1px solid var(--rule-2);
+  border-radius: var(--r-sm);
+  /* Segments share collapsed borders; clipping rounds the pair's outer
+   * corners without giving each button its own radius. */
+  overflow: hidden;
   background: var(--paper);
-  margin-right: 8px;
 }
 .cal-toolbar .week-nav-btn {
   padding: 0 8px;
@@ -64,10 +66,16 @@
 }
 .cal-toolbar .user-picker {
   position: relative;
-  margin-left: 16px;
+  /* One extra gap marks the break between the week nav and the person
+   * cluster; the bar's own gap covers the rest. */
+  margin-left: var(--bar-gap);
   display: inline-flex;
   align-items: center;
   border: 1px solid var(--rule-2);
+  border-radius: var(--r-sm);
+  /* Pills share collapsed borders; clipping rounds the group's outer
+   * corners without breaking the single-seam look between them. */
+  overflow: hidden;
   background: var(--paper);
   height: 24px;
 }
@@ -135,7 +143,11 @@
   width: 220px;
   background: var(--paper);
   border: 1px solid var(--rule-3);
-  box-shadow: 0 6px 20px rgba(0,0,0,0.12);
+  border-radius: var(--r-md);
+  box-shadow: var(--e-float);
+  /* Rows paint edge-to-edge hover backgrounds, so clip them to the
+   * container's corners rather than rounding each one. */
+  overflow: hidden;
   z-index: 30;
   display: flex;
   flex-direction: column;
@@ -246,7 +258,7 @@
 .cal-totals-strip {
   display: none;
   padding: 6px 12px;
-  border-bottom: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule-chrome);
 }
 @media (max-width: 700px) {
   .cal-totals-inline { display: none; }
@@ -275,36 +287,41 @@
   min-width: 700px;
 }
 
+/* The day-header band and the app topbar have always been the same
+ * height, and the design reads better when they stay matched — so both
+ * take --topbar-h rather than each carrying its own literal. */
 .cal-headcorner {
   position: sticky; top: 0; left: 0;
   z-index: 5;
   background: var(--paper);
-  border-bottom: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule-chrome);
   border-right: 1px solid var(--rule);
-  height: 44px;
+  height: var(--topbar-h);
 }
 .cal-dayhead {
   position: sticky; top: 0;
   z-index: 4;
   background: var(--paper);
-  border-bottom: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule-chrome);
   border-right: 1px solid var(--rule);
-  height: 44px;
-  padding: 6px 10px;
+  height: var(--topbar-h);
+  padding: 6px calc(10px * var(--density));
   display: flex;
   flex-direction: column;
   justify-content: center;
 }
 .cal-dayhead .dow {
-  font-family: var(--font-mono);
+  font-family: var(--font-label);
+  /* Deliberately outside --label-size: the day band is chrome and was
+   * already outsized next to the grid it labels. */
   font-size: calc(10px * var(--fs-scale));
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  letter-spacing: calc(0.1em * var(--label-track));
+  text-transform: var(--label-case);
   color: var(--ink-3);
 }
 .cal-dayhead .dnum {
   font-family: var(--font-mono);
-  font-size: calc(16px * var(--fs-scale));
+  font-size: calc(13px * var(--fs-scale));
   font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
@@ -314,7 +331,7 @@
 }
 .cal-dayhead[data-today="true"] .dow,
 .cal-dayhead[data-today="true"] .dnum { color: var(--accent); }
-.cal-dayhead[data-weekend="true"] { background: var(--paper-2); }
+.cal-dayhead[data-weekend="true"] { background: var(--panel); }
 
 .cal-gutter { border-right: 1px solid var(--rule); position: relative; }
 .cal-gutter-hour {
@@ -339,7 +356,7 @@
   position: relative;
   background: var(--paper);
 }
-.cal-daycol[data-weekend="true"] { background: var(--paper-2); }
+.cal-daycol[data-weekend="true"] { background: var(--panel); }
 .cal-daycol[data-today="true"]::after {
   content: '';
   position: absolute; left: 0; top: 0; bottom: 0;
@@ -384,7 +401,8 @@
   border: 1px solid var(--proj-color, var(--ink));
   background: color-mix(in oklab, var(--proj-color, var(--ink)) 14%, var(--paper));
   border-left: 3px solid var(--proj-color, var(--ink));
-  border-radius: 3px;
+  border-radius: max(3px, var(--r-sm));
+  box-shadow: var(--e-rest);
   padding: 4px 6px 4px 7px;
   font-size: var(--fs-xs);
   color: var(--ink);
@@ -420,7 +438,7 @@
    * the now-visible 30%-mix fill a dimmed stripe read as barely there. */
   border-left-color: var(--proj-color, var(--ink));
 }
-.tblock:hover { box-shadow: 0 0 0 1px var(--proj-color, var(--ink)); z-index: 3; border-radius: 3px; }
+.tblock:hover { box-shadow: 0 0 0 1px var(--proj-color, var(--ink)); z-index: 3; border-radius: max(3px, var(--r-sm)); }
 :root[data-theme="dark"] .tblock:hover {
   box-shadow: 0 0 0 1px color-mix(in oklab, var(--proj-color, var(--ink)) 60%, var(--paper));
 }
@@ -539,10 +557,10 @@
   cursor: grabbing;
   opacity: 0.85;
   z-index: 10;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18), 0 0 0 1px var(--proj-color, var(--ink));
+  box-shadow: var(--e-drag), 0 0 0 1px var(--proj-color, var(--ink));
 }
 :root[data-theme="dark"] .tblock[data-dragging="true"] {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4), 0 0 0 1px color-mix(in oklab, var(--proj-color, var(--ink)) 60%, var(--paper));
+  box-shadow: var(--e-drag), 0 0 0 1px color-mix(in oklab, var(--proj-color, var(--ink)) 60%, var(--paper));
 }
 .tblock[data-active="true"] {
   box-shadow: 0 0 0 2px var(--accent);
@@ -614,12 +632,12 @@
  * menu). */
 .tblock[data-pressing="true"] {
   transform: scale(1.04);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2), 0 0 0 1px var(--proj-color, var(--ink));
+  box-shadow: var(--e-drag), 0 0 0 1px var(--proj-color, var(--ink));
   z-index: 6;
   transition: transform 100ms ease-out, box-shadow 100ms ease-out;
 }
 :root[data-theme="dark"] .tblock[data-pressing="true"] {
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4), 0 0 0 1px color-mix(in oklab, var(--proj-color, var(--ink)) 60%, var(--paper));
+  box-shadow: var(--e-drag), 0 0 0 1px color-mix(in oklab, var(--proj-color, var(--ink)) 60%, var(--paper));
 }
 .tb-action {
   /* Scale with --fs-scale so the row tracks user readability the same
@@ -635,7 +653,7 @@
   border: 1px solid var(--rule-2);
   color: var(--ink-3);
   cursor: pointer;
-  border-radius: 2px;
+  border-radius: max(2px, var(--r-xs));
 }
 /* Lucide renders an inline SVG with hard-coded width/height attributes;
  * this CSS rule wins because it's more specific, and lets the icon scale
@@ -672,8 +690,8 @@
   width: max-content;
   background: var(--paper);
   border: 1px solid var(--proj-color, var(--rule-2));
-  border-radius: 3px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.14);
+  border-radius: max(3px, var(--r-sm));
+  box-shadow: var(--e-pop);
   z-index: 12;
   /* Don't let the popup get re-targeted by the long-press / pointer-down
    * machinery — its buttons stop propagation themselves, but this is a
@@ -810,9 +828,9 @@
 .gcal-popover {
   background: var(--paper);
   border: 1px solid var(--rule-2);
-  border-radius: 6px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.12);
-  padding: 10px 12px;
+  border-radius: max(6px, var(--r-md));
+  box-shadow: var(--e-float);
+  padding: calc(10px * var(--density)) calc(12px * var(--density));
   font-size: calc(12px * var(--fs-scale));
   color: var(--ink);
   display: flex;
@@ -931,12 +949,12 @@
   display: inline-flex; align-items: center;
   height: 22px;
   padding: 0 10px;
-  margin-left: 4px;
   font-family: var(--font-mono);
   font-size: calc(10px * var(--fs-scale));
   letter-spacing: 0.04em;
   color: var(--ink-3);
   border: 1px solid var(--rule-2);
+  border-radius: var(--r-sm);
   background: var(--paper);
   cursor: pointer;
 }
@@ -951,17 +969,16 @@
 }
 
 .cal-rail {
-  border-left: 1px solid var(--rule);
+  border-left: 1px solid var(--rule-chrome);
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
 .rail-head {
-  height: 36px;
-  border-bottom: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule-chrome);
   display: flex; align-items: center;
-  gap: 6px;
-  padding: 0 8px;
+  gap: var(--bar-gap);
+  padding: var(--bar-pad-t) var(--gutter-x) var(--bar-pad-b);
 }
 .rail-new-btn {
   display: inline-flex; align-items: center; gap: 6px;
@@ -972,6 +989,7 @@
   color: var(--accent-fg);
   background: var(--accent);
   border: 1px solid var(--accent);
+  border-radius: var(--r-sm);
   cursor: pointer;
   letter-spacing: 0;
 }
@@ -987,13 +1005,14 @@
 .rail-scope-btn {
   height: 24px;
   padding: 0 10px;
-  font-family: var(--font-mono);
-  font-size: calc(10px * var(--fs-scale));
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-family: var(--font-label);
+  font-size: calc(10px * var(--fs-scale) * var(--label-size));
+  letter-spacing: calc(0.08em * var(--label-track));
+  text-transform: var(--label-case);
   color: var(--ink-3);
   background: var(--paper);
   border: 1px solid var(--rule-2);
+  border-radius: var(--r-sm);
   cursor: pointer;
 }
 .rail-scope-btn:hover { color: var(--ink); border-color: var(--rule-3); }
@@ -1012,6 +1031,7 @@
   color: var(--ink);
   background: var(--paper);
   border: 1px solid var(--rule-2);
+  border-radius: var(--r-sm);
   outline: 0;
 }
 .rail-search:focus { border-color: var(--focus-line); }
@@ -1034,21 +1054,20 @@
  * the rail is height-constrained and needs the projects panel to
  * either collapse out of the way or scroll along with the tasks. */
 .rail-projects {
-  background: var(--paper-2);
-  border-bottom: 2px solid var(--rule-2);
-  padding: 6px 12px 10px;
+  background: var(--panel);
+  padding: 6px calc(var(--gutter-x) - var(--scrollbar-w)) 10px var(--gutter-x);
 }
-.rail-projects[data-open="false"] { padding: 6px 12px; }
+.rail-projects[data-open="false"] { padding: 6px calc(var(--gutter-x) - var(--scrollbar-w)) 6px var(--gutter-x); }
 .rail-projects-head {
   display: flex;
   align-items: center;
   gap: 6px;
   width: 100%;
   padding: 4px 0;
-  font-family: var(--font-mono);
-  font-size: calc(10px * var(--fs-scale));
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  font-family: var(--font-label);
+  font-size: calc(10px * var(--fs-scale) * var(--label-size));
+  letter-spacing: calc(0.1em * var(--label-track));
+  text-transform: var(--label-case);
   color: var(--ink-3);
   background: transparent;
   border: 0;
@@ -1087,21 +1106,25 @@
 }
 
 .rail-body {
+  /* Reserved unconditionally so the rows below keep the same content
+   * edge as .rail-head above them whether or not the list overflows.
+   * The rows subtract --scrollbar-w from their right gutter to match. */
+  scrollbar-gutter: stable;
   flex: 1;
   overflow: auto;
 }
 .rail-group {
-  border-bottom: 1px solid var(--rule);
+  /* No closing rule — the next group's header rule is the boundary. */
 }
 .rail-group-head {
   display: flex; align-items: center; gap: 6px;
   width: 100%;
-  padding: 8px 12px 6px;
+  padding: calc(8px * var(--density)) calc(var(--gutter-x) - var(--scrollbar-w)) calc(6px * var(--density)) var(--gutter-x);
   font: inherit;
-  font-family: var(--font-mono);
-  font-size: calc(10px * var(--fs-scale));
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  font-family: var(--font-label);
+  font-size: calc(10px * var(--fs-scale) * var(--label-size));
+  letter-spacing: calc(0.1em * var(--label-track));
+  text-transform: var(--label-case);
   color: var(--ink-3);
   position: sticky; top: 0;
   background: var(--paper);
@@ -1114,17 +1137,16 @@
   z-index: 1;
 }
 .rail-group-head:hover { color: var(--ink-2); }
-.rail-group[data-collapsed="true"] {
-  border-bottom: 1px solid var(--rule);
-}
 .rail-group-head .swatch { width: 8px; height: 8px; }
 :root[data-theme="dark"] .rail-group-head .swatch { filter: saturate(0.7) brightness(0.85); }
 .rail-group-head .pname { color: var(--ink-2); font-weight: 500; }
 .rail-group-head .pcount { margin-left: auto; color: var(--ink-4); font-weight: 400; }
 
 .rail-task {
-  padding: 7px 12px 7px 16px;
-  border-bottom: 1px solid var(--rule);
+  padding: calc(7px * var(--density)) calc(var(--gutter-x) - var(--scrollbar-w)) calc(7px * var(--density)) var(--gutter-x);
+  /* One rule per task is a lot of hairline in a tall rail; the group
+   * heads above still carry the structure. Classic keeps them. */
+  border-bottom: 1px solid var(--rule-chrome);
   display: flex;
   align-items: flex-start;
   gap: 8px;
@@ -1146,7 +1168,8 @@
 .rail-task[data-pressing="true"] {
   background: var(--paper-3);
   transform: scale(1.03);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+  box-shadow: var(--e-drag);
+  border-radius: var(--r-sm);
   z-index: 4;
   transition: transform 100ms ease-out, box-shadow 100ms ease-out;
 }
@@ -1187,6 +1210,15 @@
   font-size: calc(10px * var(--fs-scale));
   color: var(--ink-3);
 }
+/* The external ticket ref reads as a label here, not as data to scan in
+ * a column — it sits inline under the title, one per row. Mono made it
+ * the loudest thing in the rail; the numeric time-left beside it keeps
+ * mono, where the tabular figures actually earn it. */
+.rail-task-ext {
+  font-family: var(--font-label);
+  letter-spacing: calc(0.01em * var(--label-track));
+  color: var(--ink-4);
+}
 .rail-task-meta .left {
   margin-left: auto;
   font-variant-numeric: tabular-nums;
@@ -1208,6 +1240,7 @@
   position: relative;
   height: 4px;
   background: var(--paper-3);
+  border-radius: var(--r-2xs);
   display: flex;
   overflow: hidden;
 }
@@ -1267,9 +1300,7 @@
   }
   /* Smaller spacing inside the toolbar so prev/today/next + totals fit
    * without horizontal scroll. */
-  .cal-toolbar { gap: 4px; padding: 0 8px; }
   /* Tighter rail head on phones so the new button + scope toggle + search
    * fit one row at 360px. */
-  .rail-head { padding: 0 6px; gap: 4px; }
   .rail-search { font-size: var(--fs-md); }
 }

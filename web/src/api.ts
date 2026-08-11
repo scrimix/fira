@@ -1,4 +1,4 @@
-import type { AccountSummary, Attachment, Bootstrap, LinkedCalendar, PersonalCalendar, Theme, User, UserLink, UUID, WorkCalendar, Workspace, WorkspaceInvite, WorkspaceRole } from './types';
+import type { AccountSummary, Attachment, Bootstrap, LinkedCalendar, PersonalCalendar, Theme, UiStyle, User, UserLink, UUID, WorkCalendar, Workspace, WorkspaceInvite, WorkspaceRole } from './types';
 
 // Always go through the Vite dev proxy at /api. The proxy target is
 // configured server-side in vite.config.ts (env: VITE_API_PROXY_TARGET),
@@ -234,7 +234,7 @@ export const api = {
     req<WorkspaceInvite>('POST', `/invites/${id}/decline`),
   /// Patch the caller's account-scoped settings. Pass an explicit `null`
   /// to clear a field; omit a field to leave it unchanged.
-  patchMySettings: (patch: { account_badge?: 'personal' | 'work' | null; theme?: Theme }) =>
+  patchMySettings: (patch: { account_badge?: 'personal' | 'work' | null; theme?: Theme; ui_style?: UiStyle }) =>
     req<import('./types').UserSettings>('PATCH', '/me/settings', patch),
   disconnectGcal: () => req<void>('POST', '/gcal/disconnect'),
   /// Validates the pasted email/token against Jira before the server

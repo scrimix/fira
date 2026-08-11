@@ -35,6 +35,23 @@
   --font-sans: 'Inter Tight', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
 
+  /* The editorial label idiom — mono, uppercase, wide tracking — used by
+   * every small label that names a thing (field labels, section
+   * headings, chips, pills, toggles). Classic keeps it; modern relaxes
+   * the same slots into the sans face so the UI reads as quieter
+   * chrome rather than a stamped-on caption. Genuinely tabular mono
+   * (clock times, durations, ticket ids, monogram avatars, code) does
+   * NOT go through these tokens and stays mono in both styles.
+   *
+   * --label-track is a multiplier rather than a value so each call site
+   * keeps its own hand-tuned tracking in classic and collapses to normal
+   * in modern; --label-size compensates for lowercase sans reading
+   * smaller than mono caps at the same pixel size. */
+  --font-label: var(--font-mono);
+  --label-case: uppercase;
+  --label-track: 1;
+  --label-size: 1;
+
   /* Single readability knob. 1.0 = original sizes; bump to taste, set back
    * to 1.0 to revert. Token consumers don't need to know — calc() applies
    * the scale once here. Free-floating `font-size: NNpx` declarations are
@@ -48,14 +65,181 @@
   --fs-xxl: calc(24px * var(--fs-scale));
 }
 
+/* ── Shape / density axis (data-style) ────────────────────────────────
+ * Orthogonal to the palette axis below: `data-theme` picks the *colors*,
+ * `data-style` picks the *shape* — corner radius, elevation and density.
+ * Every combination of the two is valid, so no rule anywhere branches on
+ * `[data-style]` directly; rules consume the tokens defined here and the
+ * one override block further down does all the switching.
+ *
+ * Classic (the bare `:root` values) is the original editorial-utilitarian
+ * look: square corners, hairline rules, tight rows, and elevation only
+ * where something genuinely floats above the page. */
+:root {
+  /* Corner radius by element size. All zero in classic, so every
+   * `border-radius: var(--r-*)` in the stylesheets is inert until the
+   * modern block below fills them in. */
+  --r-2xs: 0px;  /* 14px checkboxes — --r-xs rounds these into circles */
+  --r-xs: 0px;   /* chips, tag pills, swatches, tiny controls */
+  --r-sm: 0px;   /* buttons, inputs, avatars, segments */
+  --r-md: 0px;   /* rows, cards, time blocks, bordered lists */
+  --r-lg: 0px;   /* modals, popovers, panels */
+
+  /* Elevation. Shadows are built from a shared color + alpha multiplier
+   * so the dark palette can deepen all of them at once (see
+   * --shadow-a below) without every level being redeclared per theme.
+   * --e-rest is the one level that's genuinely absent in classic: the
+   * editorial look separates surfaces with rules, not shadows. */
+  --shadow-rgb: 24 24 27;
+  --shadow-a: 1;
+  --e-rest: none;
+  --e-pop: 0 4px 12px rgb(var(--shadow-rgb) / calc(7% * var(--shadow-a)));
+  --e-float: 0 6px 20px rgb(var(--shadow-rgb) / calc(12% * var(--shadow-a)));
+  --e-modal:
+    0 1px 0 rgb(var(--shadow-rgb) / calc(2% * var(--shadow-a))),
+    0 24px 60px -24px rgb(var(--shadow-rgb) / calc(18% * var(--shadow-a)));
+  /* Modals that already sit on a dimming backdrop. Classic leaves them
+   * flat — the scrim alone does the separating — where the login card
+   * (no scrim behind it) keeps --e-modal in both styles. */
+  --e-dialog: none;
+  /* Drag / long-press lift. Separate level because call sites pair it
+   * with a `0 0 0 1px <project color>` ring in the same declaration. */
+  --e-drag: 0 4px 12px rgb(var(--shadow-rgb) / calc(18% * var(--shadow-a)));
+
+  /* Structural chrome rules: the hairlines that divide the app's *panels*
+   * from one another — sidebar, topbar, toolbars, modal panes, section
+   * rules. Distinct from --rule itself, which also draws the separators
+   * *inside* a list (task rows, rail rows, member rows) and the calendar
+   * grid's hour / day lines; those carry real information and stay in
+   * both styles. Modern hides the chrome so panels read as floating
+   * surfaces. Kept as a transparent 1px border rather than `border: 0`
+   * so the box model — and every height calc built on it — is identical
+   * across styles. */
+  --rule-chrome: var(--rule);
+
+  /* Panel tint: the flat grey fill that marks a *subordinate panel* off
+   * from the main surface — the task modal's details pane (and the head
+   * band above it) and the rail's projects block. Modern drops it back
+   * to plain paper: with --rule-chrome hidden there's no outline to
+   * carry the transition, so a tinted panel meets the main surface at a
+   * bare, hard corner: the rail's projects block, and the weekend day
+   * columns, where a hard un-outlined edge down the middle of the grid
+   * costs more than the cue is worth. The task modal's side column is
+   * NOT this token — it reads as one properly outlined sidebar, so it
+   * keeps its tint in both styles. Interaction / state greys are also
+   * not this token and stay in both: row hover, done rows, the members
+   * editor's owner row. */
+  --panel: var(--paper-2);
+
+  /* Density multiplier. Padding / gaps that are allowed to breathe are
+   * written as calc(<classic px> * var(--density)) so the compact
+   * baseline still reads plainly in the source. */
+  --density: 1;
+  /* The topbar's height feeds the list + calendar viewport calcs, so it
+   * has to be a token for those to track a density change. */
+  --topbar-h: 44px;
+  /* Vertical padding of a chrome bar that stacks directly against
+   * another one (calendar toolbar, rail head): the bar takes its height
+   * from its controls plus these. Classic keeps them symmetric, which
+   * reproduces its original centred 36px bar exactly. Modern zeroes the
+   * top so the row butts straight up under the bar above and the two
+   * can't stack half-leading into a dead band. */
+  --bar-pad-t: 6px;
+  --bar-pad-b: 6px;
+  /* The app's single horizontal gutter. Used by the bar rows — topbar
+   * (breadcrumb), calendar toolbar, rail head — and by the rail's own
+   * rows, so everything stacked in a column shares one left and one
+   * right edge. These used to carry 16 / 12 / 8px of their own and
+   * visibly stepped in and out. */
+  --gutter-x: calc(16px * var(--density));
+  /* Width the styled scrollbar takes inside a scrolling panel; kept in
+   * sync with the ::-webkit-scrollbar rule near the bottom of this file.
+   * A scrolling panel whose content edge has to stay level with a
+   * non-scrolling sibling (the rail body vs. the rail head) reserves it
+   * unconditionally with `scrollbar-gutter: stable` and subtracts it
+   * from its rows' right gutter — otherwise the edge jumps sideways the
+   * moment the list grows past the fold. */
+  --scrollbar-w: 10px;
+  /* Spacing between controls inside any bar row — topbar, calendar
+   * toolbar, rail head. One token so a pair of buttons reads the same
+   * distance apart wherever it sits: the topbar's chips used to stack
+   * their own margins on top of the bar's gap and ended up ~2-3x
+   * further apart than the rail head's. Chips that want to sit flush
+   * against a neighbour cancel it explicitly (see .playground-pill). */
+  --bar-gap: calc(8px * var(--density));
+  /* Task-modal details column. Lives here rather than on .modal so the
+   * style override below actually wins — a custom property set on the
+   * element itself beats an inherited one. Modern's larger labels wrap
+   * names like "Maya Chen (you)" at 220px, which left the column looking
+   * starved beside a wide empty channel, so it gets more room there. */
+  --side-w: 220px;
+}
+
+/* Modern — same layout and palette, softer surface treatment: rounded
+ * corners, real (but low-contrast) elevation, and ~30% more breathing
+ * room everywhere the density token is applied. */
+:root[data-style="modern"] {
+  --r-2xs: 3px;
+  --r-xs: 5px;
+  --r-sm: 7px;
+  --r-md: 10px;
+  --r-lg: 16px;
+
+  /* Two-part shadows: a tight contact shadow plus a wide, mostly
+   * transparent spread. The negative spread on the wide half keeps it
+   * from haloing straight out the sides. */
+  --e-rest:
+    0 1px 2px rgb(var(--shadow-rgb) / calc(4% * var(--shadow-a))),
+    0 4px 12px -6px rgb(var(--shadow-rgb) / calc(10% * var(--shadow-a)));
+  --e-pop:
+    0 2px 6px rgb(var(--shadow-rgb) / calc(5% * var(--shadow-a))),
+    0 10px 28px -8px rgb(var(--shadow-rgb) / calc(14% * var(--shadow-a)));
+  --e-float:
+    0 4px 10px rgb(var(--shadow-rgb) / calc(6% * var(--shadow-a))),
+    0 16px 40px -12px rgb(var(--shadow-rgb) / calc(20% * var(--shadow-a)));
+  --e-modal:
+    0 2px 8px rgb(var(--shadow-rgb) / calc(6% * var(--shadow-a))),
+    0 32px 80px -24px rgb(var(--shadow-rgb) / calc(28% * var(--shadow-a)));
+  --e-dialog: var(--e-modal);
+  --e-drag: 0 8px 24px rgb(var(--shadow-rgb) / calc(22% * var(--shadow-a)));
+
+  --rule-chrome: transparent;
+  --panel: var(--paper);
+  --side-w: 248px;
+  /* The topbar and the control row sit flush against each other, so
+   * growing both just stacks two lots of half-leading into a dead band
+   * — which is what "twice the padding" looked like. Room goes into the
+   * control row, which holds actual controls and is what reads as the
+   * header's padding; the breadcrumb bar holds one line of small text
+   * and gets slightly snugger to pay for it. */
+  --topbar-h: 48px;
+  --bar-pad-t: 0px;
+  --bar-pad-b: 22px;
+  --font-label: var(--font-sans);
+  /* Not `none`: several controls pass their label lowercase ('all',
+   * 'me', 'or', 'and', 'classic') because classic's uppercase rule made
+   * the source case irrelevant. Capitalize keeps those reading as
+   * labels instead of stray lowercase words. */
+  --label-case: capitalize;
+  --label-track: 0;
+  --label-size: 1.25;
+  --density: 1.45;
+}
+
 /* Dark theme — same editorial-utilitarian structure as :root (classic),
  * cyan "now" accent kept but brightened so it still pops against a dark
- * paper. Only color tokens are overridden; typography/spacing tokens
- * are theme-agnostic and inherited from :root. Extending to a future
- * theme (e.g. "modern-dark") is: add another
- * `:root[data-theme="modern-dark"] { ... }` block below this one — no
- * other file needs to change. */
+ * paper. Only color tokens are overridden; typography, radius and
+ * density tokens belong to the orthogonal data-style axis above and are
+ * inherited untouched. Extending with another palette is: add another
+ * `:root[data-theme="..."] { ... }` block below this one — no other file
+ * needs to change. */
 :root[data-theme="dark"] {
+  /* Light-mode shadow alphas vanish against dark paper. Switch to pure
+   * black and roughly double the strength so elevation still reads —
+   * this rescales every --e-* level at once, in both styles. */
+  --shadow-rgb: 0 0 0;
+  --shadow-a: 2.4;
+
   /* Dark grey, not near-black — a true near-black paper made every
    * saturated project/tag/accent color read as neon by simultaneous
    * contrast, and made the muted ink tiers (below) nearly invisible. */
@@ -132,23 +316,24 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
 }
 
 .sidebar {
-  border-right: 1px solid var(--rule);
+  border-right: 1px solid var(--rule-chrome);
   background: var(--paper);
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 14px 0 8px;
-  gap: 10px;
+  padding: calc(14px * var(--density)) 0 calc(8px * var(--density));
+  gap: calc(10px * var(--density));
 }
 .sidebar .brand {
   width: 22px; height: 22px;
   display: block;
-  border-radius: 5px;
+  border-radius: max(5px, var(--r-sm));
   margin-bottom: 4px;
 }
 .sidebar .nav-btn {
   width: 36px; height: 36px;
   display: grid; place-items: center;
+  border-radius: var(--r-sm);
   color: var(--ink-3);
   font-family: var(--font-mono);
   font-size: calc(11px * var(--fs-scale));
@@ -193,6 +378,7 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
 .sidebar .spacer { flex: 1; }
 .sidebar .me {
   width: 32px; height: 32px;
+  border-radius: var(--r-sm);
   background: var(--ink); color: var(--paper);
   font-family: var(--font-mono);
   font-size: calc(11px * var(--fs-scale)); font-weight: 600;
@@ -200,18 +386,18 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
 }
 
 .topbar {
-  height: 44px;
-  border-bottom: 1px solid var(--rule);
+  height: var(--topbar-h);
+  border-bottom: 1px solid var(--rule-chrome);
   display: flex; align-items: center;
-  padding: 0 16px;
-  gap: 12px;
+  padding: 0 var(--gutter-x);
+  gap: var(--bar-gap);
   background: var(--paper);
 }
 .topbar .crumb {
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-family: var(--font-label);
+  font-size: calc(var(--fs-xs) * var(--label-size));
+  letter-spacing: calc(0.08em * var(--label-track));
+  text-transform: var(--label-case);
   color: var(--ink-3);
 }
 .topbar .crumb-sep { color: var(--ink-4); }
@@ -232,7 +418,7 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   letter-spacing: 0.04em;
   display: grid; place-items: center;
   border: 1px solid var(--ink);
-  margin-left: 4px;
+  border-radius: var(--r-xs);
 }
 .topbar-me-btn { padding: 0; cursor: pointer; }
 .topbar-me-btn:hover { background: var(--ink-2); border-color: var(--ink-2); }
@@ -244,6 +430,11 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   gap: 0;
 }
 .topbar-account .topbar-me { margin-left: 0; }
+/* Badge + avatar are a single flush chip, so only the pair's *outer*
+ * corners round — otherwise the seam between them turns into a pinched
+ * hourglass under a modern radius. */
+.topbar-account .topbar-badge { border-radius: var(--r-xs) 0 0 var(--r-xs); }
+.topbar-account .topbar-badge + .topbar-me { border-radius: 0 var(--r-xs) var(--r-xs) 0; }
 /* Compact mode badge — sits flush against the avatar (no seam) and
  * carries a saturated mode color so it reads at a glance. Personal =
  * accent solid; work = warm amber solid. */
@@ -278,6 +469,7 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
 .topbar-menu {
   width: 32px; height: 32px;
   display: grid; place-items: center;
+  border-radius: var(--r-sm);
   color: var(--ink-2);
   margin-left: -4px;
   flex: none;
@@ -300,18 +492,20 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   font-size: calc(10px * var(--fs-scale));
   color: var(--ink-3);
   border: 1px solid var(--rule-2);
+  border-radius: var(--r-xs);
   background: var(--paper);
 }
 .chip {
   display: inline-flex; align-items: center; gap: 4px;
-  height: 18px;
-  padding: 0 6px;
-  font-family: var(--font-mono);
-  font-size: calc(10px * var(--fs-scale));
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  height: calc(18px * var(--density));
+  padding: 0 calc(6px * var(--density));
+  font-family: var(--font-label);
+  font-size: calc(10px * var(--fs-scale) * var(--label-size));
+  letter-spacing: calc(0.04em * var(--label-track));
+  text-transform: var(--label-case);
   color: var(--ink-2);
   border: 1px solid var(--rule-2);
+  border-radius: var(--r-xs);
   background: var(--paper);
 }
 .chip[data-tone="now"] {
@@ -322,18 +516,20 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
 .chip[data-tone="done"] { color: var(--done); border-color: color-mix(in srgb, var(--done) 35%, var(--paper)); }
 
 .btn {
-  height: 26px;
-  padding: 0 10px;
+  height: calc(26px * var(--density));
+  padding: 0 calc(10px * var(--density));
   font-size: var(--fs-sm);
   border: 1px solid var(--rule-2);
+  border-radius: var(--r-sm);
   background: var(--paper);
   color: var(--ink);
   display: inline-flex; align-items: center; gap: 6px;
 }
 .btn:hover { background: var(--paper-3); }
 .icon-btn {
-  width: 26px; height: 26px;
+  width: calc(26px * var(--density)); height: calc(26px * var(--density));
   display: grid; place-items: center;
+  border-radius: var(--r-sm);
   color: var(--ink-3);
 }
 .icon-btn:hover { color: var(--ink); background: var(--paper-3); }
@@ -343,6 +539,7 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   display: grid; place-items: center;
   background: var(--paper-2);
   border: 1px solid var(--rule-2);
+  border-radius: var(--r-xs);
   color: var(--ink-2);
   font-family: var(--font-mono);
   font-size: calc(9px * var(--fs-scale)); font-weight: 600;
@@ -354,7 +551,7 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
 /* Small inline project-color indicator, used wherever a task modal
  * shows the owning project without the full icon (modal head, project
  * field, attachment preview head). Background is set inline per-project. */
-.proj-dot { width: 10px; height: 10px; display: inline-block; flex-shrink: 0; }
+.proj-dot { width: 10px; height: 10px; display: inline-block; flex-shrink: 0; border-radius: var(--r-xs); }
 :root[data-theme="dark"] .proj-dot { filter: saturate(0.7) brightness(0.86); }
 
 .login-shell {
@@ -368,10 +565,11 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
 .login-card {
   background: var(--paper);
   border: 1px solid var(--rule);
+  border-radius: var(--r-lg);
   padding: 44px 56px 40px;
   width: 380px;
   display: flex; flex-direction: column; align-items: flex-start;
-  box-shadow: 0 1px 0 rgba(24, 24, 27, 0.02), 0 24px 60px -24px rgba(24, 24, 27, 0.18);
+  box-shadow: var(--e-modal);
 }
 .login-head {
   display: flex; align-items: center; gap: 14px;
@@ -398,6 +596,7 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   height: 40px;
   padding: 0 20px;
   border: 1px solid var(--rule-2);
+  border-radius: var(--r-sm);
   background: var(--paper);
   color: var(--ink);
   font-size: var(--fs-md);
@@ -413,6 +612,7 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   height: 36px;
   padding: 0 16px;
   border: 1px dashed var(--rule-2);
+  border-radius: var(--r-sm);
   background: transparent;
   color: var(--ink-2);
   font-family: var(--font-mono);
@@ -441,6 +641,7 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   height: 36px;
   padding: 0 16px;
   border: 1px dashed var(--rule-2);
+  border-radius: var(--r-sm);
   background: transparent;
   color: var(--ink-2);
   font-family: var(--font-mono);
@@ -476,15 +677,16 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   width: 24px; height: 24px;
   display: grid; place-items: center;
   border: 1px solid currentColor;
+  border-radius: var(--r-xs);
   font-size: calc(14px * var(--fs-scale));
   flex: none;
 }
-.np-body { padding: 20px 28px 24px; display: flex; flex-direction: column; overflow: auto; }
+.np-body { padding: calc(20px * var(--density)) calc(28px * var(--density)) calc(24px * var(--density)); display: flex; flex-direction: column; overflow: auto; }
 .np-label {
-  font-family: var(--font-mono);
-  font-size: calc(10px * var(--fs-scale));
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  font-family: var(--font-label);
+  font-size: calc(10px * var(--fs-scale) * var(--label-size));
+  letter-spacing: calc(0.1em * var(--label-track));
+  text-transform: var(--label-case);
   color: var(--ink-3);
   margin: 18px 0 8px;
   font-weight: 500;
@@ -494,8 +696,9 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   width: 100%;
   /* Drop the fixed height so vertical padding is what sets the size —
      keeps the cap-height comfortably away from the border on every font. */
-  padding: 9px 12px;
+  padding: calc(9px * var(--density)) 12px;
   border: 1px solid var(--rule-2);
+  border-radius: var(--r-sm);
   background: var(--paper);
   color: var(--ink);
   font-size: var(--fs-md);
@@ -514,6 +717,7 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   height: 38px;
   display: grid; place-items: center;
   border: 1px solid var(--rule-2);
+  border-radius: var(--r-sm);
   background: var(--paper);
   font-size: calc(16px * var(--fs-scale));
   color: var(--ink-2);
@@ -539,6 +743,7 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   height: 38px;
   padding: 4px;
   border: 1px solid var(--rule-2);
+  border-radius: var(--r-sm);
   background: var(--paper);
   cursor: pointer;
   display: grid; place-items: stretch;
@@ -549,6 +754,7 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   display: block;
   background: var(--swatch);
   width: 100%; height: 100%;
+  border-radius: max(0px, calc(var(--r-sm) - 4px));
 }
 .np-color[data-active="true"] {
   border-color: var(--ink);
@@ -574,6 +780,7 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   margin-top: 14px;
   padding: 8px 10px;
   border: 1px solid #E8B6B6;
+  border-radius: var(--r-sm);
   background: #FBEFEF;
   color: var(--danger);
   font-size: var(--fs-sm);
@@ -587,6 +794,7 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   margin: 0 0 10px;
   padding: 8px 10px;
   border: 1px solid #E5D2A8;
+  border-radius: var(--r-sm);
   background: #FAF3DF;
   color: #6B5A2B;
   font-size: var(--fs-sm);
@@ -597,6 +805,7 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   display: inline-block;
   margin-right: 6px;
   padding: 0 5px;
+  border-radius: var(--r-xs);
   background: #6B5A2B;
   color: #FAF3DF;
   font-weight: 600;
@@ -628,6 +837,10 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   display: flex;
   flex-direction: column;
   border: 1px solid var(--rule-2);
+  border-radius: var(--r-md);
+  /* Rows and the inline picker run edge to edge, so they need clipping
+   * to the container's radius rather than radii of their own. */
+  overflow: hidden;
   background: var(--paper);
 }
 .np-member {
@@ -655,10 +868,10 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
 .np-member-owner { background: var(--paper-2); }
 .np-member-name { font-weight: 400; }
 .np-member-tag {
-  font-family: var(--font-mono);
-  font-size: calc(9px * var(--fs-scale));
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-family: var(--font-label);
+  font-size: calc(9px * var(--fs-scale) * var(--label-size));
+  letter-spacing: calc(0.08em * var(--label-track));
+  text-transform: var(--label-case);
   color: var(--ink-4);
 }
 .np-member-x {
@@ -672,13 +885,14 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
 }
 .np-member-x:hover { color: var(--danger); }
 .np-member-confirm {
-  font-family: var(--font-mono);
-  font-size: calc(10px * var(--fs-scale));
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-family: var(--font-label);
+  font-size: calc(10px * var(--fs-scale) * var(--label-size));
+  letter-spacing: calc(0.08em * var(--label-track));
+  text-transform: var(--label-case);
   background: var(--danger);
   color: var(--paper);
   border: 1px solid var(--danger);
+  border-radius: var(--r-xs);
   padding: 3px 8px;
   cursor: pointer;
 }
@@ -739,20 +953,26 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  height: 18px;
-  padding: 0 6px;
+  height: calc(18px * var(--density));
+  padding: 0 calc(6px * var(--density));
   background: transparent;
   /* Faint, desaturated outline derived from the tag's hex. color-mix()
    * blends 35% of the brand color into 65% paper, dropping saturation
    * without picking a second hardcoded color. Falls back to rule-2 if
    * --tag-color isn't set. */
   border: 1px solid color-mix(in srgb, var(--tag-color, var(--rule-2)) 35%, var(--paper));
-  font-family: var(--font-mono);
-  font-size: calc(10px * var(--fs-scale));
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  border-radius: var(--r-xs);
+  font-family: var(--font-label);
+  font-size: calc(10px * var(--fs-scale) * var(--label-size));
+  letter-spacing: calc(0.04em * var(--label-track));
+  text-transform: var(--label-case);
   color: var(--ink-2);
-  line-height: 1.2;
+  /* No explicit line-height: at 1.2 the line box was shorter than the
+   * font's own ascent+descent, so the half-leading fell unevenly around
+   * the baseline and the flex centring left ~1.5px more space under the
+   * text than over it — visible at chip size. Letting the line box match
+   * the font's metrics centres the glyphs properly. The chip's height is
+   * fixed anyway, so this changes nothing else. */
 }
 /* Tag hexes are deep, muted "700-level" colors chosen to read against
  * white paper — mixing more of the *same dark hue* into an already-dark
@@ -779,7 +999,7 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
 }
 .tag-chip-x {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 14px; height: 14px;
+  width: calc(14px * var(--density)); height: calc(14px * var(--density));
   background: transparent;
   border: 0;
   color: var(--ink-4);
@@ -793,9 +1013,10 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px; height: 18px;
+  width: calc(18px * var(--density)); height: calc(18px * var(--density));
   background: var(--paper);
   border: 1px dashed var(--rule-2);
+  border-radius: var(--r-xs);
   color: var(--ink-3);
   cursor: pointer;
   padding: 0;
@@ -811,7 +1032,8 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   z-index: 1300;
   background: var(--paper);
   border: 1px solid var(--rule-2);
-  box-shadow: 0 4px 16px rgb(0 0 0 / 0.08);
+  border-radius: var(--r-lg);
+  box-shadow: var(--e-pop);
   display: flex;
   flex-direction: column;
 }
@@ -846,12 +1068,13 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   height: 22px;
   background: transparent;
   border: 1px solid color-mix(in srgb, var(--tag-color, var(--rule-2)) 35%, var(--paper));
+  border-radius: var(--r-xs);
   text-align: left;
   /* Chip-style typography: mono caps, same size knob as `.tag-chip`. */
-  font-family: var(--font-mono);
-  font-size: calc(10px * var(--fs-scale));
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-family: var(--font-label);
+  font-size: calc(10px * var(--fs-scale) * var(--label-size));
+  letter-spacing: calc(0.04em * var(--label-track));
+  text-transform: var(--label-case);
   color: var(--ink-2);
   cursor: pointer;
 }
@@ -913,10 +1136,10 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
 }
 .np-tag-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .np-tag-count {
-  font-family: var(--font-mono);
-  font-size: calc(9px * var(--fs-scale));
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-family: var(--font-label);
+  font-size: calc(9px * var(--fs-scale) * var(--label-size));
+  letter-spacing: calc(0.08em * var(--label-track));
+  text-transform: var(--label-case);
   color: var(--ink-4);
   flex: none;
 }
@@ -928,6 +1151,7 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   font-size: var(--fs-sm);
   padding: 4px 8px;
   border: 1px solid var(--rule);
+  border-radius: var(--r-xs);
   background: var(--paper);
   color: var(--ink);
 }
@@ -940,6 +1164,7 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
 .np-tag-swatch {
   width: 16px; height: 16px;
   border: 1px solid rgb(0 0 0 / 0.12);
+  border-radius: var(--r-xs);
   cursor: pointer;
   padding: 0;
 }
@@ -949,13 +1174,14 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
 }
 .np-tag-cancel,
 .np-tag-save {
-  font-family: var(--font-mono);
-  font-size: calc(10px * var(--fs-scale));
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-family: var(--font-label);
+  font-size: calc(10px * var(--fs-scale) * var(--label-size));
+  letter-spacing: calc(0.08em * var(--label-track));
+  text-transform: var(--label-case);
   padding: 3px 8px;
   cursor: pointer;
   border: 1px solid var(--rule);
+  border-radius: var(--r-xs);
   background: var(--paper);
   color: var(--ink);
 }
@@ -979,6 +1205,7 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   align-items: center;
   gap: 8px;
   border: 1px solid var(--rule-2);
+  border-radius: var(--r-sm);
   background: var(--paper);
   padding: 4px 6px 4px 10px;
 }
@@ -1002,10 +1229,10 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   padding: 8px 0 0;
 }
 .np-invites-head {
-  font-family: var(--font-mono);
-  font-size: calc(10px * var(--fs-scale));
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-family: var(--font-label);
+  font-size: calc(10px * var(--fs-scale) * var(--label-size));
+  letter-spacing: calc(0.08em * var(--label-track));
+  text-transform: var(--label-case);
   color: var(--ink-3);
   margin-bottom: 4px;
 }
@@ -1016,6 +1243,7 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   gap: 10px;
   padding: 6px 8px;
   border: 1px solid var(--rule);
+  border-radius: var(--r-sm);
   background: var(--paper);
   font-size: var(--fs-sm);
 }
@@ -1033,6 +1261,7 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   width: 22px; height: 22px;
   display: inline-flex; align-items: center; justify-content: center;
   border: 1px solid var(--rule-2);
+  border-radius: var(--r-xs);
   background: var(--paper);
   color: var(--ink-3);
   cursor: pointer;
@@ -1059,12 +1288,13 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   display: inline-flex; align-items: center;
   height: 22px;
   padding: 0 8px;
-  font-family: var(--font-mono);
-  font-size: calc(10px * var(--fs-scale));
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-family: var(--font-label);
+  font-size: calc(10px * var(--fs-scale) * var(--label-size));
+  letter-spacing: calc(0.06em * var(--label-track));
+  text-transform: var(--label-case);
   color: var(--ink-3);
   border: 1px solid var(--rule-2);
+  border-radius: var(--r-xs);
   background: var(--paper);
   /* Topbar gets cramped on phones; without nowrap "Log out" splits
    * into two lines and breaks the row's height. */
@@ -1090,7 +1320,6 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   gap: 5px;
   height: 22px;
   padding: 0 4px;
-  margin-right: 6px;
   color: var(--ink-3);
   border: none;
   background: transparent;
@@ -1154,7 +1383,7 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
 .account-identity {
   display: flex; align-items: center; gap: 12px;
   padding-bottom: 10px;
-  border-bottom: 1px dashed var(--rule-2);
+  border-bottom: 1px dashed var(--rule-chrome);
 }
 .account-identity-ava {
   width: 32px; height: 32px;
@@ -1177,10 +1406,10 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
 .account-section { display: flex; flex-direction: column; gap: 8px; }
 .account-section-h {
   margin: 0;
-  font-family: var(--font-mono);
-  font-size: calc(10px * var(--fs-scale));
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-family: var(--font-label);
+  font-size: calc(10px * var(--fs-scale) * var(--label-size));
+  letter-spacing: calc(0.08em * var(--label-track));
+  text-transform: var(--label-case);
   color: var(--ink-3);
   font-weight: 500;
 }
@@ -1224,6 +1453,7 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   padding: 4px 8px;
   background: var(--paper);
   border: 1px solid var(--rule-2);
+  border-radius: var(--r-sm);
   cursor: pointer;
   flex: none;
 }
@@ -1238,6 +1468,7 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   font-size: calc(9px * var(--fs-scale)); font-weight: 600;
   letter-spacing: 0.04em;
   border: 1px solid var(--ink);
+  border-radius: var(--r-xs);
 }
 .account-stub-btn {
   display: inline-flex; align-items: center; gap: 6px;
@@ -1253,7 +1484,7 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
 .account-actions {
   margin-top: 4px;
   padding-top: 12px;
-  border-top: 1px dashed var(--rule-2);
+  border-top: 1px dashed var(--rule-chrome);
   justify-content: flex-end;
   gap: 8px;
 }
@@ -1286,11 +1517,11 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   display: inline-flex; align-items: center; gap: 6px;
   height: 22px;
   padding: 0 8px;
-  margin-right: 8px;
   font-family: var(--font-mono);
   font-size: calc(10px * var(--fs-scale));
   letter-spacing: 0.04em;
   border: 1px solid var(--rule-2);
+  border-radius: var(--r-xs);
   background: var(--paper);
   color: var(--ink-3);
   cursor: pointer;
@@ -1340,8 +1571,8 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   display: inline-flex; align-items: center; justify-content: center;
   height: 22px;
   padding: 0 8px;
-  margin-right: 8px;
   border: 1px solid var(--rule-2);
+  border-radius: var(--r-xs);
   background: var(--paper);
   color: var(--ink-3);
   cursor: pointer;
@@ -1361,20 +1592,21 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   display: inline-flex; align-items: center;
   height: 22px;
   padding: 0 8px;
-  font-family: var(--font-mono);
-  font-size: calc(10px * var(--fs-scale));
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-family: var(--font-label);
+  font-size: calc(10px * var(--fs-scale) * var(--label-size));
+  letter-spacing: calc(0.04em * var(--label-track));
+  text-transform: var(--label-case);
   border: 1px solid var(--rule-2);
+  border-radius: var(--r-xs) 0 0 var(--r-xs);
   background: var(--paper-3);
   color: var(--ink-2);
   /* Pull the next pill's left edge over our right border by 1px so the
    * seam is a single line, not two stacked borders or a sliver of
    * background. Keep our own border-right intact (was missing before,
    * which made the right edge look invisible against the sync-pill). */
-  margin-right: -1px;
+  margin-right: calc(-1 * var(--bar-gap) - 1px);
 }
-.playground-pill + .sync-pill-wrap .sync-pill { margin-left: 0; }
+.playground-pill + .sync-pill-wrap .sync-pill { margin-left: 0; border-radius: 0 var(--r-xs) var(--r-xs) 0; }
 
 /* Popover that lists failed ops with per-op Retry / Discard. Sits to the
    right of the pill and aligns to its top so it stays readable when the
@@ -1388,7 +1620,8 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   max-width: 360px;
   background: var(--paper);
   border: 1px solid var(--rule-2);
-  box-shadow: 0 6px 16px rgba(0,0,0,0.08);
+  border-radius: var(--r-md);
+  box-shadow: var(--e-pop);
   font-family: var(--font-mono);
   font-size: calc(11px * var(--fs-scale));
   color: var(--ink-2);
@@ -1414,6 +1647,7 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   font-size: calc(10px * var(--fs-scale));
   letter-spacing: 0.04em;
   border: 1px solid var(--rule-2);
+  border-radius: var(--r-xs);
   background: var(--paper);
   color: var(--ink-2);
   cursor: pointer;
@@ -1446,6 +1680,7 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   width: 22px; height: 22px;
   display: grid; place-items: center;
   border: 1px solid var(--rule-2);
+  border-radius: var(--r-xs);
   background: var(--paper);
   color: var(--ink-3);
   cursor: pointer;
@@ -1462,7 +1697,7 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--rule-2); }
+::-webkit-scrollbar-thumb { background: var(--rule-2); border-radius: var(--r-xs); }
 ::-webkit-scrollbar-thumb:hover { background: var(--rule-3); }
 
 /* Workspace switcher — sits in the breadcrumb area of the TopBar, between
@@ -1483,6 +1718,7 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   color: var(--ink-2);
   padding: 2px 4px;
   border: none;
+  border-radius: var(--r-xs);
   background: transparent;
   cursor: pointer;
 }
@@ -1501,17 +1737,18 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   z-index: 200;
   background: var(--paper);
   border: 1px solid var(--rule-2);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+  border-radius: var(--r-md);
+  box-shadow: var(--e-pop);
   display: flex;
   flex-direction: column;
   padding: 4px 0;
 }
 .ws-menu-section {
   padding: 4px 10px;
-  font-family: var(--font-mono);
-  font-size: calc(10px * var(--fs-scale));
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-family: var(--font-label);
+  font-size: calc(10px * var(--fs-scale) * var(--label-size));
+  letter-spacing: calc(0.08em * var(--label-track));
+  text-transform: var(--label-case);
   color: var(--ink-4);
 }
 .ws-menu-row {
@@ -1536,10 +1773,10 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   white-space: nowrap;
 }
 .ws-menu-tag {
-  font-family: var(--font-mono);
-  font-size: calc(9px * var(--fs-scale));
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-family: var(--font-label);
+  font-size: calc(9px * var(--fs-scale) * var(--label-size));
+  letter-spacing: calc(0.06em * var(--label-track));
+  text-transform: var(--label-case);
   color: var(--ink-4);
   border: 1px solid var(--rule-2);
   padding: 0 4px;
@@ -1577,6 +1814,7 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   align-items: center;
   gap: 4px;
   border: 1px solid var(--rule-2);
+  border-radius: var(--r-sm);
   background: var(--paper);
   color: var(--ink-2);
   padding: 0 6px 0 8px;
@@ -1609,7 +1847,8 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   z-index: 1200;
   background: var(--paper);
   border: 1px solid var(--rule-2);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+  border-radius: var(--r-md);
+  box-shadow: var(--e-pop);
   display: flex;
   flex-direction: column;
   padding: 2px 0;
@@ -1652,9 +1891,10 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   font-size: var(--fs-sm);
   line-height: 1.4;
   border: 1px solid var(--rule-2);
+  border-radius: var(--r-md);
   background: var(--paper);
   color: var(--ink);
-  box-shadow: 0 4px 12px rgba(24, 24, 27, 0.12);
+  box-shadow: var(--e-float);
   display: flex;
   align-items: flex-start;
   gap: 8px;
@@ -1679,6 +1919,7 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   border: 0;
   background: transparent;
   cursor: pointer;
+  border-radius: var(--r-xs);
   color: inherit;
   opacity: 0.65;
   padding: 0;
@@ -1715,7 +1956,7 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
     z-index: 50;
     transform: translateX(-100%);
     transition: transform 160ms ease-out;
-    box-shadow: 2px 0 12px rgba(24, 24, 27, 0.18);
+    box-shadow: var(--e-float);
     /* Slide-over sidebar is `position: fixed`, so it doesn't inherit
      * the safe-area padding the .app grid container takes — it would
      * slide in under the iOS notch / home indicator otherwise. Push
@@ -1727,7 +1968,9 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   .sidebar[data-open="true"] {
     transform: translateX(0);
   }
-  .topbar { padding: 0 10px; gap: 8px; }
+  /* Retuning the shared gutter here keeps the topbar, calendar toolbar
+   * and rail head aligned on phones too — each of them reads the token. */
+  :root { --gutter-x: calc(8px * var(--density)); --bar-gap: 4px; }
   .topbar .crumb-sep { display: none; }
 
 }

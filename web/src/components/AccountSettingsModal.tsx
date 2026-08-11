@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Calendar, Link, Ticket, X } from 'lucide-react';
 import { useFira } from '../store';
 import { api, gcalConnectUrl, loginUrl } from '../api';
-import type { AccountSummary, Theme } from '../types';
+import type { AccountSummary, Theme, UiStyle } from '../types';
 
 // Account settings: container for personal-account stuff that isn't
 // workspace-scoped. Replaces the topbar's two-avatar + link-button
@@ -342,6 +342,16 @@ export function AccountSettingsModal() {
           <Section title="Appearance">
             <div className="account-row">
               <ThemePicker />
+              <p className="account-row-text account-row-muted">
+                Color palette.
+              </p>
+            </div>
+            <div className="account-row">
+              <StylePicker />
+              <p className="account-row-text account-row-muted">
+                Modern rounds the corners, softens the shadows and gives
+                everything more room.
+              </p>
             </div>
           </Section>
 
@@ -612,8 +622,8 @@ function SegmentedPicker<T extends string>({
   );
 }
 
-// Theme picker — two options today (classic/dark); modern-white and
-// modern-dark land here later as more entries in `options`.
+// Theme picker — the *palette* axis. Pairs with StylePicker below, which
+// owns the orthogonal shape/density axis; the two combine freely.
 function ThemePicker() {
   const value = useFira((s) => s.theme);
   const setTheme = useFira((s) => s.setTheme);
@@ -626,6 +636,26 @@ function ThemePicker() {
       options={[
         { value: 'classic', label: 'classic', title: 'Classic (paper white)' },
         { value: 'dark', label: 'dark', title: 'Dark' },
+      ]}
+    />
+  );
+}
+
+// Style picker — the shape/density axis: square + compact (classic) vs
+// rounded + soft-shadowed + roomier (modern). Independent of the theme,
+// so e.g. dark + modern is a valid combination.
+function StylePicker() {
+  const value = useFira((s) => s.uiStyle);
+  const setUiStyle = useFira((s) => s.setUiStyle);
+  return (
+    <SegmentedPicker<UiStyle>
+      className="account-theme-picker"
+      ariaLabel="Style"
+      value={value}
+      onChange={setUiStyle}
+      options={[
+        { value: 'classic', label: 'classic', title: 'Classic (square, compact)' },
+        { value: 'modern', label: 'modern', title: 'Modern (rounded, soft, roomy)' },
       ]}
     />
   );
