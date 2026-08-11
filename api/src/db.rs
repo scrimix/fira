@@ -1635,12 +1635,19 @@ pub async fn get_user_settings(
     pool: &PgPool,
     user_id: Uuid,
 ) -> sqlx::Result<crate::models::UserSettings> {
-    let row: Option<(Option<String>,)> =
-        sqlx::query_as("SELECT account_badge FROM user_settings WHERE user_id = $1")
-            .bind(user_id)
-            .fetch_optional(pool)
-            .await?;
-    let account_badge = row.and_then(|(b,)| b);
+    let row: Option<(Option<String>, String, String)> = sqlx::query_as(
+        "SELECT account_badge, theme, ui_style FROM user_settings WHERE user_id = $1",
+    )
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await?;
+    let (account_badge, theme, ui_style) = match row {
+        Some((b, t, s)) => (b, t, s),
+        // No row yet: account_badge defaults to None; theme and ui_style
+        // default to 'classic' here too, mirroring the columns' DB-level
+        // defaults.
+        None => (None, "classic".to_string(), "classic".to_string()),
+    };
     // Connection state lives on a separate table; fetch alongside so the
     // bootstrap response carries everything the AccountSettings modal
     // needs to render correctly on first paint.
@@ -1656,6 +1663,8 @@ pub async fn get_user_settings(
     };
     Ok(crate::models::UserSettings {
         account_badge,
+        theme,
+        ui_style,
         gcal_connected,
         gcal_email,
         gcal_last_sync_error,
@@ -1710,23 +1719,29 @@ pub async fn workspace_jira_site_url(
     Ok(row.and_then(|(u,)| u))
 }
 
-/// Upsert the caller's account-scoped settings. Today only the
-/// account_badge field is exposed; new fields just need adding here
-/// and to UserSettings. Pass None to clear a field.
+/// Upsert the caller's account-scoped settings. `account_badge`, `theme`
+/// and `ui_style` are exposed today; new fields just need adding here and
+/// to UserSettings. Pass None to clear account_badge.
 pub async fn upsert_user_settings(
     pool: &PgPool,
     user_id: Uuid,
     account_badge: Option<&str>,
+    theme: &str,
+    ui_style: &str,
 ) -> sqlx::Result<crate::models::UserSettings> {
     sqlx::query(
-        "INSERT INTO user_settings (user_id, account_badge, updated_at)
-         VALUES ($1, $2, now())
+        "INSERT INTO user_settings (user_id, account_badge, theme, ui_style, updated_at)
+         VALUES ($1, $2, $3, $4, now())
          ON CONFLICT (user_id) DO UPDATE
              SET account_badge = EXCLUDED.account_badge,
+                 theme = EXCLUDED.theme,
+                 ui_style = EXCLUDED.ui_style,
                  updated_at = now()",
     )
     .bind(user_id)
     .bind(account_badge)
+    .bind(theme)
+    .bind(ui_style)
     .execute(pool)
     .await?;
     get_user_settings(pool, user_id).await

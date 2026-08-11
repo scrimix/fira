@@ -160,34 +160,39 @@ export function TaskModal({ taskId }: Props) {
         downOnBackdropRef.current = false;
       }}
     >
-      <div className="modal" onClick={(e) => e.stopPropagation()}
+      <div className="modal" data-side={sideOpen ? 'open' : 'closed'} onClick={(e) => e.stopPropagation()}
           style={{ display: attachmentPreview == null ? 'flex' : 'none', ['--proj-color' as string]: project.color }}>
         <div className="modal-head">
-          <span style={{ width: 10, height: 10, background: project.color, display: 'inline-block' }} />
+          <span className="proj-dot" style={{ background: project.color }} />
           <span className="ext">{project.title}</span>
           <span className="grow" />
-          <CopyTaskLinkButton taskId={task.id} />
-          <button
-            className="icon-btn modal-head-danger"
-            onClick={() => setConfirmingDelete(true)}
-            title="Delete task"
-          >
-            <Trash2 size={15} strokeWidth={1.75} />
-          </button>
-          <button
-            className="icon-btn"
-            onClick={() => setSideOpen((v) => !v)}
-            title={sideOpen ? 'Hide details' : 'Show details'}
-            aria-label={sideOpen ? 'Hide details' : 'Show details'}
-            aria-pressed={sideOpen}
-          >
-            {sideOpen
-              ? <PanelRightClose size={15} strokeWidth={1.75} />
-              : <PanelRightOpen size={15} strokeWidth={1.75} />}
-          </button>
-          <button className="icon-btn" onClick={() => close(null)} title="Close (Esc)" aria-label="Close">
-            <X size={15} strokeWidth={1.75} />
-          </button>
+          {/* Grouped so the head's trailing controls can carry the side
+              pane's tint and sit directly above it as one column —
+              see .modal-head-actions. */}
+          <div className="modal-head-actions">
+            <CopyTaskLinkButton taskId={task.id} />
+            <button
+              className="icon-btn modal-head-danger"
+              onClick={() => setConfirmingDelete(true)}
+              title="Delete task"
+            >
+              <Trash2 size={15} strokeWidth={1.75} />
+            </button>
+            <button
+              className="icon-btn"
+              onClick={() => setSideOpen((v) => !v)}
+              title={sideOpen ? 'Hide details' : 'Show details'}
+              aria-label={sideOpen ? 'Hide details' : 'Show details'}
+              aria-pressed={sideOpen}
+            >
+              {sideOpen
+                ? <PanelRightClose size={15} strokeWidth={1.75} />
+                : <PanelRightOpen size={15} strokeWidth={1.75} />}
+            </button>
+            <button className="icon-btn" onClick={() => close(null)} title="Close (Esc)" aria-label="Close">
+              <X size={15} strokeWidth={1.75} />
+            </button>
+          </div>
         </div>
         <div className="modal-body" data-side={sideOpen ? 'open' : 'closed'}>
           <div className="modal-main">
@@ -354,7 +359,7 @@ export function TaskModal({ taskId }: Props) {
           <div className="modal-side">
             <Field label="Project" value={
               <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span style={{ width: 10, height: 10, background: project.color, display: 'inline-block' }} />
+                <span className="proj-dot" style={{ background: project.color }} />
                 {project.title}
               </span>
             } />
@@ -467,7 +472,7 @@ export function TaskModal({ taskId }: Props) {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="modal-head">
-          <span style={{ width: 10, height: 10, background: project.color, display: 'inline-block' }} />
+          <span className="proj-dot" style={{ background: project.color }} />
           <span className="ext">{project.title} / {task.title} / {attachmentPreview?.a?.filename}</span>
           <span className="grow" />
           <button className="icon-btn" title="Close (Esc)" aria-label="Close" onClick={() => {

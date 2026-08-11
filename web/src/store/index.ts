@@ -8,7 +8,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type {
   Bootstrap, Project, User, Epic, Sprint, Task, TimeBlock, GcalEvent, UUID, Section, Subtask, Status,
-  Workspace, WorkspaceRole, UserLink, LinkedTask, WorkspaceInvite, Tag,
+  Workspace, WorkspaceRole, UserLink, LinkedTask, WorkspaceInvite, Tag, Theme, UiStyle,
 } from '../types';
 import { api, HttpError, setActiveWorkspaceId } from '../api';
 import { newOp, type Op, type OpKind, type AnyOpKind, type ChangeEntry } from './outbox';
@@ -211,6 +211,14 @@ interface FiraState {
   // a compact chip next to the avatar so the user has a glance-able
   // signal of which mode they intend to be in. `null` = no badge.
   accountBadge: 'personal' | 'work' | null;
+  // UI color theme. Hydrated from `Bootstrap.settings`, backend-synced
+  // like accountBadge. Mirrored onto <html data-theme> by the
+  // subscribe() call below so CSS can key off it.
+  theme: Theme;
+  // UI shape/density style (corner radius, elevation, padding).
+  // Independent of `theme` — the two axes combine freely. Mirrored onto
+  // <html data-style> by the same subscribe() call below.
+  uiStyle: UiStyle;
   // Google Calendar connection state. Hydrated from
   // `Bootstrap.settings`; toggled server-side by the OAuth callback /
   // disconnect endpoint, not by client mutations.
@@ -344,6 +352,8 @@ interface FiraState {
   openAccountModal: () => void;
   closeAccountModal: () => void;
   setAccountBadge: (b: 'personal' | 'work' | null) => void;
+  setTheme: (t: Theme) => void;
+  setUiStyle: (s: UiStyle) => void;
   disconnectGcal: () => Promise<void>;
   connectJira: (email: string, apiToken: string) => Promise<void>;
   disconnectJira: () => Promise<void>;
@@ -857,6 +867,8 @@ function applyBootstrap(
     links: data.links ?? [],
     workspaceInvites: data.workspace_invites ?? [],
     accountBadge: data.settings?.account_badge ?? null,
+    theme: data.settings?.theme ?? 'classic',
+    uiStyle: data.settings?.ui_style ?? 'classic',
     gcalConnected: data.settings?.gcal_connected ?? false,
     gcalEmail: data.settings?.gcal_email ?? null,
     gcalLastSyncError: data.settings?.gcal_last_sync_error ?? null,
@@ -935,6 +947,8 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
   linkModalOpen: false,
   accountModalOpen: false,
   accountBadge: null,
+  theme: 'classic',
+  uiStyle: 'classic',
   gcalConnected: false,
   gcalEmail: null,
   gcalLastSyncError: null,
@@ -1083,6 +1097,8 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
         links: data.links ?? [],
         workspaceInvites: data.workspace_invites ?? [],
         accountBadge: data.settings?.account_badge ?? null,
+        theme: data.settings?.theme ?? 'classic',
+        uiStyle: data.settings?.ui_style ?? 'classic',
         gcalConnected: data.settings?.gcal_connected ?? false,
         gcalEmail: data.settings?.gcal_email ?? null,
         gcalLastSyncError: data.settings?.gcal_last_sync_error ?? null,
@@ -1812,6 +1828,26 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
       get().showToast(msg);
     });
   },
+  setTheme: (t) => {
+    const prev = get().theme;
+    set({ theme: t });
+    if (get().playgroundMode) return;
+    void api.patchMySettings({ theme: t }).catch((e) => {
+      set({ theme: prev });
+      const msg = e instanceof Error ? e.message : 'Failed to save theme';
+      get().showToast(msg);
+    });
+  },
+  setUiStyle: (s) => {
+    const prev = get().uiStyle;
+    set({ uiStyle: s });
+    if (get().playgroundMode) return;
+    void api.patchMySettings({ ui_style: s }).catch((e) => {
+      set({ uiStyle: prev });
+      const msg = e instanceof Error ? e.message : 'Failed to save style';
+      get().showToast(msg);
+    });
+  },
   disconnectGcal: async () => {
     if (get().playgroundMode) return;
     try {
@@ -2535,6 +2571,12 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     // and didn't expect every later visit to show estimates.
     listFilter: s.listFilter,
     accountBadge: s.accountBadge,
+    // theme and uiStyle must stay in this allowlist — the flash-prevention
+    // inline script in index.html reads them straight out of this
+    // localStorage snapshot before React/Zustand hydrate, to set
+    // data-theme / data-style pre-paint.
+    theme: s.theme,
+    uiStyle: s.uiStyle,
     gcalConnected: s.gcalConnected,
     gcalEmail: s.gcalEmail,
     gcalLastSyncError: s.gcalLastSyncError,
@@ -2601,6 +2643,20 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     });
   });
 }
+
+// Keep documentElement's data-theme / data-style attributes in sync with
+// the store. Covers in-tab picks and a bootstrap/rehydrate pulling in a
+// value set from another device. The inline script in index.html only
+// handles the very first paint before this module runs; this takes over
+// for every change after that. Both axes drop the attribute entirely on
+// 'classic' so the bare `:root` block is the default in each dimension.
+useFira.subscribe((s) => {
+  const root = document.documentElement;
+  if (s.theme === 'classic') root.removeAttribute('data-theme');
+  else root.setAttribute('data-theme', s.theme);
+  if (s.uiStyle === 'classic') root.removeAttribute('data-style');
+  else root.setAttribute('data-style', s.uiStyle);
+});
 
 // Selectors that components subscribe to. Putting these here keeps the
 // component code uncluttered with `useFira((s) => ...)` boilerplate.

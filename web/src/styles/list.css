@@ -1,6 +1,6 @@
 .list {
-  height: calc(100vh - 44px);
-  height: calc(100dvh - 44px);
+  height: calc(100vh - var(--topbar-h));
+  height: calc(100dvh - var(--topbar-h));
   overflow: auto;
   /* Reserve the scrollbar gutter even when the doc isn't tall enough
    * to overflow yet, so toggling a tag filter (which can shrink the
@@ -11,7 +11,7 @@
 .list-doc {
   max-width: 880px;
   margin: 0 auto;
-  padding: 24px 48px 80px;
+  padding: calc(24px * var(--density)) calc(48px * var(--density)) 80px;
 }
 /* Phone: drop the editorial side margins and run the document near the
  * viewport edges so the title column is the widest part of the row. The
@@ -19,7 +19,7 @@
  * trailing `auto` column, but the left only loses a few pixels for the
  * grip + check (which together total ~32px). */
 @media (max-width: 700px) {
-  .list-doc { padding: 16px 8px 80px; }
+  .list-doc { padding: calc(16px * var(--density)) calc(8px * var(--density)) 80px; }
   /* Project header runs out of horizontal room with tasks/members count
    * + Archive button on a 360px screen — drop the count, the action is
    * what the user came here for. */
@@ -33,7 +33,7 @@
   .task-add { padding-right: 0; }
 }
 .list-empty {
-  min-height: calc(100dvh - 44px - 24px);
+  min-height: calc(100dvh - var(--topbar-h) - 24px);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -71,9 +71,9 @@
 .list-empty-link:hover { color: var(--ink); border-bottom-color: var(--ink-3); }
 .list-proj-head {
   display: flex; align-items: baseline; gap: 12px;
-  margin: 6px 0 24px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--rule);
+  margin: 6px 0 calc(24px * var(--density));
+  padding-bottom: calc(12px * var(--density));
+  border-bottom: 1px solid var(--rule-chrome);
 }
 /* When the tag filter strip follows the project header, drop the
  * head's own bottom border + spacing so the strip docks flush
@@ -101,6 +101,12 @@
   font-size: calc(22px * var(--fs-scale));
   line-height: 1;
 }
+/* The component also sets `color` inline (higher specificity than the
+ * rule above), so `filter` is the only hook left to dim it for dark
+ * mode. */
+:root[data-theme="dark"] .list-proj-head .icon {
+  filter: saturate(0.7) brightness(0.86);
+}
 /* Right-side cluster: meta text, edit, archive. Centered against each
  * other so the icon-only edit button sits on the same line as the text in
  * its neighbours, regardless of font baselines. align-self: baseline anchors
@@ -117,10 +123,10 @@
   margin-left: -8px;
 }
 .list-proj-head .meta {
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
+  font-family: var(--font-label);
+  font-size: calc(var(--fs-xs) * var(--label-size));
   color: var(--ink-3);
-  letter-spacing: 0.04em;
+  letter-spacing: calc(0.04em * var(--label-track));
 }
 .list-proj-head .proj-edit-btn {
   width: auto; min-width: 22px; height: 24px;
@@ -147,10 +153,10 @@
 .list-proj-head .archive-btn {
   height: 24px;
   padding: 0 10px;
-  font-size: var(--fs-xs);
-  font-family: var(--font-mono);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-size: calc(var(--fs-xs) * var(--label-size));
+  font-family: var(--font-label);
+  letter-spacing: calc(0.06em * var(--label-track));
+  text-transform: var(--label-case);
   color: var(--ink-3);
   display: inline-flex;
   align-items: center;
@@ -196,10 +202,10 @@
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 6px 10px;
-  padding: 8px 0;
-  margin: 0 0 12px;
+  padding: calc(8px * var(--density)) 0;
+  margin: 0 0 calc(12px * var(--density));
   background: var(--paper);
-  border-bottom: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule-chrome);
 }
 /* When totals follow the tag filter, drop its bottom margin so the
  * totals row's own padding-top alone controls the gap above the
@@ -240,20 +246,30 @@
   transition: opacity 80ms ease;
 }
 .list-tag-filter-chip:hover { opacity: 0.85; }
+/* 0.55 fades a dark-on-light chip toward a still-legible grey; against
+ * dark paper the same opacity fades a light-on-dark chip toward
+ * near-invisible instead, since it's blending down rather than up. */
+:root[data-theme="dark"] .list-tag-filter-chip { opacity: 0.75; }
+:root[data-theme="dark"] .list-tag-filter-chip:hover { opacity: 0.95; }
 .list-tag-filter-chip[data-on] {
   opacity: 1;
   background: color-mix(in srgb, var(--tag-color, var(--rule-2)) 12%, var(--paper));
 }
+:root[data-theme="dark"] .list-tag-filter-chip[data-on] {
+  background: color-mix(in srgb, var(--tag-color, var(--rule-2)) 26%, var(--paper));
+}
 .list-tag-filter-clear {
-  font-family: var(--font-mono);
-  font-size: calc(10px * var(--fs-scale));
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-family: var(--font-label);
+  font-size: calc(10px * var(--fs-scale) * var(--label-size));
+  letter-spacing: calc(0.04em * var(--label-track));
+  text-transform: var(--label-case);
   background: transparent;
   border: 1px solid var(--rule-2);
+  border-radius: var(--r-xs);
   color: var(--ink-3);
-  padding: 0 8px;
-  height: 18px;
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 0 calc(8px * var(--density));
+  height: calc(18px * var(--density));
   cursor: pointer;
   flex: none;
 }
@@ -269,21 +285,26 @@
 .list-tag-filter-mode {
   display: inline-flex;
   flex: none;
-  height: 18px;
+  height: calc(18px * var(--density));
 }
 .list-tag-filter-mode-seg {
-  font-family: var(--font-mono);
-  font-size: calc(10px * var(--fs-scale));
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-family: var(--font-label);
+  font-size: calc(10px * var(--fs-scale) * var(--label-size));
+  letter-spacing: calc(0.04em * var(--label-track));
+  text-transform: var(--label-case);
   background: transparent;
   border: 1px solid var(--rule-2);
   color: var(--ink-3);
-  padding: 0 8px;
-  height: 18px;
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 0 calc(8px * var(--density));
+  height: calc(18px * var(--density));
   cursor: pointer;
 }
+/* Segments collapse their shared borders into one seam, so only the
+ * control's outer corners round. */
 .list-tag-filter-mode-seg + .list-tag-filter-mode-seg { border-left: 0; }
+.list-tag-filter-mode-seg:first-child { border-radius: var(--r-xs) 0 0 var(--r-xs); }
+.list-tag-filter-mode-seg:last-child { border-radius: 0 var(--r-xs) var(--r-xs) 0; }
 .list-tag-filter-mode-seg:hover { color: var(--ink); }
 .list-tag-filter-mode-seg[data-active] {
   background: var(--ink);
@@ -301,25 +322,34 @@
 .list-totals {
   flex-wrap: wrap;
   justify-content: center;
-  padding: 8px 0;
-  margin: 0 0 12px;
-  border-bottom: 1px dashed var(--rule);
+  padding: calc(8px * var(--density)) 0;
+  margin: 0 0 calc(12px * var(--density));
+  border-bottom: 1px dashed var(--rule-chrome);
 }
 
-.section { margin: 28px 0; }
+.section { margin: calc(28px * var(--density)) 0; }
+/* The header block (project head → tag filter → totals) already ends
+ * with its own bottom spacing. The first section adding a full
+ * section-to-section gap on top of that stacked into a visible hole
+ * between the numbers and "Now" — the same double-padding shape as the
+ * topbar/toolbar pair. The block's own trailing space is the gap. */
+.list-totals + .section,
+.list-tag-filter + .section {
+  margin-top: 0;
+}
 .section-head {
   display: flex; align-items: baseline; gap: 10px;
-  padding: 0 0 6px;
+  padding: 0 0 calc(6px * var(--density));
   cursor: pointer;
   user-select: none;
 }
 .section-head h2 {
   margin: 0;
-  font-size: calc(13px * var(--fs-scale));
+  font-size: calc(13px * var(--fs-scale) * var(--label-size));
   font-weight: 500;
-  font-family: var(--font-mono);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  font-family: var(--font-label);
+  letter-spacing: calc(0.12em * var(--label-track));
+  text-transform: var(--label-case);
 }
 .section-head .caret {
   font-family: var(--font-mono);
@@ -329,9 +359,16 @@
 }
 .section-head .count {
   font-family: var(--font-mono);
-  font-size: calc(11px * var(--fs-scale));
-  color: var(--ink-4);
+  font-size: calc(11px * var(--fs-scale) * var(--label-size));
+  color: var(--ink-3);
   font-variant-numeric: tabular-nums;
+}
+/* Word captions sharing the .count slot ("week of apr 27", "parking
+ * lot"). They're prose, not the numeric count beside the heading, so
+ * they take the label family while .count keeps its tabular mono. */
+.section-head .section-caption {
+  font-family: var(--font-label);
+  font-variant-numeric: normal;
 }
 /* Pulse the numeric count when the filtered task count changes. Resting
  * state stays faint (`--ink-4`) so the row is calm at rest; the pulse
@@ -366,7 +403,7 @@
   .section-head .count[data-pulse] { animation: none; }
 }
 .section-head .est {
-  font-family: var(--font-mono);
+  font-family: var(--font-label);
   font-size: calc(11px * var(--fs-scale));
   color: var(--ink-2);
   font-variant-numeric: tabular-nums;
@@ -389,10 +426,10 @@
 .assignee-head {
   display: flex; align-items: center; gap: 8px;
   margin: 16px 0 6px;
-  font-family: var(--font-mono);
-  font-size: calc(10px * var(--fs-scale));
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-family: var(--font-label);
+  font-size: calc(10px * var(--fs-scale) * var(--label-size));
+  letter-spacing: calc(0.08em * var(--label-track));
+  text-transform: var(--label-case);
   color: var(--ink-3);
   cursor: pointer;
   user-select: none;
@@ -407,7 +444,8 @@
 }
 .assignee-head .ah-rule { flex: 1; height: 1px; background: var(--rule); }
 .assignee-head .ah-count {
-  color: var(--ink-4);
+  font-size: calc(11px * var(--fs-scale) * var(--label-size));
+  color: var(--ink-3);
   font-variant-numeric: tabular-nums;
 }
 
@@ -419,7 +457,8 @@
   grid-template-columns: 14px 18px 1fr auto;
   align-items: start;
   gap: 8px;
-  padding: 6px 8px 6px 0;
+  padding: calc(6px * var(--density)) 8px calc(6px * var(--density)) 0;
+  border-radius: var(--r-md);
   cursor: pointer;
   position: relative;
   /* The row is click-to-open; there's no useful text selection here.
@@ -463,7 +502,7 @@
   background: var(--accent-soft) !important;
   transform: scale(1.05) !important;
   box-shadow: 0 8px 22px rgba(8, 145, 178, 0.32) !important;
-  border-radius: 6px;
+  border-radius: max(6px, var(--r-md));
   outline: 2px solid var(--accent);
   outline-offset: -1px;
   z-index: 10;
@@ -489,7 +528,7 @@
   background: var(--accent-soft) !important;
   outline: 2px solid var(--accent);
   outline-offset: -1px;
-  border-radius: 6px;
+  border-radius: max(6px, var(--r-md));
 }
 
 .task-grip {
@@ -526,20 +565,18 @@
   margin-top: 2px;
   width: 14px; height: 14px;
   border: 1px solid var(--rule-3);
+  border-radius: var(--r-2xs);
   background: var(--paper);
   display: grid; place-items: center;
   cursor: pointer;
   flex-shrink: 0;
-  font-family: var(--font-mono);
-  font-size: calc(11px * var(--fs-scale));
-  color: transparent;
+  color: var(--paper);
   line-height: 1;
 }
 .task-check:hover { border-color: var(--ink-2); }
 .task-check[data-checked="true"] {
-  background: var(--ink);
-  border-color: var(--ink);
-  color: var(--paper);
+  background: var(--ink-3);
+  border-color: var(--ink-3);
 }
 
 .task-title-wrap { min-width: 0; }
@@ -658,11 +695,22 @@
 /* When the user has an active filter, fade unmatched tag chips so the
  * matched ones (which always sort to the front of the row) read as the
  * dominant signal. With no filter active, every chip stays bright. */
+/* Compact variant of .chip.tag-chip for the row's trailing column —
+ * one step down from the filter strip's chips, but on the same tokens
+ * so it tracks the label scale instead of drifting away from them. */
+.task-trail .tag-chip {
+  height: calc(16px * var(--density));
+  font-size: calc(9px * var(--fs-scale) * var(--label-size));
+}
 .task-trail[data-has-filter] .tag-chip { opacity: 0.45; }
 .task-trail[data-has-filter] .tag-chip[data-match] {
   opacity: 1;
   background: color-mix(in srgb, var(--tag-color, var(--rule-2)) 14%, var(--paper));
   border-color: color-mix(in srgb, var(--tag-color, var(--rule-2)) 60%, var(--paper));
+}
+:root[data-theme="dark"] .task-trail[data-has-filter] .tag-chip[data-match] {
+  background: color-mix(in srgb, var(--tag-color, var(--rule-2)) 28%, var(--paper));
+  border-color: color-mix(in oklab, var(--tag-color, var(--rule-2)) 52%, var(--ink-3));
 }
 .task-trail .tag-chip-more {
   color: var(--ink-4);
@@ -828,6 +876,7 @@
   width: 14px; height: 14px;
   margin-top: 2px;
   border: 1px solid var(--rule-3);
+  border-radius: var(--r-2xs);
   background: var(--paper);
   display: inline-flex; align-items: center; justify-content: center;
   flex-shrink: 0;
@@ -868,8 +917,12 @@
   max-height: 88vh;
   max-height: 88dvh;
   height: min(88vh, 1080px);
+  --head-pad-y: calc(14px * var(--density));
+  --head-pad-x: calc(18px * var(--density));
   background: var(--paper);
   border: 1px solid var(--rule-3);
+  border-radius: var(--r-lg);
+  box-shadow: var(--e-dialog);
   display: flex; flex-direction: column;
   overflow: clip;
 }
@@ -891,8 +944,8 @@
 }
 .modal-head {
   display: flex; align-items: center; gap: 10px;
-  padding: 14px 18px;
-  border-bottom: 1px solid var(--rule);
+  padding: var(--head-pad-y) var(--head-pad-x);
+  border-bottom: 1px solid var(--rule-chrome);
   flex-shrink: 0;
 }
 .modal-head .ext {
@@ -901,10 +954,45 @@
   color: var(--ink-3);
 }
 .modal-head .grow { flex: 1; }
+/* The side pane is a tinted column that used to begin only *below* the
+ * head, which left these buttons on the main pane's paper and put a
+ * stray ⌐-shaped inner corner where the two backgrounds met. Running the
+ * tint up through the head turns the two into one continuous column.
+ * Negative margins pull the band out of the head's own padding so it
+ * reaches the modal's top, bottom and right edges; .modal's `overflow:
+ * clip` takes care of the corner radius. */
+.modal-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  align-self: stretch;
+  flex: none;
+  box-sizing: border-box;
+  /* One pixel wider than the column so this border-left lands on the
+   * exact pixel .modal-main's border-right uses below it — the two are
+   * one unbroken rule down the side pane's edge, not two offset ones. */
+  width: calc(var(--side-w) + 1px);
+  border-left: 1px solid var(--rule-chrome);
+  justify-content: flex-end;
+  /* The extra -1px at the bottom paints this band over .modal-head's
+   * bottom rule, which otherwise runs straight across the side column
+   * and chops it into a boxed-off sub-panel. That rule should stop
+   * where the main pane does. */
+  margin: calc(-1 * var(--head-pad-y)) calc(-1 * var(--head-pad-x))
+          calc(-1 * var(--head-pad-y) - 1px) 0;
+  padding: 0 var(--head-pad-x);
+  background: var(--paper-2);
+}
+/* Details collapsed — there's no column to continue, so the cluster goes
+ * back to being plain trailing buttons. */
+.modal[data-side="closed"] .modal-head-actions {
+  width: auto;
+  background: transparent;
+}
 
 .modal-body {
   display: grid;
-  grid-template-columns: 1fr 220px;
+  grid-template-columns: 1fr var(--side-w);
   flex: 1 1 auto;
   min-height: 0;
   min-width: 0;
@@ -925,18 +1013,18 @@
   border-right: 0;
 }
 .modal-main {
-  padding: 16px 22px 22px;
+  padding: calc(16px * var(--density)) calc(22px * var(--density)) calc(22px * var(--density));
   overflow-y: auto;
   overflow-x: hidden;
   min-height: 0;
   min-width: 0;
   height: 100%;
   box-sizing: border-box;
-  border-right: 1px solid var(--rule);
+  border-right: 1px solid var(--rule-chrome);
   scrollbar-gutter: stable;
 }
 .modal-side {
-  padding: 16px 18px;
+  padding: calc(16px * var(--density)) calc(18px * var(--density));
   overflow-y: auto;
   overflow-x: hidden;
   min-height: 0;
@@ -951,8 +1039,8 @@
  * the right edge. Shrink the main pane's horizontal padding to claw
  * back the pixels — the content reads fine tighter to the edges. */
 @media (max-width: 700px) {
-  .modal-main { padding: 12px 10px 16px; }
-  .modal-side { padding: 12px 10px; }
+  .modal-main { padding: calc(12px * var(--density)) calc(10px * var(--density)) calc(16px * var(--density)); }
+  .modal-side { padding: calc(12px * var(--density)) calc(10px * var(--density)); }
 }
 
 .attachment-preview-modal {
@@ -997,12 +1085,12 @@
 .modal-side h5,
 .tm-section-h {
   margin: 0 0 4px;
-  font-family: var(--font-mono);
-  font-size: var(--fs-sm);
+  font-family: var(--font-label);
+  font-size: calc(var(--fs-sm) * var(--label-size));
   color: var(--ink-3);
   font-weight: 500;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
+  letter-spacing: calc(0.02em * var(--label-track));
+  text-transform: var(--label-case);
 }
 /* Sections in the main pane stack vertically; give all of them the same
  * generous breathing room so Description / Subtasks / Time blocks read as
@@ -1015,6 +1103,11 @@
 }
 .tm-section-h-title { /* base color from .tm-section-h */ }
 .tm-section-h-hint {
+  /* Deliberately outside --label-size. The hint is usually a bare
+   * figure ("· 5", "· 2/4"), and lining digits sit at cap height while
+   * the sentence-case title beside them is mostly x-height — at the
+   * title's size the number reads as the larger of the two. */
+  font-size: var(--fs-sm);
   color: var(--ink-4);
   font-weight: 400;
 }
@@ -1036,7 +1129,7 @@
   color: var(--ink-3);
   background: transparent;
   border: 0;
-  border-radius: 3px;
+  border-radius: max(3px, var(--r-sm));
   cursor: pointer;
   transition: color 120ms ease, background 120ms ease;
 }
@@ -1067,7 +1160,7 @@
   column-gap: 10px;
   row-gap: 2px;
   padding: 4px 0;
-  border-bottom: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule-chrome);
   align-items: center;
 }
 .tm-block-ava { grid-area: ava; }
@@ -1100,10 +1193,10 @@
 }
 .tm-block-state {
   grid-area: state;
-  font-family: var(--font-mono);
-  font-size: calc(9px * var(--fs-scale));
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-family: var(--font-label);
+  font-size: calc(9px * var(--fs-scale) * var(--label-size));
+  letter-spacing: calc(0.08em * var(--label-track));
+  text-transform: var(--label-case);
   text-align: right;
   display: inline-flex;
   align-items: center;
@@ -1131,7 +1224,7 @@
  * the surrounding mono-tabular column. */
 .tm-block-cell {
   cursor: text;
-  border-radius: 2px;
+  border-radius: max(2px, var(--r-xs));
   padding: 1px 2px;
   margin: -1px -2px;
 }
@@ -1147,7 +1240,7 @@
   color: var(--ink);
   background: var(--paper);
   border: 1px solid var(--focus-line);
-  border-radius: 2px;
+  border-radius: max(2px, var(--r-xs));
   padding: 1px 4px;
   margin: -2px 0;
   outline: none;
@@ -1205,7 +1298,7 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
   cursor: default;
   padding: 4px 6px;
   box-sizing: border-box;
-  border-radius: 2px;
+  border-radius: max(2px, var(--r-xs));
 }
 .desc-md > *:first-child { margin-top: 0; }
 .desc-md > *:last-child { margin-bottom: 0; }
@@ -1236,12 +1329,12 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
   font-size: 0.95em;
   background: var(--paper-2);
   padding: 0.1em 0.3em;
-  border-radius: 2px;
+  border-radius: max(2px, var(--r-xs));
 }
 .desc-md pre {
   margin: 0 0 0.7em;
   padding: 0.7em 0.8em;
-  border-radius: 4px;
+  border-radius: max(4px, var(--r-sm));
   background: var(--paper-2);
   overflow-x: auto;
 }
@@ -1308,7 +1401,7 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
   display: block;
   max-width: 100%;
   height: auto;
-  border-radius: 4px;
+  border-radius: max(4px, var(--r-sm));
   margin: 0.4em 0;
   border: 1px solid var(--rule);
 }
@@ -1367,7 +1460,7 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
   min-height: 1.55em;
   padding: 4px 6px;
   margin-left: -6px;
-  border-radius: 2px;
+  border-radius: max(2px, var(--r-xs));
 }
 .attachment-item {
   display: flex; align-items: flex-start; gap: 8px;
@@ -1439,6 +1532,7 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
 .est-bar {
   height: 6px;
   background: var(--paper-3);
+  border-radius: var(--r-2xs);
   margin: 10px 0 6px;
   display: flex;
   overflow: hidden;
@@ -1447,6 +1541,12 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
 .est-bar .seg-planned {
   background: color-mix(in oklab, var(--proj-color, var(--ink)) 30%, var(--paper-3));
   height: 100%;
+}
+:root[data-theme="dark"] .est-bar .seg-spent {
+  background: color-mix(in oklab, var(--proj-color, var(--ink)) 62%, var(--paper-3));
+}
+:root[data-theme="dark"] .est-bar .seg-planned {
+  background: color-mix(in oklab, var(--proj-color, var(--ink)) 45%, var(--paper-3));
 }
 .est-meta {
   display: flex; gap: 12px;
@@ -1481,6 +1581,7 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
   font-size: var(--fs-sm);
   padding: 6px 10px;
   border: 1px solid var(--rule-2);
+  border-radius: var(--r-sm);
   background: var(--paper);
   color: var(--ink);
   width: 100%;
@@ -1490,10 +1591,10 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
 
 .status-editor { position: relative; display: inline-block; }
 .status-trigger {
-  font-family: var(--font-mono);
-  font-size: calc(11px * var(--fs-scale));
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-family: var(--font-label);
+  font-size: calc(11px * var(--fs-scale) * var(--label-size));
+  letter-spacing: calc(0.06em * var(--label-track));
+  text-transform: var(--label-case);
   padding: 0;
   border: 0;
   background: transparent;
@@ -1513,7 +1614,10 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
   left: 0;
   background: var(--paper);
   border: 1px solid var(--rule-3);
-  box-shadow: 0 6px 20px rgba(0,0,0,0.12);
+  border-radius: var(--r-md);
+  box-shadow: var(--e-float);
+  /* Options run edge to edge and paint their own hover background. */
+  overflow: hidden;
   /* Portaled to document.body when inside the task modal — z-index has
    * to clear the modal-backdrop (z:50) and any modals layered on top.
    * Matches `.tag-editor-popover`. */
@@ -1523,10 +1627,10 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
   min-width: 120px;
 }
 .status-option {
-  font-family: var(--font-mono);
-  font-size: calc(11px * var(--fs-scale));
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-family: var(--font-label);
+  font-size: calc(11px * var(--fs-scale) * var(--label-size));
+  letter-spacing: calc(0.06em * var(--label-track));
+  text-transform: var(--label-case);
   text-align: left;
   padding: 6px 10px;
   border: 0;
@@ -1667,8 +1771,8 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
   display: flex;
   gap: 8px;
   justify-content: flex-end;
-  padding: 12px 22px;
-  border-top: 1px solid var(--rule);
+  padding: calc(12px * var(--density)) calc(22px * var(--density));
+  border-top: 1px solid var(--rule-chrome);
   background: var(--paper);
   flex: none;
 }
@@ -1695,7 +1799,7 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
   height: auto;
 }
 .confirm-body {
-  padding: 18px 22px 8px;
+  padding: calc(18px * var(--density)) calc(22px * var(--density)) calc(8px * var(--density));
 }
 .confirm-title {
   margin: 0 0 8px;
@@ -1713,11 +1817,11 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
 .confirm-guard-label {
   display: block;
   margin: 12px 0 4px;
-  font-family: var(--font-mono);
-  font-size: calc(11px * var(--fs-scale));
+  font-family: var(--font-label);
+  font-size: calc(11px * var(--fs-scale) * var(--label-size));
   color: var(--ink-3);
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
+  letter-spacing: calc(0.02em * var(--label-track));
+  text-transform: var(--label-case);
 }
 .confirm-guard-label strong {
   color: var(--ink);

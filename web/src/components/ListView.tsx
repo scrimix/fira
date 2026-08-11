@@ -733,7 +733,7 @@ export function ListView() {
             <SectionCount value={nowTasks.length} />
             <span className="rule" />
             {showListTimes && <span className="est" title="estimated time">{fmtMin(nowEst)}</span>}
-            <span className="count" style={{ fontFamily: 'var(--font-mono)' }}>week of apr 27</span>
+            <span className="count section-caption">week of apr 27</span>
           </div>
           {!collapsed.now && (
             <>
@@ -878,7 +878,7 @@ export function ListView() {
             <SectionCount value={laterTasks.length} />
             <span className="rule" />
             {showListTimes && <span className="est" title="estimated time">{fmtMin(laterEst)}</span>}
-            <span className="count" style={{ fontFamily: 'var(--font-mono)' }}>parking lot</span>
+            <span className="count section-caption">parking lot</span>
           </div>
           {!collapsed.later && (
             <>
@@ -900,7 +900,7 @@ export function ListView() {
             <SectionCount value={recurringTasks.length} />
             <span className="rule" />
             {showListTimes && <span className="est" title="estimated time">{fmtMin(recurringEst)}</span>}
-            <span className="count" style={{ fontFamily: 'var(--font-mono)' }}>ongoing</span>
+            <span className="count section-caption">ongoing</span>
           </div>
           {!collapsed.recurring && (
             <>
@@ -922,7 +922,7 @@ export function ListView() {
             <SectionCount value={somedayTasks.length} />
             <span className="rule" />
             {showListTimes && <span className="est" title="estimated time">{fmtMin(somedayEst)}</span>}
-            <span className="count" style={{ fontFamily: 'var(--font-mono)' }}>maybe</span>
+            <span className="count section-caption">maybe</span>
           </div>
           {!collapsed.someday && (
             <>
@@ -942,7 +942,7 @@ export function ListView() {
             <SectionCount value={doneTasks.length} />
             <span className="rule" />
             {showListTimes && <span className="est" title="completed time">{fmtMin(doneDone)}</span>}
-            <span className="count" style={{ fontFamily: 'var(--font-mono)' }}>archive</span>
+            <span className="count section-caption">archive</span>
           </div>
           {!collapsed.done && (
             <>
@@ -1404,7 +1404,7 @@ function TaskRow({
       <div className="task-check"
            data-checked={task.status === 'done'}
            onClick={(e) => { e.stopPropagation(); onTick(task.id); }}>
-        {task.status === 'done' ? '✓' : ''}
+        {task.status === 'done' && <Check size={11} strokeWidth={3} />}
       </div>
       <div className="task-title-wrap">
         <div className="task-title-line">
@@ -1591,11 +1591,7 @@ function TaskRow({
                   key={tid}
                   className="chip tag-chip"
                   data-match={matched || undefined}
-                  style={{
-                    height: 16,
-                    fontSize: 'calc(9px * var(--fs-scale))',
-                    ['--tag-color' as string]: tag.color,
-                  }}
+                  style={{ ['--tag-color' as string]: tag.color }}
                 >
                   {tag.title}
                 </span>

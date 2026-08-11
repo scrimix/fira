@@ -49,16 +49,26 @@ async fn projects(State(s): State<AppState>, ctx: AuthCtx) -> ApiResult<Json<Vec
 }
 
 /// Caller's account-scoped settings. `field: null` clears the field;
-/// omitting a field leaves it unchanged. Today only `account_badge` is
-/// exposed; new preferences just need to be added here, in the
-/// UserSettings struct, and in upsert_user_settings.
+/// omitting a field leaves it unchanged. `account_badge`, `theme` and
+/// `ui_style` are exposed today; new preferences just need to be added
+/// here, in the UserSettings struct, and in upsert_user_settings.
 #[derive(Deserialize, Default)]
 struct PatchSettings {
     // Two-state nullable: absent = leave alone, explicit null = clear.
     // serde flattens null into Some(None) when wrapped in Option<Option<_>>.
     #[serde(default, deserialize_with = "deserialize_some")]
     account_badge: Option<Option<String>>,
+    // Plain Option: theme has no "explicit null" state (every user is
+    // always on some theme), so absent = leave alone is the only case
+    // besides Some(new value). Same for ui_style.
+    theme: Option<String>,
+    ui_style: Option<String>,
 }
+
+const VALID_THEMES: &[&str] = &["classic", "dark"];
+// Shape/density axis — independent of theme, so every combination of the
+// two (classic+classic, dark+modern, …) is valid.
+const VALID_UI_STYLES: &[&str] = &["classic", "modern"];
 
 // Distinguish "field absent" from "field present and null" — bare
 // Option<String> collapses both to None. This pattern is from serde's
@@ -91,7 +101,28 @@ async fn patch_my_settings(
             ));
         }
     }
-    let updated = db::upsert_user_settings(&s.pool, ctx.user.id, next_badge.as_deref()).await?;
+    let next_theme = body.theme.unwrap_or(current.theme.clone());
+    if !VALID_THEMES.contains(&next_theme.as_str()) {
+        return Err(error::ApiError::BadRequest(format!(
+            "theme must be one of: {}",
+            VALID_THEMES.join(", ")
+        )));
+    }
+    let next_ui_style = body.ui_style.unwrap_or(current.ui_style.clone());
+    if !VALID_UI_STYLES.contains(&next_ui_style.as_str()) {
+        return Err(error::ApiError::BadRequest(format!(
+            "ui_style must be one of: {}",
+            VALID_UI_STYLES.join(", ")
+        )));
+    }
+    let updated = db::upsert_user_settings(
+        &s.pool,
+        ctx.user.id,
+        next_badge.as_deref(),
+        &next_theme,
+        &next_ui_style,
+    )
+    .await?;
     Ok(Json(updated))
 }
 

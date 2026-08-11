@@ -1952,7 +1952,7 @@ function CalRail({ onDragTask, onTouchSchedule, allocByProject }: {
                       {t.title}
                     </div>
                     <div className="rail-task-meta">
-                      {t.external_id && <span style={{ color: 'var(--ink-4)' }}>{t.external_id}</span>}
+                      {t.external_id && <span className="rail-task-ext">{t.external_id}</span>}
                       <span className="left" data-over={left != null && left < 0 ? 'true' : undefined}>
                         {leftLabel}
                       </span>

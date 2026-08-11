@@ -28,3 +28,6 @@ api/.sqlx/
 loadtest/
 
 storage/
+
+# scripts/visual-check.mjs screenshot output
+web/scripts/visual-check-out/
