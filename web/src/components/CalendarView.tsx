@@ -1906,6 +1906,8 @@ function CalRail({ onDragTask, onTouchSchedule, allocByProject }: {
               const estPct = est != null && total ? (est / total) * 100 : 100;
               const overPct = Math.max(0, compPct + planPct - estPct);
               const overSpent = est != null && completed > est;
+              const plentyLeft =
+                left != null && est != null && (left >= est * 0.3 || left >= 120);
               const leftLabel = left == null ? 'no est'
                 : left < 0 ? `${fmtMin(-left)} over`
                 : left === 0 && overSpent ? `+${fmtMin(completed - (est ?? 0))} spent`
@@ -1953,7 +1955,9 @@ function CalRail({ onDragTask, onTouchSchedule, allocByProject }: {
                     </div>
                     <div className="rail-task-meta">
                       {t.external_id && <span className="rail-task-ext">{t.external_id}</span>}
-                      <span className="left" data-over={left != null && left < 0 ? 'true' : undefined}>
+                      <span className="left"
+                            data-over={left != null && left < 0 ? 'true' : undefined}
+                            data-plenty={plentyLeft || undefined}>
                         {leftLabel}
                       </span>
                     </div>

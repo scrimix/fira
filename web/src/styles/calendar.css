@@ -1228,6 +1228,9 @@
 .rail-task-meta .left[data-over="true"] {
   color: var(--warn);
 }
+.rail-task-meta .left[data-plenty="true"] {
+  color: var(--accent);
+}
 /* Loop glyph that prefixes a rail-task title for tasks in the recurring
    section. Inline with the title; muted recurring tint. */
 .rail-task-recurring-icon {

@@ -719,7 +719,7 @@
   letter-spacing: 0;
 }
 .task-trail .left-est { color: var(--ink-2); }
-.task-trail .left-est[data-low="true"] { color: var(--accent); }
+.task-trail .left-est[data-plenty="true"] { color: var(--accent); }
 .task-trail .left-est[data-over="true"] { color: var(--warn); }
 .task-trail .src {
   width: 14px; height: 14px;

@@ -1260,7 +1260,10 @@ function TaskRow({
   const visibleTagIds = sortedTagIds.slice(0, 3);
   const moreCount = task.tag_ids.length - visibleTagIds.length;
   const left = taskTimeLeft(task, blocks);
-  const lowLeft = left != null && task.estimate_min != null && left < task.estimate_min * 0.2 && left > 0;
+  const plentyLeft =
+    left != null &&
+    task.estimate_min != null &&
+    (left >= task.estimate_min * 0.3 || left >= 120);
 
   // Long-press → drag for the whole row on touch. The hook drives
   // `isPressing` (renders as `data-pressing="true"` for the CSS visual)
@@ -1611,7 +1614,7 @@ function TaskRow({
                 left < 0 ? (
                   <span className="left-est" data-over="true">{fmtMin(-left)} over</span>
                 ) : (
-                  <span className="left-est" data-low={lowLeft || undefined}>{fmtMin(left)} left</span>
+                  <span className="left-est" data-plenty={plentyLeft || undefined}>{fmtMin(left)} left</span>
                 )
               ) : (
                 <span style={{ color: 'var(--ink-4)' }}>no est</span>
