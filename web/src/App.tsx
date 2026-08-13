@@ -2,6 +2,8 @@ import { useEffect, useRef } from 'react';
 import { useFira } from './store';
 import { buildTaskLink, parseTaskLink } from './deeplink';
 import { openNudgeSocket, openUserSocket } from './ws';
+import { useAppActive } from './hooks';
+import { syncLog, syncLogDev } from './synclog';
 import { Sidebar } from './components/Sidebar';
 import { TopBar } from './components/TopBar';
 import { CalendarView } from './components/CalendarView';
@@ -72,6 +74,11 @@ export default function App() {
   const hydrate = useFira((s) => s.hydrate);
   const activeWorkspaceId = useFira((s) => s.activeWorkspaceId);
   const playgroundMode = useFira((s) => s.playgroundMode);
+
+  // Background sync stands down when the tab has been out of sight for a
+  // couple of minutes, and catches up when it comes back. See the polling
+  // and socket effects below for what each side of that flip controls.
+  const appActive = useAppActive();
 
   useEffect(() => {
     hydrate();
@@ -156,20 +163,62 @@ export default function App() {
   // fallback for missed nudges (transient disconnect, dropped frames) so
   // remote changes still surface even if the socket is unhappy.
   useEffect(() => {
-    const id = window.setInterval(() => { void pollChanges(); }, 60_000);
+    if (!appActive) return;
+    const id = window.setInterval(() => {
+      syncLogDev('  · change-feed poll tick');
+      void pollChanges();
+    }, 60_000);
     return () => window.clearInterval(id);
-  }, [pollChanges]);
+  }, [pollChanges, appActive]);
 
-  // Full bootstrap refresh every 5 min. The change-feed catches incremental
+  // Full bootstrap refresh every 30 min. The change-feed catches incremental
   // ops, but it can drift if a nudge is missed AND the cursor advances past
   // it (e.g. a transient WS reconnect that swallows a frame). Rehydrating
   // the bootstrap snapshot at a coarse cadence is the belt-and-braces fix —
   // outbox + UI state are preserved, only the server-derived collections
   // get overwritten.
+  //
+  // This is the single most expensive thing an idle tab does: a full
+  // workspace snapshot, and a Google Calendar sync behind it (the bootstrap
+  // handler kicks one off per request). The 60s change-feed poll above
+  // already covers the drift case, so this only has to be a coarse backstop —
+  // hence 30 min rather than 5.
   useEffect(() => {
-    const id = window.setInterval(() => { void rehydrate(); }, 5 * 60_000);
+    if (!appActive) return;
+    const id = window.setInterval(() => {
+      syncLogDev('  · bootstrap refresh tick');
+      void rehydrate();
+    }, 30 * 60_000);
     return () => window.clearInterval(id);
-  }, [rehydrate]);
+  }, [rehydrate, appActive]);
+
+  // Coming back from idle. The timers above resume on their own, but they'd
+  // leave the user staring at stale data until the next tick, and a cursor
+  // that sat still for eight hours may be further behind than one /changes
+  // page can drain. A rehydrate settles both — it resets the cursor to the
+  // bootstrap watermark — and refreshes the calendar on the way in, which is
+  // exactly what you want when returning to the app. Skips the first run:
+  // the initial hydrate() has just done this.
+  //
+  // The user-channel reloads ride along: those nudges (membership, roles,
+  // invites, account links) are fire-and-forget, so anything that happened
+  // while the socket was down is simply gone. Refetching is the only way to
+  // learn about it.
+  // Waits for `loaded` rather than firing on mount: a tab backgrounded while
+  // the initial hydrate is still in flight would otherwise fire this against
+  // a half-built store. The first pass through is consumed as the skip —
+  // hydrate() has just fetched everything this effect would refetch.
+  const wakeMountedRef = useRef(false);
+  useEffect(() => {
+    if (!loaded) return;
+    if (!wakeMountedRef.current) { wakeMountedRef.current = true; return; }
+    if (!appActive || playgroundMode) return;
+    syncLog('  ⟳ wake catch-up: rehydrate + workspaces/links/invites');
+    void rehydrate();
+    void reloadWorkspaces();
+    void reloadLinks();
+    void reloadWorkspaceInvites();
+  }, [loaded, appActive, playgroundMode, rehydrate, reloadWorkspaces, reloadLinks, reloadWorkspaceInvites]);
 
   // WS nudge channel: open one socket per active workspace. Each nudge
   // triggers the same syncOutbox+pollChanges sequence as the interval, so
@@ -184,8 +233,13 @@ export default function App() {
   // into one sync, and an in-flight guard + `pending` flag guarantees at
   // most one extra catch-up pass. Without this the tab fires one fetch per
   // nudge and falls over.
+  //
+  // Dropped entirely while the tab is idle: the socket is what keeps the
+  // connection (and, on Fly, the machine serving it) alive all night. The
+  // 60s poll fallback is documented as covering any gap while disconnected,
+  // and the wake effect above does a full rehydrate on the way back.
   useEffect(() => {
-    if (!activeWorkspaceId || playgroundMode) return;
+    if (!activeWorkspaceId || playgroundMode || !appActive) return;
     let debounceTimer: number | null = null;
     let syncing = false;
     let pending = false;
@@ -207,6 +261,8 @@ export default function App() {
       if (debounceTimer !== null) return; // a sync is already scheduled
       debounceTimer = window.setTimeout(() => {
         debounceTimer = null;
+        // Logged after the debounce, not per nudge — a burst is one line.
+        syncLogDev('  · nudge → sync');
         void runSync();
       }, 200);
     };
@@ -217,7 +273,7 @@ export default function App() {
       if (debounceTimer !== null) window.clearTimeout(debounceTimer);
       handle.close();
     };
-  }, [activeWorkspaceId, syncOutbox, pollChanges, playgroundMode]);
+  }, [activeWorkspaceId, syncOutbox, pollChanges, playgroundMode, appActive]);
 
   // User-channel socket: opaque "your workspace surface changed" nudges.
   // Independent of which workspace is active, because the events that
@@ -225,15 +281,16 @@ export default function App() {
   // Account links share the same channel — a link request / accept /
   // cancel needs to reach a partner who may be looking at a different
   // workspace, so the per-user transport is the only one that fits.
+  // Idle-gated for the same reason as the workspace socket above.
   useEffect(() => {
-    if (!meId || playgroundMode) return;
+    if (!meId || playgroundMode || !appActive) return;
     const handle = openUserSocket(() => {
       void reloadWorkspaces();
       void reloadLinks();
       void reloadWorkspaceInvites();
     });
     return () => handle.close();
-  }, [meId, playgroundMode, reloadWorkspaces, reloadLinks, reloadWorkspaceInvites]);
+  }, [meId, playgroundMode, appActive, reloadWorkspaces, reloadLinks, reloadWorkspaceInvites]);
 
   // Bootstrap may include an already-accepted link — pull the partner's
   // calendar overlay once so the toggle has data to show as soon as the

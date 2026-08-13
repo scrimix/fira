@@ -8,6 +8,8 @@ use axum::{
 use serde::Deserialize;
 use sqlx::postgres::PgPoolOptions;
 use std::time::Duration;
+use tower::ServiceBuilder;
+use tower_http::compression::CompressionLayer;
 use tower_http::services::{ServeDir, ServeFile};
 use tower_http::trace::TraceLayer;
 
@@ -622,9 +624,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/invites/:id/accept", post(invites::accept))
         .route("/invites/:id/decline", post(invites::decline))
         .route("/ops", post(ops::post_ops))
-        .route("/changes", get(ops::get_changes))
-        .route("/ws", get(ws::ws_handler))
-        .route("/ws/user", get(ws::user_ws_handler));
+        .route("/changes", get(ops::get_changes));
 
     let attachments_router = Router::new()
         .route("/upload/:task_id", post(attachments::upload_attachment))
@@ -640,6 +640,28 @@ async fn main() -> anyhow::Result<()> {
     let api = api
         .route("/auth/dev-login", get(auth::dev_login))
         .route("/auth/dev-seed", post(auth::dev_seed));
+
+    // Compress JSON responses. `/bootstrap` is the one that matters: a full
+    // workspace snapshot (every task, block, gcal event, …) refetched by each
+    // client on a timer, previously going out as raw JSON. gzip/br takes an
+    // order of magnitude off it, which is most of our egress.
+    //
+    // The WS routes are merged *after* this layer on purpose. A 101 upgrade
+    // carries no body, and the default predicate — which decides by
+    // content-length / content-type — has neither to go on, so it would stamp
+    // `content-encoding` onto a handshake response that has nothing encoded.
+    let api = api.layer(CompressionLayer::new()).merge(
+        Router::new()
+            .route("/ws", get(ws::ws_handler))
+            .route("/ws/user", get(ws::user_ws_handler)),
+    );
+
+    // Same treatment for the SPA bundle. `layer` only wraps what's already on
+    // the router, so the fallback needs compression applied to it directly
+    // rather than inherited from the `app` chain below.
+    let static_svc = ServiceBuilder::new()
+        .layer(CompressionLayer::new())
+        .service(static_svc);
 
     let app = Router::new()
         .route("/health", get(health))

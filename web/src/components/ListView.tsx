@@ -1263,11 +1263,14 @@ function TaskRow({
   // Blue is a reward for landing a task under budget, so it only applies
   // once the task is done. On an unfinished task a big remaining number
   // just means the work hasn't started yet — nothing worth celebrating.
+  // Both gates must clear: 2h is the floor below which the saving isn't
+  // worth flagging at all, and 30% keeps it proportionate to the estimate.
   const plentyLeft =
     task.status === 'done' &&
     left != null &&
     task.estimate_min != null &&
-    (left >= task.estimate_min * 0.3 || left >= 120);
+    left >= 120 &&
+    left >= task.estimate_min * 0.3;
 
   // Long-press → drag for the whole row on touch. The hook drives
   // `isPressing` (renders as `data-pressing="true"` for the CSS visual)
