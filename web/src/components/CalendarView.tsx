@@ -1906,7 +1906,9 @@ function CalRail({ onDragTask, onTouchSchedule, allocByProject }: {
               const estPct = est != null && total ? (est / total) * 100 : 100;
               const overPct = Math.max(0, compPct + planPct - estPct);
               const overSpent = est != null && completed > est;
+              // Blue only for tasks that finished under budget — see ListView.
               const plentyLeft =
+                t.status === 'done' &&
                 left != null && est != null && (left >= est * 0.3 || left >= 120);
               const leftLabel = left == null ? 'no est'
                 : left < 0 ? `${fmtMin(-left)} over`

@@ -1260,7 +1260,11 @@ function TaskRow({
   const visibleTagIds = sortedTagIds.slice(0, 3);
   const moreCount = task.tag_ids.length - visibleTagIds.length;
   const left = taskTimeLeft(task, blocks);
+  // Blue is a reward for landing a task under budget, so it only applies
+  // once the task is done. On an unfinished task a big remaining number
+  // just means the work hasn't started yet — nothing worth celebrating.
   const plentyLeft =
+    task.status === 'done' &&
     left != null &&
     task.estimate_min != null &&
     (left >= task.estimate_min * 0.3 || left >= 120);
