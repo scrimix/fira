@@ -3,7 +3,7 @@ import { Check, ChevronDown, ChevronRight, Clock, ClockFading, Pencil } from 'lu
 import { useFira } from '../store';
 import { useLongPress } from '../useLongPress';
 import { useIsMobile } from '../hooks';
-import { fmtMin, taskCompletedMin, taskPlannedMin, taskTimeLeft } from '../time';
+import { fmtMin, fmtWeekOf, taskCompletedMin, taskPlannedMin, taskTimeLeft } from '../time';
 import { ProjectIcon } from './ProjectIcon';
 import { ConfirmDelete } from './ConfirmDelete';
 import type { Tag, Task, TimeBlock, Section, UUID } from '../types';
@@ -747,7 +747,7 @@ export function ListView() {
             <SectionCount value={nowTasks.length} />
             <span className="rule" />
             {showListTimes && <span className="est" title="estimated time">{fmtMin(nowEst)}</span>}
-            <span className="count section-caption">week of apr 27</span>
+            <span className="count section-caption">week of {fmtWeekOf()}</span>
           </div>
           {!collapsed.now && (
             <>

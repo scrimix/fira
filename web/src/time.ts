@@ -73,6 +73,14 @@ export function fmtWeekRange(weekStart: number, opts?: { compact?: boolean }): s
   return `${sm} ${start.getDate()}, ${start.getFullYear()} – ${em} ${end.getDate()}, ${end.getFullYear()}`;
 }
 
+// Lowercase "mon d" anchor for the list's "week of …" caption. Defaults to
+// the current week and reads `now()` on every call, so it follows the clock
+// (and snapshot mode) instead of freezing at first render.
+export function fmtWeekOf(weekStart: number = weekStartMs()): string {
+  const d = new Date(weekStart);
+  return `${MONTHS[d.getMonth()].toLowerCase()} ${d.getDate()}`;
+}
+
 export function dayOfMonthFor(weekStart: number, dayIdx: number): number {
   return addDaysLocal(weekStart, dayIdx).getDate();
 }

@@ -1058,7 +1058,11 @@
  * the rail is height-constrained and needs the projects panel to
  * either collapse out of the way or scroll along with the tasks. */
 .rail-projects {
-  background: var(--panel);
+  /* Plain paper in both styles. The panel tint used to mark this block
+   * as subordinate, but the rail already separates it with the head's
+   * rule, and against classic's white the grey slab read as a foreign
+   * card dropped into the rail rather than part of it. */
+  background: var(--paper);
   padding: 6px calc(var(--gutter-x) - var(--scrollbar-w)) 10px calc(8px * var(--density));
 }
 .rail-projects[data-open="false"] { padding: 6px calc(var(--gutter-x) - var(--scrollbar-w)) 6px calc(8px * var(--density)); }
@@ -1069,11 +1073,15 @@
   width: 100%;
   padding: 4px 0;
   font-family: var(--font-label);
-  font-size: var(--fs-md);
-  font-weight: 650;
-  letter-spacing: 0;
-  text-transform: none;
-  color: var(--ink);
+  /* Same label formula as .rail-group-head below — this head and the
+   * project group heads sit a few rows apart in the same rail, so a
+   * fixed size here made it tower over them in classic (10px tracked
+   * uppercase) while looking fine in modern (12.5px capitalized). */
+  font-size: calc(10px * var(--fs-scale) * var(--label-size));
+  font-weight: 500;
+  letter-spacing: calc(0.1em * var(--label-track));
+  text-transform: var(--label-case);
+  color: var(--ink-3);
   background: transparent;
   border: 0;
   border-bottom: 1px solid var(--rule);
@@ -1090,10 +1098,14 @@
   padding: 3px 0;
   font-family: var(--font-label);
   font-size: var(--fs-sm);
-  font-weight: 500;
+  font-weight: 400;
   cursor: pointer;
   user-select: none;
 }
+/* Modern keeps the medium weight: its lowercase sans label needs the
+ * extra stroke to hold rank against the task rows below. Classic's
+ * serif-ish label at 500 just read as bold next to the group heads. */
+:root[data-style="modern"] .rail-proj-row { font-weight: 500; }
 .rail-proj-row:hover { color: var(--ink-2); }
 .rail-proj-icon {
   flex-shrink: 0;
@@ -1101,7 +1113,10 @@
 .rail-proj-row[data-dimmed="true"] .rail-proj-icon {
   opacity: 0.6;
 }
-.rail-proj-name { color: var(--ink); }
+/* Same ink as the project name in a section head (.rail-group-head
+ * .pname) — it's the same string in the same rail, and at full --ink
+ * these rows outshone the heads they filter. */
+.rail-proj-name { color: var(--ink-2); }
 .rail-proj-row[data-dimmed="true"] .rail-proj-name {
   color: var(--ink-4);
   text-decoration: line-through;

@@ -119,17 +119,17 @@
   --rule-chrome: var(--rule);
 
   /* Panel tint: the flat grey fill that marks a *subordinate panel* off
-   * from the main surface — the task modal's details pane (and the head
-   * band above it) and the rail's projects block. Modern drops it back
-   * to plain paper: with --rule-chrome hidden there's no outline to
-   * carry the transition, so a tinted panel meets the main surface at a
-   * bare, hard corner: the rail's projects block, and the weekend day
-   * columns, where a hard un-outlined edge down the middle of the grid
-   * costs more than the cue is worth. The task modal's side column is
-   * NOT this token — it reads as one properly outlined sidebar, so it
-   * keeps its tint in both styles. Interaction / state greys are also
-   * not this token and stay in both: row hover, done rows, the members
-   * editor's owner row. */
+   * from the main surface. Only the weekend day head / column carry it
+   * now — the rail's projects block gave it up because the slab read as
+   * a foreign card against classic's white rather than a subordinate
+   * panel. Modern drops the tint back to plain paper: with
+   * --rule-chrome hidden there's no outline to carry the transition, so
+   * a tinted panel meets the main surface at a bare, hard corner —
+   * costlier down the middle of the grid than the cue is worth. The
+   * task modal's side column is NOT this token; it reads as one
+   * properly outlined sidebar, so it keeps its tint in both styles.
+   * Interaction / state greys are also not this token and stay in both:
+   * row hover, done rows, the members editor's owner row. */
   --panel: var(--paper-2);
 
   /* Density multiplier. Padding / gaps that are allowed to breathe are
