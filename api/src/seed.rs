@@ -618,6 +618,48 @@ async fn seed_tasks(tx: &mut Transaction<'_, Postgres>) -> sqlx::Result<()> {
         },
         // ---- DONE ----
         TaskSpec {
+            slug: "t_atlas_done_today", project: "p_atlas", epic: Some("e_auth_v2"), sprint: None,
+            assignee: "u_maya", title: "Publish API rate-limit guide", description: "",
+            section: "done", status: "done", priority: Some("p2"), source: "local", external_id: None,
+            estimate_min: Some(60), spent_min: 45, tags: &["auth"], subtasks: &[],
+        },
+        TaskSpec {
+            slug: "t_atlas_done_yesterday", project: "p_atlas", epic: Some("e_auth_v2"), sprint: None,
+            assignee: "u_maya", title: "Tighten billing export permissions", description: "",
+            section: "done", status: "done", priority: Some("p1"), source: "local", external_id: None,
+            estimate_min: Some(90), spent_min: 75, tags: &["billing"], subtasks: &[],
+        },
+        TaskSpec {
+            slug: "t_atlas_done_recent", project: "p_atlas", epic: Some("e_auth_v2"), sprint: None,
+            assignee: "u_maya", title: "Clean up stale webhook subscriptions", description: "",
+            section: "done", status: "done", priority: Some("p2"), source: "local", external_id: None,
+            estimate_min: Some(120), spent_min: 110, tags: &[], subtasks: &[],
+        },
+        TaskSpec {
+            slug: "t_atlas_done_last_week", project: "p_atlas", epic: Some("e_auth_v2"), sprint: None,
+            assignee: "u_maya", title: "Retire legacy OAuth callback", description: "",
+            section: "done", status: "done", priority: Some("p3"), source: "local", external_id: None,
+            estimate_min: Some(45), spent_min: 30, tags: &[], subtasks: &[],
+        },
+        TaskSpec {
+            slug: "t_atlas_done_july_one", project: "p_atlas", epic: Some("e_auth_v2"), sprint: None,
+            assignee: "u_maya", title: "Document the recovery runbook", description: "",
+            section: "done", status: "done", priority: Some("p2"), source: "local", external_id: None,
+            estimate_min: Some(180), spent_min: 165, tags: &["security"], subtasks: &[],
+        },
+        TaskSpec {
+            slug: "t_atlas_done_july_two", project: "p_atlas", epic: Some("e_auth_v2"), sprint: None,
+            assignee: "u_maya", title: "Replace the email delivery retry worker", description: "",
+            section: "done", status: "done", priority: Some("p2"), source: "local", external_id: None,
+            estimate_min: Some(240), spent_min: 210, tags: &[], subtasks: &[],
+        },
+        TaskSpec {
+            slug: "t_atlas_done_older", project: "p_atlas", epic: Some("e_auth_v2"), sprint: None,
+            assignee: "u_maya", title: "Audit infrastructure access grants", description: "",
+            section: "done", status: "done", priority: Some("p1"), source: "local", external_id: None,
+            estimate_min: Some(300), spent_min: 275, tags: &[], subtasks: &[],
+        },
+        TaskSpec {
             slug: "t_atlas_done1", project: "p_atlas", epic: Some("e_auth_v2"), sprint: Some("s_apr27"),
             assignee: "u_maya", title: "Migrate session store to Redis 7",
             description: "",
@@ -723,6 +765,24 @@ async fn seed_tasks(tx: &mut Transaction<'_, Postgres>) -> sqlx::Result<()> {
             .await?;
         }
     }
+    // Spread completed Atlas fixtures across archive periods so the Done
+    // grouping UI is useful immediately after each backend reseed.
+    for (slug, days_ago) in [
+        ("t_atlas_done_today", 0_i64),
+        ("t_atlas_done_yesterday", 1),
+        ("t_atlas_done_recent", 3),
+        ("t_atlas_done_last_week", 8),
+        ("t_atlas_done_july_one", 14),
+        ("t_atlas_done_july_two", 35),
+        ("t_atlas_done_older", 75),
+    ] {
+        sqlx::query("UPDATE tasks SET finished_at = now() - ($2 * INTERVAL '1 day') WHERE id = $1")
+            .bind(id(slug))
+            .bind(days_ago)
+            .execute(&mut **tx)
+            .await?;
+    }
+
     Ok(())
 }
 

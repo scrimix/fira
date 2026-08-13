@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import { X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronDown, X } from 'lucide-react';
 import { useFira } from '../store';
 import { fmtMin, parseEstimate } from '../time';
 import { Select } from './Select';
@@ -37,6 +37,19 @@ export function TaskModalDraft({ draft }: Props) {
   const [assigneeId, setAssigneeId] = useState<UUID | ''>(
     draft.assignee_id ?? meId ?? ''
   );
+  const assigneeUsers = useMemo(() => {
+    if (!project) return [];
+    const memberIds = new Set(
+      project.members.filter((m) => m.role !== 'inactive').map((m) => m.user_id),
+    );
+    return users.filter((u) => memberIds.has(u.id));
+  }, [project, users]);
+
+  useEffect(() => {
+    if (project && assigneeId && !assigneeUsers.some((u) => u.id === assigneeId)) {
+      setAssigneeId('');
+    }
+  }, [project, assigneeId, assigneeUsers]);
   const [section, setSection] = useState<Section>(draft.section);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -130,7 +143,7 @@ export function TaskModalDraft({ draft }: Props) {
 
             <h5 style={modalH5}>Assignee</h5>
             <AssigneePicker
-              users={users}
+              users={assigneeUsers}
               meId={meId}
               value={assigneeId || null}
               allowUnassigned={section !== 'now'}
@@ -342,7 +355,7 @@ function AssigneePicker({ users, meId, value, allowUnassigned, onChange }: {
         ) : (
           <span className="ap-empty">Unassigned</span>
         )}
-        <span className="ap-caret">▾</span>
+        <span className="ap-caret"><ChevronDown size={13} strokeWidth={1.75} /></span>
       </button>
       {open && (
         <div className="user-popover assignee-popover">

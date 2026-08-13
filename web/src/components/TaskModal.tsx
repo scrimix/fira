@@ -56,6 +56,7 @@ export function TaskModal({ taskId }: Props) {
   const allTags = useFira((s) => s.tags);
   const users = useFira((s) => s.users);
   const meId = useFira((s) => s.meId);
+  const assigneeUsers = useMemo(() => {    const memberIds = new Set(      (project?.members ?? []).filter((m) => m.role !== 'inactive').map((m) => m.user_id),    );    return users.filter((u) => memberIds.has(u.id));  }, [project, users]);
   const close = useFira((s) => s.openTask);
   const tickSubtask = useFira((s) => s.tickSubtask);
   const addSubtask = useFira((s) => s.addSubtask);
@@ -363,13 +364,13 @@ export function TaskModal({ taskId }: Props) {
                 {project.title}
               </span>
             } />
-            <Field label="Created by" value={<CreatorDisplay userId={task.created_by} users={users} meId={meId} />} />
+            <Field label="Created by" value={<CreatorDisplay userId={task.created_by} users={users} meId={meId} createdAt={task.created_at} />} />
             <div className="field">
               <h5>Assignee</h5>
               <AssigneeEditor
                 key={task.id}
                 value={task.assignee_id}
-                users={users}
+                users={assigneeUsers}
                 meId={meId}
                 onChange={(uid) => setTaskAssignee(task.id, uid)}
               />
@@ -1551,7 +1552,7 @@ function EstimateEditor({ value, onSave }: {
            style={{
              cursor: 'text',
              fontFamily: 'var(--font-sans)',
-             fontSize: 'var(--fs-sm)',
+             fontSize: 'var(--fs-md)',
              fontVariantNumeric: 'tabular-nums',
              color: value != null ? 'var(--ink)' : 'var(--ink-4)',
            }}>
@@ -2260,26 +2261,35 @@ export function TagEditor({
   );
 }
 
-function CreatorDisplay({ userId, users, meId }: {
+function CreatorDisplay({ userId, users, meId, createdAt }: {
   userId: UUID | null;
   users: User[];
   meId: UUID | null;
+  createdAt: string;
 }) {
-  if (!userId) {
-    return <span style={{ color: 'var(--ink-4)' }}>Unknown</span>;
-  }
-  const u = users.find((x) => x.id === userId);
-  if (!u) {
-    return <span style={{ color: 'var(--ink-4)' }}>Removed user</span>;
-  }
+  const user = userId ? users.find((x) => x.id === userId) ?? null : null;
+  const name = !userId ? "Unknown" : user ? `${user.name}${user.id === meId ? " (you)" : ""}` : "Removed user";
+
   return (
-    <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-      <div className="avatar" data-me={u.id === meId}>{u.initials}</div>
-      <span>{u.name}{u.id === meId ? ' (you)' : ''}</span>
+    <span style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+      <span style={{ display: "flex", alignItems: "center", gap: 6, padding: "2px 0" }}>
+        {user && <div className="avatar" data-me={user.id === meId}>{user.initials}</div>}
+        <span>{name}</span>
+      </span>
+      <span style={{ color: "var(--ink-4)", fontFamily: "var(--font-mono)", fontSize: "calc(10px * var(--fs-scale))", padding: "2px 0" }}>
+        {formatTaskCreatedAt(createdAt)}
+      </span>
     </span>
   );
 }
 
+function formatTaskCreatedAt(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "Created date unavailable";
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium", timeStyle: "short",
+  }).format(date);
+}
 function Field({ label, value, mono }: { label: string; value: React.ReactNode; mono?: boolean }) {
   return (
     <div className="field">

@@ -73,9 +73,9 @@
   align-items: center;
   border: 1px solid var(--rule-2);
   border-radius: var(--r-sm);
-  /* Pills share collapsed borders; clipping rounds the group's outer
-   * corners without breaking the single-seam look between them. */
-  overflow: hidden;
+  /* The search popover is absolutely positioned below this group, so the
+   * container must not clip it. The shared border still groups the pills. */
+  overflow: visible;
   background: var(--paper);
   height: 24px;
 }

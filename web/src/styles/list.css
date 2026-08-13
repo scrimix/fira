@@ -9,9 +9,9 @@
   scrollbar-gutter: stable;
 }
 .list-doc {
-  max-width: 880px;
+  max-width: 980px;
   margin: 0 auto;
-  padding: calc(24px * var(--density)) calc(48px * var(--density)) 80px;
+  padding: calc(24px * var(--density)) calc(36px * var(--density)) 80px;
 }
 /* Phone: drop the editorial side margins and run the document near the
  * viewport edges so the title column is the widest part of the row. The
@@ -220,7 +220,7 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   min-width: 0;
 }
 .list-tag-filter-controls {
@@ -259,26 +259,6 @@
 :root[data-theme="dark"] .list-tag-filter-chip[data-on] {
   background: color-mix(in srgb, var(--tag-color, var(--rule-2)) 26%, var(--paper));
 }
-.list-tag-filter-clear {
-  font-family: var(--font-label);
-  font-size: calc(10px * var(--fs-scale) * var(--label-size));
-  letter-spacing: calc(0.04em * var(--label-track));
-  text-transform: var(--label-case);
-  background: transparent;
-  border: 1px solid var(--rule-2);
-  border-radius: var(--r-xs);
-  color: var(--ink-3);
-  display: inline-flex; align-items: center; justify-content: center;
-  padding: 0 calc(8px * var(--density));
-  height: calc(18px * var(--density));
-  cursor: pointer;
-  flex: none;
-}
-.list-tag-filter-clear:hover:not(:disabled) { color: var(--ink); border-color: var(--ink-3); }
-.list-tag-filter-clear:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
 /* Segmented any / all toggle: each segment is a button, active segment
  * is filled with --ink so the current mode is visually unambiguous;
  * clicking the *other* segment switches mode. Borders collapse
@@ -288,6 +268,9 @@
   flex: none;
   height: calc(18px * var(--density));
 }
+/* Tag matching is visually closest to the chips it qualifies; the
+ * assignee scope stays as the trailing, broader task-visibility filter. */
+.list-tag-filter-mode[aria-label="Tag match mode"] { order: -1; }
 .list-tag-filter-mode-seg {
   font-family: var(--font-label);
   font-size: calc(10px * var(--fs-scale) * var(--label-size));
@@ -353,10 +336,11 @@
   text-transform: var(--label-case);
 }
 .section-head .caret {
-  font-family: var(--font-mono);
   color: var(--ink-4);
-  font-size: calc(11px * var(--fs-scale));
-  width: 12px;
+  width: 14px;
+  height: 14px;
+  display: grid;
+  place-items: center;
 }
 .section-head .count {
   font-family: var(--font-mono);
@@ -417,6 +401,25 @@
 .section[data-section="recurring"] .section-head h2 { color: var(--recurring); }
 .section[data-section="recurring"] .section-head .caret { color: var(--recurring); }
 .section[data-section="done"] .section-head h2 { color: var(--ink-3); }
+.archive-date-group { margin-top: calc(14px * var(--density)); }
+.archive-date-head {
+  display: flex; align-items: baseline; gap: 8px;
+  cursor: pointer;
+  user-select: none;
+  padding: 0 0 calc(4px * var(--density));
+  color: var(--ink-4);
+  font-family: var(--font-label);
+  font-size: calc(10px * var(--fs-scale) * var(--label-size));
+  letter-spacing: calc(0.08em * var(--label-track));
+  text-transform: var(--label-case);
+}
+.archive-date-head:hover { color: var(--ink-3); }
+.archive-date-head .archive-caret {
+  width: 13px; height: 13px;
+  display: grid; place-items: center;
+}
+.archive-date-head .rule { flex: 1; height: 1px; background: var(--rule); }
+.archive-date-head .count { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 
 .assignee-group[data-assignee-drop="true"] {
   background: var(--accent-soft);
@@ -435,13 +438,13 @@
   cursor: pointer;
   user-select: none;
 }
-.assignee-head:hover { color: var(--ink-2); }
 .assignee-head .ah-caret {
-  font-family: var(--font-mono);
   color: var(--ink-4);
-  font-size: calc(11px * var(--fs-scale));
-  width: 12px;
-  display: inline-block;
+  width: 14px;
+  height: 14px;
+  display: grid;
+  place-items: center;
+}
 }
 .assignee-head .ah-rule { flex: 1; height: 1px; background: var(--rule); }
 .assignee-head .ah-count {
@@ -595,22 +598,15 @@
 }
 
 .task-title-wrap { min-width: 0; }
-/* Container for the toggle caret + title text + ext-id chip. flex
- * baseline so the small caret aligns with the title's baseline rather
- * than its top. flex-wrap so a long external_id doesn't overflow on
- * narrow widths. */
+/* Title text may wrap, but the trailing subtask toggle and inline edit
+ * target must stay in the same row instead of becoming orphaned lines. */
 .task-title-line {
-  display: flex;
-  align-items: baseline;
-  /* No flex gap: the 4-px slivers it would insert between title /
-   * toggle / edit-pad inherit the row's pointer cursor, creating an
-   * I-beam → pointer → I-beam flicker as the cursor crosses. The
-   * toggle / pad provide their own spacing intrinsically. */
-  gap: 0;
-  flex-wrap: wrap;
+  display: block;
   min-width: 0;
+  line-height: 1.45;
 }
 .task-title {
+  min-width: 0;
   font-size: var(--fs-md);
   line-height: 1.45;
   word-break: break-word;
@@ -618,25 +614,11 @@
 /* Edit-zone affordance: only the title text gets the I-beam, so the
  * surrounding row body still reads as "click to open modal". Mobile
  * leaves the attribute off so the row pointer cursor wins. */
-.task-title[data-editable] { cursor: text; }
-/* Click-past-text edit zone. A fixed-width invisible span after the
- * title (and after the subtask toggle, if any) catches clicks and
- * enters edit at end. Width is tighter when a toggle is present
- * because the toggle eats some inline space and the modal-click
- * area should start sooner. Beyond this pad the row's pointer
- * cursor returns and clicks fall through to the row → open modal. */
-.task-title-edit-pad {
-  display: inline-block;
-  flex: 0 0 3ch;
-  align-self: stretch;
-  width: 3ch;
-  min-width: 3ch;
+.task-title[data-editable] {
   cursor: text;
-}
-.task-title-edit-pad[data-narrow] {
-  flex-basis: 1ch;
-  width: 1ch;
-  min-width: 1ch;
+  /* A small inline tail belongs to the title's own click target, so the
+   * user can click just past the text without a separate layout element. */
+  padding-inline-end: 1ch;
 }
 /* Per-task subtask-list toggle. Only rendered when the task has at
  * least one subtask; click flips the list's per-row expanded state.
@@ -674,7 +656,7 @@
  * (textarea sized as a single line via line-height + min-height) so
  * the cursor lands exactly where the static .task-title text was. */
 .list-title-input {
-  flex: 1;
+  width: 100%;
   min-width: 0;
   font: inherit;
   font-size: var(--fs-md);

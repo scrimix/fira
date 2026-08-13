@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Pencil, Plus, Trash2, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { useFira } from '../store';
 import { PROJECT_ICONS, DEFAULT_ICON, ProjectIcon } from './ProjectIcon';
 import { Select } from './Select';
@@ -9,6 +9,8 @@ import type { Project, ProjectMember, ProjectRole, Tag, UUID } from '../types';
 // Editorial-utilitarian palette. All Tailwind ~700 shades so each chip sits
 // at the same perceived weight on paper — distinguishable by hue, not by
 // brightness. Two existing seed projects (teal, amber) live here unchanged.
+const ICONS_PER_PAGE = 16;
+
 const COLORS: { hex: string; name: string }[] = [
   { hex: '#0F766E', name: 'Teal' },
   { hex: '#0E7490', name: 'Cyan' },
@@ -16,6 +18,12 @@ const COLORS: { hex: string; name: string }[] = [
   { hex: '#6D28D9', name: 'Violet' },
   { hex: '#BE185D', name: 'Pink' },
   { hex: '#B45309', name: 'Amber' },
+  { hex: '#DC2626', name: 'Red' },  { hex: '#CA8A04', name: 'Yellow' },  { hex: '#71717A', name: 'Graphite' },
+  { hex: '#4D7C0F', name: 'Lime' },
+  { hex: '#047857', name: 'Emerald' },
+  { hex: '#0369A1', name: 'Sky' },
+  { hex: '#4338CA', name: 'Indigo' },
+  { hex: '#A21CAF', name: 'Fuchsia' },
   { hex: '#15803D', name: 'Green' },
   { hex: '#334155', name: 'Slate' },
 ];
@@ -56,6 +64,8 @@ export function ProjectModal({ project }: Props) {
 
   const [title, setTitle] = useState(project?.title ?? '');
   const [icon, setIcon] = useState(project?.icon || DEFAULT_ICON);
+  const [iconPage, setIconPage] = useState(0);
+  const iconPageCount = Math.ceil(PROJECT_ICONS.length / ICONS_PER_PAGE);
   const [color, setColor] = useState(project?.color || COLORS[0].hex);
   const [urlTemplate, setUrlTemplate] = useState(project?.external_url_template ?? '');
   const [jiraProjectKey, setJiraProjectKey] = useState(project?.jira_project_key ?? '');
@@ -71,6 +81,33 @@ export function ProjectModal({ project }: Props) {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   // Workspace owners only — leads can edit, but deletion is owner-gated.
   const canDelete = isEdit && canEditRoles;
+
+  const persistProject = async (patch: Parameters<typeof updateProject>[1]) => {
+    if (!project) return;
+    try {
+      setError(null);
+      await updateProject(project.id, patch);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Failed to update project";
+      setError(msg);
+      showToast(msg);
+    }
+  };
+  const persistMembers = async (next: ProjectMember[]) => {
+    if (!project) return;
+    try {
+      setError(null);
+      await setProjectMembers(project.id, next);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Failed to update members";
+      setError(msg);
+      showToast(msg);
+    }
+  };
+  const updateMembers = (next: ProjectMember[]) => {
+    setMembers(next);
+    if (isEdit) void persistMembers(next);
+  };
 
   useEffect(() => {
     if (isEdit) loadAllUsers().catch(() => { /* non-fatal */ });
@@ -143,7 +180,7 @@ export function ProjectModal({ project }: Props) {
     <div className="modal-backdrop" onClick={close}>
       <div className="modal np-modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <span className="np-preview" style={{ color, borderColor: color }}>
+          <span className="np-preview" style={{ color, borderColor: PROJECT_ICONS.some((entry) => entry.name === icon) ? color : "transparent" }}>
             <ProjectIcon name={icon} size={14} strokeWidth={1.75} />
           </span>
           <span className="ext">{trimmed || (isEdit ? project!.title : 'New project')}</span>
@@ -170,8 +207,9 @@ export function ProjectModal({ project }: Props) {
             onChange={(e) => setTitle(e.target.value)}
             placeholder="Project name"
             maxLength={80}
+            onBlur={() => { if (isEdit && trimmed && trimmed !== project!.title) void persistProject({ title: trimmed }); }}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey || valid)) {
+              if (!isEdit && e.key === 'Enter' && (e.metaKey || e.ctrlKey || valid)) {
                 e.preventDefault();
                 submit();
               }
@@ -181,19 +219,45 @@ export function ProjectModal({ project }: Props) {
 
           <label className="np-label">Icon</label>
           <div className="np-icons">
-            {PROJECT_ICONS.map(({ name, icon: I }) => (
+            {PROJECT_ICONS.slice(iconPage * ICONS_PER_PAGE, (iconPage + 1) * ICONS_PER_PAGE).map(({ name, icon: I }) => (
               <button
                 key={name}
                 type="button"
                 className="np-icon"
                 data-active={name === icon}
-                onClick={() => setIcon(name)}
+                onClick={() => { setIcon(name); if (isEdit && name !== project!.icon) void persistProject({ icon: name }); }}
                 title={name}
                 aria-label={name}
               >
                 <I size={18} strokeWidth={1.75} />
               </button>
             ))}
+          </div>
+          <div className="np-icon-pages" aria-label="Icon picker pages">
+            <button type="button" onClick={() => setIconPage((page) => Math.max(0, page - 1))}
+                    disabled={iconPage === 0} aria-label="Previous icon page">
+              <ChevronLeft size={14} strokeWidth={1.75} />
+            </button>
+            <span>{iconPage + 1} / {iconPageCount}</span>
+            <button type="button" onClick={() => setIconPage((page) => Math.min(iconPageCount - 1, page + 1))}
+                    disabled={iconPage === iconPageCount - 1} aria-label="Next icon page">
+              <ChevronRight size={14} strokeWidth={1.75} />
+            </button>
+          </div>
+
+
+          <div className="np-emoji-field">
+            <span>Or use an emoji</span>
+            <input
+              className="np-emoji-input"
+              value={PROJECT_ICONS.some((entry) => entry.name === icon) ? "" : icon}
+              onChange={(e) => setIcon(e.target.value || DEFAULT_ICON)}
+              onBlur={() => { if (isEdit && !PROJECT_ICONS.some((entry) => entry.name === icon) && icon !== project!.icon) void persistProject({ icon }); }}
+              placeholder="😀"
+              maxLength={16}
+              inputMode="text"
+              aria-label="Project emoji"
+            />
           </div>
 
           <label className="np-label">Color</label>
@@ -205,7 +269,7 @@ export function ProjectModal({ project }: Props) {
                 className="np-color"
                 data-active={c.hex === color}
                 style={{ ['--swatch' as string]: c.hex }}
-                onClick={() => setColor(c.hex)}
+                onClick={() => { setColor(c.hex); if (isEdit && c.hex !== project!.color) void persistProject({ color: c.hex }); }}
                 title={c.name}
                 aria-label={c.name}
               >
@@ -223,6 +287,7 @@ export function ProjectModal({ project }: Props) {
                 onChange={(e) => setUrlTemplate(e.target.value)}
                 placeholder="https://acme.atlassian.net/browse/{key}"
                 spellCheck={false}
+                onBlur={() => { if (trimmedUrl !== (project?.external_url_template ?? "")) void persistProject({ external_url_template: trimmedUrl || null }); }}
               />
               <div className="np-hint">
                 {trimmedUrl && !trimmedUrl.includes('{key}')
@@ -243,6 +308,7 @@ export function ProjectModal({ project }: Props) {
                   }}
                   placeholder="FIR"
                   spellCheck={false}
+                  onBlur={() => { if (isEdit && trimmedJiraKey !== (project?.jira_project_key ?? "")) void persistProject({ jira_project_key: trimmedJiraKey || null }); }}
                 />
                 <button
                   type="button"
@@ -281,15 +347,17 @@ export function ProjectModal({ project }: Props) {
                 canEditRoles={canEditRoles}
                 armedRemove={armedRemove}
                 setArmedRemove={setArmedRemove}
-                onAdd={(uid) => setMembers((m) =>
-                  m.some((x) => x.user_id === uid) ? m : [...m, { user_id: uid, role: 'member' }]
-                )}
+                onAdd={(uid) => {
+                  const next = members.some((x) => x.user_id === uid)
+                    ? members : [...members, { user_id: uid, role: 'member' as const }];
+                  updateMembers(next);
+                }}
                 onRemove={(uid) => {
-                  setMembers((m) => m.filter((x) => x.user_id !== uid));
+                  updateMembers(members.filter((x) => x.user_id !== uid));
                   setArmedRemove(null);
                 }}
-                onRoleChange={(uid, role) => setMembers((m) =>
-                  m.map((x) => x.user_id === uid ? { ...x, role } : x)
+                onRoleChange={(uid, role) => updateMembers(
+                  members.map((x) => x.user_id === uid ? { ...x, role } : x),
                 )}
               />
               {!canEditRoles && (
@@ -305,18 +373,18 @@ export function ProjectModal({ project }: Props) {
 
           {error && <div className="np-error">{error}</div>}
 
-          <div className="np-actions">
-            <button className="btn" onClick={close} disabled={submitting}>Cancel</button>
-            <button
-              className="btn np-create"
-              onClick={submit}
-              disabled={!valid || !dirty || submitting}
-            >
-              {submitting
-                ? (isEdit ? 'Saving…' : 'Creating…')
-                : (isEdit ? 'Save changes' : 'Create project')}
-            </button>
-          </div>
+          {!isEdit && (
+            <div className="np-actions">
+              <button className="btn" onClick={close} disabled={submitting}>Cancel</button>
+              <button
+                className="btn np-create"
+                onClick={submit}
+                disabled={!valid || submitting}
+              >
+                {submitting ? 'Creating…' : 'Create project'}
+              </button>
+            </div>
+          )}
         </div>
         {confirmingDelete && project && (
           <ConfirmDelete

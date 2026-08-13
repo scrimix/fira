@@ -161,6 +161,7 @@
    * from its rows' right gutter — otherwise the edge jumps sideways the
    * moment the list grows past the fold. */
   --scrollbar-w: 10px;
+  --control-h: calc(26px * var(--density));
   /* Spacing between controls inside any bar row — topbar, calendar
    * toolbar, rail head. One token so a pair of buttons reads the same
    * distance apart wherever it sits: the topbar's chips used to stack
@@ -518,7 +519,7 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
 .chip[data-tone="done"] { color: var(--done); border-color: color-mix(in srgb, var(--done) 35%, var(--paper)); }
 
 .btn {
-  height: calc(26px * var(--density));
+  height: var(--control-h);
   padding: 0 calc(10px * var(--density));
   font-size: var(--fs-sm);
   border: 1px solid var(--rule-2);
@@ -529,7 +530,7 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
 }
 .btn:hover { background: var(--paper-3); }
 .icon-btn {
-  width: calc(26px * var(--density)); height: calc(26px * var(--density));
+  width: calc(26px * var(--density)); height: var(--control-h);
   display: grid; place-items: center;
   border-radius: var(--r-sm);
   color: var(--ink-3);
@@ -696,9 +697,12 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
 .np-label:first-child { margin-top: 0; }
 .np-title {
   width: 100%;
-  /* Drop the fixed height so vertical padding is what sets the size —
-     keeps the cap-height comfortably away from the border on every font. */
-  padding: calc(9px * var(--density)) 12px;
+  /* Match the shared button height so inline form rows (such as Jira
+   * project key + Check) align as one control. */
+  box-sizing: border-box;
+  -webkit-appearance: none;
+  appearance: none;
+  padding: calc(5px * var(--density)) 12px;
   border: 1px solid var(--rule-2);
   border-radius: var(--r-sm);
   background: var(--paper);
@@ -731,6 +735,49 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   color: var(--ink);
   background: var(--paper-2);
 }
+.np-icon-pages {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 8px;
+  color: var(--ink-3);
+  font-family: var(--font-label);
+  font-size: calc(10px * var(--fs-scale) * var(--label-size));
+}
+.np-icon-pages button {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--rule-2);
+  border-radius: var(--r-xs);
+  color: var(--ink-3);
+}
+.np-icon-pages button:hover:not(:disabled) { color: var(--ink); border-color: var(--ink-3); }
+.np-icon-pages button:disabled { opacity: 0.35; cursor: not-allowed; }
+.np-emoji-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  color: var(--ink-3);
+  font-size: var(--fs-sm);
+}
+.np-emoji-input {
+  width: 42px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--rule-2);
+  border-radius: var(--r-sm);
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 18px;
+  line-height: 1;
+  text-align: center;
+  outline: 0;
+}
+.np-emoji-input:focus { border-color: var(--focus-line); }
 
 /* Color swatches: a chunky inset chip on a paper button. The active state
  * frames the chip with the ink-color stroke that matches the icon active
@@ -886,6 +933,14 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   padding: 0;
 }
 .np-member-x:hover { color: var(--danger); }
+/* Self rows cannot be removed, but reserve the remove-button slot so their
+ * role picker lines up with every other member row. */
+.np-member[data-me]::after {
+  content: '';
+  flex: 0 0 22px;
+  width: 22px;
+  height: 22px;
+}
 .np-member-confirm {
   font-family: var(--font-label);
   font-size: calc(10px * var(--fs-scale) * var(--label-size));

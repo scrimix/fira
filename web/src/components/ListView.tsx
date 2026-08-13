@@ -55,6 +55,7 @@ export function ListView() {
   // below is an early return, so all useState/useRef calls live above it.
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({ done: true, someday: true });
   const [collapsedAssignee, setCollapsedAssignee] = useState<Record<UUID, boolean>>({});
+  const [collapsedArchiveGroups, setCollapsedArchiveGroups] = useState<Record<string, boolean>>({});
   const [dropTarget, setDropTarget] = useState<Section | null>(null);
   const [assigneeDropTarget, setAssigneeDropTarget] = useState<UUID | null>(null);
   const [rowDropAt, setRowDropAt] = useState<{ id: UUID; pos: 'before' | 'after' | 'merge' } | null>(null);
@@ -200,6 +201,7 @@ export function ListView() {
   const doneTasks = projectTasks
     .filter((t) => t.section === 'done')
     .sort((a, b) => (b.finished_at ?? b.created_at).localeCompare(a.finished_at ?? a.created_at));
+  const doneGroups = groupArchivedTasks(doneTasks);
   // Caller floats to the top of the assignee groups; the rest stay in
   // membership order. Members with role 'owner' (the workspace owner's
   // default per-project stance) or 'inactive' (a member who's been parked)
@@ -261,8 +263,17 @@ export function ListView() {
       const onDragOver = (ev: DragEvent) => {
         dragCursorRef.current = { x: ev.clientX, y: ev.clientY };
       };
+      const stopOnNativeEnd = () => dragScrollStopRef.current?.();
       document.addEventListener('dragover', onDragOver);
-      removeListener = () => document.removeEventListener('dragover', onDragOver);
+      // Cross-section drops can unmount the source row before React's
+      // onDragEnd runs, so native document events provide final cleanup.
+      document.addEventListener('drop', stopOnNativeEnd);
+      document.addEventListener('dragend', stopOnNativeEnd);
+      removeListener = () => {
+        document.removeEventListener('dragover', onDragOver);
+        document.removeEventListener('drop', stopOnNativeEnd);
+        document.removeEventListener('dragend', stopOnNativeEnd);
+      };
     }
 
     // Asymmetric zones: bottom is wider so the user can scroll down toward
@@ -272,7 +283,7 @@ export function ListView() {
     // responsive without hijacking the cursor too aggressively.
     const ZONE_TOP = 100;
     const ZONE_BOTTOM = 160;
-    const MAX_SPEED = 8;
+    const MAX_SPEED = mode === 'drag' ? 4 : 8;
     let raf = 0;
     const tick = () => {
       const cur = dragCursorRef.current;
@@ -350,6 +361,7 @@ export function ListView() {
   const onRowDrop = (e: React.DragEvent, target: Task) => {
     e.preventDefault();
     e.stopPropagation();
+    dragScrollStopRef.current?.();
     setRowDropAt(null);
     setDropTarget(null);
     setAssigneeDropTarget(null);
@@ -366,6 +378,7 @@ export function ListView() {
   };
   const onSectionDrop = (e: React.DragEvent, section: Section) => {
     e.preventDefault();
+    dragScrollStopRef.current?.();
     const id = e.dataTransfer.getData('text/plain');
     if (id) setTaskSection(id, section);
     setDropTarget(null);
@@ -707,6 +720,7 @@ export function ListView() {
           tagIds={listFilter.tag_ids}
           mode={listFilter.tag_mode}
           scope={assigneeScope}
+          showAssigneeScope={project.members.filter((m) => m.role !== 'inactive').length > 1}
           onChange={(tag_ids) => setListFilter({ tag_ids })}
           onModeChange={(tag_mode) => setListFilter({ tag_mode })}
           onScopeChange={(assignee_scope) => setListFilter({ assignee_scope })}
@@ -728,7 +742,7 @@ export function ListView() {
              onDragLeave={() => setDropTarget(null)}
              onDrop={(e) => onSectionDrop(e, 'now')}>
           <div className="section-head" onClick={() => setCollapsed({ ...collapsed, now: !collapsed.now })}>
-            <span className="caret">{collapsed.now ? '▸' : '▾'}</span>
+            <span className="caret">{collapsed.now ? <ChevronRight size={14} strokeWidth={1.75} /> : <ChevronDown size={14} strokeWidth={1.75} />}</span>
             <h2>Now</h2>
             <SectionCount value={nowTasks.length} />
             <span className="rule" />
@@ -808,7 +822,7 @@ export function ListView() {
                        }}>
                     <div className="assignee-head"
                          onClick={() => setCollapsedAssignee({ ...collapsedAssignee, [aid]: !folded })}>
-                      <span className="ah-caret">{folded ? '▸' : '▾'}</span>
+                      <span className="ah-caret">{folded ? <ChevronRight size={13} strokeWidth={1.75} /> : <ChevronDown size={13} strokeWidth={1.75} />}</span>
                       <div className="avatar" data-me={u?.id === meId}>{u?.initials ?? '?'}</div>
                       <span>{u?.name}{u?.id === meId ? ' (you)' : ''}</span>
                       <span className="ah-rule" />
@@ -852,7 +866,7 @@ export function ListView() {
                   <div className="assignee-group">
                     <div className="assignee-head"
                          onClick={() => setCollapsedAssignee({ ...collapsedAssignee, ['__unassigned']: !folded })}>
-                      <span className="ah-caret">{folded ? '▸' : '▾'}</span>
+                      <span className="ah-caret">{folded ? <ChevronRight size={13} strokeWidth={1.75} /> : <ChevronDown size={13} strokeWidth={1.75} />}</span>
                       <div className="avatar">?</div>
                       <span>Unassigned</span>
                       <span className="ah-rule" />
@@ -873,7 +887,7 @@ export function ListView() {
              onDragLeave={() => setDropTarget(null)}
              onDrop={(e) => onSectionDrop(e, 'later')}>
           <div className="section-head" onClick={() => setCollapsed({ ...collapsed, later: !collapsed.later })}>
-            <span className="caret">{collapsed.later ? '▸' : '▾'}</span>
+            <span className="caret">{collapsed.later ? <ChevronRight size={14} strokeWidth={1.75} /> : <ChevronDown size={14} strokeWidth={1.75} />}</span>
             <h2>Later</h2>
             <SectionCount value={laterTasks.length} />
             <span className="rule" />
@@ -895,7 +909,7 @@ export function ListView() {
              onDragLeave={() => setDropTarget(null)}
              onDrop={(e) => onSectionDrop(e, 'recurring')}>
           <div className="section-head" onClick={() => setCollapsed({ ...collapsed, recurring: !collapsed.recurring })}>
-            <span className="caret">{collapsed.recurring ? '▸' : '▾'}</span>
+            <span className="caret">{collapsed.recurring ? <ChevronRight size={14} strokeWidth={1.75} /> : <ChevronDown size={14} strokeWidth={1.75} />}</span>
             <h2>Recurring</h2>
             <SectionCount value={recurringTasks.length} />
             <span className="rule" />
@@ -917,7 +931,7 @@ export function ListView() {
              onDragLeave={() => setDropTarget(null)}
              onDrop={(e) => onSectionDrop(e, 'someday')}>
           <div className="section-head" onClick={() => setCollapsed({ ...collapsed, someday: !collapsed.someday })}>
-            <span className="caret">{collapsed.someday ? '▸' : '▾'}</span>
+            <span className="caret">{collapsed.someday ? <ChevronRight size={14} strokeWidth={1.75} /> : <ChevronDown size={14} strokeWidth={1.75} />}</span>
             <h2>Someday</h2>
             <SectionCount value={somedayTasks.length} />
             <span className="rule" />
@@ -937,7 +951,7 @@ export function ListView() {
              onDragOver={(e) => { e.preventDefault(); setDropTarget('done'); }}
              onDrop={(e) => onSectionDrop(e, 'done')}>
           <div className="section-head" onClick={() => setCollapsed({ ...collapsed, done: !collapsed.done })}>
-            <span className="caret">{collapsed.done ? '▸' : '▾'}</span>
+            <span className="caret">{collapsed.done ? <ChevronRight size={14} strokeWidth={1.75} /> : <ChevronDown size={14} strokeWidth={1.75} />}</span>
             <h2>Done</h2>
             <SectionCount value={doneTasks.length} />
             <span className="rule" />
@@ -946,8 +960,27 @@ export function ListView() {
           </div>
           {!collapsed.done && (
             <>
-              {doneTasks.map((t, i) => renderRow(t, doneTasks, i))}
-              <AddTaskRow onAdd={(title) => addTask(project.id, 'done', title, undefined, tagFilter)} onNavigate={navigateFrom} />
+              {doneGroups.map((group) => {
+                const folded = !!collapsedArchiveGroups[group.key];
+                return (
+                  <div className="archive-date-group" key={group.key}>
+                    <div
+                      className="archive-date-head"
+                      onClick={() => setCollapsedArchiveGroups((current) => ({
+                        ...current, [group.key]: !folded,
+                      }))}
+                    >
+                      <span className="archive-caret">
+                        {folded ? <ChevronRight size={13} strokeWidth={1.75} /> : <ChevronDown size={13} strokeWidth={1.75} />}
+                      </span>
+                      <span>{group.label}</span>
+                      <span className="rule" />
+                      <span className="count">{group.tasks.length}</span>
+                    </div>
+                    {!folded && group.tasks.map((t) => renderRow(t, doneTasks, doneTasks.indexOf(t)))}
+                  </div>
+                );
+              })}
             </>
           )}
         </div>
@@ -1519,19 +1552,7 @@ function TaskRow({
               {task.title}
             </span>
           )}
-          {!editingTitle && allowInlineEdit && (
-            // Click-past-text edit zone, always between title and
-            // toggle. Narrow to 1 char when a toggle follows so the
-            // chevron stays close to the title; wide (5 ch) when
-            // there's no toggle so the user gets a generous click-
-            // to-type-at-end target.
-            <span
-              className="task-title-edit-pad"
-              data-narrow={task.subtasks.length > 0 || undefined}
-              aria-hidden="true"
-              onClick={(e) => { e.stopPropagation(); setEditingTitle(true); }}
-            />
-          )}
+          <span className="task-title-tail">
           {task.subtasks.length > 0 && (
             <button
               type="button"
@@ -1544,8 +1565,9 @@ function TaskRow({
               {expanded
                 ? <ChevronDown size={14} strokeWidth={1.75} />
                 : <ChevronRight size={14} strokeWidth={1.75} />}
-            </button>
+              </button>
           )}
+          </span>
         </div>
         {expanded && task.subtasks.length > 0 && (
           <div className="subtasks">
@@ -1624,6 +1646,7 @@ function TaskRow({
                   <span className="left-est" data-plenty={plentyLeft || undefined}>{fmtMin(left)} left</span>
                 )
               ) : (
+
                 <span style={{ color: 'var(--ink-4)' }}>no est</span>
               )
             )}
@@ -1634,13 +1657,49 @@ function TaskRow({
   );
 }
 
+function groupArchivedTasks(tasks: Task[]): Array<{ key: string; label: string; tasks: Task[] }> {
+  const groups = new Map<string, { label: string; tasks: Task[] }>();
+  for (const task of tasks) {
+    const timestamp = task.finished_at ?? task.created_at;
+    const { key, label } = archiveDateGroup(timestamp);
+    const group = groups.get(key);
+    if (group) group.tasks.push(task);
+    else groups.set(key, { label, tasks: [task] });
+  }
+  return [...groups.entries()].map(([key, group]) => ({ key, ...group }));
+}
+
+function archiveDateGroup(iso: string): { key: string; label: string } {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return { key: "unknown", label: "Earlier" };
+  const midnight = (value: Date) => new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime();
+  const daysAgo = Math.max(0, Math.round((midnight(new Date()) - midnight(date)) / 86_400_000));
+  const dayKey = new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
+  if (daysAgo === 0) return { key: `day-${dayKey}`, label: "Today" };
+  if (daysAgo === 1) return { key: `day-${dayKey}`, label: "Yesterday" };
+  if (daysAgo < 7) return {
+    key: `day-${dayKey}`,
+    label: new Intl.DateTimeFormat(undefined, { weekday: "long", month: "short", day: "numeric" }).format(date),
+  };
+  if (daysAgo < 14) return { key: "last-week", label: "Last week" };
+  const now = new Date();
+  if (date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth()) {
+    return { key: "earlier-this-month", label: "Earlier this month" };
+  }
+  const monthKey = `${date.getFullYear()}-${date.getMonth()}`;
+  return {
+    key: `month-${monthKey}`,
+    label: new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" }).format(date),
+  };
+}
+
 // Sticky tag filter strip. Sits at the top of the scroll container so the
 // active filter stays visible as the user scrolls down through Now / Later
-// / Done. Always renders the Me/All scope pill; the tag chips section
-// hides itself when the project has no tags so empty chips don't show
-// up as visual noise.
+// / Done. The Me/All scope pill is omitted when a project has only one
+// active member; the tag chips section hides itself when the project has no
+// tags so empty chips do not show up as visual noise.
 function ListTagFilter({
-  projectId, allTags, tagIds, mode, scope,
+  projectId, allTags, tagIds, mode, scope, showAssigneeScope,
   onChange, onModeChange, onScopeChange,
 }: {
   projectId: UUID;
@@ -1648,6 +1707,7 @@ function ListTagFilter({
   tagIds: UUID[];
   mode: 'and' | 'or';
   scope: 'me' | 'all';
+  showAssigneeScope: boolean;
   onChange: (ids: UUID[]) => void;
   onModeChange: (mode: 'and' | 'or') => void;
   onScopeChange: (scope: 'me' | 'all') => void;
@@ -1667,7 +1727,6 @@ function ListTagFilter({
     if (selected.has(id)) onChange(tagIds.filter((x) => x !== id));
     else onChange([...tagIds, id]);
   };
-  const clear = () => onChange([]);
   const hasTags = projectTags.length > 0;
 
   return (
@@ -1698,7 +1757,7 @@ function ListTagFilter({
        * has no visible effect until a second tag is added. Clear is a
        * safe no-op when nothing is selected. */}
       <div className="list-tag-filter-controls">
-        <div className="list-tag-filter-mode" role="group" aria-label="Assignee scope">
+        {showAssigneeScope && <div className="list-tag-filter-mode" role="group" aria-label="Assignee scope">
           <button
             type="button"
             className="list-tag-filter-mode-seg"
@@ -1717,9 +1776,8 @@ function ListTagFilter({
           >
             me
           </button>
-        </div>
+        </div>}
         {hasTags && (
-          <>
             <div className="list-tag-filter-mode" role="group" aria-label="Tag match mode">
               <button
                 type="button"
@@ -1740,16 +1798,6 @@ function ListTagFilter({
                 and
               </button>
             </div>
-            <button
-              type="button"
-              className="list-tag-filter-clear"
-              onClick={clear}
-              disabled={tagIds.length === 0}
-              title="Clear tag filter"
-            >
-              clear
-            </button>
-          </>
         )}
       </div>
     </div>

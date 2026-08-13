@@ -1787,6 +1787,16 @@ function CalRail({ onDragTask, onTouchSchedule, allocByProject }: {
     p.members.find((m) => m.user_id === activePersonId)?.role !== 'inactive',
   );
 
+  const hasMultipleRailMembers = new Set(
+    railProjects.flatMap((p) => p.members
+      .filter((m) => m.role !== 'inactive')
+      .map((m) => m.user_id)),
+  ).size > 1;
+
+  useEffect(() => {
+    if (!hasMultipleRailMembers) setShowAll(false);
+  }, [hasMultipleRailMembers]);
+
   const groups: Array<{ project: Project; tasks: Task[] }> = railProjects
     .filter((p) => projectFilter[p.id] !== false)
     .map((p) => ({
@@ -1831,14 +1841,16 @@ function CalRail({ onDragTask, onTouchSchedule, allocByProject }: {
           spellCheck={false}
           onKeyDown={(e) => { if (e.key === 'Escape') setTitleQuery(''); }}
         />
-        <button className="rail-scope-btn"
-                onClick={() => setShowAll((v) => !v)}
-                data-active={showAll}
-                title={showAll
-                  ? 'Showing every task in the project — click to filter back to your own'
-                  : 'Show every task in the project (so you can log time on tasks you don’t own)'}>
-          {showAll ? 'My' : 'All'}
-        </button>
+        {hasMultipleRailMembers && (
+          <button className="rail-scope-btn"
+                  onClick={() => setShowAll((v) => !v)}
+                  data-active={showAll}
+                  title={showAll
+                    ? 'Showing every task in the project — click to filter back to your own'
+                    : 'Show every task in the project (so you can log time on tasks you don’t own)'}>
+            {showAll ? 'My' : 'All'}
+          </button>
+        )}
       </div>
       <div className="rail-body" ref={setRailBodyEl}>
         <div className="rail-projects" data-open={projectsOpen}>

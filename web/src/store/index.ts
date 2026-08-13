@@ -750,7 +750,7 @@ function applyOpToState(s: FiraState, op: AnyOpKind): Partial<FiraState> {
         const { [op.project_id]: _drop, ...remainingFilter } = s.projectFilter;
         const nextProjects = s.projects.filter((p) => p.id !== op.project_id);
         const listFilter = s.listFilter.project_id === op.project_id
-          ? { ...s.listFilter, project_id: nextProjects[0]?.id ?? null }
+          ? { ...s.listFilter, project_id: nextProjects[0]?.id ?? null, tag_ids: [] }
           : s.listFilter;
         return {
           projects: nextProjects,
@@ -783,7 +783,7 @@ function applyOpToState(s: FiraState, op: AnyOpKind): Partial<FiraState> {
       const { [op.project_id]: _drop, ...remainingFilter } = s.projectFilter;
       const nextProjects = s.projects.filter((p) => p.id !== op.project_id);
       const listFilter = s.listFilter.project_id === op.project_id
-        ? { ...s.listFilter, project_id: nextProjects[0]?.id ?? null }
+        ? { ...s.listFilter, project_id: nextProjects[0]?.id ?? null, tag_ids: [] }
         : s.listFilter;
       return {
         projects: nextProjects,
@@ -902,11 +902,7 @@ function applyBootstrap(
       ...get().listFilter,
       project_id: firstProject,
       assignee_id: me.id,
-      // Drop persisted tag ids that no longer exist so the toolbar
-      // doesn't carry phantoms after a peer deleted a tag offline.
-      tag_ids: get().listFilter.tag_ids.filter(
-        (id) => (data.tags ?? []).some((t) => t.id === id),
-      ),
+      tag_ids: [],
     },
     // Empty workspace lands on list: that view's empty state has the
     // owner-aware "Create your first project" / "ask an admin" CTA.
@@ -1047,7 +1043,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
         set((s) => ({
           view: data.projects.length === 0 ? 'list' : lastView.view,
           listFilter: projectExists
-            ? { ...s.listFilter, project_id: lastView.projectId }
+            ? { ...s.listFilter, project_id: lastView.projectId, tag_ids: [] }
             : s.listFilter,
         }));
       }
@@ -1157,14 +1153,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
         cursor: data.cursor ?? s.cursor,
         appliedOpIds: new Map(),
         lastSyncedAt: Date.now(),
-        // Mirror applyBootstrap's tag-id pruning so a peer-deleted tag
-        // can't leave a phantom in the list filter.
-        listFilter: {
-          ...s.listFilter,
-          tag_ids: s.listFilter.tag_ids.filter(
-            (id) => (data.tags ?? []).some((t) => t.id === id),
-          ),
-        },
+
       }));
     } catch {
       // Silent — same posture as pollChanges. The next tick (or the
@@ -1601,7 +1590,10 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
 
   setView: (v, projectId) => set((s) => ({
     view: v,
-    listFilter: projectId ? { ...s.listFilter, project_id: projectId } : s.listFilter,
+    listFilter: projectId
+      ? { ...s.listFilter, project_id: projectId,
+          ...(projectId !== s.listFilter.project_id ? { tag_ids: [] } : {}) }
+      : s.listFilter,
   })),
   addPerson: (id) => set((s) => ({
     selectedPersonIds: s.selectedPersonIds.includes(id)
@@ -1644,7 +1636,17 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     }
     return { projectFilter: next };
   }),
-  setListFilter: (patch) => set((s) => ({ listFilter: { ...s.listFilter, ...patch } })),
+  setListFilter: (patch) => set((s) => {
+    const switchingProject = patch.project_id != null
+      && patch.project_id !== s.listFilter.project_id;
+    return {
+      listFilter: {
+        ...s.listFilter,
+        ...patch,
+        ...(switchingProject && patch.tag_ids === undefined ? { tag_ids: [] } : {}),
+      },
+    };
+  }),
   openTask: (id) => set({ openTaskId: id, creatingDraft: id ? null : get().creatingDraft }),
   openTaskByDeepLink: async (workspaceId, taskId) => {
     // Switch workspace first when the link points at one we're not in but
@@ -2018,7 +2020,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
         // Switch into the new project's list so the user lands
         // somewhere useful instead of an empty calendar.
         view: 'list',
-        listFilter: { ...s.listFilter, project_id: project.id },
+        listFilter: { ...s.listFilter, project_id: project.id, tag_ids: [] },
         projectModal: null,
       };
     });
