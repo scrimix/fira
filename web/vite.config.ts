@@ -15,6 +15,16 @@ export default defineConfig({
   resolve: {
     alias: { '@': path.resolve(__dirname, 'src') },
   },
+  build: {
+    // Never inline font files. Vite's default 4 kB threshold base64s the
+    // smaller unicode subsets (greek, cyrillic-ext, …) straight into the
+    // stylesheet, which defeats the whole point of `unicode-range`: an inlined
+    // face ships to every visitor whether or not they ever render a glyph from
+    // it, and base64 adds ~33% on top. Returning undefined for everything else
+    // leaves Vite's normal threshold in place for other assets.
+    assetsInlineLimit: (filePath: string) =>
+      /\.(woff2?|ttf|otf|eot)$/i.test(filePath) ? false : undefined,
+  },
   server: {
     port: PORT,
     host: true,

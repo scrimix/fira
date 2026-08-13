@@ -1,9 +1,10 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useFira } from './store';
 import { buildTaskLink, parseTaskLink } from './deeplink';
 import { openNudgeSocket, openUserSocket } from './ws';
 import { useAppActive } from './hooks';
 import { syncLog, syncLogDev } from './synclog';
+
 import { Sidebar } from './components/Sidebar';
 import { TopBar } from './components/TopBar';
 import { CalendarView } from './components/CalendarView';
@@ -17,6 +18,37 @@ import { AccountSettingsModal } from './components/AccountSettingsModal';
 import { WorkspaceInviteModal } from './components/WorkspaceInviteModal';
 import { Login } from './components/Login';
 import { Toasts } from './components/Toasts';
+
+// Counts automatic reloads in this tab, so a mismatch that survives one can't
+// turn into a refresh loop. Session-scoped, so a fresh tab starts over.
+const BUILD_RELOAD_KEY = 'fira:autoReloadCount';
+
+// Would reloading right now throw away anything the user cares about? Un-pushed
+// edits in the outbox, or an open modal / draft they're in the middle of.
+function safeToReload(s: ReturnType<typeof useFira.getState>): boolean {
+  return s.outbox.length === 0
+    && s.openTaskId === null
+    && s.creatingDraft === null
+    && s.projectModal === null
+    && s.workspaceModal === null
+    && !s.linkModalOpen
+    && !s.accountModalOpen;
+}
+
+// One automatic reload per tab, and only when nothing is in flight. Returns
+// false if it declined, so the caller can fall back to telling the user.
+function tryAutoReload(): boolean {
+  if (!safeToReload(useFira.getState())) return false;
+  let used = 0;
+  try {
+    used = Number(sessionStorage.getItem(BUILD_RELOAD_KEY) ?? '0') || 0;
+  } catch { /* private mode — decline and let the caller announce */ }
+  if (used >= 1) return false;
+  syncLog('new build, clean wake, nothing in flight — reloading into it');
+  try { sessionStorage.setItem(BUILD_RELOAD_KEY, String(used + 1)); } catch { /* ignore */ }
+  window.location.reload();
+  return true;
+}
 
 export default function App() {
   const authChecked = useFira((s) => s.authChecked);
@@ -33,6 +65,7 @@ export default function App() {
   const syncOutbox = useFira((s) => s.syncOutbox);
   const pollChanges = useFira((s) => s.pollChanges);
   const rehydrate = useFira((s) => s.rehydrate);
+  const checkBuildVersion = useFira((s) => s.checkBuildVersion);
   const reloadWorkspaces = useFira((s) => s.reloadWorkspaces);
   const reloadLinks = useFira((s) => s.reloadLinks);
   const reloadWorkspaceInvites = useFira((s) => s.reloadWorkspaceInvites);
@@ -79,6 +112,17 @@ export default function App() {
   // couple of minutes, and catches up when it comes back. See the polling
   // and socket effects below for what each side of that flip controls.
   const appActive = useAppActive();
+
+  // Told once per tab, whichever path notices the deploy first.
+  const buildToastedRef = useRef(false);
+  const announceNewBuild = useCallback(() => {
+    if (buildToastedRef.current) return;
+    buildToastedRef.current = true;
+    useFira.getState().showToast(
+      'A new version of Fira is available — refresh when convenient',
+      'info',
+    );
+  }, []);
 
   useEffect(() => {
     hydrate();
@@ -218,7 +262,36 @@ export default function App() {
     void reloadWorkspaces();
     void reloadLinks();
     void reloadWorkspaceInvites();
-  }, [loaded, appActive, playgroundMode, rehydrate, reloadWorkspaces, reloadLinks, reloadWorkspaceInvites]);
+    // Sequenced rather than fired-and-forgotten: the reload decision has to be
+    // made against a fresh answer, and this is the one moment where reloading
+    // costs the user nothing — they've just arrived back at the tab and, by
+    // definition of having been idle, aren't part-way through anything.
+    void checkBuildVersion().then(() => {
+      if (!useFira.getState().newBuildAvailable) return;
+      if (!tryAutoReload()) announceNewBuild();
+    });
+  }, [loaded, appActive, playgroundMode, rehydrate, reloadWorkspaces, reloadLinks,
+      reloadWorkspaceInvites, checkBuildVersion, announceNewBuild]);
+
+  // Version check. Establishes the baseline once the app is up, then re-checks
+  // on a slow timer for tabs that stay open all day. The wake path below is the
+  // case that actually matters — a tab asleep since yesterday is the one most
+  // likely to be running superseded code — so the baseline call is guarded to
+  // avoid both paths fetching /version on the same wake.
+  //
+  // A deploy noticed *mid-session* only ever announces itself. Reloading
+  // someone's page while they're using it is never worth it, however clean the
+  // state looks: "safe" is about lost data, not lost attention.
+  useEffect(() => {
+    if (!loaded || playgroundMode || !appActive) return;
+    if (useFira.getState().bootBuild === null) void checkBuildVersion();
+    const id = window.setInterval(() => {
+      void checkBuildVersion().then(() => {
+        if (useFira.getState().newBuildAvailable) announceNewBuild();
+      });
+    }, 30 * 60_000);
+    return () => window.clearInterval(id);
+  }, [loaded, appActive, playgroundMode, checkBuildVersion, announceNewBuild]);
 
   // WS nudge channel: open one socket per active workspace. Each nudge
   // triggers the same syncOutbox+pollChanges sequence as the interval, so

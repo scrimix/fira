@@ -45,6 +45,60 @@ async fn bootstrap(State(s): State<AppState>, ctx: AuthCtx) -> ApiResult<Json<Bo
     Ok(Json(data))
 }
 
+/// Which SPA build this server ships. Unauthenticated and dependency-free —
+/// a long-idle tab hits this to find out whether its own code is still the
+/// code we serve.
+async fn version(State(s): State<AppState>) -> Json<serde_json::Value> {
+    Json(serde_json::json!({ "build": &*s.build_id }))
+}
+
+/// Cache policy for the static bundle, keyed on path. Everything under
+/// `/assets/` carries a content hash in its filename, so it can be cached
+/// indefinitely — a changed file is a changed URL. Everything else is the
+/// document (or its SPA-fallback rewrite), which must be revalidated or the
+/// browser will happily keep booting a bundle we no longer serve.
+async fn static_cache_headers(
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    let hashed = req.uri().path().starts_with("/assets/");
+    let mut res = next.run(req).await;
+    res.headers_mut().insert(
+        axum::http::header::CACHE_CONTROL,
+        if hashed {
+            axum::http::HeaderValue::from_static("public, max-age=31536000, immutable")
+        } else {
+            axum::http::HeaderValue::from_static("no-cache")
+        },
+    );
+    res
+}
+
+/// Derive a build identity from the served `index.html`.
+///
+/// Vite content-hashes its asset filenames, so the first `/assets/…`
+/// reference in the document changes exactly when the bundle changes — which
+/// makes it a build id we get for free, with no version constant to bump and
+/// no build-arg plumbing between the web and api stages of the Dockerfile.
+///
+/// Falls back to a fixed string when there's no `dist` to read: in dev the
+/// SPA comes from Vite on :5173, not from here, so there's nothing
+/// meaningful to report and clients should never see a mismatch.
+fn read_build_id(static_root: &str) -> String {
+    let Ok(html) = std::fs::read_to_string(format!("{static_root}/index.html")) else {
+        return "dev".into();
+    };
+    match html.split_once("/assets/") {
+        Some((_, rest)) => rest
+            .split(['"', '\''])
+            .next()
+            .filter(|s| !s.is_empty())
+            .unwrap_or("unknown")
+            .to_string(),
+        None => "unknown".into(),
+    }
+}
+
 async fn projects(State(s): State<AppState>, ctx: AuthCtx) -> ApiResult<Json<Vec<Project>>> {
     let scope = db::project_scope(&s.pool, ctx.user.id, ctx.workspace_id).await?;
     Ok(Json(db::list_projects_in_scope(&s.pool, &scope).await?))
@@ -547,23 +601,30 @@ async fn main() -> anyhow::Result<()> {
             s3_storage.create_bucket().await?;
         }
     }
+    // SPA static fallback: any request that doesn't match an /api route falls
+    // through to ServeDir, which serves files under STATIC_ROOT and rewrites
+    // unknown paths to index.html so React Router can handle client-side
+    // routing. In dev, STATIC_ROOT defaults to "dist" which doesn't exist —
+    // ServeDir returns 404 and the developer is hitting Vite on :5173 anyway.
+    //
+    // Read once at boot rather than per request: the bundle can't change
+    // under a running process, since a deploy replaces the whole container.
+    let static_root = std::env::var("STATIC_ROOT").unwrap_or_else(|_| "dist".into());
+    let build_id = read_build_id(&static_root);
+    tracing::info!(build = %build_id, "serving SPA build");
+
     let state = AppState {
         pool,
         auth: auth_cfg,
         hub,
         storage,
+        build_id: build_id.into(),
     };
 
     // Same-origin in both dev (Vite proxy) and prod (api serves the SPA).
     // No CorsLayer needed; re-add scoped to the prod domain if a non-browser
     // caller appears.
 
-    // SPA static fallback: any request that doesn't match an /api route falls
-    // through to ServeDir, which serves files under STATIC_ROOT and rewrites
-    // unknown paths to index.html so React Router can handle client-side
-    // routing. In dev, STATIC_ROOT defaults to "dist" which doesn't exist —
-    // ServeDir returns 404 and the developer is hitting Vite on :5173 anyway.
-    let static_root = std::env::var("STATIC_ROOT").unwrap_or_else(|_| "dist".into());
     let serve_index = ServeFile::new(format!("{static_root}/index.html"));
     let static_svc = ServeDir::new(&static_root).not_found_service(serve_index);
 
@@ -572,6 +633,7 @@ async fn main() -> anyhow::Result<()> {
     // :3000 unchanged (no strip); in prod, the api serves itself and routes
     // `/api/*` here. `/health` stays at the root for Fly's healthcheck.
     let api = Router::new()
+        .route("/version", get(version))
         .route("/me", get(auth::me))
         .route("/me/settings", patch(patch_my_settings))
         .route("/auth/config", get(auth::config))
@@ -659,8 +721,16 @@ async fn main() -> anyhow::Result<()> {
     // Same treatment for the SPA bundle. `layer` only wraps what's already on
     // the router, so the fallback needs compression applied to it directly
     // rather than inherited from the `app` chain below.
+    //
+    // Cache headers matter for the version check to work at all: if a browser
+    // serves index.html from its own cache, the tab boots the old bundle while
+    // /api/version reports the new build, and the mismatch is invisible.
+    // `no-cache` forces revalidation of the document (cheap — it's a few kB
+    // and 304s when unchanged), while the content-hashed assets it points at
+    // are safe to cache forever, since a new bundle means new filenames.
     let static_svc = ServiceBuilder::new()
         .layer(CompressionLayer::new())
+        .layer(axum::middleware::from_fn(static_cache_headers))
         .service(static_svc);
 
     let app = Router::new()

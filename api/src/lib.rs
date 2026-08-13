@@ -35,6 +35,10 @@ pub struct AppState {
     pub auth: AuthConfig,
     pub hub: Arc<Hub>,
     pub storage: storage::StorageBackend,
+    /// Identifies the SPA bundle this process serves — see `read_build_id`.
+    /// Clients capture it at load and compare on a timer; a change means the
+    /// tab is running code this server no longer ships.
+    pub build_id: Arc<str>,
 }
 
 /// The shape `/api/bootstrap` returns. Lifted out of `main.rs` so the

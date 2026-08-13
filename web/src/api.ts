@@ -141,6 +141,9 @@ export interface ChangesResponse {
 export const api = {
   me: () => req<User>('GET', '/me'),
   bootstrap: () => req<Bootstrap>('GET', '/bootstrap'),
+  /// Which SPA build the server currently ships. Unauthenticated, and the
+  /// response is a few dozen bytes — cheap enough to poll on a timer.
+  version: () => req<{ build: string }>('GET', '/version'),
   authConfig: () => req<{ dev_auth: boolean }>('GET', '/auth/config'),
   /// Dev-only: drop a session for an existing fixture user. Doesn't touch
   /// data — re-seeding is a separate CLI step (`cargo run --bin seed -- --drop`).

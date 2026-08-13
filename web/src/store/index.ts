@@ -16,6 +16,7 @@ import {
   clearPlayground, isPlayground, loadPlaygroundSnapshot, markPlayground,
 } from '../playground';
 import { setFrozenNow } from '../time';
+import { syncLog } from '../synclog';
 
 // Sync state machine. The TopBar pill reads this directly.
 //   idle  — nothing queued, last attempt either succeeded or never ran
@@ -122,6 +123,14 @@ interface FiraState {
   syncStatus: SyncStatus;
   // Last successful sync wallclock time (ms since epoch), null if none yet.
   lastSyncedAt: number | null;
+
+  // Build identity of the server as of this page load, captured on the first
+  // /version call. Deliberately not persisted: it describes the code this tab
+  // is running, which a reload replaces.
+  bootBuild: string | null;
+  // Set once the server starts reporting a different build than `bootBuild` —
+  // i.e. this tab is running code that's been superseded by a deploy.
+  newBuildAvailable: boolean;
 
   // Change-feed state.
   // `cursor` is the highest server-side `seq` we've ingested. Polls send
@@ -287,6 +296,9 @@ interface FiraState {
   // Pull change-feed rows since `cursor`, apply each through applyRemoteOp,
   // advance cursor.
   pollChanges: () => Promise<void>;
+  // Compare the server's SPA build against the one this tab booted with,
+  // setting `newBuildAvailable` when they diverge.
+  checkBuildVersion: () => Promise<void>;
   // Move an errored op back to 'queued' so the next syncOutbox tick
   // picks it up. Useful when the server-side validation is fixed (e.g.
   // the user edited the URL template after a malformed value 400'd).
@@ -923,6 +935,8 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
   outbox: [],
   syncStatus: { kind: 'idle' },
   lastSyncedAt: null,
+  bootBuild: null,
+  newBuildAvailable: false,
   cursor: 0,
   appliedOpIds: new Map(),
 
@@ -1073,6 +1087,38 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
         return;
       }
       set({ authChecked: true, error: e instanceof Error ? e.message : String(e) });
+    }
+  },
+
+  // Ask the server which SPA build it ships, and compare against what it
+  // said when this tab loaded.
+  //
+  // The first call establishes the baseline rather than asserting one: the
+  // bundle can't know its own content hash at build time (it *is* the thing
+  // being hashed), so "the build that was live when I loaded" is the honest
+  // definition of this tab's version. Cache-Control: no-cache on index.html
+  // is what keeps that definition true — without it a browser could boot a
+  // cached old bundle against a new server and the baseline would be wrong.
+  //
+  // Failures are ignored on purpose. This is a nice-to-have running next to
+  // the real sync path; a flaky /version must never surface an error to
+  // someone whose app is working fine.
+  checkBuildVersion: async () => {
+    if (get().playgroundMode) return;
+    let build: string;
+    try {
+      ({ build } = await api.version());
+    } catch {
+      return;
+    }
+    const known = get().bootBuild;
+    if (known === null) {
+      set({ bootBuild: build });
+      return;
+    }
+    if (build !== known && !get().newBuildAvailable) {
+      syncLog(`new build deployed (${known} → ${build}) — this tab is running old code`);
+      set({ newBuildAvailable: true });
     }
   },
 
