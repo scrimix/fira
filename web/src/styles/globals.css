@@ -714,6 +714,30 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
 }
 .np-title:focus { border-color: var(--focus-line); }
 .np-title::placeholder { color: var(--ink-4); }
+/* Field-shaped but inert — for values the modal reports rather than asks
+ * for (e.g. the Jira issue assignee, which is always the creator). Muted
+ * fill + dashed rule so it reads as "not editable" next to real inputs. */
+.np-readonly-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  padding: calc(5px * var(--density)) 12px;
+  border: 1px dashed var(--rule-2);
+  border-radius: var(--r-sm);
+  background: var(--paper-2);
+  color: var(--ink-2);
+  font-size: var(--fs-md);
+  line-height: 1.4;
+}
+.np-readonly-note {
+  margin-left: auto;
+  color: var(--ink-4);
+  font-family: var(--font-label);
+  font-size: calc(10px * var(--fs-scale) * var(--label-size));
+  letter-spacing: calc(0.1em * var(--label-track));
+  text-transform: var(--label-case);
+}
 .np-icons {
   display: grid;
   grid-template-columns: repeat(4, 1fr);

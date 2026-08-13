@@ -593,9 +593,9 @@ pub struct WorklogPushResponse {
 }
 
 /// `POST /api/jira/blocks/:block_id` — manual "Log to Jira" action. Scope
-/// check only; the actual push (network call + DB write) happens outside
-/// the scope-check transaction in `push_block_worklog`, shared with the
-/// background resync below.
+/// + ownership check only; the actual push (network call + DB write)
+/// happens outside the scope-check transaction in `push_block_worklog`,
+/// shared with the background resync below.
 pub async fn push_block(
     State(s): State<AppState>,
     ctx: AuthCtx,
@@ -605,7 +605,21 @@ pub async fn push_block(
     ensure_scope::ensure_block_in_scope(&mut tx, ctx.user.id, ctx.workspace_id, block_id)
         .await
         .map_err(|_| ApiError::NotFound)?;
+    // Project scope is enough to *see* a teammate's block, but logging time
+    // is personal: the push authenticates as the block's owner (see
+    // `push_block_worklog`), so letting anyone in the project trigger it
+    // would write a worklog into someone else's Jira account on their
+    // behalf. Only the owner gets to do that.
+    let owner_id: Uuid = sqlx::query_scalar("SELECT user_id FROM time_blocks WHERE id = $1")
+        .bind(block_id)
+        .fetch_one(&mut *tx)
+        .await?;
     tx.commit().await?;
+    if owner_id != ctx.user.id {
+        return Err(ApiError::BadRequest(
+            "you can only log your own time to Jira".into(),
+        ));
+    }
 
     let jira_worklog_id = push_block_worklog(&s.pool, ctx.workspace_id, block_id)
         .await

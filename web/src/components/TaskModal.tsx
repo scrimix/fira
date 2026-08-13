@@ -581,17 +581,21 @@ function BlockRow({
   onSave: (patch: { start_at?: string; end_at?: string }) => void;
   onDelete: () => void;
   // Jira worklog sync — only rendered when the task is linked to a Jira
-  // issue (project has a key + task has an external_id). Reruns of
-  // onPushJira after the first (jiraWorklogId already set) update the
-  // existing worklog rather than creating a duplicate.
+  // issue (project has a key + task has an external_id) *and* the block is
+  // mine: the push authenticates as the block's owner, so logging someone
+  // else's block would write a worklog into their Jira account (the server
+  // rejects it too). Reruns of onPushJira after the first (jiraWorklogId
+  // already set) update the existing worklog rather than creating a
+  // duplicate.
   jiraLinked: boolean;
   jiraWorklogId: string | null;
   jiraSyncError: string | null;
   onPushJira: () => Promise<void>;
 }) {
   const [jiraPushing, setJiraPushing] = useState(false);
+  const isMine = userId === meId;
   const pushJira = async () => {
-    if (jiraPushing) return;
+    if (jiraPushing || !isMine) return;
     setJiraPushing(true);
     try {
       await onPushJira();
@@ -661,7 +665,7 @@ function BlockRow({
 
   return (
     <div className="tm-block-row" data-state={state}>
-      <span className="avatar tm-block-ava" data-me={userId === meId} title={u?.name ?? '?'}>
+      <span className="avatar tm-block-ava" data-me={isMine} title={u?.name ?? '?'}>
         {u?.initials ?? '?'}
       </span>
       <BlockCell
@@ -698,20 +702,24 @@ function BlockRow({
         )}
         {state}
       </span>
-      {jiraLinked && (
+      {jiraLinked && (isMine || jiraWorklogId || jiraSyncError) && (
         <button
           className="tm-section-btn tm-block-jira"
           data-tone={jiraSyncError ? 'error' : jiraWorklogId ? 'ok' : undefined}
           onClick={pushJira}
-          disabled={jiraPushing}
+          disabled={jiraPushing || !isMine}
           title={
-            jiraPushing
-              ? 'Logging to Jira…'
-              : jiraSyncError
-                ? `Sync failed: ${jiraSyncError} — click to retry`
-                : jiraWorklogId
-                  ? 'Synced to Jira — click to re-sync'
-                  : 'Log this block to Jira'
+            !isMine
+              ? jiraSyncError
+                ? `${u?.name ?? 'This person'}'s block — sync failed: ${jiraSyncError}`
+                : `Logged to Jira by ${u?.name ?? 'someone else'}`
+              : jiraPushing
+                ? 'Logging to Jira…'
+                : jiraSyncError
+                  ? `Sync failed: ${jiraSyncError} — click to retry`
+                  : jiraWorklogId
+                    ? 'Synced to Jira — click to re-sync'
+                    : 'Log this block to Jira'
           }
         >
           {jiraPushing
@@ -1847,6 +1855,13 @@ function JiraCreateIssueModal({ taskId, jiraProjectKey, onClose }: {
 }) {
   const listJiraEpics = useFira((s) => s.listJiraEpics);
   const pushTaskToJira = useFira((s) => s.pushTaskToJira);
+  const users = useFira((s) => s.users);
+  const meId = useFira((s) => s.meId);
+  // The issue is created with *my* Jira credentials, and the server assigns
+  // it to whoever those belong to (jira.rs `create_issue`) — so the assignee
+  // isn't a choice, it's a consequence. Shown read-only so that's obvious
+  // before pressing Create, rather than a surprise in Jira afterwards.
+  const me = users.find((u) => u.id === meId) ?? null;
   const [epics, setEpics] = useState<{ key: string; summary: string }[]>([]);
   const [loadingEpics, setLoadingEpics] = useState(true);
   const [epicKey, setEpicKey] = useState('');
@@ -1901,6 +1916,12 @@ function JiraCreateIssueModal({ taskId, jiraProjectKey, onClose }: {
               ...epics.map((e) => ({ value: e.key, label: `${e.key} — ${e.summary}` })),
             ]}
           />
+          <label className="np-label">Assignee</label>
+          <div className="np-readonly-row" title="The issue is created with your Jira account, so it's assigned to you">
+            <div className="avatar" data-me={!!me}>{me?.initials ?? '?'}</div>
+            <span>{me ? `${me.name} (you)` : 'You'}</span>
+            <span className="np-readonly-note">assigned automatically</span>
+          </div>
           {error && <div className="np-error">{error}</div>}
           <div className="np-actions">
             <button className="btn" onClick={onClose} disabled={pushing}>Cancel</button>
