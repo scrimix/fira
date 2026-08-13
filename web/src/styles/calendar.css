@@ -972,6 +972,37 @@
   border-color: var(--accent-line);
 }
 
+/* Segmented pair built out of .link-toggle so it keeps the toolbar's
+ * sizing, mono face and lit-accent active state — this only collapses
+ * the shared border into one seam and rounds the outer corners, the
+ * same shape as .list-tag-filter-mode in the list. */
+.cal-seg { display: inline-flex; flex: none; }
+.cal-seg .link-toggle { border-radius: 0; }
+/* Overlap the shared edge rather than dropping one side's border: with
+ * `border-left: 0` the seam belongs to the left segment, so a lit right
+ * segment lost its accent on exactly that edge. Both keep all four
+ * borders, the pair overlaps by 1px, and the lit one is raised so its
+ * accent paints over the neighbour's grey. */
+.cal-seg .link-toggle + .link-toggle { margin-left: -1px; }
+.cal-seg .link-toggle:first-child { border-radius: var(--r-sm) 0 0 var(--r-sm); }
+.cal-seg .link-toggle:last-child { border-radius: 0 var(--r-sm) var(--r-sm) 0; }
+/* The lit segment is the current state, not an action — no pointer. */
+.cal-seg .link-toggle[data-active="true"] {
+  cursor: default;
+  position: relative;
+  z-index: 1;
+}
+/* Workspace titles are user-set and unbounded. Without a cap, one long
+ * name pushes the toolbar into a horizontal scroll — and unlike the old
+ * label this one is on screen in both states. */
+.cal-seg-name {
+  display: block;
+  max-width: 14ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .cal-rail {
   border-left: 1px solid var(--rule-chrome);
   display: flex;
@@ -1327,16 +1358,25 @@
   }
   /* Hide the user picker on phones — the multi-person tab strip is too
    * wide and the active person almost always equals "me" on a phone
-   * anyway. Link toggles stay (Show linked / Show personal) but get
-   * tightened up below. */
+   * anyway. Link toggles stay (the sources segment / Logged only) but
+   * get tightened up below. */
   .cal-toolbar .user-picker { display: none; }
-  /* Compress link toggles so "Show linked" / "Show personal" still fit
-   * after the user picker is gone. Smaller padding, no left margin. */
+  /* Compress link toggles so the sources segment and "Logged only" still
+   * fit after the user picker is gone. The segment carries two labels at
+   * once now, so it needs this more than the old single pill did.
+   * Smaller padding, no left margin. */
   .cal-toolbar .link-toggle {
     padding: 0 6px;
     margin-left: 2px;
     font-size: calc(9px * var(--fs-scale));
   }
+  /* The segment's members sit inside their own wrapper, so the toolbar's
+   * inter-pill margin would reopen the seam as a 2px gap. The wrapper
+   * itself still takes the toolbar's gap; the second segment keeps the
+   * -1px border overlap from the base rule. */
+  .cal-toolbar .cal-seg .link-toggle { margin-left: 0; }
+  .cal-toolbar .cal-seg .link-toggle + .link-toggle { margin-left: -1px; }
+  .cal-toolbar .cal-seg-name { max-width: 9ch; }
   /* Smaller spacing inside the toolbar so prev/today/next + totals fit
    * without horizontal scroll. */
   /* Tighter rail head on phones so the new button + scope toggle + search

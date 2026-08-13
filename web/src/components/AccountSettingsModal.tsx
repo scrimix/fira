@@ -145,7 +145,7 @@ export function AccountSettingsModal() {
         return (
           <>
             Linked with <strong>{partner?.name ?? 'another account'}</strong>. Their tasks and
-            time blocks show on your calendar (read-only) when "Show linked" is on.
+            time blocks show on your calendar (read-only) when it's set to "Everywhere".
           </>
         );
       case 'none':

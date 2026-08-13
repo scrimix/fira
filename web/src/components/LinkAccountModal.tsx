@@ -123,7 +123,7 @@ export function LinkAccountModal() {
         </p>
         <p className="np-hint">
           Their tasks and time blocks show on your calendar (read-only) when
-          "Show linked" is on. Either of you can unlink at any time.
+          it's set to "Everywhere". Either of you can unlink at any time.
         </p>
         <div className="np-actions">
           <button className="btn" onClick={close} disabled={submitting}>Close</button>

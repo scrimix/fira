@@ -136,6 +136,16 @@ export function CalendarView() {
     const ws = s.workspaces.find((w) => w.id === s.activeWorkspaceId);
     return ws ? !ws.is_personal : false;
   });
+  const activeWorkspaceTitle = useFira((s) =>
+    s.workspaces.find((w) => w.id === s.activeWorkspaceId)?.title ?? null,
+  );
+  // Is there a workspace on the other side of the personal/team split to
+  // pull blocks in from? The overlay aggregates them, so one is enough.
+  const hasOtherWorkspaces = useFira((s) => {
+    const active = s.workspaces.find((w) => w.id === s.activeWorkspaceId);
+    if (!active) return false;
+    return s.workspaces.some((w) => w.is_personal !== active.is_personal);
+  });
   const jiraConnected = useFira((s) => s.jiraConnected);
   const projectFilter = useFira((s) => s.projectFilter);
   const selectedPersonIds = useFira((s) => s.selectedPersonIds);
@@ -695,6 +705,35 @@ export function CalendarView() {
   );
   const visibleWorkBlocks = workOverlayActive ? workBlocks : [];
 
+  // One toggle for every "not this workspace" source. Three separate
+  // Show/Hide buttons split what is really a single question — am I
+  // looking at just this workspace, or at everything? — across a
+  // vocabulary ("linked", "personal", "work") that collided with the
+  // account badges and couldn't name a third workspace anyway. The flags
+  // stay separate underneath because each gates its own loader; only the
+  // control merges.
+  const sourceFlags = [
+    acceptedLink ? showLinked : null,
+    hasOtherWorkspaces ? (inTeamWorkspace ? showPersonal : showWork) : null,
+  ].filter((v): v is boolean => v !== null);
+  // Every applicable source, not any: a half-on state left over from the
+  // old per-source buttons then reads as off, so the first press turns
+  // everything on instead of switching everything off.
+  const allSourcesOn = sourceFlags.length > 0 && sourceFlags.every(Boolean);
+  const setAllSources = (next: boolean) => {
+    if (acceptedLink) setShowLinked(next);
+    if (hasOtherWorkspaces) {
+      if (inTeamWorkspace) setShowPersonal(next);
+      else setShowWork(next);
+    }
+  };
+  // Names only the sources that actually exist, so the tooltip never
+  // promises a linked calendar to someone who hasn't linked one.
+  const otherSourceNames = [
+    acceptedLink ? 'the linked account' : null,
+    hasOtherWorkspaces ? 'my other workspaces' : null,
+  ].filter(Boolean).join(' and ');
+
   const tickBlock = (b: TimeBlock) => {
     updateBlock(b.id, { state: b.state === 'completed' ? 'planned' : 'completed' });
   };
@@ -812,50 +851,43 @@ export function CalendarView() {
             onRemove={removePerson}
             onSetActive={setActivePerson}
           />
-          {acceptedLink && activePersonId === meId && (
-            <button
-              className="link-toggle"
-              data-active={showLinked || undefined}
-              onClick={() => setShowLinked(!showLinked)}
-              title={showLinked ? 'Hide linked calendar' : 'Show linked calendar (read-only)'}
-            >
-              {showLinked ? 'Hide linked' : 'Show linked'}
-            </button>
+          {/* Segmented, not a flipping verb: both destinations stay on
+            * screen and the lit segment says which one you're in. Keeps
+            * the active workspace's name visible either way, and the
+            * label stops changing width as you toggle. */}
+          {activePersonId === meId && sourceFlags.length > 0 && (
+            <div className="cal-seg" role="group" aria-label="Calendar sources">
+              <button
+                className="link-toggle"
+                data-active={!allSourcesOn || undefined}
+                onClick={() => setAllSources(false)}
+                title={`Show only ${activeWorkspaceTitle ?? 'this workspace'}`}
+              >
+                <span className="cal-seg-name">{activeWorkspaceTitle ?? 'This one'}</span>
+              </button>
+              <button
+                className="link-toggle"
+                data-active={allSourcesOn || undefined}
+                onClick={() => setAllSources(true)}
+                title={`Show ${otherSourceNames} alongside ${activeWorkspaceTitle ?? 'this workspace'} (read-only)`}
+              >
+                Everywhere
+              </button>
+            </div>
           )}
-          {inTeamWorkspace && activePersonId === meId && (
-            <button
-              className="link-toggle"
-              data-active={showPersonal || undefined}
-              onClick={() => setShowPersonal(!showPersonal)}
-              title={showPersonal
-                ? 'Hide personal-workspace blocks'
-                : 'Show personal-workspace blocks (read-only)'}
-            >
-              {showPersonal ? 'Hide personal' : 'Show personal'}
-            </button>
-          )}
-          {!inTeamWorkspace && activePersonId === meId && (
-            <button
-              className="link-toggle"
-              data-active={showWork || undefined}
-              onClick={() => setShowWork(!showWork)}
-              title={showWork
-                ? 'Hide work-workspace blocks'
-                : 'Show work-workspace blocks (read-only)'}
-            >
-              {showWork ? 'Hide work' : 'Show work'}
-            </button>
-          )}
+          {/* One label in both states — the pill's lit styling carries
+            * on/off. The old "Hide logged only" read as "hide only the
+            * logged ones", i.e. the opposite of what it did. */}
           {jiraConnected && (
             <button
               className="link-toggle"
               data-active={showLoggedOnly || undefined}
               onClick={() => setShowLoggedOnly(!showLoggedOnly)}
               title={showLoggedOnly
-                ? 'Show all blocks'
+                ? 'Showing only blocks logged to Jira — click to show every block'
                 : 'Show only blocks already logged to Jira'}
             >
-              {showLoggedOnly ? 'Hide logged only' : 'Show logged only'}
+              Logged only
             </button>
           )}
           {/* Desktop: inline at the right end of the toolbar, sharing
