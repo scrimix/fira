@@ -151,8 +151,8 @@
   color: color-mix(in oklab, var(--danger) 65%, var(--ink-4));
 }
 .list-proj-head .archive-btn {
-  height: 24px;
-  padding: 0 10px;
+  height: 28px;
+  padding: 0 12px;
   font-size: calc(var(--fs-xs) * var(--label-size));
   font-family: var(--font-label);
   letter-spacing: calc(0.06em * var(--label-track));
@@ -181,7 +181,8 @@
   font-variant-numeric: tabular-nums;
   background: var(--ink);
   color: var(--paper);
-  padding: 1px 5px;
+  padding: 1px 6px;
+  border-radius: var(--r-xs);
   letter-spacing: 0;
   font-size: calc(10px * var(--fs-scale));
 }
@@ -578,6 +579,20 @@
   background: var(--ink-3);
   border-color: var(--ink-3);
 }
+/* Modern keeps task completion controls easier to see and tap without
+ * widening the list grid. Modal and list subtasks inherit the same size. */
+:root[data-style="modern"] .task-check,
+:root[data-style="modern"] .subtask .sc {
+  width: 16px;
+  height: 16px;
+}
+:root[data-style="modern"] .task-check svg,
+:root[data-style="modern"] .subtask .sc svg {
+  display: block;
+  width: 12px;
+  height: 12px;
+  transform: none;
+}
 
 .task-title-wrap { min-width: 0; }
 /* Container for the toggle caret + title text + ext-id chip. flex
@@ -715,7 +730,7 @@
 .task-trail .tag-chip-more {
   color: var(--ink-4);
   border-color: var(--rule-2);
-  padding: 0 4px;
+  padding: 0 6px;
   letter-spacing: 0;
 }
 .task-trail .left-est { color: var(--ink-2); }
@@ -911,6 +926,18 @@
   z-index: 50;
   display: grid;
   place-items: center;
+}
+/* Modern dialogs keep their contents opaque and crisp. Blur belongs on the
+ * full-screen scrim, so the workspace recedes behind the dialog instead. */
+:root[data-style="modern"] .modal-backdrop {
+  background: rgb(24 24 27 / 0.40);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+:root[data-style="modern"] .modal {
+  box-shadow:
+    0 2px 8px rgb(var(--shadow-rgb) / calc(7% * var(--shadow-a))),
+    0 16px 36px -18px rgb(var(--shadow-rgb) / calc(20% * var(--shadow-a)));
 }
 .modal {
   width: min(1080px, 92vw);

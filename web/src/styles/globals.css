@@ -8,6 +8,7 @@
   --rule-2: #D6D2C3;
   --rule-3: #B8B3A2;
 
+  --scrollbar-track: var(--paper);
   --ink: #18181B;
   --ink-2: #3F3F46;
   --ink-3: #71717A;
@@ -250,6 +251,7 @@
   --rule-2: #43434C;
   --rule-3: #58585F;
 
+  --scrollbar-track: var(--paper);
   /* Softer than a literal near-white: --ink also fills "inverted" solid
    * elements (active toggle segments, the self-avatar, primary buttons'
    * hover states) — a pure ~93%-lightness white there reads as blown
@@ -947,6 +949,9 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   align-items: center;
   gap: 4px;
 }
+/* Picker tags need a small, even inset so their title and remove control
+ * do not sit against the border. */
+.tag-editor .tag-chip { padding-inline: calc(4px * var(--density)); }
 /* Same dimensions / typography as the list-row .chip — tag chips look
  * like every other chip in the app, just with a tag-color outline. */
 .tag-chip {
@@ -1695,8 +1700,9 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
 }
 .sync-popover-foot span { color: var(--danger); }
 
+* { scrollbar-color: var(--rule-2) var(--scrollbar-track); }
 ::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-track { background: var(--scrollbar-track); }
 ::-webkit-scrollbar-thumb { background: var(--rule-2); border-radius: var(--r-xs); }
 ::-webkit-scrollbar-thumb:hover { background: var(--rule-3); }
 

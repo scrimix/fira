@@ -332,6 +332,10 @@
 .cal-dayhead[data-today="true"] .dow,
 .cal-dayhead[data-today="true"] .dnum { color: var(--accent); }
 .cal-dayhead[data-weekend="true"] { background: var(--panel); }
+/* The last day borders the grid scrollbar. Modern leaves that edge open so
+ * the grid ends cleanly against the track. */
+:root[data-style="modern"] .cal-dayhead[data-day-idx="6"],
+:root[data-style="modern"] .cal-daycol[data-day-idx="6"] { border-right: 0; }
 
 .cal-gutter { border-right: 1px solid var(--rule); position: relative; }
 .cal-gutter-hour {
@@ -1055,9 +1059,9 @@
  * either collapse out of the way or scroll along with the tasks. */
 .rail-projects {
   background: var(--panel);
-  padding: 6px calc(var(--gutter-x) - var(--scrollbar-w)) 10px var(--gutter-x);
+  padding: 6px calc(var(--gutter-x) - var(--scrollbar-w)) 10px calc(8px * var(--density));
 }
-.rail-projects[data-open="false"] { padding: 6px calc(var(--gutter-x) - var(--scrollbar-w)) 6px var(--gutter-x); }
+.rail-projects[data-open="false"] { padding: 6px calc(var(--gutter-x) - var(--scrollbar-w)) 6px calc(8px * var(--density)); }
 .rail-projects-head {
   display: flex;
   align-items: center;
@@ -1065,12 +1069,14 @@
   width: 100%;
   padding: 4px 0;
   font-family: var(--font-label);
-  font-size: calc(10px * var(--fs-scale) * var(--label-size));
-  letter-spacing: calc(0.1em * var(--label-track));
-  text-transform: var(--label-case);
-  color: var(--ink-3);
+  font-size: var(--fs-md);
+  font-weight: 650;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ink);
   background: transparent;
   border: 0;
+  border-bottom: 1px solid var(--rule);
   cursor: pointer;
   text-align: left;
 }
@@ -1082,7 +1088,9 @@
   align-items: center;
   gap: 8px;
   padding: 3px 0;
+  font-family: var(--font-label);
   font-size: var(--fs-sm);
+  font-weight: 500;
   cursor: pointer;
   user-select: none;
 }
@@ -1119,7 +1127,8 @@
 .rail-group-head {
   display: flex; align-items: center; gap: 6px;
   width: 100%;
-  padding: calc(8px * var(--density)) calc(var(--gutter-x) - var(--scrollbar-w)) calc(6px * var(--density)) var(--gutter-x);
+  padding: calc(8px * var(--density)) calc(var(--gutter-x) - var(--scrollbar-w)) calc(6px * var(--density)) calc(8px * var(--density));
+  box-sizing: border-box;
   font: inherit;
   font-family: var(--font-label);
   font-size: calc(10px * var(--fs-scale) * var(--label-size));
@@ -1139,8 +1148,18 @@
 .rail-group-head:hover { color: var(--ink-2); }
 .rail-group-head .swatch { width: 8px; height: 8px; }
 :root[data-theme="dark"] .rail-group-head .swatch { filter: saturate(0.7) brightness(0.85); }
-.rail-group-head .pname { color: var(--ink-2); font-weight: 500; }
-.rail-group-head .pcount { margin-left: auto; color: var(--ink-4); font-weight: 400; }
+.rail-group-head .pname {
+  color: var(--ink-2);
+  font-size: calc(10px * var(--fs-scale) * var(--label-size));
+  font-weight: 500;
+}
+.rail-group-head .pcount {
+  margin-left: auto;
+  color: var(--ink-4);
+  font-family: var(--font-mono);
+  font-size: calc(10px * var(--fs-scale));
+  font-weight: 400;
+}
 
 .rail-task {
   padding: calc(7px * var(--density)) calc(var(--gutter-x) - var(--scrollbar-w)) calc(7px * var(--density)) var(--gutter-x);

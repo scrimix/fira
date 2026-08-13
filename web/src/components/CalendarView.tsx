@@ -882,6 +882,7 @@ export function CalendarView() {
             {dayLabels.map((lbl, i) => (
               <div key={i} className="cal-dayhead"
                    data-today={i === todayCol}
+                   data-day-idx={i}
                    data-weekend={lbl === 'SAT' || lbl === 'SUN'}>
                 <span className="dow">{lbl}</span>
                 <span className="dnum">{dayOfMonthFor(gridAnchor, i)}</span>
@@ -1882,11 +1883,10 @@ function CalRail({ onDragTask, onTouchSchedule, allocByProject }: {
           <div key={g.project.id} className="rail-group" data-collapsed={collapsed || undefined}>
             <button type="button" className="rail-group-head"
                     onClick={() => toggleRailGroup(g.project.id)}
-                    onDoubleClick={() => soloProjectFilter(g.project.id)}
                     aria-expanded={!collapsed}
                     title={collapsed
-                      ? `Show ${g.project.title} tasks — double-click to solo on calendar`
-                      : `Hide ${g.project.title} tasks — double-click to solo on calendar`}>
+                      ? `Show  tasks`
+                      : `Hide  tasks`}>
               {collapsed
                 ? <ChevronRight size={11} strokeWidth={1.75} />
                 : <ChevronDown size={11} strokeWidth={1.75} />}
