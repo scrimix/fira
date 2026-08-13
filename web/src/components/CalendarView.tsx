@@ -676,34 +676,6 @@ export function CalendarView() {
   });
 
   const myGcal = gcal.filter((g) => g.user_id === activePersonId);
-  // Partner overlay only shows on my own calendar tab — switching to a
-  // teammate's view drops it. Joined to linkedTasks so we can render the
-  // title + project color without polluting global `tasks`.
-  const overlayActive = showLinked && acceptedLink && activePersonId === meId;
-  const linkedTaskById = useMemo(
-    () => new Map(linkedTasks.map((t) => [t.id, t])),
-    [linkedTasks],
-  );
-  const visibleLinkedBlocks = overlayActive ? linkedBlocks : [];
-  const visibleLinkedGcal = overlayActive ? linkedGcal : [];
-
-  // Personal-workspace overlay — same posture as linked: only on my own
-  // tab, only in a team workspace, only when the user opted in.
-  const personalOverlayActive = showPersonal && inTeamWorkspace && activePersonId === meId;
-  const personalTaskById = useMemo(
-    () => new Map(personalTasks.map((t) => [t.id, t])),
-    [personalTasks],
-  );
-  const visiblePersonalBlocks = personalOverlayActive ? personalBlocks : [];
-
-  // Work-workspace overlay — inverse of personal: only on my own tab,
-  // only when the active workspace IS personal, only when opted in.
-  const workOverlayActive = showWork && !inTeamWorkspace && activePersonId === meId;
-  const workTaskById = useMemo(
-    () => new Map(workTasks.map((t) => [t.id, t])),
-    [workTasks],
-  );
-  const visibleWorkBlocks = workOverlayActive ? workBlocks : [];
 
   // One toggle for every "not this workspace" source. Three separate
   // Show/Hide buttons split what is really a single question — am I
@@ -718,8 +690,43 @@ export function CalendarView() {
   ].filter((v): v is boolean => v !== null);
   // Every applicable source, not any: a half-on state left over from the
   // old per-source buttons then reads as off, so the first press turns
-  // everything on instead of switching everything off.
+  // everything on instead of switching everything off. Every overlay below
+  // is gated on this same value rather than on its own flag, so what the
+  // segmented control claims and what the grid renders can never disagree
+  // — a half-on mix (e.g. showLinked survived a workspace switch that
+  // cleared showPersonal) renders nothing, matching the lit "this one"
+  // segment, instead of quietly leaking the other source's blocks in.
   const allSourcesOn = sourceFlags.length > 0 && sourceFlags.every(Boolean);
+
+  // Partner overlay only shows on my own calendar tab — switching to a
+  // teammate's view drops it. Joined to linkedTasks so we can render the
+  // title + project color without polluting global `tasks`.
+  const overlayActive = allSourcesOn && showLinked && acceptedLink && activePersonId === meId;
+  const linkedTaskById = useMemo(
+    () => new Map(linkedTasks.map((t) => [t.id, t])),
+    [linkedTasks],
+  );
+  const visibleLinkedBlocks = overlayActive ? linkedBlocks : [];
+  const visibleLinkedGcal = overlayActive ? linkedGcal : [];
+
+  // Personal-workspace overlay — same posture as linked: only on my own
+  // tab, only in a team workspace, only when the user opted in.
+  const personalOverlayActive = allSourcesOn && showPersonal && inTeamWorkspace && activePersonId === meId;
+  const personalTaskById = useMemo(
+    () => new Map(personalTasks.map((t) => [t.id, t])),
+    [personalTasks],
+  );
+  const visiblePersonalBlocks = personalOverlayActive ? personalBlocks : [];
+
+  // Work-workspace overlay — inverse of personal: only on my own tab,
+  // only when the active workspace IS personal, only when opted in.
+  const workOverlayActive = allSourcesOn && showWork && !inTeamWorkspace && activePersonId === meId;
+  const workTaskById = useMemo(
+    () => new Map(workTasks.map((t) => [t.id, t])),
+    [workTasks],
+  );
+  const visibleWorkBlocks = workOverlayActive ? workBlocks : [];
+
   const setAllSources = (next: boolean) => {
     if (acceptedLink) setShowLinked(next);
     if (hasOtherWorkspaces) {

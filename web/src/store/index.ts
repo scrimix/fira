@@ -1201,11 +1201,19 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     // mirrors a fresh hydrate. Overlay caches that are per-workspace get
     // dropped here so a stale projection doesn't leak into the new context;
     // the App-level effects refetch them after applyBootstrap lands.
+    //
+    // Every *toggle* resets too, not just the caches — including showLinked,
+    // whose overlay isn't workspace-scoped but whose flag is half of what
+    // the calendar's "this one / everywhere" segment reads. Leaving it on
+    // while showPersonal/showWork reset landed the new workspace in a
+    // half-on state: the segment lit "this one" (not all sources on) while
+    // the linked account's blocks still rendered over it.
     set({
       loaded: false,
       linkedBlocks: [],
       linkedTasks: [],
       linkedGcal: [],
+      showLinked: false,
       personalBlocks: [],
       personalTasks: [],
       showPersonal: false,
