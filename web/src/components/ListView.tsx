@@ -1646,8 +1646,7 @@ function TaskRow({
                   <span className="left-est" data-plenty={plentyLeft || undefined}>{fmtMin(left)} left</span>
                 )
               ) : (
-
-                <span style={{ color: 'var(--ink-4)' }}>no est</span>
+                <span className="left-est" data-none="true">no est</span>
               )
             )}
           </div>
