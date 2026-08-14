@@ -1383,7 +1383,11 @@
    * without horizontal scroll. */
   /* Tighter rail head on phones so the new button + scope toggle + search
    * fit one row at 360px. */
-  /* Let the search shrink before it pushes the All/My scope control out. */
-  .rail-head { min-width: 0; }
+  /* Let the search shrink before it pushes the All/My scope control out.
+   * Own top inset because --bar-pad-t is 0 (no toolbar above it here). */
+  .rail-head {
+    min-width: 0;
+    padding-top: calc(8px * var(--density));
+  }
   .rail-search { font-size: var(--fs-md); }
 }

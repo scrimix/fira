@@ -1655,11 +1655,9 @@ function CalRail({ onDragTask, onTouchSchedule, allocByProject }: {
   const openTask = useFira((s) => s.openTask);
   const openCreate = useFira((s) => s.openCreate);
 
-  // "My tasks only" (default) vs "All in project". Showing all is what
-  // makes logging time on a task someone else owns possible — drag any
-  // task onto your calendar and the block becomes yours regardless of the
-  // assignee. The button label names the action you'd take by clicking
-  // (verb-style), not the current filter state.
+  // "My Now tasks only" (default) vs "All in project" — All adds other
+  // people's tasks *and* your own Later/Recurring, so it's offered even
+  // solo. Label names the action, not the current state.
   const [showAll, setShowAll] = useState(false);
   const [titleQuery, setTitleQuery] = useState('');
   const q = titleQuery.trim().toLowerCase();
@@ -1826,16 +1824,6 @@ function CalRail({ onDragTask, onTouchSchedule, allocByProject }: {
     p.members.find((m) => m.user_id === activePersonId)?.role !== 'inactive',
   );
 
-  const hasMultipleRailMembers = new Set(
-    railProjects.flatMap((p) => p.members
-      .filter((m) => m.role !== 'inactive')
-      .map((m) => m.user_id)),
-  ).size > 1;
-
-  useEffect(() => {
-    if (!hasMultipleRailMembers) setShowAll(false);
-  }, [hasMultipleRailMembers]);
-
   const groups: Array<{ project: Project; tasks: Task[] }> = railProjects
     .filter((p) => projectFilter[p.id] !== false)
     .map((p) => ({
@@ -1880,16 +1868,14 @@ function CalRail({ onDragTask, onTouchSchedule, allocByProject }: {
           spellCheck={false}
           onKeyDown={(e) => { if (e.key === 'Escape') setTitleQuery(''); }}
         />
-        {hasMultipleRailMembers && (
-          <button className="rail-scope-btn"
-                  onClick={() => setShowAll((v) => !v)}
-                  data-active={showAll}
-                  title={showAll
-                    ? 'Showing every task in the project — click to filter back to your own'
-                    : 'Show every task in the project (so you can log time on tasks you don’t own)'}>
-            {showAll ? 'My' : 'All'}
-          </button>
-        )}
+        <button className="rail-scope-btn"
+                onClick={() => setShowAll((v) => !v)}
+                data-active={showAll}
+                title={showAll
+                  ? 'Showing every task in the project, including Later and Recurring — click to filter back to your own Now tasks'
+                  : 'Show every task in the project — other people’s tasks plus your own Later and Recurring'}>
+          {showAll ? 'My' : 'All'}
+        </button>
       </div>
       <div className="rail-body" ref={setRailBodyEl}>
         <div className="rail-projects" data-open={projectsOpen}>

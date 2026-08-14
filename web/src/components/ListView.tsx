@@ -1632,7 +1632,6 @@ function TaskRow({
             {trailMore > 0 && (
               <span
                 className="chip tag-chip-more"
-                style={{ height: 16, fontSize: 'calc(9px * var(--fs-scale))' }}
                 title={`+${trailMore} more tag${trailMore === 1 ? '' : 's'}`}
               >
                 +{trailMore}

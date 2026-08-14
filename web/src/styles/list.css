@@ -237,6 +237,8 @@
 @media (max-width: 700px) {
   .list-tag-filter {
     grid-template-columns: minmax(0, 1fr);
+    /* Don't pin: wrapped chips eat too much of a short viewport. */
+    position: static;
   }
   .list-tag-filter-chips {
     flex-wrap: wrap;
@@ -721,7 +723,10 @@
   background: color-mix(in srgb, var(--tag-color, var(--rule-2)) 28%, var(--paper));
   border-color: color-mix(in oklab, var(--tag-color, var(--rule-2)) 52%, var(--ink-3));
 }
+/* Same sizing as the tag chips above (incl. --label-size), quieter ink. */
 .task-trail .tag-chip-more {
+  height: calc(16px * var(--density));
+  font-size: calc(9px * var(--fs-scale) * var(--label-size));
   color: var(--ink-4);
   border-color: var(--rule-2);
   padding: 0 6px;
