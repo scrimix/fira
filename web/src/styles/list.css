@@ -71,6 +71,7 @@
 .list-empty-link:hover { color: var(--ink); border-bottom-color: var(--ink-3); }
 .list-proj-head {
   display: flex; align-items: baseline; gap: 12px;
+  min-width: 0;
   margin: 6px 0 calc(24px * var(--density));
   padding-bottom: calc(12px * var(--density));
   border-bottom: 1px solid var(--rule-chrome);
@@ -86,10 +87,12 @@
   border-bottom: 0;
 }
 .list-proj-head h1 {
+  min-width: 0;
   margin: 0;
   font-size: var(--fs-xxl);
   font-weight: 500;
   letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
 }
 .list-proj-head .icon {
   display: inline-flex;
@@ -228,13 +231,20 @@
   align-items: center;
   gap: 6px;
 }
-/* Phone widths: chips take multiple rows, so the controls stack into
- * a vertical stripe on the right with proper spacing instead of
- * cramping against the wrapped chip column. */
+/* Phone widths: put controls beneath the chips. A fixed right-hand
+ * stripe leaves too little room for chips and can push either control
+ * group beyond the visible document. */
 @media (max-width: 700px) {
+  .list-tag-filter {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .list-tag-filter-chips {
+    flex-wrap: wrap;
+  }
   .list-tag-filter-controls {
-    flex-direction: column;
-    align-items: stretch;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
     gap: 4px;
   }
 }

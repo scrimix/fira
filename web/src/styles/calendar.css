@@ -1038,6 +1038,7 @@
   line-height: 1;
 }
 .rail-scope-btn {
+  flex: 0 0 auto;
   height: 24px;
   padding: 0 10px;
   font-family: var(--font-label);
@@ -1349,6 +1350,7 @@
   }
   .cal-rail {
     display: flex;
+    min-width: 0;
     border-left: 0;
     border-top: 1px solid var(--rule);
   }
@@ -1381,5 +1383,7 @@
    * without horizontal scroll. */
   /* Tighter rail head on phones so the new button + scope toggle + search
    * fit one row at 360px. */
+  /* Let the search shrink before it pushes the All/My scope control out. */
+  .rail-head { min-width: 0; }
   .rail-search { font-size: var(--fs-md); }
 }
