@@ -3,10 +3,14 @@ import { createPortal } from 'react-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
-import { AlertTriangle, ArrowLeft, Check, ClockPlus, Copy, Download, Link, Loader2, PanelRightClose, PanelRightOpen, Paperclip, Pencil, Plus, RefreshCw, Ticket, Trash2, X } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Check, ClockPlus, Copy, Download, FilePlus2, Link, Loader2, PanelRightClose, PanelRightOpen, Paperclip, Pencil, Plus, RefreshCw, Ticket, Trash2, X } from 'lucide-react';
 import { useFira } from '../store';
 import { useIsMobile } from '../hooks';
 import { ConfirmDelete } from './ConfirmDelete';
+import {
+  AttachmentComposer, MAX_ATTACHMENT_BYTES, draftFromPaste, emptyTextDraft, formatBytes,
+  type AttachmentDraft,
+} from './AttachmentComposer';
 import { Select } from './Select';
 import {
   fmtMin, fmtClockShort, parseEstimate,
@@ -114,6 +118,21 @@ export function TaskModal({ taskId }: Props) {
     return () => { cancelled = true; };
   }, [attachmentPreview]);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
+  // Direct attachments: a typed note or a paste (image / file / text) becomes
+  // a draft that the composer names and uploads — no file picker involved.
+  const [composerDraft, setComposerDraft] = useState<AttachmentDraft | null>(null);
+  useEffect(() => { setComposerDraft(null); }, [taskId]);
+  useEffect(() => {
+    if (composerDraft || attachmentPreview || confirmingDelete || attachmentForDelete) return;
+    const onPaste = (e: ClipboardEvent) => {
+      const draft = draftFromPaste(e);
+      if (!draft) return;
+      e.preventDefault();
+      setComposerDraft(draft);
+    };
+    window.addEventListener('paste', onPaste);
+    return () => window.removeEventListener('paste', onPaste);
+  }, [composerDraft, attachmentPreview, confirmingDelete, attachmentForDelete]);
   // Reset description edit mode when the modal is reused for another task.
   useEffect(() => { setDescEditing(false); }, [taskId]);
 
@@ -271,7 +290,20 @@ export function TaskModal({ taskId }: Props) {
 
             <SectionHeading
               title="Attachments"
-              trailing={AddAttachmentButton({task, setError: setAttachmentError})}
+              trailing={
+                <span className="task-attachment-actions">
+                  <button
+                    className="tm-section-btn"
+                    type="button"
+                    onClick={() => setComposerDraft(emptyTextDraft())}
+                    title="Create attachment (or paste one anywhere in this task)"
+                    aria-label="Create attachment"
+                  >
+                    <FilePlus2 size={14} strokeWidth={1.75} />
+                  </button>
+                  {AddAttachmentButton({task, setError: setAttachmentError})}
+                </span>
+              }
             />
             <AttachmentList
               attachments={task.attachments}
@@ -449,6 +481,15 @@ export function TaskModal({ taskId }: Props) {
           />
         )}
       </div>
+      {composerDraft && (
+        <AttachmentComposer
+          taskId={task.id}
+          draft={composerDraft}
+          crumb={`${project.title} / ${task.title}`}
+          projectColor={project.color}
+          onClose={() => setComposerDraft(null)}
+        />
+      )}
       <div>
         {attachmentForDelete && (
           <ConfirmDelete
@@ -1007,13 +1048,6 @@ function CopyTaskLinkButton({ taskId }: { taskId: UUID }) {
         : <Link size={15} strokeWidth={1.75} />}
     </button>
   );
-}
-
-const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024; // 10 MB
-
-function formatBytes(bytes: number): string {
-  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  return `${Math.ceil(bytes / 1024)} KB`;
 }
 
 function AddAttachmentButton({ task, setError }: { task: Task, setError: (err: string | null) => void }) {

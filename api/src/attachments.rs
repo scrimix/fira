@@ -22,6 +22,42 @@ pub struct UploadFileResponse {
     pub storage_path: String,
 }
 
+/// Clients name their own files now (see the attachment composer), so the
+/// name is scrubbed before it reaches the DB. Kept permissive — only path
+/// components and control characters go; the strict rules live in
+/// `sanitize_extension`, which is what actually reaches a storage path.
+fn sanitize_filename(name: &str) -> String {
+    let base = name.rsplit(['/', '\\']).next().unwrap_or(name);
+    let cleaned: String = base
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(120)
+        .collect();
+    let cleaned = cleaned.trim().trim_matches('.').to_string();
+    if cleaned.is_empty() {
+        format!("file-{}", Utc::now().format("%Y%m%d-%H%M%S"))
+    } else {
+        cleaned
+    }
+}
+
+/// The extension goes into the storage path, so it must never carry
+/// separators or dots — anything unusable falls back to `bin`.
+fn sanitize_extension(file_name: &str) -> String {
+    let ext = file_name.rsplit_once('.').map(|(_, e)| e).unwrap_or("");
+    let ext: String = ext
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .take(16)
+        .collect::<String>()
+        .to_ascii_lowercase();
+    if ext.is_empty() {
+        "bin".to_string()
+    } else {
+        ext
+    }
+}
+
 pub async fn upload_attachment(
     State(state): State<AppState>,
     ctx: AuthCtx,
@@ -52,7 +88,8 @@ pub async fn upload_attachment(
 
             if name == "file" {
                 let id = Uuid::new_v4();
-                let file_extension = file_name.split('.').last().unwrap_or("bin");
+                let file_name = sanitize_filename(&file_name);
+                let file_extension = sanitize_extension(&file_name);
                 let storage_name = format!("{}.{}", id, file_extension);
                 let storage_path = format!("{}/{}/{}", task.project_id, task.id, storage_name);
 

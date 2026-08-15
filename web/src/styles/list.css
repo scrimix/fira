@@ -1555,6 +1555,97 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
   font-size: calc(11px * var(--fs-scale));
   color: var(--danger);
 }
+.task-attachment-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* Direct-attachment composer — where a paste or the Create button lands so
+ * the draft can be named and previewed before it uploads. */
+.ac-modal {
+  width: min(720px, 94vw);
+  height: auto;
+  max-height: min(88dvh, 900px);
+}
+.ac-body {
+  padding: calc(16px * var(--density)) calc(22px * var(--density)) calc(10px * var(--density));
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: auto;
+}
+.ac-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+  font-family: var(--font-mono);
+  font-size: calc(11px * var(--fs-scale));
+  color: var(--ink-4);
+}
+.ac-text {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 220px;
+  resize: vertical;
+  padding: 10px 12px;
+  border: 1px solid var(--rule-2);
+  border-radius: var(--r-sm);
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+.ac-text:focus { outline: none; border-color: var(--focus-line); }
+.ac-text::placeholder { color: var(--ink-4); }
+.ac-preview {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 160px;
+  padding: 12px;
+  border: 1px solid var(--rule-2);
+  border-radius: var(--r-sm);
+  background: var(--paper-2);
+  overflow: auto;
+}
+.ac-image {
+  display: block;
+  max-width: 100%;
+  max-height: 42dvh;
+  object-fit: contain;
+}
+/* Binary drafts have nothing to show — report the shape of the bytes. */
+.ac-binary {
+  gap: 12px;
+  justify-content: flex-start;
+  color: var(--ink-3);
+}
+.ac-binary-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ac-binary-lines strong { color: var(--ink); font-size: var(--fs-md); }
+.ac-binary-lines span {
+  font-family: var(--font-mono);
+  font-size: calc(11px * var(--fs-scale));
+  color: var(--ink-4);
+}
+.ac-hint {
+  margin-right: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: calc(11px * var(--fs-scale));
+  color: var(--ink-4);
+}
+@media (max-width: 700px) {
+  .ac-hint { display: none; }
+}
 
 .est-bar {
   height: 6px;
