@@ -117,19 +117,21 @@ export function TaskModalDraft({ draft }: Props) {
         </div>
         <div className="modal-body" data-side="closed">
           <div className="modal-main">
-            <input
+            <textarea
               autoFocus
+              rows={1}
               className="task-title-big task-title-input"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="Task title"
-              type="text"
-              autoComplete="one-time-code"
+              name="task_title"
+              autoComplete="off"
               autoCorrect="off"
               autoCapitalize="sentences"
               spellCheck={false}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); submit(); }
+                else if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); }
                 else if (e.key === 'Escape') closeCreate();
               }}
             />

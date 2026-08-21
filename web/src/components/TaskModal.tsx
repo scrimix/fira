@@ -845,10 +845,16 @@ function BlockCell({
 function TitleEditor({ value, onSave }: { value: string; onSave: (v: string) => void }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
-  const ref = useRef<HTMLInputElement>(null);
+  const ref = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => { setDraft(value); setEditing(false); }, [value]);
-  useEffect(() => { if (editing) ref.current?.focus(); }, [editing]);
+  useEffect(() => {
+    if (!editing) return;
+    const el = ref.current;
+    if (!el) return;
+    el.focus();
+    el.setSelectionRange(el.value.length, el.value.length);
+  }, [editing]);
 
   const commit = () => {
     const v = draft.trim();
@@ -865,14 +871,15 @@ function TitleEditor({ value, onSave }: { value: string; onSave: (v: string) => 
     );
   }
   return (
-    <input
+    <textarea
       ref={ref}
+      rows={1}
       className="task-title-big task-title-input"
       value={draft}
       onChange={(e) => setDraft(e.target.value)}
       onBlur={commit}
-      type="text"
-      autoComplete="one-time-code"
+      name="task_title"
+      autoComplete="off"
       autoCorrect="off"
       autoCapitalize="sentences"
       spellCheck={false}
@@ -1313,10 +1320,16 @@ function SubtaskRow({
   const [editing, setEditing] = useState(autoEdit);
   const [draft, setDraft] = useState(title);
   const [dragOnHandle, setDragOnHandle] = useState(false);
-  const ref = useRef<HTMLInputElement>(null);
+  const ref = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => { setDraft(title); }, [title]);
-  useEffect(() => { if (editing) ref.current?.focus(); }, [editing]);
+  useEffect(() => {
+    if (!editing) return;
+    const el = ref.current;
+    if (!el) return;
+    el.focus();
+    el.setSelectionRange(el.value.length, el.value.length);
+  }, [editing]);
   // One-shot: when the parent flags this row as the just-created
   // "next subtask" (Enter-on-previous), drop into edit mode and tell
   // the parent to clear its focusId so future re-renders aren't
@@ -1383,7 +1396,7 @@ function SubtaskRow({
   const onRowPointerDown = (e: React.PointerEvent) => {
     if (e.pointerType !== 'touch') return;
     const targetEl = e.target as HTMLElement;
-    if (targetEl.closest('.sc, .subtask-grip, .subtask-del, input')) return;
+    if (targetEl.closest('.sc, .subtask-grip, .subtask-del, input, textarea')) return;
     if (editing) return;
     rowTouchRef.current = {
       startX: e.clientX, startY: e.clientY,
@@ -1478,14 +1491,15 @@ function SubtaskRow({
         {done && <Check size={11} strokeWidth={3} />}
       </span>
       {editing ? (
-        <input
+        <textarea
           ref={ref}
+          rows={1}
           className="subtask-edit-input"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onBlur={commit}
-          type="text"
-          autoComplete="one-time-code"
+          name="subtask_title"
+          autoComplete="off"
           autoCorrect="off"
           autoCapitalize="sentences"
           spellCheck={false}
@@ -1521,7 +1535,7 @@ function SubtaskRow({
 
 function AddSubtaskRow({ onAdd, bare }: { onAdd: (title: string) => void; bare: boolean }) {
   const [value, setValue] = useState('');
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const commit = () => {
     const v = value.trim();
@@ -1541,8 +1555,9 @@ function AddSubtaskRow({ onAdd, bare }: { onAdd: (title: string) => void; bare: 
           </span>
         </>
       )}
-      <input
+      <textarea
         ref={inputRef}
+        rows={1}
         className="subtask-add-input"
         value={value}
         onChange={(e) => setValue(e.target.value)}
@@ -1556,8 +1571,8 @@ function AddSubtaskRow({ onAdd, bare }: { onAdd: (title: string) => void; bare: 
           else if (e.key === 'Escape') { setValue(''); inputRef.current?.blur(); }
         }}
         placeholder="Add subtask…"
-        type="text"
-        autoComplete="one-time-code"
+        name="subtask_title"
+        autoComplete="off"
         autoCorrect="off"
         autoCapitalize="sentences"
         spellCheck={false}

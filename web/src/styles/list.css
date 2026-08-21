@@ -617,6 +617,31 @@
   min-width: 0;
   line-height: 1.45;
 }
+.task-title-line[data-editing] {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+}
+.title-autosize {
+  display: inline-grid;
+  min-width: 0;
+  max-width: 100%;
+  font-size: var(--fs-md);
+  font-family: inherit;
+  line-height: 1.45;
+}
+.title-autosize::after {
+  content: attr(data-value) ' ';
+  visibility: hidden;
+  white-space: pre-wrap;
+  grid-area: 1 / 1 / 2 / 2;
+  font: inherit;
+}
+.title-autosize .list-title-input {
+  grid-area: 1 / 1 / 2 / 2;
+  width: auto;
+  min-width: 1ch;
+}
 .task-title {
   min-width: 0;
   font-size: var(--fs-md);
@@ -827,6 +852,12 @@
   background: transparent;
   color: var(--ink);
   padding: 0;
+  line-height: 1.45;
+  resize: none;
+  overflow-y: hidden;
+  min-height: calc(1.45em);
+  display: block;
+  width: 100%;
 }
 /* Match the muted "No description." / "No blocks yet" empty-state look —
  * same family + size, same `--ink-4` tint, no browser-default placeholder
@@ -872,6 +903,11 @@
 .subtasks .subtask .subtask-edit-input {
   font-size: var(--fs-md);
   line-height: 1.45;
+  resize: none;
+  overflow-y: hidden;
+  min-height: calc(1.45em);
+  display: block;
+  width: 100%;
 }
 .subtask {
   display: flex; align-items: flex-start; gap: 8px;
@@ -886,7 +922,7 @@
   -webkit-user-select: none;
   -webkit-touch-callout: none;
 }
-.subtask input { user-select: text; -webkit-user-select: text; }
+.subtask input, .subtask textarea { user-select: text; -webkit-user-select: text; }
 .subtask .sc {
   width: 14px; height: 14px;
   margin-top: 2px;
@@ -1690,6 +1726,10 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
   width: 100%;
   padding: 0;
   margin: 0 0 10px;
+  resize: none;
+  overflow-y: hidden;
+  min-height: calc(1.2em);
+  display: block;
 }
 .task-title-input::placeholder { color: var(--ink-4); }
 
@@ -1780,6 +1820,11 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
   background: transparent;
   color: var(--ink);
   padding: 0;
+  line-height: 1.45;
+  resize: none;
+  overflow-y: hidden;
+  min-height: calc(1.45em);
+  display: block;
 }
 /* Geometry + danger hover come from .tm-section-btn / [data-danger]; the
  * row only adds right-alignment and reveal-on-row-hover. */

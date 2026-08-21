@@ -1121,10 +1121,16 @@ function ListSubtaskRow({
 }) {
   const [editing, setEditing] = useState(autoEdit);
   const [draft, setDraft] = useState(title);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => { setDraft(title); }, [title]);
-  useEffect(() => { if (editing) inputRef.current?.focus(); }, [editing]);
+  useEffect(() => {
+    if (!editing) return;
+    const el = inputRef.current;
+    if (!el) return;
+    el.focus();
+    el.setSelectionRange(el.value.length, el.value.length);
+  }, [editing]);
   // One-shot: a freshly-minted subtask (Enter on previous, or Tab demote
   // from a task) gets stamped with autoEdit — drop into edit mode and
   // tell the parent to clear the flag so re-renders don't loop.
@@ -1151,8 +1157,9 @@ function ListSubtaskRow({
         {done && <Check size={11} strokeWidth={3} />}
       </span>
       {editing ? (
-        <input
+        <textarea
           ref={inputRef}
+          rows={1}
           className="subtask-edit-input"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
@@ -1197,8 +1204,7 @@ function ListSubtaskRow({
             else if (e.key === 'Backspace' && !draft) { e.preventDefault(); onDelete(); }
           }}
           name="subtask_title"
-          type="text"
-          autoComplete="one-time-code"
+          autoComplete="off"
           autoCorrect="off"
           autoCapitalize="sentences"
           spellCheck={false}
@@ -1424,7 +1430,7 @@ function TaskRow({
            // there — clicking surrounding row body still pops the
            // modal, matching pre-inline-edit behavior.
            if (el.closest('.task-check, .sc, .task-grip, .task-toggle')) return;
-           if (el.closest('.list-title-input, .subtask-edit-input')) return;
+           if (el.closest('.title-autosize, .subtask-edit-input')) return;
            onOpen(task.id);
          }}>
       {/* Two drag paths, split by input type:
@@ -1450,91 +1456,94 @@ function TaskRow({
         {task.status === 'done' && <Check size={11} strokeWidth={3} />}
       </div>
       <div className="task-title-wrap">
-        <div className="task-title-line">
+        <div className="task-title-line" data-editing={editingTitle || undefined}>
           {editingTitle ? (
-            <textarea
-              ref={titleRef}
-              className="list-title-input"
-              rows={1}
-              value={titleDraft}
-              onChange={(e) => setTitleDraft(e.target.value)}
-              onBlur={commitTitle}
-              onClick={(e) => e.stopPropagation()}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  const v = titleDraft.trim();
-                  if (!v) { onTitleDelete(task.id); return; }
-                  if (v !== task.title) onTitleSave(task.id, v);
-                  setEditingTitle(false);
-                  onCreateSibling(v);
-                }
-                else if (e.key === 'Tab' && !e.shiftKey) {
-                  e.preventDefault();
-                  // Demote into a subtask of the previous task. Stage 1
-                  // ignores the keypress when a demote isn't possible
-                  // (no prev task, or current task already has subtasks)
-                  // — the input stays in edit mode so the user can
-                  // continue typing without losing their place.
-                  if (!prevTaskId || task.subtasks.length > 0) return;
-                  const ok = onDemote(titleDraft);
-                  if (ok) setEditingTitle(false);
-                }
-                else if (e.key === 'Backspace' && !titleDraft) {
-                  // Backspace on an empty title removes the row —
-                  // matches the subtask handler. We *do* navigate up
-                  // first: without it the textarea unmounts with the
-                  // task and focus falls back to the body, at which
-                  // point the next ↑ / ↓ scroll the page instead of
-                  // jumping to the next editable row. Skipped when
-                  // the task carries subtasks: a stray empty title
-                  // shouldn't one-key destroy nested data.
-                  if (task.subtasks.length > 0) return;
-                  e.preventDefault();
-                  const row = e.currentTarget.closest('.task-row') as HTMLElement | null;
-                  onNavigate(row, 'up');
-                  setEditingTitle(false);
-                  onTitleDelete(task.id);
-                }
-                else if (e.key === 'ArrowUp') {
-                  // Shift-modified: move the task itself one slot up
-                  // within its render group (assignee bucket in Now,
-                  // section list otherwise). Plain Up: move edit
-                  // focus to the previous visible row. Multi-line
-                  // titles only navigate when the caret is on the
-                  // first line so intra-textarea Up still works.
-                  if (e.shiftKey) {
-                    if (onShiftMoveTask('up')) e.preventDefault();
-                    return;
+            <span className="title-autosize" data-value={titleDraft}>
+              <textarea
+                ref={titleRef}
+                className="list-title-input"
+                rows={1}
+                cols={1}
+                value={titleDraft}
+                onChange={(e) => setTitleDraft(e.target.value)}
+                onBlur={commitTitle}
+                onClick={(e) => e.stopPropagation()}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    const v = titleDraft.trim();
+                    if (!v) { onTitleDelete(task.id); return; }
+                    if (v !== task.title) onTitleSave(task.id, v);
+                    setEditingTitle(false);
+                    onCreateSibling(v);
                   }
-                  const ta = e.currentTarget;
-                  const before = ta.value.slice(0, ta.selectionStart);
-                  if (before.includes('\n')) return;
-                  const row = ta.closest('.task-row') as HTMLElement | null;
-                  if (onNavigate(row, 'up')) e.preventDefault();
-                }
-                else if (e.key === 'ArrowDown') {
-                  if (e.shiftKey) {
-                    if (onShiftMoveTask('down')) e.preventDefault();
-                    return;
+                  else if (e.key === 'Tab' && !e.shiftKey) {
+                    e.preventDefault();
+                    // Demote into a subtask of the previous task. Stage 1
+                    // ignores the keypress when a demote isn't possible
+                    // (no prev task, or current task already has subtasks)
+                    // — the input stays in edit mode so the user can
+                    // continue typing without losing their place.
+                    if (!prevTaskId || task.subtasks.length > 0) return;
+                    const ok = onDemote(titleDraft);
+                    if (ok) setEditingTitle(false);
                   }
-                  const ta = e.currentTarget;
-                  const after = ta.value.slice(ta.selectionEnd);
-                  if (after.includes('\n')) return;
-                  const row = ta.closest('.task-row') as HTMLElement | null;
-                  if (onNavigate(row, 'down')) e.preventDefault();
-                }
-                else if (e.key === 'Escape') {
-                  setTitleDraft(task.title);
-                  setEditingTitle(false);
-                }
-              }}
-              name="task_title"
-              autoComplete="off"
-              autoCorrect="off"
-              autoCapitalize="sentences"
-              spellCheck={false}
-            />
+                  else if (e.key === 'Backspace' && !titleDraft) {
+                    // Backspace on an empty title removes the row —
+                    // matches the subtask handler. We *do* navigate up
+                    // first: without it the textarea unmounts with the
+                    // task and focus falls back to the body, at which
+                    // point the next ↑ / ↓ scroll the page instead of
+                    // jumping to the next editable row. Skipped when
+                    // the task carries subtasks: a stray empty title
+                    // shouldn't one-key destroy nested data.
+                    if (task.subtasks.length > 0) return;
+                    e.preventDefault();
+                    const row = e.currentTarget.closest('.task-row') as HTMLElement | null;
+                    onNavigate(row, 'up');
+                    setEditingTitle(false);
+                    onTitleDelete(task.id);
+                  }
+                  else if (e.key === 'ArrowUp') {
+                    // Shift-modified: move the task itself one slot up
+                    // within its render group (assignee bucket in Now,
+                    // section list otherwise). Plain Up: move edit
+                    // focus to the previous visible row. Multi-line
+                    // titles only navigate when the caret is on the
+                    // first line so intra-textarea Up still works.
+                    if (e.shiftKey) {
+                      if (onShiftMoveTask('up')) e.preventDefault();
+                      return;
+                    }
+                    const ta = e.currentTarget;
+                    const before = ta.value.slice(0, ta.selectionStart);
+                    if (before.includes('\n')) return;
+                    const row = ta.closest('.task-row') as HTMLElement | null;
+                    if (onNavigate(row, 'up')) e.preventDefault();
+                  }
+                  else if (e.key === 'ArrowDown') {
+                    if (e.shiftKey) {
+                      if (onShiftMoveTask('down')) e.preventDefault();
+                      return;
+                    }
+                    const ta = e.currentTarget;
+                    const after = ta.value.slice(ta.selectionEnd);
+                    if (after.includes('\n')) return;
+                    const row = ta.closest('.task-row') as HTMLElement | null;
+                    if (onNavigate(row, 'down')) e.preventDefault();
+                  }
+                  else if (e.key === 'Escape') {
+                    setTitleDraft(task.title);
+                    setEditingTitle(false);
+                  }
+                }}
+                name="task_title"
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="sentences"
+                spellCheck={false}
+              />
+            </span>
           ) : (
             <span
               className="task-title"
