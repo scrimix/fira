@@ -28,6 +28,7 @@ export type OpKind =
   | { kind: 'task.set_tags'; task_id: string; tag_ids: string[] }
   | { kind: 'task.add_attachment'; task_id: string; attachment: import('../types').Attachment }
   | { kind: 'task.remove_attachment'; task_id: string; attachment: import('../types').Attachment }
+  | { kind: 'task.move_attachment'; from_task_id: string; to_task_id: string; attachment: import('../types').Attachment }
 
 /// Server-only op kinds — synthesized in REST handlers and delivered via
 /// /changes. Clients never enqueue these; they only apply them.

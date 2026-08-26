@@ -219,6 +219,59 @@ pub async fn delete_attachment(
     result.map_err(|e| ApiError::InternalServerError(format!("{err_ctx} error: {e}")))
 }
 
+pub async fn move_attachment(
+    State(state): State<AppState>,
+    ctx: AuthCtx,
+    Path((file_id, task_id)): Path<(String, Uuid)>,
+) -> ApiResult<()> {
+    let err_ctx = format!("move_attachment [file_id: {file_id}, task_id: {task_id}]");
+
+    let result: Result<(), String> = async {
+        let file_id = Uuid::from_str(&file_id)
+            .map_err(|e| format!("failed to get uuid: {e}"))?;
+
+        let mut tx = state.pool.begin()
+            .await.map_err(|e| format!("failed to get db tx {e}"))?;
+
+        let from_project_id = ensure_attachment_in_scope(&state.pool, ctx.user.id, ctx.workspace_id, file_id)
+            .await.map_err(|e| format!("check failed for attachment in scope access: {e}"))?;
+        let to_project_id = ensure_task_in_scope(&mut tx, ctx.user.id, ctx.workspace_id, task_id)
+            .await.map_err(|e| format!("check failed for target task in scope access: {e}"))?;
+        if from_project_id != to_project_id {
+            return Err("attachment and target task belong to different projects".to_string());
+        }
+
+        let attachment = db::get_attachment(&state.pool, file_id)
+            .await.map_err(|e| format!("failed to get attachment info: {e}"))?;
+        let from_task_id = attachment.task_id;
+
+        let moved = db::move_attachment_task(&mut tx, file_id, task_id)
+            .await.map_err(|e| format!("failed to move attachment: {e}"))?;
+        if !moved {
+            return Err("attachment doesn't exist in db".to_string());
+        }
+
+        let mut moved_attachment = attachment;
+        moved_attachment.task_id = task_id;
+
+        let kind = "task.move_attachment";
+        let payload = serde_json::json!({
+            "kind": kind,
+            "from_task_id": from_task_id,
+            "to_task_id": task_id,
+            "attachment": &moved_attachment,
+        });
+        ops::record_synthesized_op(&mut tx, ctx.user.id, ctx.workspace_id, kind, payload, Some(to_project_id))
+            .await.map_err(|e| format!("failed to record op: {e}"))?;
+
+        tx.commit().await.map_err(|e| format!("failed to commit tx: {e}"))?;
+
+        Ok(())
+    }.await;
+
+    result.map_err(|e| ApiError::InternalServerError(format!("{err_ctx} error: {e}")))
+}
+
 pub async fn delete_task_attachments(
     tx: &mut Transaction<'_, Postgres>,
     storage: &StorageBackend,

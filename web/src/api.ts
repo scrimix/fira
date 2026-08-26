@@ -280,6 +280,8 @@ export const api = {
   getAttachmentUrl,
   deleteAttachment: (attachment_id: string) =>
     req<void>('DELETE', `/attachments/${attachment_id}`),
+  moveAttachment: (attachment_id: string, task_id: string) =>
+    req<void>('POST', `/attachments/${attachment_id}/move/${task_id}`),
   triggerDownloadAttachment,
 };
 

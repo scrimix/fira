@@ -1004,7 +1004,7 @@ export function ListView() {
             }
             onCancel={() => setPendingMerge(null)}
             onConfirm={() => {
-              mergeTaskInto(pendingMerge.sourceId, pendingMerge.targetId);
+              void mergeTaskInto(pendingMerge.sourceId, pendingMerge.targetId);
               // Auto-expand so the user sees what they just merged into
               // the target — mirrors the Tab-demote handler's behavior.
               setExpandedSubs((p) => ({ ...p, [pendingMerge.targetId]: true }));

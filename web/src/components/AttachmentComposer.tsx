@@ -246,8 +246,22 @@ export function AttachmentComposer({ taskId, draft: initial, crumb, projectColor
       ? `${(IMAGE_EXT_BY_MIME[sourceMime] ?? 'image').toUpperCase()} image`
       : sourceMime || 'Binary';
 
+  // Only close when *both* the mousedown and the click landed on the
+  // backdrop itself. A drag that starts on text inside the modal and
+  // releases outside (text selection that overshoots) would otherwise
+  // synthesize a click on the backdrop and dismiss the modal.
+  const downOnBackdropRef = useRef(false);
+
   return (
-    <div className="modal-backdrop confirm-backdrop" onClick={onClose}>
+    <div
+      className="modal-backdrop confirm-backdrop"
+      onMouseDown={(e) => { downOnBackdropRef.current = e.target === e.currentTarget; }}
+      onClick={(e) => {
+        const onBackdrop = e.target === e.currentTarget;
+        if (onBackdrop && downOnBackdropRef.current) onClose();
+        downOnBackdropRef.current = false;
+      }}
+    >
       <div
         className="modal ac-modal"
         style={{ ['--proj-color' as string]: projectColor }}

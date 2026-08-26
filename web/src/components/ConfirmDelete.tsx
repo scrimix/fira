@@ -36,8 +36,22 @@ export function ConfirmDelete({
 
   const tryConfirm = () => { if (matches) onConfirm(); };
 
+  // Only close when *both* the mousedown and the click landed on the
+  // backdrop itself. A drag that starts on text inside the modal and
+  // releases outside (text selection that overshoots) would otherwise
+  // synthesize a click on the backdrop and dismiss the modal.
+  const downOnBackdropRef = useRef(false);
+
   return (
-    <div className="modal-backdrop confirm-backdrop" onClick={onCancel}>
+    <div
+      className="modal-backdrop confirm-backdrop"
+      onMouseDown={(e) => { downOnBackdropRef.current = e.target === e.currentTarget; }}
+      onClick={(e) => {
+        const onBackdrop = e.target === e.currentTarget;
+        if (onBackdrop && downOnBackdropRef.current) onCancel();
+        downOnBackdropRef.current = false;
+      }}
+    >
       <div className="modal confirm-modal" onClick={(e) => e.stopPropagation()}>
         <div className="confirm-body">
           <h3 className="confirm-title">{title}</h3>

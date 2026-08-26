@@ -694,7 +694,8 @@ async fn main() -> anyhow::Result<()> {
         .route(
             "/:file_id",
             get(attachments::get_attachment).delete(attachments::delete_attachment),
-        );
+        )
+        .route("/:file_id/move/:task_id", post(attachments::move_attachment));
 
     let api = api.nest("/attachments", attachments_router);
 

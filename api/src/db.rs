@@ -1805,6 +1805,19 @@ pub async fn delete_attachment(
     Ok(res.rows_affected() > 0)
 }
 
+pub async fn move_attachment_task(
+    tx: &mut Transaction<'_, Postgres>,
+    file_id: Uuid,
+    new_task_id: Uuid,
+) -> sqlx::Result<bool> {
+    let res = sqlx::query("UPDATE attachments SET task_id = $1 WHERE id = $2")
+        .bind(new_task_id)
+        .bind(file_id)
+        .execute(&mut **tx)
+        .await?;
+    Ok(res.rows_affected() > 0)
+}
+
 pub async fn list_attachments_for_task(
     tx: &mut Transaction<'_, Postgres>,
     task_id: Uuid,

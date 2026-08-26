@@ -426,7 +426,7 @@ interface FiraState {
   /// of target; description / estimate / tags / time blocks are
   /// merged per the list brief; source is deleted. No-op when ids
   /// match or projects differ.
-  mergeTaskInto: (sourceId: UUID, targetId: UUID) => void;
+  mergeTaskInto: (sourceId: UUID, targetId: UUID) => Promise<void>;
   addSubtask: (taskId: UUID, title: string, afterId?: UUID) => UUID | null;
   tickSubtask: (taskId: UUID, subId: UUID) => void;
   setSubtaskTitle: (taskId: UUID, subId: UUID, title: string) => void;
@@ -439,6 +439,7 @@ interface FiraState {
   addAttachment: (taskId: UUID, file: File) => Promise<UUID | null>;
   getAttachment: (attachment_id: UUID) => Promise<string>;
   deleteAttachment: (attachment_id: UUID) => Promise<void>;
+  moveAttachment: (attachment_id: UUID, taskId: UUID) => Promise<void>;
 }
 
 // Compute a sort_key strictly between `a` and `b` (or strictly past
@@ -714,6 +715,14 @@ function applyOpToState(s: FiraState, op: AnyOpKind): Partial<FiraState> {
       return {
         tasks: s.tasks.map((t) => t.id === op.task_id ? { ...t, attachments: t.attachments.filter((a) => a.id != op.attachment.id)} : t)
       }
+    case 'task.move_attachment':
+      return {
+        tasks: s.tasks.map((t) => {
+          if (t.id === op.from_task_id) return { ...t, attachments: t.attachments.filter((a) => a.id !== op.attachment.id) };
+          if (t.id === op.to_task_id) return { ...t, attachments: [...(t.attachments ?? []), op.attachment] };
+          return t;
+        }),
+      };
     case 'project.create': {
       if (s.projects.some((p) => p.id === op.project.id)) return {};
       return {
@@ -2306,7 +2315,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     ...pushOp(s, { kind: 'task.delete', task_id: taskId }),
   })),
 
-  mergeTaskInto: (sourceId, targetId) => {
+  mergeTaskInto: async (sourceId, targetId) => {
     if (sourceId === targetId) return;
     const before = get();
     const source = before.tasks.find((t) => t.id === sourceId);
@@ -2314,6 +2323,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     if (!source || !target) return;
     if (source.project_id !== target.project_id) return;
     const sourceBlocks = before.blocks.filter((b) => b.task_id === sourceId);
+    const sourceAttachments = source.attachments;
     const actions = get();
     // 1. Source title becomes a new subtask of target. Inherits the
     //    "done" state from the source's status so a completed task
@@ -2371,7 +2381,16 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
         jira_sync_error: null,
       });
     }
-    // 7. Drop the source. Cascades remove its old blocks server-side;
+    // 7. Move source's attachments onto target. Unlike the steps above,
+    //    attachments live outside the outbox/op system — each move is a
+    //    direct server call, and it must finish before we delete the
+    //    source below, since task.delete purges whatever attachments are
+    //    still attached to the source task at that point.
+    if (sourceAttachments.length) {
+      await Promise.all(sourceAttachments.map((a) => actions.moveAttachment(a.id, targetId)));
+      await actions.pollChanges();
+    }
+    // 8. Drop the source. Cascades remove its old blocks server-side;
     //    the local store mirrors the cascade in deleteTask.
     actions.deleteTask(sourceId);
   },
@@ -2585,7 +2604,11 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
   },
 
   deleteAttachment: async (attachment_id) => {
-    await api.deleteAttachment(attachment_id); 
+    await api.deleteAttachment(attachment_id);
+  },
+
+  moveAttachment: async (attachment_id, taskId) => {
+    await api.moveAttachment(attachment_id, taskId);
   }
 
 }), {
