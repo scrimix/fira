@@ -126,6 +126,10 @@ export function WeekStrip({
             data-today={currentWeek === ms ? 'true' : undefined}
             data-pending={g.pending ? 'true' : undefined}
             data-over={g.over ? 'true' : undefined}
+            // Drives the same ramp the daily cells use — without it every
+            // week renders flat and a part-way week is indistinguishable
+            // from an empty one.
+            style={{ ['--fill' as string]: String(g.fill) }}
             aria-label={g.tip}
             onMouseEnter={(e) => {
               if (!onHover || !g.tip) return;

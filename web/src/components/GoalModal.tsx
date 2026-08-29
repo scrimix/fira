@@ -28,7 +28,17 @@ export function GoalModal({ goalId }: { goalId: UUID | null }) {
   const [target, setTarget] = useState(
     existing?.target_min != null ? fmtMin(existing.target_min) : '',
   );
-  const [projectId, setProjectId] = useState<string>(existing?.project_id ?? NONE);
+  const [projectId, setProjectId] = useState<string>(() => {
+    if (existing?.project_id) return existing.project_id;
+    // A tag identifies its project on its own, so a goal saved with a
+    // tag and no project is well-formed. Resolve the project back out of
+    // it so the form can show — and keep — the tag.
+    if (existing?.tag_id) {
+      const owner = tags.find((t) => t.id === existing.tag_id)?.project_id;
+      if (owner) return owner;
+    }
+    return NONE;
+  });
   const [tagId, setTagId] = useState<string>(existing?.tag_id ?? NONE);
   const [taskId, setTaskId] = useState<string>(existing?.task_id ?? NONE);
 
@@ -166,13 +176,20 @@ export function GoalModal({ goalId }: { goalId: UUID | null }) {
               }}
               options={opt(projects.map((p) => ({ id: p.id, label: p.title })), 'Any project')}
             />
+            {/* Tags are project-scoped rows, so without a project this
+              * would be a flat list of every tag in the workspace, where
+              * two projects' identically-named tags are impossible to
+              * tell apart. Gate it instead of showing a lying list. */}
             <Select<string>
               value={tagId}
               onChange={setTagId}
-              options={opt(
-                scopedTags.map((t) => ({ id: t.id, label: `#${t.title}` })),
-                'Any tag',
-              )}
+              disabled={projectId === NONE}
+              options={projectId === NONE
+                ? [{ value: NONE, label: 'Pick a project first' }]
+                : opt(
+                    scopedTags.map((t) => ({ id: t.id, label: `#${t.title}` })),
+                    'Any tag',
+                  )}
             />
             <Select<string>
               value={taskId}
@@ -184,8 +201,8 @@ export function GoalModal({ goalId }: { goalId: UUID | null }) {
             />
           </div>
           <p className="goal-hint">
-            All three are combined with AND. Tags belong to a project, so
-            picking one already narrows the project.
+            All three are combined with AND. Tags and tasks belong to a
+            project, so choose the project first to narrow them.
           </p>
         </div>
 
