@@ -1,6 +1,6 @@
 import { Menu } from 'lucide-react';
 import { useFira } from '../store';
-import { weekStartFor, fmtWeekRange } from '../time';
+import { weekStartFor, fmtWeekRange, fmtMonth } from '../time';
 import { useIsMobile } from '../hooks';
 import { ProjectIcon } from './ProjectIcon';
 import { SyncPill, RefreshButton } from './SyncPill';
@@ -12,6 +12,12 @@ export function TopBar() {
     s.projects.find((p) => p.id === s.listFilter.project_id) ?? null
   );
   const weekOffset = useFira((s) => s.weekOffset);
+  const monthOffset = useFira((s) => s.monthOffset);
+  const dashboardProjectId = useFira((s) => s.dashboardProjectId);
+  const dashboardProject = useFira((s) =>
+    s.projects.find((p) => p.id === s.dashboardProjectId) ?? null
+  );
+  const setDashboardProject = useFira((s) => s.setDashboardProject);
   const me = useFira((s) => s.users.find((u) => u.id === s.meId) ?? null);
   const playgroundMode = useFira((s) => s.playgroundMode);
   const accountBadge = useFira((s) => s.accountBadge);
@@ -31,7 +37,15 @@ export function TopBar() {
     ? ''
     : view === 'calendar'
       ? `Week of ${fmtWeekRange(weekStartFor(weekOffset))}`
-      : project?.title ?? 'List';
+      : view === 'dashboard'
+        ? fmtMonth(monthOffset)
+        : project?.title ?? 'List';
+
+  // In a dashboard project scope the month becomes a clickable crumb that
+  // returns to the workspace overview — "August 2026 / Atlas". Desktop
+  // only, because the title is suppressed entirely on phones; the
+  // dashboard's own toolbar carries a back button for that case.
+  const dashboardCrumb = view === 'dashboard' && dashboardProjectId != null && !isMobile;
 
   return (
     <div className="topbar">
@@ -60,7 +74,29 @@ export function TopBar() {
           className="title-icon"
         />
       )}
-      {title && <span className="title">{title}</span>}
+      {dashboardCrumb ? (
+        <>
+          <button
+            className="crumb crumb-btn"
+            onClick={() => setDashboardProject(null)}
+            title="Back to the workspace overview"
+          >
+            {title}
+          </button>
+          <span className="crumb-sep">/</span>
+          {dashboardProject && (
+            <ProjectIcon
+              name={dashboardProject.icon}
+              color={dashboardProject.color}
+              size={13}
+              className="title-icon"
+            />
+          )}
+          <span className="title">{dashboardProject?.title ?? ''}</span>
+        </>
+      ) : (
+        title && <span className="title">{title}</span>
+      )}
       <div className="grow" />
       {playgroundMode && !isMobile && (
         <span

@@ -64,6 +64,9 @@ pub async fn wipe(tx: &mut Transaction<'_, Postgres>) -> sqlx::Result<()> {
     for table in [
         "processed_ops",
         "gcal_events",
+        // Before tags/tasks/projects: goals hold FKs into all three, and
+        // an ON DELETE CASCADE would silently take goals with them.
+        "goals",
         "time_blocks",
         "task_tags",
         "tags",
@@ -334,6 +337,9 @@ pub async fn seed_all(tx: &mut Transaction<'_, Postgres>) -> sqlx::Result<()> {
 
     // ---- Time blocks ----
     seed_blocks(tx).await?;
+    // After blocks: the goals reference tasks and tags that must already
+    // exist, and their grids are only interesting once there's history.
+    seed_goals(tx).await?;
 
     // ---- GCal events ----
     let gcals = [
@@ -848,6 +854,184 @@ async fn seed_blocks(tx: &mut Transaction<'_, Postgres>) -> sqlx::Result<()> {
         .bind(start_at)
         .bind(end_at)
         .bind(*state)
+        .execute(&mut **tx)
+        .await?;
+    }
+
+    seed_block_history(tx, blocks.len()).await
+}
+
+/// Five prior weeks of history, so the month dashboard has something to
+/// aggregate. Without this the heatmap is one week of cells in a
+/// six-week grid and the day-of-week chart is noise.
+///
+/// Every block here is `completed`, declared rather than derived — same
+/// rule as the current week above. These are past weeks in a fixture, so
+/// "completed" is a statement about the fixture, not about the wallclock
+/// at seed time.
+///
+/// The shape is deliberately uneven: heavier Atlas than Helix, light
+/// Fridays, two genuinely empty weekdays, one Saturday, and a week where
+/// the standup lapses. A perfectly regular fixture makes the heatmap and
+/// the day-of-week bars look synthetic and hides bugs in the "active
+/// days" / "avg per active day" maths.
+async fn seed_block_history(
+    tx: &mut Transaction<'_, Postgres>,
+    id_offset: usize,
+) -> sqlx::Result<()> {
+    // (week, day, start_min, dur_min, task_slug). `week` counts back from
+    // the current week: -1 is last week. `day` is 0=Mon .. 6=Sun.
+    let h: &[(i64, i64, i64, i64, &str)] = &[
+        // ---- last week: a heavy, well-rounded week ----
+        (-1, 0, 8 * 60, 30, "t_atlas_standup"),
+        (-1, 0, 9 * 60, 120, "t_atlas_oauth"),
+        (-1, 0, 11 * 60 + 30, 60, "t_atlas_review"),
+        (-1, 0, 14 * 60, 120, "t_atlas_billing"),
+        (-1, 1, 8 * 60, 30, "t_atlas_standup"),
+        (-1, 1, 9 * 60, 150, "t_atlas_oauth"),
+        (-1, 1, 13 * 60, 120, "t_relay_jira"),
+        (-1, 1, 15 * 60 + 30, 90, "t_helix_emb"),
+        (-1, 2, 8 * 60, 30, "t_atlas_standup"),
+        (-1, 2, 9 * 60, 120, "t_atlas_billing"),
+        (-1, 2, 13 * 60, 180, "t_helix_emb"),
+        (-1, 3, 8 * 60, 30, "t_atlas_standup"),
+        (-1, 3, 9 * 60, 90, "t_atlas_perf"),
+        (-1, 3, 11 * 60, 60, "t_atlas_review"),
+        (-1, 3, 14 * 60, 120, "t_relay_diff"),
+        (-1, 4, 9 * 60 + 30, 90, "t_atlas_logs"),
+        // ---- two weeks back: a Wednesday off, catching up Thursday ----
+        (-2, 0, 8 * 60, 30, "t_atlas_standup"),
+        (-2, 0, 9 * 60, 120, "t_atlas_sso"),
+        (-2, 0, 13 * 60, 90, "t_relay_jira"),
+        (-2, 1, 8 * 60, 30, "t_atlas_standup"),
+        (-2, 1, 9 * 60, 180, "t_atlas_sso"),
+        (-2, 1, 14 * 60, 60, "t_atlas_review"),
+        // (-2, 2) deliberately empty — a day off mid-week.
+        (-2, 3, 8 * 60, 30, "t_atlas_standup"),
+        (-2, 3, 9 * 60, 210, "t_atlas_sso"),
+        (-2, 3, 13 * 60, 120, "t_atlas_billing"),
+        (-2, 3, 15 * 60 + 30, 90, "t_relay_diff"),
+        (-2, 4, 9 * 60, 120, "t_helix_emb"),
+        (-2, 4, 13 * 60, 60, "t_atlas_review"),
+        (-2, 5, 10 * 60, 120, "t_helix_idea"),
+        // ---- three weeks back: research-heavy, standup lapses ----
+        (-3, 0, 9 * 60, 180, "t_helix_emb"),
+        (-3, 0, 14 * 60, 90, "t_helix_idea"),
+        (-3, 1, 9 * 60, 120, "t_helix_emb"),
+        (-3, 1, 13 * 60, 120, "t_atlas_perf"),
+        (-3, 2, 8 * 60, 30, "t_atlas_standup"),
+        (-3, 2, 9 * 60, 150, "t_atlas_perf"),
+        (-3, 2, 14 * 60, 90, "t_relay_notion"),
+        (-3, 3, 9 * 60, 120, "t_atlas_oauth"),
+        (-3, 3, 13 * 60, 150, "t_helix_idea"),
+        (-3, 4, 10 * 60, 90, "t_relay_notion"),
+        // ---- four weeks back: a light week ----
+        (-4, 0, 8 * 60, 30, "t_atlas_standup"),
+        (-4, 0, 9 * 60, 120, "t_atlas_logs"),
+        (-4, 1, 8 * 60, 30, "t_atlas_standup"),
+        (-4, 1, 9 * 60, 90, "t_atlas_logs"),
+        (-4, 1, 13 * 60, 60, "t_relay_jira"),
+        (-4, 2, 8 * 60, 30, "t_atlas_standup"),
+        (-4, 2, 9 * 60 + 30, 120, "t_atlas_review"),
+        // (-4, 3) deliberately empty.
+        (-4, 4, 9 * 60, 60, "t_atlas_logs"),
+        // ---- five weeks back: a full, front-loaded week ----
+        (-5, 0, 8 * 60, 30, "t_atlas_standup"),
+        (-5, 0, 9 * 60, 180, "t_atlas_oauth"),
+        (-5, 0, 13 * 60, 120, "t_atlas_billing"),
+        (-5, 0, 15 * 60 + 30, 90, "t_relay_jira"),
+        (-5, 1, 8 * 60, 30, "t_atlas_standup"),
+        (-5, 1, 9 * 60, 150, "t_atlas_oauth"),
+        (-5, 1, 13 * 60, 180, "t_atlas_billing"),
+        (-5, 2, 8 * 60, 30, "t_atlas_standup"),
+        (-5, 2, 9 * 60, 120, "t_helix_emb"),
+        (-5, 2, 13 * 60, 120, "t_relay_diff"),
+        (-5, 3, 8 * 60, 30, "t_atlas_standup"),
+        (-5, 3, 9 * 60, 120, "t_atlas_perf"),
+        (-5, 3, 14 * 60, 90, "t_atlas_review"),
+        (-5, 4, 9 * 60, 120, "t_relay_notion"),
+    ];
+
+    // Block ids continue the `b_{i}` sequence so the two tables can't
+    // collide on a deterministic id.
+    for (i, (week, day, start_min, dur, slug)) in h.iter().enumerate() {
+        let day_index = week * 7 + day;
+        let start_at = ts(day_index, *start_min);
+        let end_at = ts(day_index, *start_min + *dur);
+        sqlx::query(
+            "INSERT INTO time_blocks (id, task_id, user_id, start_at, end_at, state)
+             VALUES ($1,$2,$3,$4,$5,'completed')",
+        )
+        .bind(id(&format!("b_{}", id_offset + i)))
+        .bind(id(slug))
+        .bind(primary_user_id())
+        .bind(start_at)
+        .bind(end_at)
+        .execute(&mut **tx)
+        .await?;
+    }
+    Ok(())
+}
+
+/// Maya's goals in the team workspace. Deliberately one of each shape,
+/// so the dashboard's goal card has to handle all of them on first run:
+/// a task-scoped daily floor, a project-scoped daily floor, a
+/// tag-scoped weekly floor, and a cap.
+async fn seed_goals(tx: &mut Transaction<'_, Postgres>) -> sqlx::Result<()> {
+    struct GoalSpec {
+        slug: &'static str,
+        name: &'static str,
+        cadence: &'static str,
+        direction: &'static str,
+        target_min: Option<i32>,
+        project: Option<&'static str>,
+        tag: Option<&'static str>,
+        task: Option<&'static str>,
+    }
+
+    let goals = &[
+        GoalSpec {
+            slug: "g_standup", name: "Daily standup",
+            cadence: "daily", direction: "at_least", target_min: Some(30),
+            project: None, tag: None, task: Some("t_atlas_standup"),
+        },
+        GoalSpec {
+            slug: "g_deep_atlas", name: "Deep work on Atlas",
+            cadence: "daily", direction: "at_least", target_min: Some(120),
+            project: Some("p_atlas"), tag: None, task: None,
+        },
+        GoalSpec {
+            slug: "g_research", name: "Research time",
+            cadence: "weekly", direction: "at_least", target_min: Some(180),
+            project: None, tag: Some("tag_p_helix_research"), task: None,
+        },
+        // The cap. Exercises the inverted fill rule and proves an empty
+        // day reads as a pass rather than a miss.
+        GoalSpec {
+            slug: "g_meetings", name: "Keep meetings down",
+            cadence: "daily", direction: "at_most", target_min: Some(60),
+            project: None, tag: Some("tag_p_atlas_review"), task: None,
+        },
+    ];
+
+    for (i, g) in goals.iter().enumerate() {
+        sqlx::query(
+            "INSERT INTO goals
+                (id, workspace_id, user_id, name, cadence, direction,
+                 target_min, project_id, tag_id, task_id, sort_key)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)",
+        )
+        .bind(id(g.slug))
+        .bind(id(TEAM_WORKSPACE_SLUG))
+        .bind(primary_user_id())
+        .bind(g.name)
+        .bind(g.cadence)
+        .bind(g.direction)
+        .bind(g.target_min)
+        .bind(g.project.map(id))
+        .bind(g.tag.map(id))
+        .bind(g.task.map(id))
+        .bind(format!("M{i:03}"))
         .execute(&mut **tx)
         .await?;
     }

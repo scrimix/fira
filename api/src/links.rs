@@ -223,7 +223,9 @@ pub async fn personal_calendar(
 #[derive(serde::Serialize)]
 pub struct WorkCalendarResponse {
     pub blocks: Vec<crate::models::TimeBlock>,
-    pub tasks: Vec<crate::models::LinkedTask>,
+    /// `WorkTask`, not `LinkedTask` — these carry workspace attribution
+    /// so the dashboard can split other-workspace hours per workspace.
+    pub tasks: Vec<crate::models::WorkTask>,
 }
 
 /// Caller's work-workspace blocks + task projection — the inverse of

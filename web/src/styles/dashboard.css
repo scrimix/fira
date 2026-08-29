@@ -1,0 +1,472 @@
+/* Month dashboard.
+ *
+ * Single scrolling column like the list, with the toolbar pinned above
+ * it. Shares the calendar toolbar's `.cal-toolbar` / `.week-nav` chrome
+ * so the month stepper reads as the same control as the week stepper —
+ * it is the same control, just stepping a different unit. */
+
+.dash {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: calc(100vh - var(--topbar-h));
+  height: calc(100dvh - var(--topbar-h));
+}
+.dash-scroll {
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+.dash-col {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: calc(24px * var(--density)) calc(36px * var(--density)) 80px;
+}
+/* The way out of a project scope. It carries a word, not just a
+ * chevron, and sits on the far side of the month stepper — an icon-only
+ * `‹` immediately left of the stepper's own `‹` read as another month
+ * control. */
+.dash-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 22px;
+  padding: 0 9px 0 6px;
+  border: 1px solid var(--rule-2);
+  border-radius: var(--r-sm);
+  background: var(--paper);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.dash-back:hover { color: var(--ink); background: var(--paper-3); border-color: var(--ink-4); }
+/* The copy inside a panel header. Aligns to the heading's baseline row
+ * and carries the same bottom margin so the bars start level. */
+.dash-back-inline { margin-left: auto; margin-bottom: calc(12px * var(--density)); }
+.dash-scope {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-2);
+  font-size: var(--fs-xs);
+}
+
+/* --- Hero + KPI row ---
+ *
+ * The month's headline is a single number, so it is a hero figure rather
+ * than one tile among six equals — six same-sized numbers in a row is
+ * how the first pass ended up flat. */
+
+.dash-hero { padding-bottom: calc(18px * var(--density)); }
+.dash-hero-fig {
+  font-family: var(--font-mono);
+  font-size: calc(52px * var(--fs-scale));
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.dash-hero-sub {
+  margin-top: 8px;
+  font-size: var(--fs-sm);
+  color: var(--ink-3);
+}
+.dash-hero-sub strong { color: var(--ink-2); font-weight: 500; }
+.dash-delta {
+  margin-left: 10px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--paper-3);
+  color: var(--ink-2);
+}
+.dash-delta[data-dir="up"] { color: var(--done); }
+
+.dash-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 1px;
+  background: var(--rule);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-md, 6px);
+  overflow: hidden;
+}
+.dash-kpi { background: var(--paper); padding: calc(12px * var(--density)) 14px; }
+.dash-kpi-v {
+  font-family: var(--font-mono);
+  font-size: calc(19px * var(--fs-scale));
+  font-weight: 500;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.dash-kpi-v span { font-size: var(--fs-xs); color: var(--ink-4); font-weight: 400; }
+.dash-kpi-l { font-size: var(--fs-xs); color: var(--ink-3); margin-top: 3px; }
+
+/* --- Panels ---
+ *
+ * Two columns so the heatmap and the distribution sit side by side. The
+ * first pass ran everything down a 620px ribbon inside a 980px column,
+ * which left the right half of the page empty. */
+
+.dash-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: calc(18px * var(--density));
+  margin-top: calc(20px * var(--density));
+  /* Stretch, not start: with a short distribution panel next to a tall
+   * heatmap, `start` leaves a ragged edge halfway down the page. */
+  align-items: stretch;
+}
+.dash-panel {
+  border: 1px solid var(--rule);
+  border-radius: var(--r-md, 6px);
+  padding: calc(16px * var(--density));
+  background: var(--paper);
+  min-width: 0;
+}
+.dash-section { padding-top: calc(26px * var(--density)); }
+.dash-h {
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--ink-2);
+  margin: 0 0 calc(12px * var(--density));
+}
+.dash-h-sub { margin-top: calc(20px * var(--density)); }
+.dash-h-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.dash-h-row .dash-h { margin-bottom: calc(12px * var(--density)); }
+.dash-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--ink-3);
+  background: transparent;
+  border: 1px solid var(--rule-2);
+  border-radius: var(--r-sm);
+  padding: 3px 9px;
+  cursor: pointer;
+}
+.dash-chip:hover { color: var(--ink); background: var(--paper-3); }
+.dash-chip-add { margin-left: auto; margin-bottom: calc(12px * var(--density)); }
+.dash-empty { color: var(--ink-3); font-size: var(--fs-sm); max-width: 60ch; margin: 0; }
+/* Says in words what the encoding means. A heatmap without one is the
+ * chart people politely nod at and never read. */
+.dash-note {
+  margin: 12px 0 0;
+  font-size: var(--fs-xs);
+  color: var(--ink-4);
+  line-height: 1.5;
+  max-width: 46ch;
+}
+
+/* --- Month grid --- */
+
+.month-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 3px;
+}
+.month-grid[data-compact="true"] { gap: 2px; }
+.month-grid-dow {
+  font-family: var(--font-mono);
+  font-size: calc(9px * var(--fs-scale));
+  letter-spacing: 0.08em;
+  color: var(--ink-4);
+  text-align: center;
+  padding-bottom: 3px;
+}
+.month-cell {
+  position: relative;
+  aspect-ratio: 1;
+  border: 0;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--accent) calc(var(--fill, 0) * 100%), var(--paper-3));
+  padding: 0;
+  cursor: pointer;
+  overflow: hidden;
+}
+.month-cell:hover { box-shadow: inset 0 0 0 1.5px var(--ink-3); }
+.month-cell[data-out] { opacity: 0.3; }
+.month-cell[data-today="true"] { box-shadow: inset 0 0 0 2px var(--accent); }
+/* Planned / upcoming: hatched, never solid. Intent shouldn't be
+ * mistakable for achievement at a glance. */
+.month-cell[data-pending="true"] {
+  background: repeating-linear-gradient(
+    45deg,
+    color-mix(in srgb, var(--accent) calc(var(--fill, 0) * 55%), var(--paper-3)),
+    color-mix(in srgb, var(--accent) calc(var(--fill, 0) * 55%), var(--paper-3)) 3px,
+    var(--paper-2) 3px,
+    var(--paper-2) 6px
+  );
+}
+/* A cap's cells mean the opposite of a floor's, and can't share the
+ * floor's color or they read backwards: on a cap card an *empty* cell is
+ * a perfect day (no meetings at all) and a full one means the allowance
+ * is spent. In accent blue, full-and-blue looks like an achievement and
+ * a blank grid looks like failure — exactly inverted.
+ *
+ * So a cap ramps in amber: a consumption color, not an achievement one.
+ * Empty reads neutral, filling reads "burning through it", and the over
+ * state escalates to red. The success signal for a cap lives in the
+ * card's "28 / 29 days" count and streak, which say it plainly. */
+.goal-card[data-cap="true"] { --cap-ink: #B45309; }
+.goal-card[data-cap="true"] .month-cell,
+.goal-card[data-cap="true"] .week-cell {
+  background: color-mix(in srgb, var(--cap-ink) calc(var(--fill, 0) * 100%), var(--paper-3));
+}
+.month-cell[data-over="true"],
+.week-cell[data-over="true"],
+.goal-card[data-cap="true"] .month-cell[data-over="true"],
+.goal-card[data-cap="true"] .week-cell[data-over="true"] {
+  background: #DC2626;
+}
+/* The date is not the value. It sits small in a corner so a reader
+ * doesn't mistake "24" for twenty-four hours; the magnitude is the fill,
+ * and the exact figure is in the tooltip. */
+.month-cell-day {
+  position: absolute;
+  top: 2px;
+  left: 4px;
+  font-family: var(--font-mono);
+  font-size: calc(9px * var(--fs-scale));
+  color: var(--ink-4);
+}
+.month-cell[data-dark="true"] .month-cell-day,
+.month-cell[data-over="true"] .month-cell-day { color: rgba(255, 255, 255, 0.85); }
+.month-grid[data-compact="true"] .month-cell-day { display: none; }
+
+/* Weekly-cadence goals: one cell per week, so a month is 5-6 wide. */
+.week-strip { display: flex; gap: 3px; }
+.week-cell {
+  flex: 1;
+  height: 30px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--accent) calc(var(--fill, 0) * 100%), var(--paper-3));
+}
+.week-cell[data-today="true"] { box-shadow: inset 0 0 0 2px var(--accent); }
+.week-cell[data-pending="true"] { opacity: 0.35; }
+
+/* The heatmap's key. A sequential ramp is unreadable without one. */
+.scale-legend {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  font-family: var(--font-mono);
+  font-size: calc(9px * var(--fs-scale));
+  color: var(--ink-4);
+  flex-wrap: wrap;
+}
+/* Each swatch carries its own label. Two separate runs — swatches, then
+ * a list of ranges — makes the reader match them up by position. */
+.scale-step { display: inline-flex; align-items: center; gap: 4px; }
+.scale-legend-label { white-space: nowrap; }
+.scale-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--accent) calc(var(--fill, 0) * 100%), var(--paper-3));
+}
+
+
+/* --- Bars ---
+ *
+ * The value gets its own grid column rather than riding inside the
+ * track. Value-at-the-tip reads nicely but cannot be made safe here: the
+ * longest bar is 100% of the track by definition, so a label after it
+ * has nowhere to go and pushes out of the panel. A dedicated column also
+ * aligns the numbers vertically, which is better for comparing them. */
+
+.dash-bars {
+  display: flex;
+  flex-direction: column;
+  /* No gap between rows: the vertical rhythm comes from each row's own
+   * padding instead. With a gap, a hover highlight is a strip floating
+   * inside the row with the spacing left cold around it; with padding,
+   * hovering lights the whole row the way a list row should. */
+  gap: 0;
+  /* Bleed out into the panel's padding so a hovered row runs the full
+   * width of the panel rather than reading as an inset block. The panel
+   * pads by 16px * --density, and --density is never below 1, so 8px
+   * always has room. */
+  margin: 0 -8px;
+}
+.dash-bar-row {
+  display: grid;
+  grid-template-columns: minmax(56px, 88px) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  /* Matches .task-row's rhythm in list.css — same gesture, same feel. */
+  padding: calc(7px * var(--density)) 8px;
+  border-radius: var(--r-md);
+  min-width: 0;
+}
+.dash-bar-row[data-clickable="true"] { cursor: pointer; }
+.dash-bar-row[data-clickable="true"]:hover { background: var(--paper-3); }
+.dash-bar-label {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dash-bar-track { display: flex; align-items: center; gap: 2px; min-width: 0; }
+/* Thin mark, 4px rounded data-end, square at the baseline. */
+.dash-bar-done {
+  height: 15px;
+  border-radius: 0 4px 4px 0;
+  min-width: 2px;
+  /* Shrinkable, not `flex: none`: the widest bucket's done + planned
+   * segments total exactly 100% of the track, and the 2px surface gap
+   * between them would otherwise push past its edge. */
+  flex: 0 1 auto;
+}
+/* Planned rides beside it as a wash, separated by a 2px surface gap
+ * rather than a stroke — so a bar's full length is "committed" and its
+ * solid part is "done". */
+.dash-bar-planned {
+  height: 15px;
+  border-radius: 0 4px 4px 0;
+  opacity: 0.28;
+  flex: 0 1 auto;
+  min-width: 2px;
+}
+.dash-bar-val {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  text-align: right;
+}
+.dash-bar-val span { color: var(--ink-4); }
+
+.dash-tasks { list-style: none; margin: 0; padding: 0; font-size: var(--fs-sm); }
+.dash-tasks li {
+  display: flex;
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--rule);
+}
+.dash-tasks li:last-child { border-bottom: 0; }
+.dash-task-title { flex: 1; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dash-task-min { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--ink-3); }
+
+/* --- Goal cards --- */
+
+.goal-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(272px, 1fr));
+  gap: calc(14px * var(--density));
+}
+.goal-card {
+  border: 1px solid var(--rule);
+  border-radius: var(--r-md, 6px);
+  padding: calc(14px * var(--density));
+  background: var(--paper);
+  min-width: 0;
+}
+.goal-head { display: flex; align-items: baseline; gap: 10px; }
+.goal-name {
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.goal-name:hover { text-decoration: underline; }
+.goal-count {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--ink-4);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.goal-count strong { color: var(--ink); font-weight: 500; }
+.goal-sub {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: calc(10px * var(--fs-scale));
+  color: var(--ink-4);
+  margin: 4px 0 12px;
+}
+.goal-streak { margin-left: auto; color: var(--accent); white-space: nowrap; }
+
+/* --- Hover tooltip ---
+ *
+ * A real tooltip rather than the native `title`: the browser's version
+ * waits a second, can't be styled, and on a heatmap the whole point is
+ * sweeping across cells and reading values as you go. */
+
+.dash-tip {
+  position: fixed;
+  transform: translate(-50%, calc(-100% - 8px));
+  z-index: 60;
+  pointer-events: none;
+  background: var(--ink);
+  color: var(--paper);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  padding: 5px 9px;
+  border-radius: var(--r-sm);
+  white-space: nowrap;
+  box-shadow: var(--e-dialog, 0 4px 14px rgba(0,0,0,0.18));
+}
+
+/* --- Goal modal --- */
+
+/* .modal sets `height: min(88vh, 1080px)`, which blows this small form
+ * up to a screen-tall box of empty space below the footer. Same
+ * content-sizing opt-out .np-modal takes. */
+.goal-modal {
+  width: min(520px, calc(100vw - 32px));
+  height: auto;
+}
+.goal-target-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 8px;
+  align-items: center;
+}
+.goal-target-input { width: 100%; }
+.goal-scope { display: flex; flex-direction: column; gap: 8px; }
+.goal-hint {
+  font-size: var(--fs-xs);
+  color: var(--ink-3);
+  margin: 6px 0 0;
+  max-width: 60ch;
+}
+.goal-hint-err { color: var(--danger, #DC2626); }
+
+/* --- Phone --- */
+
+@media (max-width: 900px) {
+  /* Side-by-side panels need real width; below that they stack. */
+  .dash-grid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 700px) {
+  .dash-col { padding: calc(16px * var(--density)) calc(12px * var(--density)) 80px; }
+  .dash-hero-fig { font-size: calc(40px * var(--fs-scale)); }
+  .dash-kpis { grid-template-columns: repeat(2, 1fr); }
+  /* The topbar hides its title on phones, so the toolbar's back button
+   * is the only way out of a project scope — it must never be the thing
+   * that wraps off-screen. */
+  .dash-toolbar { flex-wrap: wrap; }
+  .goal-grid { grid-template-columns: minmax(0, 1fr); }
+  /* A fixed-position tooltip next to a fingertip is under the finger.
+   * Touch gets the click-through instead. */
+  .dash-tip { display: none; }
+}

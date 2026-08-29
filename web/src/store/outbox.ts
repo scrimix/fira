@@ -29,6 +29,18 @@ export type OpKind =
   | { kind: 'task.add_attachment'; task_id: string; attachment: import('../types').Attachment }
   | { kind: 'task.remove_attachment'; task_id: string; attachment: import('../types').Attachment }
   | { kind: 'task.move_attachment'; from_task_id: string; to_task_id: string; attachment: import('../types').Attachment }
+  // Goal ops carry the goal's *whole* definition rather than a partial
+  // patch: target_min and all three scope refs are meaningfully
+  // nullable, so a patch couldn't distinguish "leave alone" from
+  // "clear". The editor is a modal that submits the full form anyway.
+  //
+  // These are private ops — the server delivers them only back to their
+  // author, so unlike every other kind here they never reach another
+  // client. `workspace_id` / `user_id` are set server-side from the
+  // session and are deliberately absent from the payload.
+  | { kind: 'goal.create'; goal: import('../types').Goal }
+  | { kind: 'goal.update'; goal: import('../types').Goal }
+  | { kind: 'goal.delete'; goal_id: string }
 
 /// Server-only op kinds — synthesized in REST handlers and delivered via
 /// /changes. Clients never enqueue these; they only apply them.

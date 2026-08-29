@@ -1,4 +1,4 @@
-import { CalendarDays, List, Settings } from 'lucide-react';
+import { CalendarDays, LayoutDashboard, List, Settings } from 'lucide-react';
 import { useFira } from '../store';
 import { useIsMobile } from '../hooks';
 import { ProjectIcon } from './ProjectIcon';
@@ -51,6 +51,10 @@ export function Sidebar() {
         <button className="nav-btn" data-active={view === 'list'}
                 onClick={() => { setView('list'); close(); }} title="List (I)">
           <List size={16} strokeWidth={1.75} />
+        </button>
+        <button className="nav-btn" data-active={view === 'dashboard'}
+                onClick={() => { setView('dashboard'); close(); }} title="Dashboard (D)">
+          <LayoutDashboard size={16} strokeWidth={1.75} />
         </button>
         <div style={{ height: 16 }} />
         {orderedProjects.map((p) => {

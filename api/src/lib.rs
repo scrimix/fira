@@ -53,6 +53,10 @@ pub struct Bootstrap {
     pub tasks: Vec<models::Task>,
     pub tags: Vec<models::Tag>,
     pub blocks: Vec<models::TimeBlock>,
+    /// The caller's own goals in this workspace. Never anyone else's —
+    /// goals are personal, and the change feed enforces the same rule
+    /// on the incremental path (see `ops::get_changes`).
+    pub goals: Vec<models::Goal>,
     pub gcal: Vec<models::GcalEvent>,
     /// All links involving the caller (pending sent / received +
     /// accepted). Bootstrapping with this means the link icon in the
@@ -103,6 +107,7 @@ pub async fn load_bootstrap(
     let tasks = db::list_tasks_in_scope(pool, &scope).await?;
     let tags = db::list_tags_in_scope(pool, &scope).await?;
     let blocks = db::list_blocks_in_scope(pool, &scope).await?;
+    let goals = db::list_goals_for_user(pool, workspace_id, user_id).await?;
     let gcal = db::list_gcal_for_user(pool, user_id).await?;
     let links = db::list_user_links(pool, user_id).await?;
     let workspace_invites = db::list_workspace_invites(pool, user_id, &user_email.0).await?;
@@ -117,6 +122,7 @@ pub async fn load_bootstrap(
         tasks,
         tags,
         blocks,
+        goals,
         gcal,
         links,
         workspace_invites,

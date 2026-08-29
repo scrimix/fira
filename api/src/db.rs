@@ -1093,6 +1093,26 @@ pub async fn list_blocks_in_scope(pool: &PgPool, scope: &[Uuid]) -> sqlx::Result
     .await
 }
 
+/// The caller's goals in one workspace. Goals are personal: there is no
+/// variant of this query that returns another user's rows, and none
+/// should be added — see migration 0033.
+pub async fn list_goals_for_user(
+    pool: &PgPool,
+    workspace_id: Uuid,
+    user_id: Uuid,
+) -> sqlx::Result<Vec<Goal>> {
+    sqlx::query_as(
+        "SELECT id, name, cadence, direction, target_min, project_id, tag_id, task_id, sort_key
+         FROM goals
+         WHERE workspace_id = $1 AND user_id = $2
+         ORDER BY sort_key, created_at",
+    )
+    .bind(workspace_id)
+    .bind(user_id)
+    .fetch_all(pool)
+    .await
+}
+
 pub async fn list_gcal_for_user(pool: &PgPool, user_id: Uuid) -> sqlx::Result<Vec<GcalEvent>> {
     sqlx::query_as(
         "SELECT id, user_id, title, start_at, end_at, description, html_link
@@ -1607,12 +1627,19 @@ pub async fn list_blocks_in_work_workspaces_for_user(
 /// Mirrors `list_linked_tasks_in_workspace_for_user` but unscoped to a
 /// single workspace — covers every non-personal workspace the caller is
 /// an active member of.
+///
+/// Carries `workspace_id` / `workspace_title` because that is the only
+/// place the information exists: the blocks these accompany are bare
+/// `TimeBlock` rows, so a client joining `block.task_id → task` here is
+/// the sole way to bucket other-workspace hours per workspace instead
+/// of into one "Work" lump.
 pub async fn list_linked_tasks_in_work_workspaces_for_user(
     pool: &PgPool,
     user_id: Uuid,
-) -> sqlx::Result<Vec<LinkedTask>> {
+) -> sqlx::Result<Vec<WorkTask>> {
     sqlx::query_as(
-        "SELECT DISTINCT t.id, t.title, t.status, p.color AS project_color
+        "SELECT DISTINCT t.id, t.title, t.status, p.color AS project_color,
+                w.id AS workspace_id, w.title AS workspace_title
          FROM tasks t
          JOIN projects p ON p.id = t.project_id
          JOIN workspaces w ON w.id = p.workspace_id

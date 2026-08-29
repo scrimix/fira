@@ -1,5 +1,5 @@
 {
-  "snapshot_at": "2026-05-05T19:59:32.015826687Z",
+  "snapshot_at": "2026-08-29T20:32:15.163768684Z",
   "me": {
     "id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
     "email": "maya@fira.dev",
@@ -10,6 +10,7 @@
     "id": "736b2d57-f2e4-5317-9453-df009aef1100",
     "title": "Default",
     "is_personal": false,
+    "jira_site_url": null,
     "members": [
       {
         "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
@@ -66,6 +67,7 @@
         "source": "jira",
         "description": "Core platform. Auth, billing, infra.",
         "external_url_template": null,
+        "jira_project_key": null,
         "members": [
           {
             "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
@@ -90,6 +92,7 @@
         "source": "local",
         "description": "Personal R&D — embedding experiments.",
         "external_url_template": null,
+        "jira_project_key": null,
         "members": [
           {
             "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
@@ -106,6 +109,7 @@
         "source": "notion",
         "description": "Internal tooling — sync engine.",
         "external_url_template": null,
+        "jira_project_key": null,
         "members": [
           {
             "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
@@ -157,38 +161,38 @@
     ],
     "sprints": [
       {
-        "id": "f511ca38-bd12-5aeb-a7da-c977d4a5c8f0",
-        "project_id": "394c700e-b98f-5f49-911b-aeded755c4dc",
-        "title": "Atlas · May 18",
-        "dates": "May 18 – May 29",
-        "active": false
-      },
-      {
         "id": "e727d996-477b-5783-b015-19f0239c6ef7",
         "project_id": "394c700e-b98f-5f49-911b-aeded755c4dc",
-        "title": "Atlas · May 4",
-        "dates": "May 4 – May 15",
+        "title": "Atlas · Aug 24",
+        "dates": "Aug 24 – Sep 4",
         "active": true
+      },
+      {
+        "id": "f511ca38-bd12-5aeb-a7da-c977d4a5c8f0",
+        "project_id": "394c700e-b98f-5f49-911b-aeded755c4dc",
+        "title": "Atlas · Sep 7",
+        "dates": "Sep 7 – Sep 18",
+        "active": false
       },
       {
         "id": "ae9863d3-f216-58f8-9778-90576783109e",
         "project_id": "7b459832-624e-51e4-80c1-eca4c89e000d",
         "title": "Helix · Q2",
-        "dates": "May – Jul",
+        "dates": "Aug – Oct",
         "active": true
       },
       {
         "id": "9b593847-9229-55f4-b9ec-491341ca9db2",
         "project_id": "68480002-0192-5810-a90a-d9e2f7d069c2",
         "title": "Relay · Sprint 10",
-        "dates": "May 13 – May 26",
+        "dates": "Sep 2 – Sep 15",
         "active": false
       },
       {
         "id": "bc2244e4-8b87-5a4b-966d-e92698563324",
         "project_id": "68480002-0192-5810-a90a-d9e2f7d069c2",
         "title": "Relay · Sprint 9",
-        "dates": "Apr 29 – May 12",
+        "dates": "Aug 19 – Sep 1",
         "active": true
       }
     ],
@@ -210,7 +214,7 @@
         "estimate_min": 360,
         "spent_min": 120,
         "sort_key": "M",
-        "created_at": "2026-05-05T19:59:31.935811Z",
+        "created_at": "2026-08-29T20:32:15.107112Z",
         "created_by": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
         "finished_at": null,
         "subtasks": [
@@ -246,7 +250,8 @@
         "tag_ids": [
           "6d65034e-34f9-5814-b501-5ccdc2737017",
           "375cabf1-bc74-5d2a-96c6-ec5d8c570938"
-        ]
+        ],
+        "attachments": []
       },
       {
         "id": "027b9d13-09ea-522f-9c66-d558c2250ccd",
@@ -265,7 +270,7 @@
         "estimate_min": 240,
         "spent_min": 60,
         "sort_key": "M",
-        "created_at": "2026-05-05T19:59:31.935811Z",
+        "created_at": "2026-08-29T20:32:15.107112Z",
         "created_by": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
         "finished_at": null,
         "subtasks": [
@@ -293,7 +298,8 @@
         ],
         "tag_ids": [
           "42ce74c9-acd4-5786-8d3c-00dd0f3aca40"
-        ]
+        ],
+        "attachments": []
       },
       {
         "id": "d7a540e7-b137-574b-8d2d-cea798f369aa",
@@ -312,13 +318,14 @@
         "estimate_min": 60,
         "spent_min": 0,
         "sort_key": "M",
-        "created_at": "2026-05-05T19:59:31.935811Z",
+        "created_at": "2026-08-29T20:32:15.107112Z",
         "created_by": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
         "finished_at": null,
         "subtasks": [],
         "tag_ids": [
           "ad7a8c0b-e240-5295-a346-6a680328b54d"
-        ]
+        ],
+        "attachments": []
       },
       {
         "id": "8daf604d-850e-579f-85a4-8afddb0fdec8",
@@ -337,14 +344,15 @@
         "estimate_min": 480,
         "spent_min": 0,
         "sort_key": "M",
-        "created_at": "2026-05-05T19:59:31.935811Z",
+        "created_at": "2026-08-29T20:32:15.107112Z",
         "created_by": "90cdb98a-ef9a-562c-aeef-c0c065a9989c",
         "finished_at": null,
         "subtasks": [],
         "tag_ids": [
           "6d65034e-34f9-5814-b501-5ccdc2737017",
           "4b8451d3-c4a9-58fa-9abf-94aa19bf7d68"
-        ]
+        ],
+        "attachments": []
       },
       {
         "id": "9c0aafc2-4c24-53f5-950b-cc78a85562f8",
@@ -363,13 +371,14 @@
         "estimate_min": 180,
         "spent_min": 0,
         "sort_key": "M",
-        "created_at": "2026-05-05T19:59:31.935811Z",
+        "created_at": "2026-08-29T20:32:15.107112Z",
         "created_by": "90cdb98a-ef9a-562c-aeef-c0c065a9989c",
         "finished_at": null,
         "subtasks": [],
         "tag_ids": [
           "5ba1e942-35b5-55a6-91e1-c2ea060e81cf"
-        ]
+        ],
+        "attachments": []
       },
       {
         "id": "a2dea70a-f1e6-5136-84c7-36f2851856d7",
@@ -388,13 +397,14 @@
         "estimate_min": 240,
         "spent_min": 60,
         "sort_key": "M",
-        "created_at": "2026-05-05T19:59:31.935811Z",
+        "created_at": "2026-08-29T20:32:15.107112Z",
         "created_by": "adf9eeb1-caa7-5647-b726-ee7b6e2e9901",
         "finished_at": null,
         "subtasks": [],
         "tag_ids": [
           "acf8f03e-84eb-5417-a689-67077c4f94d0"
-        ]
+        ],
+        "attachments": []
       },
       {
         "id": "549d50ab-8db4-5a4b-a8c8-49720a384cd1",
@@ -413,7 +423,7 @@
         "estimate_min": 300,
         "spent_min": 90,
         "sort_key": "M",
-        "created_at": "2026-05-05T19:59:31.935811Z",
+        "created_at": "2026-08-29T20:32:15.107112Z",
         "created_by": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
         "finished_at": null,
         "subtasks": [
@@ -441,7 +451,8 @@
         ],
         "tag_ids": [
           "8d03ac8c-ee1f-5c3d-aef7-ffdee50b1c63"
-        ]
+        ],
+        "attachments": []
       },
       {
         "id": "e3033d1f-5344-5070-8e59-ab513339cc52",
@@ -460,13 +471,14 @@
         "estimate_min": 240,
         "spent_min": 0,
         "sort_key": "M",
-        "created_at": "2026-05-05T19:59:31.935811Z",
+        "created_at": "2026-08-29T20:32:15.107112Z",
         "created_by": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
         "finished_at": null,
         "subtasks": [],
         "tag_ids": [
           "3c4ac1b8-c9a9-5c79-8958-c4f51946ab7e"
-        ]
+        ],
+        "attachments": []
       },
       {
         "id": "3abd086a-bf57-510c-86b3-95cc862f6fd6",
@@ -485,13 +497,14 @@
         "estimate_min": 360,
         "spent_min": 0,
         "sort_key": "M",
-        "created_at": "2026-05-05T19:59:31.935811Z",
+        "created_at": "2026-08-29T20:32:15.107112Z",
         "created_by": "b2ac03c3-49da-5183-8562-9566ac49624f",
         "finished_at": null,
         "subtasks": [],
         "tag_ids": [
           "84cf6cf9-f7cb-5224-b26d-852232e63e19"
-        ]
+        ],
+        "attachments": []
       },
       {
         "id": "c03a7499-0469-5c9e-943c-db26f6a356fe",
@@ -510,7 +523,7 @@
         "estimate_min": 240,
         "spent_min": 30,
         "sort_key": "M",
-        "created_at": "2026-05-05T19:59:31.935811Z",
+        "created_at": "2026-08-29T20:32:15.107112Z",
         "created_by": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
         "finished_at": null,
         "subtasks": [
@@ -538,7 +551,8 @@
         ],
         "tag_ids": [
           "a427c049-9e00-5efd-bc30-621b91728c74"
-        ]
+        ],
+        "attachments": []
       },
       {
         "id": "b6e2d8b5-6aab-59c1-90c0-10bfe5c0997c",
@@ -557,13 +571,64 @@
         "estimate_min": 60,
         "spent_min": 0,
         "sort_key": "M",
-        "created_at": "2026-05-05T19:59:31.935811Z",
+        "created_at": "2026-08-29T20:32:15.107112Z",
         "created_by": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
         "finished_at": null,
         "subtasks": [],
         "tag_ids": [
           "b2588f3e-0fc5-5086-8133-b9be67427aa2"
-        ]
+        ],
+        "attachments": []
+      },
+      {
+        "id": "ae6e133d-481e-57d8-9075-f6fd98bc0b26",
+        "project_id": "394c700e-b98f-5f49-911b-aeded755c4dc",
+        "epic_id": null,
+        "sprint_id": null,
+        "assignee_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "title": "Daily standup",
+        "description_md": "Atlas + Relay team. 30 min before OAuth kickoff. Skip Wednesdays — design review day.",
+        "section": "recurring",
+        "status": "in_progress",
+        "priority": null,
+        "source": "local",
+        "external_id": null,
+        "external_url": null,
+        "estimate_min": null,
+        "spent_min": 0,
+        "sort_key": "M",
+        "created_at": "2026-08-29T20:32:15.107112Z",
+        "created_by": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "finished_at": null,
+        "subtasks": [],
+        "tag_ids": [],
+        "attachments": []
+      },
+      {
+        "id": "d44eac95-99d5-50b1-9f07-3329daf91198",
+        "project_id": "394c700e-b98f-5f49-911b-aeded755c4dc",
+        "epic_id": null,
+        "sprint_id": null,
+        "assignee_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "title": "Weekly code review block",
+        "description_md": "Tue afternoon. Burn down the PR queue.",
+        "section": "recurring",
+        "status": "in_progress",
+        "priority": null,
+        "source": "local",
+        "external_id": null,
+        "external_url": null,
+        "estimate_min": null,
+        "spent_min": 0,
+        "sort_key": "M",
+        "created_at": "2026-08-29T20:32:15.107112Z",
+        "created_by": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "finished_at": null,
+        "subtasks": [],
+        "tag_ids": [
+          "ad7a8c0b-e240-5295-a346-6a680328b54d"
+        ],
+        "attachments": []
       },
       {
         "id": "2e752adc-37bc-5d7a-8548-41810957477c",
@@ -582,11 +647,12 @@
         "estimate_min": null,
         "spent_min": 0,
         "sort_key": "M",
-        "created_at": "2026-05-05T19:59:31.935811Z",
+        "created_at": "2026-08-29T20:32:15.107112Z",
         "created_by": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
         "finished_at": null,
         "subtasks": [],
-        "tag_ids": []
+        "tag_ids": [],
+        "attachments": []
       },
       {
         "id": "79389414-d6e0-5d0d-8d98-f5bd494a55e4",
@@ -605,11 +671,12 @@
         "estimate_min": 180,
         "spent_min": 0,
         "sort_key": "M",
-        "created_at": "2026-05-05T19:59:31.935811Z",
+        "created_at": "2026-08-29T20:32:15.107112Z",
         "created_by": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
         "finished_at": null,
         "subtasks": [],
-        "tag_ids": []
+        "tag_ids": [],
+        "attachments": []
       },
       {
         "id": "a50cf4cf-1a05-56a6-9737-41577867a4d4",
@@ -628,11 +695,12 @@
         "estimate_min": null,
         "spent_min": 0,
         "sort_key": "M",
-        "created_at": "2026-05-05T19:59:31.935811Z",
+        "created_at": "2026-08-29T20:32:15.107112Z",
         "created_by": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
         "finished_at": null,
         "subtasks": [],
-        "tag_ids": []
+        "tag_ids": [],
+        "attachments": []
       },
       {
         "id": "0ebba8dd-b9b5-51ad-a2b9-57dd024b74b0",
@@ -651,11 +719,12 @@
         "estimate_min": null,
         "spent_min": 0,
         "sort_key": "M",
-        "created_at": "2026-05-05T19:59:31.935811Z",
+        "created_at": "2026-08-29T20:32:15.107112Z",
         "created_by": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
         "finished_at": null,
         "subtasks": [],
-        "tag_ids": []
+        "tag_ids": [],
+        "attachments": []
       },
       {
         "id": "17db4175-a1fb-52ce-9342-4c625639a6a1",
@@ -674,11 +743,12 @@
         "estimate_min": 60,
         "spent_min": 0,
         "sort_key": "M",
-        "created_at": "2026-05-05T19:59:31.935811Z",
+        "created_at": "2026-08-29T20:32:15.107112Z",
         "created_by": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
         "finished_at": null,
         "subtasks": [],
-        "tag_ids": []
+        "tag_ids": [],
+        "attachments": []
       },
       {
         "id": "babf0e6f-82ae-53f4-af4e-13ceb6312430",
@@ -697,11 +767,12 @@
         "estimate_min": 30,
         "spent_min": 0,
         "sort_key": "M",
-        "created_at": "2026-05-05T19:59:31.935811Z",
+        "created_at": "2026-08-29T20:32:15.107112Z",
         "created_by": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
         "finished_at": null,
         "subtasks": [],
-        "tag_ids": []
+        "tag_ids": [],
+        "attachments": []
       },
       {
         "id": "7c06ca32-581f-58e1-b763-9bc04f29cf71",
@@ -720,57 +791,12 @@
         "estimate_min": null,
         "spent_min": 0,
         "sort_key": "M",
-        "created_at": "2026-05-05T19:59:31.935811Z",
+        "created_at": "2026-08-29T20:32:15.107112Z",
         "created_by": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
         "finished_at": null,
         "subtasks": [],
-        "tag_ids": []
-      },
-      {
-        "id": "a1111111-7777-5777-8777-777777777111",
-        "project_id": "394c700e-b98f-5f49-911b-aeded755c4dc",
-        "epic_id": null,
-        "sprint_id": null,
-        "assignee_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
-        "title": "Daily standup",
-        "description_md": "Atlas + Relay team. 30 min before OAuth kickoff. Skip Wednesdays — design review day.",
-        "section": "recurring",
-        "status": "in_progress",
-        "priority": null,
-        "source": "local",
-        "external_id": null,
-        "external_url": null,
-        "estimate_min": null,
-        "spent_min": 0,
-        "sort_key": "M",
-        "created_at": "2026-05-05T19:59:31.935811Z",
-        "created_by": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
-        "finished_at": null,
-        "subtasks": [],
-        "tag_ids": []
-      },
-      {
-        "id": "a1111112-7777-5777-8777-777777777112",
-        "project_id": "394c700e-b98f-5f49-911b-aeded755c4dc",
-        "epic_id": null,
-        "sprint_id": null,
-        "assignee_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
-        "title": "Weekly code review block",
-        "description_md": "Tue afternoon. Burn down the PR queue.",
-        "section": "recurring",
-        "status": "in_progress",
-        "priority": null,
-        "source": "local",
-        "external_id": null,
-        "external_url": null,
-        "estimate_min": null,
-        "spent_min": 0,
-        "sort_key": "M",
-        "created_at": "2026-05-05T19:59:31.935811Z",
-        "created_by": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
-        "finished_at": null,
-        "subtasks": [],
-        "tag_ids": ["ad7a8c0b-e240-5295-a346-6a680328b54d"]
+        "tag_ids": [],
+        "attachments": []
       },
       {
         "id": "12bffcfc-68df-5cd6-a643-b85b14cf94e3",
@@ -789,11 +815,12 @@
         "estimate_min": null,
         "spent_min": 0,
         "sort_key": "M",
-        "created_at": "2026-05-05T19:59:31.935811Z",
+        "created_at": "2026-08-29T20:32:15.107112Z",
         "created_by": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
         "finished_at": null,
         "subtasks": [],
-        "tag_ids": []
+        "tag_ids": [],
+        "attachments": []
       },
       {
         "id": "5e5b199b-6adb-5ad0-80fe-034b0f3ce2ef",
@@ -812,11 +839,12 @@
         "estimate_min": null,
         "spent_min": 0,
         "sort_key": "M",
-        "created_at": "2026-05-05T19:59:31.935811Z",
+        "created_at": "2026-08-29T20:32:15.107112Z",
         "created_by": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
         "finished_at": null,
         "subtasks": [],
-        "tag_ids": []
+        "tag_ids": [],
+        "attachments": []
       },
       {
         "id": "685d4b46-fd25-5200-9f8d-aa2feb3fd65b",
@@ -835,172 +863,12 @@
         "estimate_min": null,
         "spent_min": 0,
         "sort_key": "M",
-        "created_at": "2026-05-05T19:59:31.935811Z",
+        "created_at": "2026-08-29T20:32:15.107112Z",
         "created_by": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
         "finished_at": null,
         "subtasks": [],
-        "tag_ids": []
-      },
-      {
-        "id": "11111111-0000-4000-8000-000000000001",
-        "project_id": "394c700e-b98f-5f49-911b-aeded755c4dc",
-        "epic_id": null,
-        "sprint_id": null,
-        "assignee_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
-        "title": "Publish API rate-limit guide",
-        "description_md": "",
-        "section": "done",
-        "status": "done",
-        "priority": "p2",
-        "source": "local",
-        "external_id": null,
-        "external_url": null,
-        "estimate_min": 60,
-        "spent_min": 45,
-        "sort_key": "Z001",
-        "created_at": "2026-08-12T09:10:00Z",
-        "created_by": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
-        "finished_at": "2026-08-13T14:20:00Z",
-        "subtasks": [],
-        "tag_ids": ["6d65034e-34f9-5814-b501-5ccdc2737017"]
-      },
-      {
-        "id": "11111111-0000-4000-8000-000000000002",
-        "project_id": "394c700e-b98f-5f49-911b-aeded755c4dc",
-        "epic_id": null,
-        "sprint_id": null,
-        "assignee_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
-        "title": "Tighten billing export permissions",
-        "description_md": "",
-        "section": "done",
-        "status": "done",
-        "priority": "p1",
-        "source": "local",
-        "external_id": null,
-        "external_url": null,
-        "estimate_min": 90,
-        "spent_min": 75,
-        "sort_key": "Z002",
-        "created_at": "2026-08-11T09:10:00Z",
-        "created_by": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
-        "finished_at": "2026-08-12T10:45:00Z",
-        "subtasks": [],
-        "tag_ids": ["42ce74c9-acd4-5786-8d3c-00dd0f3aca40"]
-      },
-      {
-        "id": "11111111-0000-4000-8000-000000000003",
-        "project_id": "394c700e-b98f-5f49-911b-aeded755c4dc",
-        "epic_id": null,
-        "sprint_id": null,
-        "assignee_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
-        "title": "Clean up stale webhook subscriptions",
-        "description_md": "",
-        "section": "done",
-        "status": "done",
-        "priority": "p2",
-        "source": "local",
-        "external_id": null,
-        "external_url": null,
-        "estimate_min": 120,
-        "spent_min": 110,
-        "sort_key": "Z003",
-        "created_at": "2026-08-08T09:10:00Z",
-        "created_by": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
-        "finished_at": "2026-08-10T16:30:00Z",
-        "subtasks": [],
-        "tag_ids": []
-      },
-      {
-        "id": "11111111-0000-4000-8000-000000000004",
-        "project_id": "394c700e-b98f-5f49-911b-aeded755c4dc",
-        "epic_id": null,
-        "sprint_id": null,
-        "assignee_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
-        "title": "Retire legacy OAuth callback",
-        "description_md": "",
-        "section": "done",
-        "status": "done",
-        "priority": "p3",
-        "source": "local",
-        "external_id": null,
-        "external_url": null,
-        "estimate_min": 45,
-        "spent_min": 30,
-        "sort_key": "Z004",
-        "created_at": "2026-08-03T09:10:00Z",
-        "created_by": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
-        "finished_at": "2026-08-05T11:15:00Z",
-        "subtasks": [],
-        "tag_ids": []
-      },
-      {
-        "id": "11111111-0000-4000-8000-000000000005",
-        "project_id": "394c700e-b98f-5f49-911b-aeded755c4dc",
-        "epic_id": null,
-        "sprint_id": null,
-        "assignee_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
-        "title": "Document the recovery runbook",
-        "description_md": "",
-        "section": "done",
-        "status": "done",
-        "priority": "p2",
-        "source": "local",
-        "external_id": null,
-        "external_url": null,
-        "estimate_min": 180,
-        "spent_min": 165,
-        "sort_key": "Z005",
-        "created_at": "2026-07-28T09:10:00Z",
-        "created_by": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
-        "finished_at": "2026-08-01T13:00:00Z",
-        "subtasks": [],
-        "tag_ids": ["375cabf1-bc74-5d2a-96c6-ec5d8c570938"]
-      },
-      {
-        "id": "11111111-0000-4000-8000-000000000006",
-        "project_id": "394c700e-b98f-5f49-911b-aeded755c4dc",
-        "epic_id": null,
-        "sprint_id": null,
-        "assignee_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
-        "title": "Replace the email delivery retry worker",
-        "description_md": "",
-        "section": "done",
-        "status": "done",
-        "priority": "p2",
-        "source": "local",
-        "external_id": null,
-        "external_url": null,
-        "estimate_min": 240,
-        "spent_min": 210,
-        "sort_key": "Z006",
-        "created_at": "2026-07-15T09:10:00Z",
-        "created_by": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
-        "finished_at": "2026-07-24T15:40:00Z",
-        "subtasks": [],
-        "tag_ids": []
-      },
-      {
-        "id": "11111111-0000-4000-8000-000000000007",
-        "project_id": "394c700e-b98f-5f49-911b-aeded755c4dc",
-        "epic_id": null,
-        "sprint_id": null,
-        "assignee_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
-        "title": "Audit infrastructure access grants",
-        "description_md": "",
-        "section": "done",
-        "status": "done",
-        "priority": "p1",
-        "source": "local",
-        "external_id": null,
-        "external_url": null,
-        "estimate_min": 300,
-        "spent_min": 275,
-        "sort_key": "Z007",
-        "created_at": "2026-06-12T09:10:00Z",
-        "created_by": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
-        "finished_at": "2026-06-18T12:10:00Z",
-        "subtasks": [],
-        "tag_ids": []
+        "tag_ids": [],
+        "attachments": []
       },
       {
         "id": "5e875d0f-119b-5765-b948-13f36227cbe7",
@@ -1019,11 +887,12 @@
         "estimate_min": 240,
         "spent_min": 280,
         "sort_key": "M",
-        "created_at": "2026-05-05T19:59:31.935811Z",
+        "created_at": "2026-08-29T20:32:15.107112Z",
         "created_by": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
-        "finished_at": "2026-05-05T19:59:31.935811Z",
+        "finished_at": "2026-08-29T20:32:15.107112Z",
         "subtasks": [],
-        "tag_ids": []
+        "tag_ids": [],
+        "attachments": []
       },
       {
         "id": "68688958-63bd-5f25-be4b-886e6e574468",
@@ -1042,11 +911,12 @@
         "estimate_min": 360,
         "spent_min": 420,
         "sort_key": "M",
-        "created_at": "2026-05-05T19:59:31.935811Z",
+        "created_at": "2026-08-29T20:32:15.107112Z",
         "created_by": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
-        "finished_at": "2026-05-05T19:59:31.935811Z",
+        "finished_at": "2026-08-29T20:32:15.107112Z",
         "subtasks": [],
-        "tag_ids": []
+        "tag_ids": [],
+        "attachments": []
       },
       {
         "id": "d9d98d09-1076-562b-8f56-021ad92a031d",
@@ -1065,11 +935,186 @@
         "estimate_min": 180,
         "spent_min": 240,
         "sort_key": "M",
-        "created_at": "2026-05-05T19:59:31.935811Z",
+        "created_at": "2026-08-29T20:32:15.107112Z",
         "created_by": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
-        "finished_at": "2026-05-05T19:59:31.935811Z",
+        "finished_at": "2026-08-29T20:32:15.107112Z",
         "subtasks": [],
-        "tag_ids": []
+        "tag_ids": [],
+        "attachments": []
+      },
+      {
+        "id": "863e830c-1ae0-51f7-88ff-7622334ac979",
+        "project_id": "394c700e-b98f-5f49-911b-aeded755c4dc",
+        "epic_id": "89a4fbf0-a385-5f68-9dae-09d00b92134c",
+        "sprint_id": null,
+        "assignee_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "title": "Publish API rate-limit guide",
+        "description_md": "",
+        "section": "done",
+        "status": "done",
+        "priority": "p2",
+        "source": "local",
+        "external_id": null,
+        "external_url": null,
+        "estimate_min": 60,
+        "spent_min": 45,
+        "sort_key": "M",
+        "created_at": "2026-08-29T20:32:15.107112Z",
+        "created_by": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "finished_at": "2026-08-29T20:32:15.107112Z",
+        "subtasks": [],
+        "tag_ids": [
+          "6d65034e-34f9-5814-b501-5ccdc2737017"
+        ],
+        "attachments": []
+      },
+      {
+        "id": "e59a6426-9154-5af3-8301-f37e9f07cbf1",
+        "project_id": "394c700e-b98f-5f49-911b-aeded755c4dc",
+        "epic_id": "89a4fbf0-a385-5f68-9dae-09d00b92134c",
+        "sprint_id": null,
+        "assignee_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "title": "Tighten billing export permissions",
+        "description_md": "",
+        "section": "done",
+        "status": "done",
+        "priority": "p1",
+        "source": "local",
+        "external_id": null,
+        "external_url": null,
+        "estimate_min": 90,
+        "spent_min": 75,
+        "sort_key": "M",
+        "created_at": "2026-08-29T20:32:15.107112Z",
+        "created_by": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "finished_at": "2026-08-28T20:32:15.107112Z",
+        "subtasks": [],
+        "tag_ids": [
+          "42ce74c9-acd4-5786-8d3c-00dd0f3aca40"
+        ],
+        "attachments": []
+      },
+      {
+        "id": "db497dc4-8708-5d89-b903-5361ab9a6ea9",
+        "project_id": "394c700e-b98f-5f49-911b-aeded755c4dc",
+        "epic_id": "89a4fbf0-a385-5f68-9dae-09d00b92134c",
+        "sprint_id": null,
+        "assignee_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "title": "Clean up stale webhook subscriptions",
+        "description_md": "",
+        "section": "done",
+        "status": "done",
+        "priority": "p2",
+        "source": "local",
+        "external_id": null,
+        "external_url": null,
+        "estimate_min": 120,
+        "spent_min": 110,
+        "sort_key": "M",
+        "created_at": "2026-08-29T20:32:15.107112Z",
+        "created_by": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "finished_at": "2026-08-26T20:32:15.107112Z",
+        "subtasks": [],
+        "tag_ids": [],
+        "attachments": []
+      },
+      {
+        "id": "e7241eb1-5cdd-5dc5-9777-2ddd40ebe1f3",
+        "project_id": "394c700e-b98f-5f49-911b-aeded755c4dc",
+        "epic_id": "89a4fbf0-a385-5f68-9dae-09d00b92134c",
+        "sprint_id": null,
+        "assignee_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "title": "Retire legacy OAuth callback",
+        "description_md": "",
+        "section": "done",
+        "status": "done",
+        "priority": "p3",
+        "source": "local",
+        "external_id": null,
+        "external_url": null,
+        "estimate_min": 45,
+        "spent_min": 30,
+        "sort_key": "M",
+        "created_at": "2026-08-29T20:32:15.107112Z",
+        "created_by": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "finished_at": "2026-08-21T20:32:15.107112Z",
+        "subtasks": [],
+        "tag_ids": [],
+        "attachments": []
+      },
+      {
+        "id": "c4bc37e1-a81d-5664-a3a6-254ae2ca8e0d",
+        "project_id": "394c700e-b98f-5f49-911b-aeded755c4dc",
+        "epic_id": "89a4fbf0-a385-5f68-9dae-09d00b92134c",
+        "sprint_id": null,
+        "assignee_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "title": "Document the recovery runbook",
+        "description_md": "",
+        "section": "done",
+        "status": "done",
+        "priority": "p2",
+        "source": "local",
+        "external_id": null,
+        "external_url": null,
+        "estimate_min": 180,
+        "spent_min": 165,
+        "sort_key": "M",
+        "created_at": "2026-08-29T20:32:15.107112Z",
+        "created_by": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "finished_at": "2026-08-15T20:32:15.107112Z",
+        "subtasks": [],
+        "tag_ids": [
+          "375cabf1-bc74-5d2a-96c6-ec5d8c570938"
+        ],
+        "attachments": []
+      },
+      {
+        "id": "6dc59495-fe2b-5eef-9ec4-7bcf2f40716a",
+        "project_id": "394c700e-b98f-5f49-911b-aeded755c4dc",
+        "epic_id": "89a4fbf0-a385-5f68-9dae-09d00b92134c",
+        "sprint_id": null,
+        "assignee_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "title": "Replace the email delivery retry worker",
+        "description_md": "",
+        "section": "done",
+        "status": "done",
+        "priority": "p2",
+        "source": "local",
+        "external_id": null,
+        "external_url": null,
+        "estimate_min": 240,
+        "spent_min": 210,
+        "sort_key": "M",
+        "created_at": "2026-08-29T20:32:15.107112Z",
+        "created_by": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "finished_at": "2026-07-25T20:32:15.107112Z",
+        "subtasks": [],
+        "tag_ids": [],
+        "attachments": []
+      },
+      {
+        "id": "df9602b5-28d0-594c-b033-7634970766d2",
+        "project_id": "394c700e-b98f-5f49-911b-aeded755c4dc",
+        "epic_id": "89a4fbf0-a385-5f68-9dae-09d00b92134c",
+        "sprint_id": null,
+        "assignee_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "title": "Audit infrastructure access grants",
+        "description_md": "",
+        "section": "done",
+        "status": "done",
+        "priority": "p1",
+        "source": "local",
+        "external_id": null,
+        "external_url": null,
+        "estimate_min": 300,
+        "spent_min": 275,
+        "sort_key": "M",
+        "created_at": "2026-08-29T20:32:15.107112Z",
+        "created_by": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "finished_at": "2026-06-15T20:32:15.107112Z",
+        "subtasks": [],
+        "tag_ids": [],
+        "attachments": []
       }
     ],
     "tags": [
@@ -1148,220 +1193,930 @@
     ],
     "blocks": [
       {
+        "id": "191f6272-0a43-5707-8d4c-4e7cf91db851",
+        "task_id": "ae6e133d-481e-57d8-9075-f6fd98bc0b26",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-07-20T08:00:00Z",
+        "end_at": "2026-07-20T08:30:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "1d4b322d-7790-5316-8cb7-011e72588b3d",
+        "task_id": "198ad86d-7c58-5bac-9a96-1b20432d8d72",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-07-20T09:00:00Z",
+        "end_at": "2026-07-20T12:00:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "bf828c56-78c2-5cad-80ba-432d69d5bce2",
+        "task_id": "027b9d13-09ea-522f-9c66-d558c2250ccd",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-07-20T13:00:00Z",
+        "end_at": "2026-07-20T15:00:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "ad4f66da-5e11-55ab-8ccc-d1a65300701a",
+        "task_id": "549d50ab-8db4-5a4b-a8c8-49720a384cd1",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-07-20T15:30:00Z",
+        "end_at": "2026-07-20T17:00:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "82e049fc-4637-5f1b-a307-29f38d332366",
+        "task_id": "ae6e133d-481e-57d8-9075-f6fd98bc0b26",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-07-21T08:00:00Z",
+        "end_at": "2026-07-21T08:30:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "339b4001-e8e9-5647-8b78-e8f3489edc64",
+        "task_id": "198ad86d-7c58-5bac-9a96-1b20432d8d72",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-07-21T09:00:00Z",
+        "end_at": "2026-07-21T11:30:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "ecacfedf-983d-5c5d-aa5a-88f7f07dc915",
+        "task_id": "027b9d13-09ea-522f-9c66-d558c2250ccd",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-07-21T13:00:00Z",
+        "end_at": "2026-07-21T16:00:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "75754248-f911-5ba0-96d2-d19452872d39",
+        "task_id": "ae6e133d-481e-57d8-9075-f6fd98bc0b26",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-07-22T08:00:00Z",
+        "end_at": "2026-07-22T08:30:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "555f69cf-b44d-5c3f-83dd-d0a0339415a7",
+        "task_id": "c03a7499-0469-5c9e-943c-db26f6a356fe",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-07-22T09:00:00Z",
+        "end_at": "2026-07-22T11:00:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "8c13b394-9a71-56a4-953f-913f9032151d",
+        "task_id": "e3033d1f-5344-5070-8e59-ab513339cc52",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-07-22T13:00:00Z",
+        "end_at": "2026-07-22T15:00:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "e30d8afc-5de1-5e56-bcc7-a3e78a5d520e",
+        "task_id": "ae6e133d-481e-57d8-9075-f6fd98bc0b26",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-07-23T08:00:00Z",
+        "end_at": "2026-07-23T08:30:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "26c7ac61-9099-5461-8bca-3c4179c8114d",
+        "task_id": "a2dea70a-f1e6-5136-84c7-36f2851856d7",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-07-23T09:00:00Z",
+        "end_at": "2026-07-23T11:00:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "5321dd79-af52-58b2-b953-a087fe13b227",
+        "task_id": "d7a540e7-b137-574b-8d2d-cea798f369aa",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-07-23T14:00:00Z",
+        "end_at": "2026-07-23T15:30:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "283a7ebe-8459-507e-a410-6163fa3a9449",
+        "task_id": "3abd086a-bf57-510c-86b3-95cc862f6fd6",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-07-24T09:00:00Z",
+        "end_at": "2026-07-24T11:00:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "bcbd7121-bb4c-53ed-b223-91c9fd2ba3f3",
+        "task_id": "ae6e133d-481e-57d8-9075-f6fd98bc0b26",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-07-27T08:00:00Z",
+        "end_at": "2026-07-27T08:30:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "6d346b28-ca6a-5fd0-b8f9-a7c4d5a11a73",
+        "task_id": "9c0aafc2-4c24-53f5-950b-cc78a85562f8",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-07-27T09:00:00Z",
+        "end_at": "2026-07-27T11:00:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "606eac00-de5a-5bf1-ad55-6319c666e2e1",
+        "task_id": "ae6e133d-481e-57d8-9075-f6fd98bc0b26",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-07-28T08:00:00Z",
+        "end_at": "2026-07-28T08:30:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "44b8b12b-2e7d-5710-9363-1df16f298fc1",
+        "task_id": "9c0aafc2-4c24-53f5-950b-cc78a85562f8",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-07-28T09:00:00Z",
+        "end_at": "2026-07-28T10:30:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "f7d8b459-5d96-557f-9e3e-2effab46242b",
+        "task_id": "549d50ab-8db4-5a4b-a8c8-49720a384cd1",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-07-28T13:00:00Z",
+        "end_at": "2026-07-28T14:00:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "5a8f4ba4-fc57-5c26-8416-fe7c7dcf1930",
+        "task_id": "ae6e133d-481e-57d8-9075-f6fd98bc0b26",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-07-29T08:00:00Z",
+        "end_at": "2026-07-29T08:30:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "6da0ca47-49c8-53a9-b44e-f2093c36c02d",
+        "task_id": "d7a540e7-b137-574b-8d2d-cea798f369aa",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-07-29T09:30:00Z",
+        "end_at": "2026-07-29T11:30:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "b64d3143-b070-592e-9a9f-296a418c7d29",
+        "task_id": "9c0aafc2-4c24-53f5-950b-cc78a85562f8",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-07-31T09:00:00Z",
+        "end_at": "2026-07-31T10:00:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "52ca5754-87f9-57f9-b520-d270e3d199e7",
+        "task_id": "c03a7499-0469-5c9e-943c-db26f6a356fe",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-08-03T09:00:00Z",
+        "end_at": "2026-08-03T12:00:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "27407ecd-7eff-5663-aae7-b66cdf460f11",
+        "task_id": "b6e2d8b5-6aab-59c1-90c0-10bfe5c0997c",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-08-03T14:00:00Z",
+        "end_at": "2026-08-03T15:30:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "f8daf06e-5e56-59de-9a3c-29a1a26f4890",
+        "task_id": "c03a7499-0469-5c9e-943c-db26f6a356fe",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-08-04T09:00:00Z",
+        "end_at": "2026-08-04T11:00:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "323d3829-e2b3-5906-bcca-fafa1cd09a67",
+        "task_id": "a2dea70a-f1e6-5136-84c7-36f2851856d7",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-08-04T13:00:00Z",
+        "end_at": "2026-08-04T15:00:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "4cca0d1b-7746-5851-83be-f278731f7ed4",
+        "task_id": "ae6e133d-481e-57d8-9075-f6fd98bc0b26",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-08-05T08:00:00Z",
+        "end_at": "2026-08-05T08:30:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "6b49ce8f-a7c6-52b8-9dda-dae0bfeacea8",
+        "task_id": "a2dea70a-f1e6-5136-84c7-36f2851856d7",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-08-05T09:00:00Z",
+        "end_at": "2026-08-05T11:30:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "fb5d7b2d-7071-58b0-be36-352518463567",
+        "task_id": "3abd086a-bf57-510c-86b3-95cc862f6fd6",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-08-05T14:00:00Z",
+        "end_at": "2026-08-05T15:30:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "587ca160-0569-59c1-98c1-4e17e5a7e1f2",
+        "task_id": "198ad86d-7c58-5bac-9a96-1b20432d8d72",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-08-06T09:00:00Z",
+        "end_at": "2026-08-06T11:00:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "f6cc7d8d-80fe-5e40-815d-4fbf94b3b814",
+        "task_id": "b6e2d8b5-6aab-59c1-90c0-10bfe5c0997c",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-08-06T13:00:00Z",
+        "end_at": "2026-08-06T15:30:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "46f27c2d-c7fc-5083-9c34-118493c21a3a",
+        "task_id": "3abd086a-bf57-510c-86b3-95cc862f6fd6",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-08-07T10:00:00Z",
+        "end_at": "2026-08-07T11:30:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "d915bd5c-9b4b-5958-93cd-5f0ddc6d3064",
+        "task_id": "ae6e133d-481e-57d8-9075-f6fd98bc0b26",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-08-10T08:00:00Z",
+        "end_at": "2026-08-10T08:30:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "b3beb9d1-9924-5336-b240-42247576377c",
+        "task_id": "8daf604d-850e-579f-85a4-8afddb0fdec8",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-08-10T09:00:00Z",
+        "end_at": "2026-08-10T11:00:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "5acaf36f-e8ea-53de-b111-aa0db762698a",
+        "task_id": "549d50ab-8db4-5a4b-a8c8-49720a384cd1",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-08-10T13:00:00Z",
+        "end_at": "2026-08-10T14:30:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "a9bc5475-fb2f-5216-a226-63b27dfa2717",
+        "task_id": "ae6e133d-481e-57d8-9075-f6fd98bc0b26",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-08-11T08:00:00Z",
+        "end_at": "2026-08-11T08:30:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "c6670b34-19dd-5197-9898-f16562fb04d2",
+        "task_id": "8daf604d-850e-579f-85a4-8afddb0fdec8",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-08-11T09:00:00Z",
+        "end_at": "2026-08-11T12:00:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "64b6591a-50f6-5bed-821c-060ccd459237",
+        "task_id": "d7a540e7-b137-574b-8d2d-cea798f369aa",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-08-11T14:00:00Z",
+        "end_at": "2026-08-11T15:00:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "38749cf8-f72d-503f-9ce4-3ba104c9a35f",
+        "task_id": "ae6e133d-481e-57d8-9075-f6fd98bc0b26",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-08-13T08:00:00Z",
+        "end_at": "2026-08-13T08:30:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "3e01a91e-a38a-5e1f-bc8a-594886ddcf27",
+        "task_id": "8daf604d-850e-579f-85a4-8afddb0fdec8",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-08-13T09:00:00Z",
+        "end_at": "2026-08-13T12:30:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "075f71b7-13c1-5173-8c33-77f3719ee89f",
+        "task_id": "027b9d13-09ea-522f-9c66-d558c2250ccd",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-08-13T13:00:00Z",
+        "end_at": "2026-08-13T15:00:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "a368316b-7331-5bdc-b543-51e7012e59a1",
+        "task_id": "e3033d1f-5344-5070-8e59-ab513339cc52",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-08-13T15:30:00Z",
+        "end_at": "2026-08-13T17:00:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "3a3a3dd1-c5df-5c06-b02f-ec0032353944",
+        "task_id": "c03a7499-0469-5c9e-943c-db26f6a356fe",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-08-14T09:00:00Z",
+        "end_at": "2026-08-14T11:00:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "b585aad8-44e9-52c1-aef9-70093c31d63d",
+        "task_id": "d7a540e7-b137-574b-8d2d-cea798f369aa",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-08-14T13:00:00Z",
+        "end_at": "2026-08-14T14:00:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "85596e53-c093-5cd3-8814-05f35f90a0ca",
+        "task_id": "b6e2d8b5-6aab-59c1-90c0-10bfe5c0997c",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-08-15T10:00:00Z",
+        "end_at": "2026-08-15T12:00:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "330a1fb4-d926-59ee-be3d-0b50e29ed7f4",
+        "task_id": "ae6e133d-481e-57d8-9075-f6fd98bc0b26",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-08-17T08:00:00Z",
+        "end_at": "2026-08-17T08:30:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "7bb248e0-7bbe-5550-8aa4-59c0cf06eeb3",
+        "task_id": "198ad86d-7c58-5bac-9a96-1b20432d8d72",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-08-17T09:00:00Z",
+        "end_at": "2026-08-17T11:00:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "eb7f5467-4dcb-5afe-9dd9-57720792ba4a",
+        "task_id": "d7a540e7-b137-574b-8d2d-cea798f369aa",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-08-17T11:30:00Z",
+        "end_at": "2026-08-17T12:30:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "0a3a9707-06b2-5b6a-9c10-c102ea51abbe",
+        "task_id": "027b9d13-09ea-522f-9c66-d558c2250ccd",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-08-17T14:00:00Z",
+        "end_at": "2026-08-17T16:00:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "126c6d1e-ed02-5411-b0c5-75ace9fd05ee",
+        "task_id": "ae6e133d-481e-57d8-9075-f6fd98bc0b26",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-08-18T08:00:00Z",
+        "end_at": "2026-08-18T08:30:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "87d649de-bc6d-5a59-9b90-806b35be7883",
+        "task_id": "198ad86d-7c58-5bac-9a96-1b20432d8d72",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-08-18T09:00:00Z",
+        "end_at": "2026-08-18T11:30:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "b07ef7fb-d1c8-5ac4-9a31-49ee7e172981",
+        "task_id": "549d50ab-8db4-5a4b-a8c8-49720a384cd1",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-08-18T13:00:00Z",
+        "end_at": "2026-08-18T15:00:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "a43539cf-d735-554d-9e98-bad5e093347e",
+        "task_id": "c03a7499-0469-5c9e-943c-db26f6a356fe",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-08-18T15:30:00Z",
+        "end_at": "2026-08-18T17:00:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "022613f9-2ef2-5ce2-9893-3621650cbd42",
+        "task_id": "ae6e133d-481e-57d8-9075-f6fd98bc0b26",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-08-19T08:00:00Z",
+        "end_at": "2026-08-19T08:30:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "cb9323d2-2eff-501c-a952-c086ce8a6844",
+        "task_id": "027b9d13-09ea-522f-9c66-d558c2250ccd",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-08-19T09:00:00Z",
+        "end_at": "2026-08-19T11:00:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "88a603c2-fb6d-5b23-ae6d-99a3b1ae60b7",
+        "task_id": "c03a7499-0469-5c9e-943c-db26f6a356fe",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-08-19T13:00:00Z",
+        "end_at": "2026-08-19T16:00:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "25c88f9a-1e90-5154-b7c1-8bc2199f28ac",
+        "task_id": "ae6e133d-481e-57d8-9075-f6fd98bc0b26",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-08-20T08:00:00Z",
+        "end_at": "2026-08-20T08:30:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "358412ee-f900-5b05-a084-cf300adb548b",
+        "task_id": "a2dea70a-f1e6-5136-84c7-36f2851856d7",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-08-20T09:00:00Z",
+        "end_at": "2026-08-20T10:30:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "138d8382-a5d1-5246-b093-e53458b082d3",
+        "task_id": "d7a540e7-b137-574b-8d2d-cea798f369aa",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-08-20T11:00:00Z",
+        "end_at": "2026-08-20T12:00:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "76f6d831-e11d-574a-a6e6-db10192d5bfa",
+        "task_id": "e3033d1f-5344-5070-8e59-ab513339cc52",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-08-20T14:00:00Z",
+        "end_at": "2026-08-20T16:00:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "f4945347-de7e-5c3d-8eed-59fe313966fa",
+        "task_id": "9c0aafc2-4c24-53f5-950b-cc78a85562f8",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-08-21T09:30:00Z",
+        "end_at": "2026-08-21T11:00:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "11835e2a-5e16-52e1-a911-bca4db07f7f4",
+        "task_id": "ae6e133d-481e-57d8-9075-f6fd98bc0b26",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-08-24T08:00:00Z",
+        "end_at": "2026-08-24T08:30:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
         "id": "ec9faf3e-8324-5ba4-bef9-867640268f5b",
         "task_id": "198ad86d-7c58-5bac-9a96-1b20432d8d72",
         "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
-        "start_at": "2026-05-04T09:00:00Z",
-        "end_at": "2026-05-04T10:30:00Z",
-        "state": "completed"
+        "start_at": "2026-08-24T09:00:00Z",
+        "end_at": "2026-08-24T10:30:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
       },
       {
         "id": "bf521e6d-5903-5ca9-9515-f558f7c4ebdf",
         "task_id": "d7a540e7-b137-574b-8d2d-cea798f369aa",
         "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
-        "start_at": "2026-05-04T10:30:00Z",
-        "end_at": "2026-05-04T11:30:00Z",
-        "state": "completed"
+        "start_at": "2026-08-24T10:30:00Z",
+        "end_at": "2026-08-24T11:30:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
       },
       {
         "id": "b94f2e36-ae0d-5f83-a96d-f55ea10b163f",
         "task_id": "027b9d13-09ea-522f-9c66-d558c2250ccd",
         "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
-        "start_at": "2026-05-04T13:00:00Z",
-        "end_at": "2026-05-04T15:00:00Z",
-        "state": "completed"
+        "start_at": "2026-08-24T13:00:00Z",
+        "end_at": "2026-08-24T15:00:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
       },
       {
         "id": "be4eadb1-c6b6-590b-a992-7905ea18d6ce",
         "task_id": "549d50ab-8db4-5a4b-a8c8-49720a384cd1",
         "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
-        "start_at": "2026-05-04T15:30:00Z",
-        "end_at": "2026-05-04T17:00:00Z",
-        "state": "completed"
+        "start_at": "2026-08-24T15:30:00Z",
+        "end_at": "2026-08-24T17:00:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "52a8d5de-8402-5ce7-adaa-8a9f12a7b485",
+        "task_id": "ae6e133d-481e-57d8-9075-f6fd98bc0b26",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-08-25T08:00:00Z",
+        "end_at": "2026-08-25T08:30:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
       },
       {
         "id": "781cd267-faa8-5a04-96da-6415d4f290a1",
         "task_id": "198ad86d-7c58-5bac-9a96-1b20432d8d72",
         "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
-        "start_at": "2026-05-05T09:00:00Z",
-        "end_at": "2026-05-05T11:00:00Z",
-        "state": "completed"
+        "start_at": "2026-08-25T09:00:00Z",
+        "end_at": "2026-08-25T11:00:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
       },
       {
         "id": "82447b56-483b-552f-a05a-09a969b489ca",
         "task_id": "c03a7499-0469-5c9e-943c-db26f6a356fe",
         "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
-        "start_at": "2026-05-05T11:30:00Z",
-        "end_at": "2026-05-05T13:00:00Z",
-        "state": "completed"
+        "start_at": "2026-08-25T11:30:00Z",
+        "end_at": "2026-08-25T13:00:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
       },
       {
         "id": "a302e976-e18b-5804-a279-e40f12e51bbe",
         "task_id": "549d50ab-8db4-5a4b-a8c8-49720a384cd1",
         "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
-        "start_at": "2026-05-05T14:00:00Z",
-        "end_at": "2026-05-05T15:30:00Z",
-        "state": "completed"
+        "start_at": "2026-08-25T14:00:00Z",
+        "end_at": "2026-08-25T15:30:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
       },
       {
         "id": "8fc29603-a94d-53c8-8a06-531bf1e32d86",
         "task_id": "d7a540e7-b137-574b-8d2d-cea798f369aa",
         "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
-        "start_at": "2026-05-05T16:00:00Z",
-        "end_at": "2026-05-05T17:00:00Z",
-        "state": "completed"
+        "start_at": "2026-08-25T16:00:00Z",
+        "end_at": "2026-08-25T17:00:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "25f0d28e-efc6-5e40-8294-c5ae212c3e4b",
+        "task_id": "d44eac95-99d5-50b1-9f07-3329daf91198",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-08-25T17:00:00Z",
+        "end_at": "2026-08-25T18:00:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
       },
       {
         "id": "4002a3de-a482-5c5e-882a-0b3115978503",
         "task_id": "198ad86d-7c58-5bac-9a96-1b20432d8d72",
         "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
-        "start_at": "2026-05-06T09:00:00Z",
-        "end_at": "2026-05-06T10:30:00Z",
-        "state": "completed"
+        "start_at": "2026-08-26T09:00:00Z",
+        "end_at": "2026-08-26T10:30:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
       },
       {
         "id": "13272597-dc23-5bc7-9ed5-a12496ac7431",
         "task_id": "027b9d13-09ea-522f-9c66-d558c2250ccd",
         "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
-        "start_at": "2026-05-06T11:00:00Z",
-        "end_at": "2026-05-06T12:00:00Z",
-        "state": "completed"
+        "start_at": "2026-08-26T11:00:00Z",
+        "end_at": "2026-08-26T12:00:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
       },
       {
         "id": "10c6dba3-5d71-5dfa-8bb8-2e9db1b5eee6",
         "task_id": "549d50ab-8db4-5a4b-a8c8-49720a384cd1",
         "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
-        "start_at": "2026-05-06T13:00:00Z",
-        "end_at": "2026-05-06T14:30:00Z",
-        "state": "planned"
+        "start_at": "2026-08-26T13:00:00Z",
+        "end_at": "2026-08-26T14:30:00Z",
+        "state": "planned",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
       },
       {
         "id": "d8d3d669-6c65-56ee-9156-7ae1483a736d",
         "task_id": "d7a540e7-b137-574b-8d2d-cea798f369aa",
         "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
-        "start_at": "2026-05-06T15:00:00Z",
-        "end_at": "2026-05-06T16:00:00Z",
-        "state": "planned"
+        "start_at": "2026-08-26T15:00:00Z",
+        "end_at": "2026-08-26T16:00:00Z",
+        "state": "planned",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
       },
       {
         "id": "d1bd362b-0686-5cd9-b9d0-7db73cf51aaf",
         "task_id": "c03a7499-0469-5c9e-943c-db26f6a356fe",
         "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
-        "start_at": "2026-05-06T16:30:00Z",
-        "end_at": "2026-05-06T18:00:00Z",
-        "state": "planned"
+        "start_at": "2026-08-26T16:30:00Z",
+        "end_at": "2026-08-26T18:00:00Z",
+        "state": "planned",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "85f66323-5617-5bcc-900b-d63ba8beb319",
+        "task_id": "ae6e133d-481e-57d8-9075-f6fd98bc0b26",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-08-27T08:00:00Z",
+        "end_at": "2026-08-27T08:30:00Z",
+        "state": "planned",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
       },
       {
         "id": "7c42ff2e-71b5-5279-af49-a5078a08e24d",
         "task_id": "198ad86d-7c58-5bac-9a96-1b20432d8d72",
         "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
-        "start_at": "2026-05-07T09:00:00Z",
-        "end_at": "2026-05-07T11:00:00Z",
-        "state": "planned"
+        "start_at": "2026-08-27T09:00:00Z",
+        "end_at": "2026-08-27T11:00:00Z",
+        "state": "planned",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
       },
       {
         "id": "57e4004b-f901-5655-b327-73c0de19378a",
         "task_id": "027b9d13-09ea-522f-9c66-d558c2250ccd",
         "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
-        "start_at": "2026-05-07T11:30:00Z",
-        "end_at": "2026-05-07T12:30:00Z",
-        "state": "planned"
+        "start_at": "2026-08-27T11:30:00Z",
+        "end_at": "2026-08-27T12:30:00Z",
+        "state": "planned",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
       },
       {
         "id": "ee5ae5b1-f99f-5a8e-84d0-4f30c915d9c2",
         "task_id": "549d50ab-8db4-5a4b-a8c8-49720a384cd1",
         "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
-        "start_at": "2026-05-07T13:00:00Z",
-        "end_at": "2026-05-07T14:30:00Z",
-        "state": "planned"
+        "start_at": "2026-08-27T13:00:00Z",
+        "end_at": "2026-08-27T14:30:00Z",
+        "state": "planned",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
       },
       {
         "id": "22faba14-0cab-51c2-b204-f30bc915d696",
         "task_id": "e3033d1f-5344-5070-8e59-ab513339cc52",
         "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
-        "start_at": "2026-05-07T15:00:00Z",
-        "end_at": "2026-05-07T17:00:00Z",
-        "state": "planned"
+        "start_at": "2026-08-27T15:00:00Z",
+        "end_at": "2026-08-27T17:00:00Z",
+        "state": "planned",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "e9629544-651b-53f3-a146-e4c379445c2d",
+        "task_id": "ae6e133d-481e-57d8-9075-f6fd98bc0b26",
+        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-08-28T08:00:00Z",
+        "end_at": "2026-08-28T08:30:00Z",
+        "state": "planned",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
       },
       {
         "id": "9aab8af6-ab54-57f2-a7d3-64a7c3883cf5",
         "task_id": "027b9d13-09ea-522f-9c66-d558c2250ccd",
         "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
-        "start_at": "2026-05-08T09:00:00Z",
-        "end_at": "2026-05-08T10:30:00Z",
-        "state": "planned"
+        "start_at": "2026-08-28T09:00:00Z",
+        "end_at": "2026-08-28T10:30:00Z",
+        "state": "planned",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
       },
       {
         "id": "d1237a90-13ee-52e0-bea7-4347fa04b4ae",
         "task_id": "198ad86d-7c58-5bac-9a96-1b20432d8d72",
         "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
-        "start_at": "2026-05-08T10:30:00Z",
-        "end_at": "2026-05-08T11:30:00Z",
-        "state": "planned"
+        "start_at": "2026-08-28T10:30:00Z",
+        "end_at": "2026-08-28T11:30:00Z",
+        "state": "planned",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
       },
       {
         "id": "1e0d1332-c149-5d5d-ab0f-807d665986ce",
         "task_id": "c03a7499-0469-5c9e-943c-db26f6a356fe",
         "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
-        "start_at": "2026-05-08T13:00:00Z",
-        "end_at": "2026-05-08T15:00:00Z",
-        "state": "planned"
+        "start_at": "2026-08-28T13:00:00Z",
+        "end_at": "2026-08-28T15:00:00Z",
+        "state": "planned",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
       },
       {
         "id": "fd6ac5d4-8134-5337-bd03-e58f40c22239",
         "task_id": "549d50ab-8db4-5a4b-a8c8-49720a384cd1",
         "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
-        "start_at": "2026-05-08T15:30:00Z",
-        "end_at": "2026-05-08T17:00:00Z",
-        "state": "planned"
+        "start_at": "2026-08-28T15:30:00Z",
+        "end_at": "2026-08-28T17:00:00Z",
+        "state": "planned",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
       },
       {
         "id": "aea25bcb-3439-5fa9-b28e-b3bf9dff6481",
         "task_id": "c03a7499-0469-5c9e-943c-db26f6a356fe",
         "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
-        "start_at": "2026-05-09T10:00:00Z",
-        "end_at": "2026-05-09T11:30:00Z",
-        "state": "planned"
+        "start_at": "2026-08-29T10:00:00Z",
+        "end_at": "2026-08-29T11:30:00Z",
+        "state": "planned",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      }
+    ],
+    "goals": [
+      {
+        "id": "cfa6f677-e61d-5767-93ae-29af7c196db7",
+        "name": "Daily standup",
+        "cadence": "daily",
+        "direction": "at_least",
+        "target_min": 30,
+        "project_id": null,
+        "tag_id": null,
+        "task_id": "ae6e133d-481e-57d8-9075-f6fd98bc0b26",
+        "sort_key": "M000"
       },
       {
-        "id": "b1111101-7777-5777-8777-bbbbbbbbb101",
-        "task_id": "a1111111-7777-5777-8777-777777777111",
-        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
-        "start_at": "2026-05-04T08:00:00Z",
-        "end_at": "2026-05-04T08:30:00Z",
-        "state": "completed"
+        "id": "a1d1bf82-d0ef-51ec-bcaf-27582db83b0c",
+        "name": "Deep work on Atlas",
+        "cadence": "daily",
+        "direction": "at_least",
+        "target_min": 120,
+        "project_id": "394c700e-b98f-5f49-911b-aeded755c4dc",
+        "tag_id": null,
+        "task_id": null,
+        "sort_key": "M001"
       },
       {
-        "id": "b1111102-7777-5777-8777-bbbbbbbbb102",
-        "task_id": "a1111111-7777-5777-8777-777777777111",
-        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
-        "start_at": "2026-05-05T08:00:00Z",
-        "end_at": "2026-05-05T08:30:00Z",
-        "state": "completed"
+        "id": "a839364c-52a3-58a4-9247-594c12872f6d",
+        "name": "Research time",
+        "cadence": "weekly",
+        "direction": "at_least",
+        "target_min": 180,
+        "project_id": null,
+        "tag_id": "a427c049-9e00-5efd-bc30-621b91728c74",
+        "task_id": null,
+        "sort_key": "M002"
       },
       {
-        "id": "b1111103-7777-5777-8777-bbbbbbbbb103",
-        "task_id": "a1111111-7777-5777-8777-777777777111",
-        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
-        "start_at": "2026-05-07T08:00:00Z",
-        "end_at": "2026-05-07T08:30:00Z",
-        "state": "planned"
-      },
-      {
-        "id": "b1111104-7777-5777-8777-bbbbbbbbb104",
-        "task_id": "a1111111-7777-5777-8777-777777777111",
-        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
-        "start_at": "2026-05-08T08:00:00Z",
-        "end_at": "2026-05-08T08:30:00Z",
-        "state": "planned"
-      },
-      {
-        "id": "b1111201-7777-5777-8777-bbbbbbbbb201",
-        "task_id": "a1111112-7777-5777-8777-777777777112",
-        "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
-        "start_at": "2026-05-05T17:00:00Z",
-        "end_at": "2026-05-05T18:00:00Z",
-        "state": "completed"
+        "id": "8295abfb-2200-5e4a-8a98-712c5955ef48",
+        "name": "Keep meetings down",
+        "cadence": "daily",
+        "direction": "at_most",
+        "target_min": 60,
+        "project_id": null,
+        "tag_id": "ad7a8c0b-e240-5295-a346-6a680328b54d",
+        "task_id": null,
+        "sort_key": "M003"
       }
     ],
     "gcal": [
@@ -1369,50 +2124,73 @@
         "id": "b37fc99f-b89f-5ff0-807a-910e6d3980da",
         "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
         "title": "1:1 with Anna",
-        "start_at": "2026-05-04T11:30:00Z",
-        "end_at": "2026-05-04T12:00:00Z"
+        "start_at": "2026-08-24T11:30:00Z",
+        "end_at": "2026-08-24T12:00:00Z",
+        "description": null,
+        "html_link": null
       },
       {
         "id": "aea1bdde-81bc-58fe-b5e8-c9d3ef92479e",
         "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
         "title": "Atlas standup",
-        "start_at": "2026-05-05T13:00:00Z",
-        "end_at": "2026-05-05T14:00:00Z"
+        "start_at": "2026-08-25T13:00:00Z",
+        "end_at": "2026-08-25T14:00:00Z",
+        "description": null,
+        "html_link": null
       },
       {
         "id": "9f03ad85-01f7-5fb8-86ea-b7aa63eae792",
         "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
         "title": "Standup",
-        "start_at": "2026-05-06T10:30:00Z",
-        "end_at": "2026-05-06T11:00:00Z"
+        "start_at": "2026-08-26T10:30:00Z",
+        "end_at": "2026-08-26T11:00:00Z",
+        "description": null,
+        "html_link": null
       },
       {
         "id": "6839a0a8-e73a-5975-85f6-91a9018e29ef",
         "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
         "title": "Design review",
-        "start_at": "2026-05-06T14:30:00Z",
-        "end_at": "2026-05-06T15:00:00Z"
+        "start_at": "2026-08-26T14:30:00Z",
+        "end_at": "2026-08-26T15:00:00Z",
+        "description": null,
+        "html_link": null
       },
       {
         "id": "93e70eff-8b44-5418-a3f2-d3f12b30cebf",
         "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
         "title": "Atlas standup",
-        "start_at": "2026-05-07T13:00:00Z",
-        "end_at": "2026-05-07T14:00:00Z"
+        "start_at": "2026-08-27T13:00:00Z",
+        "end_at": "2026-08-27T14:00:00Z",
+        "description": null,
+        "html_link": null
       },
       {
         "id": "404aa827-9471-5b4d-b06b-222c9394af74",
         "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
         "title": "Demo prep",
-        "start_at": "2026-05-08T11:30:00Z",
-        "end_at": "2026-05-08T12:00:00Z"
+        "start_at": "2026-08-28T11:30:00Z",
+        "end_at": "2026-08-28T12:00:00Z",
+        "description": null,
+        "html_link": null
       }
     ],
     "links": [],
     "workspace_invites": [],
     "cursor": 0,
     "settings": {
-      "account_badge": null
+      "account_badge": null,
+      "theme": "classic",
+      "ui_style": "classic",
+      "gcal_connected": false,
+      "gcal_email": null,
+      "gcal_last_sync_error": null
+    },
+    "jira": {
+      "connected": false,
+      "email": null,
+      "last_sync_error": null,
+      "auto_sync_new_blocks": false
     }
   }
 }

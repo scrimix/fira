@@ -108,6 +108,22 @@ pub enum Op {
     TagDelete { tag_id: Uuid },
     #[serde(rename = "task.set_tags")]
     TaskSetTags { task_id: Uuid, tag_ids: Vec<Uuid> },
+    // Goal ops are *private kinds*: see `is_private_kind` and the
+    // authorship arm in `get_changes`.
+    #[serde(rename = "goal.create")]
+    GoalCreate { goal: GoalInput },
+    #[serde(rename = "goal.update")]
+    GoalUpdate { goal: GoalInput },
+    #[serde(rename = "goal.delete")]
+    GoalDelete { goal_id: Uuid },
+}
+
+/// Op kinds that carry data private to the acting user. `get_changes`
+/// delivers these only back to their author, and `apply_payload` must
+/// leave `out_project_id` as `None` for them so they never ride a
+/// project's fan-out either.
+fn is_private_kind(kind: &str) -> bool {
+    kind.starts_with("goal.")
 }
 
 impl Op {
@@ -138,8 +154,44 @@ impl Op {
             Op::TagSetColor { .. } => "tag.set_color",
             Op::TagDelete { .. } => "tag.delete",
             Op::TaskSetTags { .. } => "task.set_tags",
+            Op::GoalCreate { .. } => "goal.create",
+            Op::GoalUpdate { .. } => "goal.update",
+            Op::GoalDelete { .. } => "goal.delete",
         }
     }
+}
+
+/// A goal's full definition. `goal.update` replaces all of it rather
+/// than patching field-by-field: `target_min` and the three scope refs
+/// are all meaningfully nullable, so a COALESCE-style partial patch
+/// couldn't distinguish "leave it alone" from "clear it" without
+/// double-Option gymnastics. The editor is a modal that submits the
+/// whole form anyway.
+///
+/// Note what is *absent*: `workspace_id` and `user_id`. Both come from
+/// `AuthCtx` at apply time, so a client cannot write a goal into
+/// another user's row or another workspace.
+#[derive(Debug, Deserialize)]
+pub struct GoalInput {
+    pub id: Uuid,
+    pub name: String,
+    pub cadence: String,
+    #[serde(default = "default_direction")]
+    pub direction: String,
+    #[serde(default)]
+    pub target_min: Option<i32>,
+    #[serde(default)]
+    pub project_id: Option<Uuid>,
+    #[serde(default)]
+    pub tag_id: Option<Uuid>,
+    #[serde(default)]
+    pub task_id: Option<Uuid>,
+    #[serde(default = "default_sort")]
+    pub sort_key: String,
+}
+
+fn default_direction() -> String {
+    "at_least".into()
 }
 
 #[derive(Debug, Deserialize)]
@@ -354,6 +406,14 @@ async fn apply_one(
         let mut project_id: Option<Uuid> = None;
         apply_payload(&mut tx, user_id, workspace_id, op, &mut project_id, storage).await?;
 
+        // A private kind that picked up a project_id would be delivered
+        // to that project's members by the arm in `get_changes`. Fail
+        // loudly here rather than leaking quietly if someone later adds
+        // an `out_project_id` assignment to a goal branch.
+        if is_private_kind(&kind) && project_id.is_some() {
+            anyhow::bail!("private op kind {kind} must not carry a project_id");
+        }
+
         // Log + idempotency: PK conflict on op_id means a concurrent retry
         // of the same op_id won. Roll back so we don't double-apply.
         let inserted: Option<(i64,)> = sqlx::query_as(
@@ -417,6 +477,51 @@ async fn apply_one(
         Ok(o) => Ok((op_id, o)),
         Err(e) => Err((op_id, e)),
     }
+}
+
+/// Check a goal's scope refs resolve inside the caller's view of this
+/// workspace. Each ref is validated with the same helper the
+/// corresponding entity's own ops use, so a goal can't be used as a
+/// side-channel to probe for ids the caller can't otherwise see.
+///
+/// The return value is discarded on purpose: these calls are for their
+/// authorization effect, not to learn a project id. Learning one would
+/// tempt a caller into setting `out_project_id`, which is exactly what
+/// must not happen for a private kind.
+async fn validate_goal(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+    workspace_id: Uuid,
+    goal: &GoalInput,
+) -> anyhow::Result<()> {
+    if goal.cadence != "daily" && goal.cadence != "weekly" {
+        anyhow::bail!("cadence must be daily or weekly");
+    }
+    if goal.name.trim().is_empty() {
+        anyhow::bail!("goal name is required");
+    }
+    if goal.direction != "at_least" && goal.direction != "at_most" {
+        anyhow::bail!("direction must be at_least or at_most");
+    }
+    if let Some(min) = goal.target_min {
+        if min <= 0 {
+            anyhow::bail!("target_min must be positive when set");
+        }
+    } else if goal.direction == "at_most" {
+        // Mirrors goals_cap_needs_target. Caught here so the client gets
+        // a readable per-op error instead of a raw constraint violation.
+        anyhow::bail!("an at_most goal needs a target");
+    }
+    if let Some(project_id) = goal.project_id {
+        require_project_access(tx, user_id, workspace_id, project_id).await?;
+    }
+    if let Some(tag_id) = goal.tag_id {
+        ensure_tag_in_scope(tx, user_id, workspace_id, tag_id).await?;
+    }
+    if let Some(task_id) = goal.task_id {
+        ensure_task_in_scope(tx, user_id, workspace_id, task_id).await?;
+    }
+    Ok(())
 }
 
 async fn apply_payload(
@@ -759,6 +864,57 @@ async fn apply_payload(
                 .execute(&mut **tx)
                 .await?;
         }
+        Op::GoalCreate { goal } | Op::GoalUpdate { goal } => {
+            // Deliberately no `*out_project_id = ...`, even when the
+            // goal is scoped to a project: setting it would fan the op
+            // out to every member of that project. Goals reach their
+            // author through the private-kind arm in `get_changes`.
+            validate_goal(tx, user_id, workspace_id, &goal).await?;
+            // Upsert, so create and update share one statement and a
+            // replayed create after an edit can't clobber the edit's
+            // ownership. The WHERE guard means an id belonging to
+            // another user is a no-op rather than a takeover.
+            sqlx::query(
+                "INSERT INTO goals
+                    (id, workspace_id, user_id, name, cadence, direction,
+                     target_min, project_id, tag_id, task_id, sort_key)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+                 ON CONFLICT (id) DO UPDATE SET
+                    name       = EXCLUDED.name,
+                    cadence    = EXCLUDED.cadence,
+                    direction  = EXCLUDED.direction,
+                    target_min = EXCLUDED.target_min,
+                    project_id = EXCLUDED.project_id,
+                    tag_id     = EXCLUDED.tag_id,
+                    task_id    = EXCLUDED.task_id,
+                    sort_key   = EXCLUDED.sort_key
+                 WHERE goals.user_id = $3 AND goals.workspace_id = $2",
+            )
+            .bind(goal.id)
+            .bind(workspace_id)
+            .bind(user_id)
+            .bind(&goal.name)
+            .bind(&goal.cadence)
+            .bind(&goal.direction)
+            .bind(goal.target_min)
+            .bind(goal.project_id)
+            .bind(goal.tag_id)
+            .bind(goal.task_id)
+            .bind(&goal.sort_key)
+            .execute(&mut **tx)
+            .await?;
+        }
+        Op::GoalDelete { goal_id } => {
+            // Scoped by user_id: deleting someone else's goal is a
+            // no-op, not an error, matching the idempotent posture of
+            // the other delete ops.
+            sqlx::query("DELETE FROM goals WHERE id = $1 AND user_id = $2 AND workspace_id = $3")
+                .bind(goal_id)
+                .bind(user_id)
+                .bind(workspace_id)
+                .execute(&mut **tx)
+                .await?;
+        }
         Op::TaskSetTags { task_id, tag_ids } => {
             let project_id = ensure_task_in_scope(tx, user_id, workspace_id, task_id).await?;
             *out_project_id = Some(project_id);
@@ -832,11 +988,20 @@ pub async fn get_changes(
     //   - project ops: scoped to projects the user can see in the workspace
     //     (own + member). Ex-members still get the terminal `project.set_members`
     //     op (`applied_at <= removed_at`) so their client can drop state.
+    //   - private kinds (`goal.*`): delivered only back to their author.
+    //
+    // That last arm is load-bearing, not belt-and-braces. Goal ops carry
+    // a NULL project_id, and the workspace arm below hands *every*
+    // NULL-project op to *every* active workspace member — so without
+    // the authorship filter, creating a goal would broadcast its name to
+    // the whole team. Giving goal ops a project_id instead would only
+    // narrow the leak from the workspace to the project.
     let rows: Vec<(i64, String, String, serde_json::Value, DateTime<Utc>)> = sqlx::query_as(
         "SELECT po.seq, po.op_id, po.kind, po.payload, po.applied_at
          FROM processed_ops po
          WHERE po.seq > $1
            AND po.workspace_id = $3
+           AND (po.kind NOT LIKE 'goal.%' OR po.user_id = $2)
            AND (
              (po.project_id IS NULL AND EXISTS (
                SELECT 1 FROM workspace_members wm

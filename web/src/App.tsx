@@ -9,6 +9,8 @@ import { Sidebar } from './components/Sidebar';
 import { TopBar } from './components/TopBar';
 import { CalendarView } from './components/CalendarView';
 import { ListView } from './components/ListView';
+import { DashboardView } from './components/DashboardView';
+import { GoalModal } from './components/GoalModal';
 import { TaskModal } from './components/TaskModal';
 import { TaskModalDraft } from './components/TaskModalDraft';
 import { ProjectModal } from './components/ProjectModal';
@@ -60,6 +62,7 @@ export default function App() {
   const creatingDraft = useFira((s) => s.creatingDraft);
   const projectModal = useFira((s) => s.projectModal);
   const workspaceModal = useFira((s) => s.workspaceModal);
+  const goalModal = useFira((s) => s.goalModal);
   const linkModalOpen = useFira((s) => s.linkModalOpen);
   const accountModalOpen = useFira((s) => s.accountModalOpen);
   const syncOutbox = useFira((s) => s.syncOutbox);
@@ -399,6 +402,7 @@ export default function App() {
         useFira.getState().closeCreate();
         useFira.getState().closeProjectModal();
         useFira.getState().closeWorkspaceModal();
+        useFira.getState().closeGoalModal();
         // Received pending link is sticky — only Accept/Decline can clear it.
         const sticky = useFira
           .getState()
@@ -407,6 +411,7 @@ export default function App() {
       }
       if (e.key === 'g') useFira.getState().setView('calendar');
       if (e.key === 'i') useFira.getState().setView('list');
+      if (e.key === 'd') useFira.getState().setView('dashboard');
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -449,7 +454,9 @@ export default function App() {
       <Sidebar />
       <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
         <TopBar />
-        {view === 'calendar' ? <CalendarView /> : <ListView />}
+        {view === 'calendar' ? <CalendarView />
+          : view === 'dashboard' ? <DashboardView />
+          : <ListView />}
       </div>
       {openTaskId && <TaskModal taskId={openTaskId} />}
       {creatingDraft && !openTaskId && <TaskModalDraft draft={creatingDraft} />}
@@ -457,6 +464,7 @@ export default function App() {
       {projectModal?.kind === 'edit' && editingProject && (
         <ProjectModal key={editingProject.id} project={editingProject} />
       )}
+      {goalModal && <GoalModal key={goalModal.id ?? 'new'} goalId={goalModal.id} />}
       {workspaceModal?.kind === 'new' && <WorkspaceModal />}
       {workspaceModal?.kind === 'edit' && editingWorkspace && (
         <WorkspaceModal key={editingWorkspace.id} workspace={editingWorkspace} />

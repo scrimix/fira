@@ -27,6 +27,7 @@ import '@fontsource/jetbrains-mono/600.css';
 import './styles/globals.css';
 import './styles/calendar.css';
 import './styles/list.css';
+import './styles/dashboard.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

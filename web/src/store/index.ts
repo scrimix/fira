@@ -8,7 +8,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type {
   Bootstrap, Project, User, Epic, Sprint, Task, TimeBlock, GcalEvent, UUID, Section, Subtask, Status,
-  Workspace, WorkspaceRole, UserLink, LinkedTask, WorkspaceInvite, Tag, Theme, UiStyle,
+  Workspace, WorkspaceRole, UserLink, LinkedTask, WorkTask, WorkspaceInvite, Tag, Goal, Theme, UiStyle,
 } from '../types';
 import { api, HttpError, setActiveWorkspaceId } from '../api';
 import { newOp, type Op, type OpKind, type AnyOpKind, type ChangeEntry } from './outbox';
@@ -42,7 +42,7 @@ const SYNC_BATCH_SIZE = 50;
 // One key per user means each account keeps its own breadcrumb.
 type LastView = {
   workspaceId: UUID | null;
-  view: 'calendar' | 'list';
+  view: 'calendar' | 'list' | 'dashboard';
   projectId: UUID | null; // listFilter.project_id
 };
 
@@ -150,7 +150,7 @@ interface FiraState {
   // The caller's role in the active workspace — drives UI gating.
   myWorkspaceRole: WorkspaceRole | null;
   workspaceModal: { kind: 'new' } | { kind: 'edit'; id: UUID } | null;
-  view: 'calendar' | 'list';
+  view: 'calendar' | 'list' | 'dashboard';
   // Pinned set of people the user can flip between, like browser tabs.
   selectedPersonIds: UUID[];
   // The currently-viewed person (must be in selectedPersonIds).
@@ -161,6 +161,25 @@ interface FiraState {
   // Independent from weekOffset so rotating between desktop and mobile
   // doesn't fight: each layout owns its own time cursor.
   dayOffset: number;
+  // Dashboard cursor in months (0 = current month). Independent of
+  // weekOffset/dayOffset for the same reason those are independent of
+  // each other: each surface owns its own time cursor. Persisted, so
+  // toggling away to the calendar and back lands on the same month.
+  monthOffset: number;
+  // The dashboard's own project scope — deliberately NOT
+  // listFilter.project_id. The sidebar's project buttons are list-only
+  // and listFilter has no "no project" state (it defaults to the first
+  // project and only goes null in an empty workspace), whereas the
+  // dashboard needs a real unscoped state for its workspace overview.
+  // null = overview. Not persisted: a session always opens unscoped.
+  dashboardProjectId: UUID | null;
+  // Your goals in the active workspace. Server data — treated like
+  // `blocks`, never persisted through `partialize`.
+  goals: Goal[];
+  // Goal editor. `{ id: null }` is "new goal"; an id edits that one.
+  // Null is closed. The wrapper object is what lets "closed" and
+  // "creating" be distinct states — a bare `UUID | null` can't.
+  goalModal: { id: UUID | null } | null;
   // Mobile sidebar slide-over open/closed. Desktop sidebar is always visible
   // and ignores this flag.
   sidebarOpen: boolean;
@@ -202,7 +221,11 @@ interface FiraState {
   // non-personal workspace they belong to, projected read-only when the
   // active workspace is the personal one. Inverse of the personal overlay.
   workBlocks: TimeBlock[];
-  workTasks: LinkedTask[];
+  // WorkTask, not LinkedTask — these carry workspace_id/workspace_title
+  // so the dashboard can bucket other-workspace hours per workspace.
+  // TimeBlock has no workspace attribution of its own, so this join is
+  // the only route to it.
+  workTasks: WorkTask[];
   showWork: boolean;
   // List time-label toggle. When false, the .list-totals row, the
   // per-section estimate badges in section heads, and the per-row
@@ -313,12 +336,27 @@ interface FiraState {
   // Apply a remote op — upsert-tolerant for create kinds so an echo of an
   // op the local client already created does nothing.
   applyRemoteOp: (entry: ChangeEntry) => void;
-  setView: (v: 'calendar' | 'list', projectId?: UUID) => void;
+  setView: (v: 'calendar' | 'list' | 'dashboard', projectId?: UUID) => void;
   addPerson: (id: UUID) => void;
   removePerson: (id: UUID) => void;
   setActivePerson: (id: UUID) => void;
   setWeekOffset: (offset: number) => void;
   setDayOffset: (offset: number) => void;
+  setMonthOffset: (offset: number) => void;
+  /// Set (or clear, with null) the dashboard's project scope. Entered by
+  /// clicking a bar inside the dashboard; left via the breadcrumb month
+  /// crumb on desktop or the toolbar back button on mobile.
+  setDashboardProject: (id: UUID | null) => void;
+  /// Create a goal in the active workspace. Returns the new id, or null
+  /// if the name was blank. `workspace_id`/`user_id` are server-side.
+  createGoal: (goal: Omit<Goal, 'id' | 'sort_key'> & { sort_key?: string }) => UUID | null;
+  /// Replace a goal's whole definition — the editor is a modal that
+  /// submits the full form, and every nullable field needs to be
+  /// clearable, which a partial patch can't express.
+  updateGoal: (goal: Goal) => void;
+  deleteGoal: (goalId: UUID) => void;
+  openGoalModal: (id: UUID | null) => void;
+  closeGoalModal: () => void;
   setSidebarOpen: (open: boolean) => void;
   toggleProjectFilter: (id: UUID) => void;
   // "Solo" a project on the calendar — hide every other project's
@@ -681,6 +719,21 @@ function applyOpToState(s: FiraState, op: AnyOpKind): Partial<FiraState> {
       return { blocks: s.blocks.map((b) => b.id === op.block_id ? { ...b, ...op.patch } : b) };
     case 'block.delete':
       return { blocks: s.blocks.filter((b) => b.id !== op.block_id) };
+    // Goal ops only ever arrive as an echo of this client's own op —
+    // the server delivers `goal.*` back to its author and no one else.
+    // The upsert shape still matters: an echo replayed after a local
+    // edit must not resurrect the pre-edit definition.
+    case 'goal.create':
+    case 'goal.update': {
+      const exists = s.goals.some((g) => g.id === op.goal.id);
+      return {
+        goals: exists
+          ? s.goals.map((g) => g.id === op.goal.id ? op.goal : g)
+          : [...s.goals, op.goal],
+      };
+    }
+    case 'goal.delete':
+      return { goals: s.goals.filter((g) => g.id !== op.goal_id) };
     case 'tag.create': {
       if (s.tags.some((t) => t.id === op.tag.id)) return {};
       return { tags: [...s.tags, op.tag] };
@@ -884,6 +937,7 @@ function applyBootstrap(
     tasks: data.tasks.map(normalizeTask),
     tags: data.tags ?? [],
     blocks: data.blocks,
+    goals: data.goals ?? [],
     gcal: data.gcal,
     links: data.links ?? [],
     workspaceInvites: data.workspace_invites ?? [],
@@ -980,6 +1034,10 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
   activePersonId: null,
   weekOffset: 0,
   dayOffset: 0,
+  monthOffset: 0,
+  dashboardProjectId: null,
+  goals: [],
+  goalModal: null,
   sidebarOpen: false,
   creatingDraft: null,
   projectModal: null,
@@ -1229,6 +1287,12 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
       workBlocks: [],
       workTasks: [],
       showWork: false,
+      // Goals are workspace-scoped, so the outgoing workspace's set must
+      // not linger while the new bootstrap is in flight. The dashboard's
+      // project scope points at a project that no longer exists in the
+      // new workspace, so it resets to the overview.
+      goals: [],
+      dashboardProjectId: null,
     });
     const data = await api.bootstrap();
     applyBootstrap(set, get, data, me, ws, get().workspaces, get().playgroundMode);
@@ -1637,6 +1701,42 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
   })),
   setWeekOffset: (offset) => set({ weekOffset: offset }),
   setDayOffset: (offset) => set({ dayOffset: offset }),
+  setMonthOffset: (offset) => set({ monthOffset: offset }),
+  setDashboardProject: (id) => set({ dashboardProjectId: id }),
+
+  createGoal: (input) => {
+    const name = input.name.trim();
+    if (!name) return null;
+    const goal: Goal = {
+      id: crypto.randomUUID(),
+      name,
+      cadence: input.cadence,
+      direction: input.direction,
+      target_min: input.target_min,
+      project_id: input.project_id,
+      tag_id: input.tag_id,
+      task_id: input.task_id,
+      sort_key: input.sort_key ?? 'M',
+    };
+    set((s) => ({
+      goals: [...s.goals, goal],
+      ...pushOp(s, { kind: 'goal.create', goal }),
+    }));
+    return goal.id;
+  },
+
+  updateGoal: (goal) => set((s) => ({
+    goals: s.goals.map((g) => g.id === goal.id ? goal : g),
+    ...pushOp(s, { kind: 'goal.update', goal }),
+  })),
+
+  deleteGoal: (goalId) => set((s) => ({
+    goals: s.goals.filter((g) => g.id !== goalId),
+    ...pushOp(s, { kind: 'goal.delete', goal_id: goalId }),
+  })),
+
+  openGoalModal: (id) => set({ goalModal: { id } }),
+  closeGoalModal: () => set({ goalModal: null }),
   setSidebarOpen: (open) => set({ sidebarOpen: open }),
   toggleProjectFilter: (id) => set((s) => ({
     projectFilter: { ...s.projectFilter, [id]: !(s.projectFilter[id] !== false) },
@@ -2627,6 +2727,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     tasks: s.tasks,
     tags: s.tags,
     blocks: s.blocks,
+    goals: s.goals,
     gcal: s.gcal,
     outbox: s.outbox,
     cursor: s.cursor,
@@ -2664,6 +2765,12 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     // persisting them across reloads would flash the previous workspace's
     // connection state before the next hydrate's Bootstrap.jira overwrites it.
     view: s.view,
+    // monthOffset persists but dashboardProjectId doesn't: the month you
+    // were looking at is worth restoring (it's what makes the day-cell
+    // jump to the calendar and back land where you left), whereas a drill
+    // -down is a transient investigation and every session should open on
+    // the workspace overview.
+    monthOffset: s.monthOffset,
   // partialize is loosely typed — zustand expects S but we're returning a
   // subset of fields. Cast through unknown is the canonical workaround.
   }) as unknown as FiraState,

@@ -50,6 +50,103 @@ function addDaysLocal(ms: number, days: number): Date {
 }
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const MONTHS_FULL = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
+// --- Month helpers (dashboard) ---
+//
+// Same rules as the week helpers above: local midnights, day arithmetic
+// via Date methods so DST never shifts a cell, and `now()` re-read on
+// every call so snapshot mode works.
+//
+// `monthOffset` counts calendar months from the current one (0 = this
+// month, -1 = last). Passing an out-of-range month to the Date
+// constructor is well-defined — month 12 rolls into next January — so no
+// year arithmetic is needed here.
+
+export function monthStartFor(monthOffset: number): number {
+  const n = now();
+  return new Date(n.getFullYear(), n.getMonth() + monthOffset, 1).getTime();
+}
+
+/// `[start, end)` — local midnight on the 1st, to local midnight on the
+/// 1st of the *next* month. End-exclusive so a block starting at 23:30
+/// on the last day of the month can't be double-counted by a naive
+/// `<=` at the boundary.
+export function monthRangeFor(monthOffset: number): { start: number; end: number } {
+  const s = new Date(monthStartFor(monthOffset));
+  return {
+    start: s.getTime(),
+    end: new Date(s.getFullYear(), s.getMonth() + 1, 1).getTime(),
+  };
+}
+
+export function daysInMonthFor(monthOffset: number): number {
+  const s = new Date(monthStartFor(monthOffset));
+  // Day 0 of the next month is the last day of this one.
+  return new Date(s.getFullYear(), s.getMonth() + 1, 0).getDate();
+}
+
+export function fmtMonth(monthOffset: number): string {
+  const d = new Date(monthStartFor(monthOffset));
+  return `${MONTHS_FULL[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+export interface MonthCell {
+  /// Local midnight of this cell's day — also its bucket key.
+  ms: number;
+  /// Day of month, for the cell label.
+  day: number;
+  /// False for the leading/trailing days borrowed from adjacent months,
+  /// which the grid dims.
+  inMonth: boolean;
+}
+
+/// The Mon-anchored calendar layout for a month: always 6 rows of 7, so
+/// the grid doesn't change height between a month that needs five rows
+/// and one that needs six. Leading and trailing cells come from the
+/// adjacent months and are flagged `inMonth: false`.
+export function weekdayGridFor(monthOffset: number): MonthCell[] {
+  const start = new Date(monthStartFor(monthOffset));
+  const lead = (start.getDay() + 6) % 7; // Mon = 0
+  const cells: MonthCell[] = [];
+  for (let i = 0; i < 42; i++) {
+    const d = new Date(start.getFullYear(), start.getMonth(), 1 - lead + i);
+    cells.push({
+      ms: d.getTime(),
+      day: d.getDate(),
+      inMonth: d.getMonth() === start.getMonth() && d.getFullYear() === start.getFullYear(),
+    });
+  }
+  return cells;
+}
+
+/// Local midnight containing `ms`. The canonical day bucket key — every
+/// per-day aggregation keys off this so blocks land in the viewer's day,
+/// not UTC's.
+export function localMidnight(ms: number): number {
+  const d = new Date(ms);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+}
+
+/// Local midnight of the Monday on or before `ms`. The week bucket key
+/// for weekly-cadence goals.
+export function weekStartOf(ms: number): number {
+  const d = new Date(ms);
+  const dayFromMon = (d.getDay() + 6) % 7;
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate() - dayFromMon).getTime();
+}
+
+export function todayMidnight(): number {
+  const n = now();
+  return new Date(n.getFullYear(), n.getMonth(), n.getDate()).getTime();
+}
+
+export function blockMinutes(b: { start_at: string; end_at: string }): number {
+  return (Date.parse(b.end_at) - Date.parse(b.start_at)) / 60000;
+}
 export function fmtWeekRange(weekStart: number, opts?: { compact?: boolean }): string {
   const start = new Date(weekStart);
   const end = addDaysLocal(weekStart, 6);

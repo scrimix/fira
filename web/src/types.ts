@@ -232,8 +232,61 @@ export interface PersonalCalendar {
 /// personal.
 export interface WorkCalendar {
   blocks: TimeBlock[];
-  tasks: LinkedTask[];
+  tasks: WorkTask[];
 }
+
+/// `LinkedTask` plus the workspace it lives in. Only `/work/calendar`
+/// returns these — its payload is the caller's own blocks in workspaces
+/// they belong to, so naming those workspaces leaks nothing.
+///
+/// The workspace fields exist for the dashboard: `TimeBlock` carries no
+/// workspace attribution, so joining `block.task_id` through here is the
+/// only way to split other-workspace hours per workspace rather than
+/// showing one undifferentiated "Work" total.
+export interface WorkTask extends LinkedTask {
+  workspace_id: UUID;
+  workspace_title: string;
+}
+
+/// A named filter over your own blocks with a daily or weekly target,
+/// rendered as a block grid on the month dashboard.
+///
+/// Personal by construction: the server only ever returns your own, and
+/// `goal.*` ops are delivered only back to their author. There is no
+/// team-level goal.
+///
+/// Scoped to the active workspace — `workspace_id` and `user_id` are
+/// constants from the client's point of view and stay off the wire.
+export interface Goal {
+  id: UUID;
+  name: string;
+  cadence: GoalCadence;
+  /// Which side of the target counts as success.
+  direction: GoalDirection;
+  /// null = "any block counts": the period is met if a matching block
+  /// exists at all, regardless of duration. Floors only — a cap without
+  /// a target is meaningless and the schema rejects it.
+  target_min: number | null;
+  /// Scope, AND-combined. All null = every block in the workspace.
+  /// Note `tag_id` already implies a project, since tags are
+  /// project-scoped.
+  project_id: UUID | null;
+  tag_id: UUID | null;
+  task_id: UUID | null;
+  sort_key: string;
+}
+
+export type GoalCadence = 'daily' | 'weekly';
+
+/// A floor or a cap. `at_least` is the default and the common case
+/// ("1h of drawing a day"); `at_most` is the inverse ("no more than 30m
+/// of meetings a day").
+///
+/// The two are not symmetric in the UI. Under a cap an empty period
+/// *passes* — no meetings is the ideal outcome — so the grid's
+/// interesting state is overshoot rather than shortfall, and "18/31 days
+/// met" counts days you stayed under rather than days you reached.
+export type GoalDirection = 'at_least' | 'at_most';
 
 /// Available UI color themes. Extending with a new theme: add the value
 /// here, add a matching `:root[data-theme="..."]` block in globals.css,
@@ -295,6 +348,8 @@ export interface Bootstrap {
   tasks: Task[];
   tags: Tag[];
   blocks: TimeBlock[];
+  /// Your own goals in this workspace — never anyone else's.
+  goals: Goal[];
   gcal: GcalEvent[];
   links: UserLink[];
   workspace_invites: WorkspaceInvite[];

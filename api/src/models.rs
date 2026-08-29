@@ -179,6 +179,38 @@ pub struct Tag {
     pub color: String,
 }
 
+/// A named filter over the caller's own blocks with a daily/weekly
+/// target. Personal by construction — `user_id` is never relaxed, and
+/// goals are never aggregated across people.
+///
+/// `workspace_id` / `user_id` are not serialized: the client only ever
+/// receives its own goals for the active workspace, so both fields are
+/// constants from its point of view. Keeping them off the wire also
+/// means a leaked payload carries no identity.
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct Goal {
+    pub id: Uuid,
+    pub name: String,
+    /// `daily` | `weekly` — CHECKed in the schema.
+    pub cadence: String,
+    /// `at_least` (a floor: "1h of drawing a day") or `at_most` (a cap:
+    /// "30m of meetings a day"). A cap inverts the grid: an empty day
+    /// passes it, and overshoot is the state worth showing.
+    pub direction: String,
+    /// NULL = "any block counts": the period is met if a matching block
+    /// exists at all, regardless of duration. Floors only — the schema
+    /// requires a target for caps.
+    pub target_min: Option<i32>,
+    /// Scope, AND-combined. All NULL = every block in the workspace.
+    /// `tag_id` already implies a project (tags are project-scoped), so
+    /// project+tag is mildly redundant — harmless, and it keeps the
+    /// picker uniform.
+    pub project_id: Option<Uuid>,
+    pub tag_id: Option<Uuid>,
+    pub task_id: Option<Uuid>,
+    pub sort_key: String,
+}
+
 #[derive(Debug, Serialize, sqlx::FromRow)]
 pub struct Subtask {
     pub id: Uuid,
@@ -279,4 +311,27 @@ pub struct LinkedTask {
     pub title: String,
     pub status: String,
     pub project_color: String,
+}
+
+/// `LinkedTask` plus the workspace the task lives in. Only used by
+/// `/api/work/calendar`, whose caller is looking at *their own* blocks
+/// in workspaces they belong to — so naming those workspaces leaks
+/// nothing.
+///
+/// Deliberately a separate struct rather than two more fields on
+/// `LinkedTask`: that one is also returned by the partner-overlay
+/// endpoint, where the workspace titles belong to someone else and must
+/// not go over the wire.
+///
+/// The dashboard needs this because a bare `TimeBlock` carries no
+/// workspace attribution, so without it every non-personal workspace
+/// collapses into one undifferentiated "Work" total.
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct WorkTask {
+    pub id: Uuid,
+    pub title: String,
+    pub status: String,
+    pub project_color: String,
+    pub workspace_id: Uuid,
+    pub workspace_title: String,
 }
