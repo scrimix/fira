@@ -2020,3 +2020,81 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
   background: color-mix(in oklab, var(--danger) 88%, black);
   border-color: color-mix(in oklab, var(--danger) 88%, black);
 }
+
+/* --- move-to-project confirm (ConfirmMove) --- */
+/* Wider than a plain confirm: this dialog carries two itemized lists and
+   is the only place a move's consequences are ever shown. */
+.move-modal {
+  width: min(480px, 92vw);
+}
+.move-section {
+  margin-top: calc(14px * var(--density));
+}
+.move-section-title {
+  margin: 0 0 6px;
+  font-family: var(--font-label);
+  font-size: calc(11px * var(--fs-scale) * var(--label-size));
+  color: var(--ink-3);
+  letter-spacing: calc(0.02em * var(--label-track));
+  text-transform: var(--label-case);
+  font-weight: 600;
+}
+.move-section-danger { color: var(--danger); }
+.move-list {
+  margin: 0;
+  padding: 0 0 0 16px;
+  list-style: disc;
+  font-size: var(--fs-sm);
+  color: var(--ink-2);
+  line-height: 1.5;
+}
+.move-list-row { margin: 0 0 3px; }
+.move-list-row strong { color: var(--ink); font-weight: 600; }
+.move-tag {
+  color: var(--ink);
+  font-weight: 600;
+  border-bottom: 2px solid var(--tag-color, var(--rule-2));
+}
+/* Softer than the list itself — these lines qualify the bullets above
+   rather than adding new facts. */
+.move-note {
+  margin: 6px 0 0;
+  font-size: calc(12px * var(--fs-scale));
+  color: var(--ink-3);
+  line-height: 1.45;
+}
+.move-survives {
+  margin: calc(14px * var(--density)) 0 0;
+  font-size: calc(12px * var(--fs-scale));
+  color: var(--ink-3);
+  font-style: italic;
+}
+.move-confirm {
+  background: var(--accent);
+  color: var(--paper);
+  border-color: var(--accent);
+}
+.move-confirm:hover {
+  background: color-mix(in oklab, var(--accent) 88%, black);
+  border-color: color-mix(in oklab, var(--accent) 88%, black);
+}
+.move-error {
+  margin-top: 5px;
+  font-size: calc(12px * var(--fs-scale));
+  color: var(--danger);
+  line-height: 1.4;
+}
+/* Target picker inside the move dialog. Sits above the impact lists,
+   which update as the selection changes. */
+.move-picker {
+  margin: calc(12px * var(--density)) 0 calc(4px * var(--density));
+}
+.move-picker h5 {
+  margin: 0 0 4px;
+  font-family: var(--font-label);
+  font-size: calc(11px * var(--fs-scale) * var(--label-size));
+  color: var(--ink-3);
+  letter-spacing: calc(0.02em * var(--label-track));
+  text-transform: var(--label-case);
+  font-weight: 600;
+}

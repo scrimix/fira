@@ -448,6 +448,21 @@ interface FiraState {
   /// project / section / assignee group. Empty title allowed (the list
   /// inline-edit flow seeds an empty row that the user types into).
   addTaskAfter: (afterTaskId: UUID, title?: string) => UUID | null;
+  /// Move a task to another project. REST, not an outbox op: the move
+  /// needs a confirm gate before the write and it spans two project
+  /// scopes. Callers must show the impact dialog (`moveImpact.ts`,
+  /// `MoveTaskModal`) first.
+  ///
+  /// `acknowledgeAccessLoss` must reflect what that dialog actually
+  /// showed the user, never a blanket true. The server rejects the move
+  /// with a 409 when it finds someone stranded that the client didn't,
+  /// which is how a membership change racing the dialog gets caught —
+  /// pass true unconditionally and that check can never fire.
+  moveTaskToProject: (
+    taskId: UUID,
+    toProjectId: UUID,
+    acknowledgeAccessLoss: boolean,
+  ) => Promise<void>;
   tickTask: (taskId: UUID) => void;
   setTaskStatus: (taskId: UUID, status: Status) => void;
   setTaskSection: (taskId: UUID, section: Section) => void;
@@ -659,6 +674,38 @@ function applyOpToState(s: FiraState, op: AnyOpKind): Partial<FiraState> {
         tasks: s.tasks.filter((t) => t.id !== op.task_id),
         blocks: s.blocks.filter((b) => b.task_id !== op.task_id),
         openTaskId: s.openTaskId === op.task_id ? null : s.openTaskId,
+      };
+    }
+    case 'task.move_project': {
+      // Delivered twice by the server — once scoped to the source
+      // project, once to the target — because one log row can only
+      // reach one audience. Branch on what *this* client can see rather
+      // than on which row arrived, so both rows land on the same
+      // idempotent result and a client in both projects is unharmed by
+      // applying it twice.
+      if (!s.projects.some((p) => p.id === op.to_project_id)) {
+        // The task left our scope. Drop it and everything hanging off
+        // it, exactly as `project.set_members` does when we're removed
+        // from a project — the change feed falls silent for this task
+        // afterwards, so nothing else will clean it up.
+        //
+        // The blocks aren't deleted server-side, only made invisible
+        // (they're reached through the task's project). Being added to
+        // the target project brings them all back on the next hydrate.
+        return {
+          tasks: s.tasks.filter((t) => t.id !== op.task.id),
+          blocks: s.blocks.filter((b) => b.task_id !== op.task.id),
+          openTaskId: s.openTaskId === op.task.id ? null : s.openTaskId,
+        };
+      }
+      const moved = normalizeTask(op.task);
+      const byId = new Map(s.blocks.map((b) => [b.id, b]));
+      for (const b of op.blocks ?? []) byId.set(b.id, b);
+      return {
+        tasks: s.tasks.some((t) => t.id === moved.id)
+          ? s.tasks.map((t) => (t.id === moved.id ? moved : t))
+          : [...s.tasks, moved],
+        blocks: Array.from(byId.values()),
       };
     }
     case 'subtask.create': {
@@ -2187,6 +2234,39 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     // change-feed echo; we share the path so a remote delete does the
     // same thing. projectModal close is handled in there too.
     set((s) => applyOpToState(s, { kind: 'project.delete', project_id: id }));
+  },
+
+  moveTaskToProject: async (taskId, toProjectId, acknowledgeAccessLoss) => {
+    const state = get();
+    const task = state.tasks.find((t) => t.id === taskId);
+    if (!task || task.project_id === toProjectId) return;
+
+    if (state.playgroundMode) {
+      // No backend: mirror the server's writes locally. Same drops —
+      // tags, epic and sprint don't survive a move.
+      set((s) => applyOpToState(s, {
+        kind: 'task.move_project',
+        from_project_id: task.project_id,
+        to_project_id: toProjectId,
+        task: { ...task, project_id: toProjectId, epic_id: null, sprint_id: null, tag_ids: [] },
+        blocks: s.blocks.filter((b) => b.task_id === taskId),
+      }));
+      return;
+    }
+
+    // The response is authoritative (post-move, tags dropped), so apply
+    // it rather than writing optimistically. Blocks are omitted: the
+    // mover can see both projects by construction, so theirs are
+    // already in state and unchanged. The change-feed echo re-applies
+    // the same upsert harmlessly.
+    const { task: moved } = await api.moveTask(taskId, toProjectId, acknowledgeAccessLoss);
+    set((s) => applyOpToState(s, {
+      kind: 'task.move_project',
+      from_project_id: task.project_id,
+      to_project_id: toProjectId,
+      task: moved,
+      blocks: [],
+    }));
   },
 
   loadAllUsers: async () => {

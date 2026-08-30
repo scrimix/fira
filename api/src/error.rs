@@ -13,6 +13,12 @@ pub enum ApiError {
     Forbidden,
     #[error("bad request: {0}")]
     BadRequest(String),
+    /// The request is well-formed and authorized, but its side effects
+    /// need the caller to acknowledge something first. Used by the task
+    /// move endpoint when the move would cut people off from their own
+    /// time blocks and the client didn't pass the ack flag.
+    #[error("conflict: {0}")]
+    Conflict(String),
     #[error(transparent)]
     Sqlx(#[from] sqlx::Error),
     #[error(transparent)]
@@ -27,6 +33,7 @@ impl IntoResponse for ApiError {
             ApiError::NotFound => (StatusCode::NOT_FOUND, "not found".to_string()),
             ApiError::Forbidden => (StatusCode::FORBIDDEN, "forbidden".to_string()),
             ApiError::BadRequest(m) => (StatusCode::BAD_REQUEST, m.clone()),
+            ApiError::Conflict(m) => (StatusCode::CONFLICT, m.clone()),
             ApiError::Sqlx(sqlx::Error::RowNotFound) => {
                 (StatusCode::NOT_FOUND, "not found".to_string())
             }

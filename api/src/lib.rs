@@ -17,6 +17,7 @@ pub mod invites;
 pub mod jira;
 pub mod links;
 pub mod models;
+pub mod move_task;
 pub mod ops;
 pub mod pubsub;
 pub mod seed;

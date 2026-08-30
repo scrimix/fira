@@ -20,7 +20,7 @@ use fira_api::{
     error::{self, ApiResult},
     gcal, invites, jira, links, load_bootstrap,
     models::*,
-    ops,
+    move_task, ops,
     pubsub::{self, Hub},
     storage, workspaces, ws, AppState, Bootstrap,
 };
@@ -685,6 +685,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/invites/:id", delete(invites::cancel))
         .route("/invites/:id/accept", post(invites::accept))
         .route("/invites/:id/decline", post(invites::decline))
+        .route("/tasks/:id/move", post(move_task::move_task))
         .route("/ops", post(ops::post_ops))
         .route("/changes", get(ops::get_changes));
 

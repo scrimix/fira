@@ -180,6 +180,7 @@ membership and, where applicable, project membership.
 | `/api/projects/:id`                    | PATCH  | update title / icon / color / `external_url_template` (workspace owner OR project lead) |
 | `/api/projects/:id`                    | DELETE | delete (workspace owner only)                         |
 | `/api/projects/:id/members`            | PUT    | replace project member set + per-row role             |
+| `/api/tasks/:id/move`                  | POST   | move a task to another project in the same workspace; 409 unless `acknowledge_access_loss` covers everyone stranded |
 | `/api/links`                           | GET    | list every link involving me                          |
 | `/api/links`                           | POST   | `{ email }` → create pending link                     |
 | `/api/links/:id`                       | DELETE | cancel sent / decline received / unlink               |
@@ -230,6 +231,29 @@ when the user creates a tag inline from the picker). `task.set_tags`
 replaces the whole tag set in one op — set-shaped is the right
 LWW-friendly intent shape, per-add / per-remove diverges under
 concurrent edits.
+
+**Moving a task between projects** (`POST /api/tasks/:id/move`) is REST
+rather than an op for two reasons: it needs a confirm gate the user sees
+*before* the write, and it spans two project scopes, which an op
+envelope's single `project_id` can't carry. It clears `epic_id` /
+`sprint_id`, deletes the task's `task_tags` (tags are identity-bearing
+rows scoped to a project, so they don't travel), re-keys `sort_key` to
+the tail of the target's same section, and materializes the resolved
+issue URL into `external_url` when the two projects' templates differ.
+
+It writes **two** `task.move_project` rows to the change log in one
+transaction — one scoped to the source project, one to the target —
+because the move has two audiences with opposite needs and
+`processed_ops.project_id` is a single column: source members must drop
+the task, target members must gain it. Both rows carry the same payload
+(the post-move task *and* its time blocks, since blocks are reached
+through `task → project` and a target-only member has never seen them);
+the client branches on whether it can see `to_project_id`, so a client in
+both projects applies the same idempotent upsert twice.
+
+Visibility loss here is recoverable and worth stating as such: blocks are
+never deleted, and adding someone to the target project restores them on
+the next hydrate. The irreversible part is the tags / epic / sprint.
 
 Workspace, project, and link mutations write synthesized
 `workspace.create` / `workspace.update` / `workspace.set_members` /

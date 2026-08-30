@@ -50,7 +50,25 @@ export type RemoteOnlyOpKind =
   | { kind: 'project.set_members'; project_id: string; members: import('../types').ProjectMember[] }
   | { kind: 'project.delete'; project_id: string }
   | { kind: 'workspace.set_members'; workspace_id: string; members: import('../types').WorkspaceMember[] }
-  | { kind: 'workspace.set_member_role'; workspace_id: string; user_id: string; role: import('../types').WorkspaceRole };
+  | { kind: 'workspace.set_member_role'; workspace_id: string; user_id: string; role: import('../types').WorkspaceRole }
+  // A task changing project. Written to the change log *twice* by the
+  // server — once scoped to the source project, once to the target —
+  // because `processed_ops.project_id` is a single column and the move
+  // has two audiences with opposite needs (source members must drop the
+  // task, target members must gain it). Both rows carry this same
+  // payload; the apply branches on whether `to_project_id` is visible,
+  // so a client in both projects applies the same upsert twice.
+  | {
+      kind: 'task.move_project';
+      from_project_id: string;
+      to_project_id: string;
+      task: import('../types').Task;
+      // The task's blocks ride along: they're reached through
+      // task → project, so a target-project member who wasn't in the
+      // source has never seen them and would otherwise gain the task
+      // with none of its history until the next hydrate.
+      blocks: import('../types').TimeBlock[];
+    };
 
 export type AnyOpKind = OpKind | RemoteOnlyOpKind;
 

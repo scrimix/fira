@@ -188,6 +188,19 @@ export const api = {
     members: { user_id: string; role: import('./types').ProjectRole }[],
   ) => req<import('./types').Project>('PUT', `/projects/${id}/members`, { members }),
   deleteProject: (id: string) => req<void>('DELETE', `/projects/${id}`),
+  // REST rather than an outbox op: the move needs a confirm gate before
+  // the write, and it spans two project scopes, which an op envelope's
+  // single project_id can't carry. `acknowledge_access_loss` is the
+  // server's guard — without it a move that strands anyone is refused
+  // with 409, so a client running stale code can't skip the dialog.
+  moveTask: (
+    taskId: string,
+    toProjectId: string,
+    acknowledgeAccessLoss: boolean,
+  ) => req<{ task: import('./types').Task }>('POST', `/tasks/${taskId}/move`, {
+    to_project_id: toProjectId,
+    acknowledge_access_loss: acknowledgeAccessLoss,
+  }),
   listMyWorkspaces: () => req<Workspace[]>('GET', '/workspaces'),
   createWorkspace: (title: string) =>
     req<Workspace>('POST', '/workspaces', { title }),

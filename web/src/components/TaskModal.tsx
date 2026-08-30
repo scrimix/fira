@@ -7,6 +7,7 @@ import { AlertTriangle, ArrowLeft, Check, ClockPlus, Copy, Download, FilePlus2, 
 import { useFira } from '../store';
 import { useIsMobile } from '../hooks';
 import { ConfirmDelete } from './ConfirmDelete';
+import { MoveTaskModal } from './MoveTaskModal';
 import {
   AttachmentComposer, MAX_ATTACHMENT_BYTES, draftFromPaste, emptyTextDraft, formatBytes,
   type AttachmentDraft,
@@ -17,9 +18,10 @@ import {
   taskCompletedMin, taskPlannedMin, taskTimeLeft,
   blockToGrid,
 } from '../time';
-import type { Section, Status, Tag, Attachment, Task, User, UUID } from '../types';
-import { api } from '@/api';
+import type { Section, Status, Tag, Attachment, Project, Task, User, UUID } from '../types';
+import { api, HttpError } from '@/api';
 import { buildTaskLink } from '../deeplink';
+import { computeMoveImpact } from '../moveImpact';
 
 interface Props { taskId: string }
 
@@ -58,6 +60,16 @@ export function TaskModal({ taskId }: Props) {
   );
   const blocks = useFira((s) => s.blocks);
   const allTags = useFira((s) => s.tags);
+  // Move-to-project needs the whole visible project set plus the
+  // project-scoped things a move drops (epics, sprints) so the confirm
+  // dialog can name them.
+  const projects = useFira((s) => s.projects);
+  const epics = useFira((s) => s.epics);
+  const sprints = useFira((s) => s.sprints);
+  const workspaceMembers = useFira((s) =>
+    s.workspaces.find((w) => w.id === s.activeWorkspaceId)?.members ?? null);
+  const moveTaskToProject = useFira((s) => s.moveTaskToProject);
+  const hydrate = useFira((s) => s.hydrate);
   const users = useFira((s) => s.users);
   const meId = useFira((s) => s.meId);
   const assigneeUsers = useMemo(() => {    const memberIds = new Set(      (project?.members ?? []).filter((m) => m.role !== 'inactive').map((m) => m.user_id),    );    return users.filter((u) => memberIds.has(u.id));  }, [project, users]);
@@ -83,6 +95,18 @@ export function TaskModal({ taskId }: Props) {
   const upsertBlock = useFira((s) => s.upsertBlock);
   const pushBlockToJira = useFira((s) => s.pushBlockToJira);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  // Move dialog: `moveOpen` is the dialog, `pendingMoveTo` is the target
+  // chosen inside it (null until the user picks, so the dialog can never
+  // commit a move nobody selected).
+  const [moveOpen, setMoveOpen] = useState(false);
+  const [pendingMoveTo, setPendingMoveTo] = useState<UUID | null>(null);
+  const [moveBusy, setMoveBusy] = useState(false);
+  const [moveError, setMoveError] = useState<string | null>(null);
+  useEffect(() => {
+    setMoveOpen(false);
+    setPendingMoveTo(null);
+    setMoveError(null);
+  }, [taskId]);
   // Description edit mode is lifted here so the Pencil button in the
   // section heading can toggle it — the editor itself no longer enters
   // edit mode on a body click.
@@ -135,6 +159,29 @@ export function TaskModal({ taskId }: Props) {
   }, [composerDraft, attachmentPreview, confirmingDelete, attachmentForDelete]);
   // Reset description edit mode when the modal is reused for another task.
   useEffect(() => { setDescEditing(false); }, [taskId]);
+
+  // Everywhere this task could go: the caller's visible projects, minus
+  // where it already is.
+  const moveCandidates = useMemo(
+    () => projects.filter((p) => p.id !== task?.project_id),
+    [projects, task?.project_id],
+  );
+  const moveTarget = useMemo(
+    () => (pendingMoveTo ? projects.find((p) => p.id === pendingMoveTo) ?? null : null),
+    [pendingMoveTo, projects],
+  );
+  // Everything the move costs, from local state — the store already
+  // holds members, blocks, tags, epics and sprints, correctly scoped, so
+  // the dialog renders on picker change with no preflight round trip.
+  const moveImpact = useMemo(() => {
+    if (!task || !moveTarget) return null;
+    const workspaceOwnerIds = new Set(
+      (workspaceMembers ?? []).filter((m) => m.role === 'owner').map((m) => m.user_id),
+    );
+    return computeMoveImpact(task, moveTarget, {
+      users, blocks, tags: allTags, epics, sprints, workspaceOwnerIds,
+    });
+  }, [task, moveTarget, users, blocks, allTags, epics, sprints, workspaceMembers]);
 
   const isMobile = useIsMobile();
 
@@ -390,12 +437,16 @@ export function TaskModal({ taskId }: Props) {
               ))}
           </div>
           <div className="modal-side">
-            <Field label="Project" value={
-              <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span className="proj-dot" style={{ background: project.color }} />
-                {project.title}
-              </span>
-            } />
+            <div className="field">
+              <h5>Project</h5>
+              <ProjectEditor
+                key={task.id}
+                project={project}
+                canMove={moveCandidates.length > 0}
+                onEdit={() => { setMoveError(null); setPendingMoveTo(null); setMoveOpen(true); }}
+              />
+              {moveError && !moveOpen && <div className="move-error">{moveError}</div>}
+            </div>
             <Field label="Created by" value={<CreatorDisplay userId={task.created_by} users={users} meId={meId} createdAt={task.created_at} />} />
             <div className="field">
               <h5>Assignee</h5>
@@ -464,6 +515,46 @@ export function TaskModal({ taskId }: Props) {
             </div>
           </div>
         </div>
+        {moveOpen && (
+          <MoveTaskModal
+            taskTitle={task.title}
+            fromProjectTitle={project.title}
+            candidates={moveCandidates}
+            toProject={moveTarget}
+            onSelectProject={(id) => { setMoveError(null); setPendingMoveTo(id); }}
+            impact={moveImpact}
+            busy={moveBusy}
+            error={moveError}
+            onCancel={() => { setMoveOpen(false); setPendingMoveTo(null); }}
+            onConfirm={async () => {
+              if (!moveTarget || !moveImpact) return;
+              setMoveBusy(true);
+              try {
+                // Acknowledge only what the dialog actually showed. A
+                // 409 then means the server found someone stranded that
+                // we didn't — our membership state is stale, so
+                // re-hydrate and let the user look at the real list
+                // before deciding again.
+                await moveTaskToProject(
+                  task.id, moveTarget.id, moveImpact.stranded.length > 0,
+                );
+                setMoveOpen(false);
+                setPendingMoveTo(null);
+              } catch (e) {
+                const stale = e instanceof HttpError && e.status === 409;
+                setMoveError(
+                  stale
+                    ? `${e.message}. The list above is now up to date — confirm again to proceed.`
+                    : e instanceof Error ? e.message : 'Move failed.',
+                );
+                if (stale) await hydrate();
+                else { setMoveOpen(false); setPendingMoveTo(null); }
+              } finally {
+                setMoveBusy(false);
+              }
+            }}
+          />
+        )}
         {confirmingDelete && (
           <ConfirmDelete
             title="Delete task?"
@@ -1992,6 +2083,38 @@ function JiraCreateIssueModal({ taskId, jiraProjectKey, onClose }: {
 // ExternalLinkEditor: read-only display with a pencil affordance,
 // click pencil to open a searchable popover. Pressing Esc or clicking
 // outside cancels; picking a row commits.
+// Project display + a pencil that opens the move dialog.
+//
+// Deliberately dumb: it shows the current project and reports the click.
+// The picker itself lives inside MoveTaskModal, not here — a <Select>
+// in this sidebar would need its own click-away handling, and its menu
+// portals to document.body, so the two compete and the option click
+// gets eaten before it can fire.
+function ProjectEditor({ project, canMove, onEdit }: {
+  project: Project;
+  canMove: boolean;
+  onEdit: () => void;
+}) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <span className="proj-dot" style={{ background: project.color }} />
+        {project.title}
+      </span>
+      {/* Nowhere to move to in a one-project workspace. */}
+      {canMove && (
+        <button
+          className="icon-btn"
+          onClick={onEdit}
+          title="Move to another project"
+        >
+          <Pencil size={12} strokeWidth={1.75} />
+        </button>
+      )}
+    </div>
+  );
+}
+
 function AssigneeEditor({ value, users, meId, onChange }: {
   value: UUID | null;
   users: User[];

@@ -849,7 +849,9 @@ fn querystring(pairs: &[(&str, &str)]) -> String {
     s
 }
 
-fn urlencoding_encode(s: &str) -> String {
+/// Percent-encode into the unreserved set. Also used by the task-move
+/// endpoint to resolve issue-link templates (`move_task.rs`).
+pub(crate) fn urlencoding_encode(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for b in s.as_bytes() {
         match b {

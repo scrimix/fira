@@ -707,6 +707,55 @@ pub async fn get_task(pool: &PgPool, task_id: Uuid) -> sqlx::Result<Option<Task>
     }
 }
 
+/// Transaction-scoped twin of `get_task`. The move endpoint has to read
+/// the task back *after* its UPDATE and *before* the commit, so the
+/// synthesized change-feed ops carry the post-move row — a `&PgPool`
+/// read would see the pre-move state from outside the transaction.
+pub async fn get_task_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    task_id: Uuid,
+) -> sqlx::Result<Option<Task>> {
+    let row: Option<Task> = sqlx::query_as(
+        "SELECT id, project_id, epic_id, sprint_id, assignee_id, title, description_md,
+                section, status, priority, source, external_id, external_url,
+                estimate_min, spent_min, sort_key, created_at, created_by, finished_at
+         FROM tasks WHERE id = $1",
+    )
+    .bind(task_id)
+    .fetch_optional(&mut **tx)
+    .await?;
+
+    let Some(mut task) = row else {
+        return Ok(None);
+    };
+
+    task.subtasks = sqlx::query_as(
+        "SELECT id, task_id, title, done, sort_key FROM subtasks
+         WHERE task_id = $1 ORDER BY sort_key",
+    )
+    .bind(task.id)
+    .fetch_all(&mut **tx)
+    .await?;
+
+    task.tag_ids = sqlx::query_as::<_, (Uuid,)>("SELECT tag_id FROM task_tags WHERE task_id = $1")
+        .bind(task.id)
+        .fetch_all(&mut **tx)
+        .await?
+        .into_iter()
+        .map(|(tag_id,)| tag_id)
+        .collect();
+
+    task.attachments = sqlx::query_as(
+        "SELECT id, task_id, filename, storage_path, content_type, size, created_at
+         FROM attachments WHERE task_id = $1",
+    )
+    .bind(task.id)
+    .fetch_all(&mut **tx)
+    .await?;
+
+    Ok(Some(task))
+}
+
 pub async fn list_tags_in_scope(pool: &PgPool, scope: &[Uuid]) -> sqlx::Result<Vec<Tag>> {
     if scope.is_empty() {
         return Ok(vec![]);
