@@ -194,10 +194,12 @@ export function TaskModal({ taskId }: Props) {
   const compPct = total ? (completed / total) * 100 : 0;
   const planPct = total ? (planned / total) * 100 : 0;
 
+  // Newest first — the block you just added (or are most likely to be
+  // editing) lands at the top of the list instead of the bottom.
   const taskBlocks = blocks
     .filter((b) => b.task_id === task.id)
     .map((b) => ({ b, ...blockToGrid(b.start_at, b.end_at) }))
-    .sort((a, c) => Date.parse(a.b.start_at) - Date.parse(c.b.start_at));
+    .sort((a, c) => Date.parse(c.b.start_at) - Date.parse(a.b.start_at));
 
   // Per-task external_url wins over the project's template — it's the
   // escape hatch for trackers (Notion, GitHub, design docs) where there's

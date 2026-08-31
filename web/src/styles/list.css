@@ -622,6 +622,11 @@
   align-items: flex-start;
   gap: 4px;
 }
+/* The tail slot renders even for a task with no subtasks, where it holds
+ * nothing. As a flex item it would still claim the 4px gap, so the edit
+ * box would be 4px narrower than the static text it replaces and the
+ * title would re-wrap the instant you clicked into it. */
+.task-title-tail:empty { display: none; }
 .title-autosize {
   display: inline-grid;
   min-width: 0;
@@ -630,10 +635,19 @@
   font-family: inherit;
   line-height: 1.45;
 }
+/* Invisible mirror of the draft text: it hugs the editor to the width of
+ * the title, so the subtask chevron sits right after the text the way it
+ * does when the row isn't being edited. Height is *not* its job — the
+ * textarea measures itself (fitToText in ListView.tsx) because the two
+ * don't always break lines in the same place. Wrap the same way the
+ * textarea does anyway (the UA gives it `overflow-wrap: break-word`), so
+ * a pasted URL doesn't blow the width out. */
 .title-autosize::after {
   content: attr(data-value) ' ';
   visibility: hidden;
   white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: normal;
   grid-area: 1 / 1 / 2 / 2;
   font: inherit;
 }
@@ -641,6 +655,11 @@
   grid-area: 1 / 1 / 2 / 2;
   width: auto;
   min-width: 1ch;
+  /* Don't let the grid stretch the input to the mirror's height:
+   * fitToText resets `height: auto` to measure the text, and a stretched
+   * item would measure the row it's sitting in instead — the box could
+   * then only ever grow. */
+  align-self: start;
 }
 .task-title {
   min-width: 0;
@@ -698,6 +717,14 @@
   font: inherit;
   font-size: var(--fs-md);
   font-family: inherit;
+  /* Chrome's UA stylesheet drops `letter-spacing` and `text-rendering`
+   * on form controls, so a textarea lays the same string out wider than
+   * the .task-title it replaces (body tracks at -0.005em). The title
+   * visibly re-flowed the moment you clicked into a row, and the sizing
+   * mirror — which does inherit both — hugged the text at a width the
+   * input then had to wrap. Inherit them back. */
+  letter-spacing: inherit;
+  text-rendering: inherit;
   border: 0;
   outline: 0;
   background: transparent;
@@ -800,6 +827,10 @@
   grid-column: 3;
   font: inherit;
   font-size: var(--fs-md);
+  /* Same UA reset as .list-title-input — without it the text re-flows
+   * when the typed title commits and becomes a .task-title. */
+  letter-spacing: inherit;
+  text-rendering: inherit;
   border: 0;
   outline: 0;
   background: transparent;
@@ -809,8 +840,9 @@
   /* Render the textarea as a single-line input. `resize: none` kills
    * the corner grabber; explicit single-row height keeps it from
    * springing to a multi-line height when the textarea's UA default
-   * tries to fit `rows=1` plus padding. The user can still
-   * Shift+Enter to insert newlines and the height grows naturally. */
+   * tries to fit `rows=1` plus padding. The user can still Shift+Enter
+   * to insert newlines — the growing is fitToText's job (ListView.tsx),
+   * since `overflow-y: hidden` would otherwise just hide the overflow. */
   resize: none;
   overflow-y: hidden;
   min-height: calc(1.45em);
@@ -1815,6 +1847,10 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
   min-width: 0;
   font: inherit;
   font-size: var(--fs-sm);
+  /* Same UA reset as .list-title-input above — keep the edit text on the
+   * same metrics as the .sname it replaces. */
+  letter-spacing: inherit;
+  text-rendering: inherit;
   border: 0;
   outline: 0;
   background: transparent;

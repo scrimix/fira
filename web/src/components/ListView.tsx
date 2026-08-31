@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Check, ChevronDown, ChevronRight, Clock, ClockFading, Pencil } from 'lucide-react';
 import { useFira } from '../store';
 import { useLongPress } from '../useLongPress';
@@ -9,6 +9,21 @@ import { ConfirmDelete } from './ConfirmDelete';
 import type { Tag, Task, TimeBlock, Section, UUID } from '../types';
 
 const byKey = (a: Task, b: Task) => a.sort_key.localeCompare(b.sort_key);
+
+/// Grow an inline-edit textarea to exactly the height of its own text.
+///
+/// Every textarea in this view renders `rows={1}` with `overflow-y:
+/// hidden`, so a title that wraps loses everything past the first line
+/// unless something stretches the box — and the caret scrolls the hidden
+/// remainder in and out of view as it moves. Only the task title had a
+/// stretcher, the CSS mirror in `.title-autosize::after`, and a mirror is
+/// only right while it breaks lines exactly where the textarea does (see
+/// the letter-spacing note on `.list-title-input`). Measuring the
+/// textarea itself can't disagree with the textarea.
+function fitToText(ta: HTMLTextAreaElement) {
+  ta.style.height = 'auto';
+  ta.style.height = `${ta.scrollHeight}px`;
+}
 
 export function ListView() {
   const tasks = useFira((s) => s.tasks);
@@ -1045,6 +1060,12 @@ function AddTaskRow({ onAdd, placeholder = 'Add task…', onNavigate }: {
 }) {
   const [value, setValue] = useState('');
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  // A title long enough to wrap is typed here as often as it's edited in
+  // place, and this textarea is `rows={1}` with `overflow-y: hidden` too:
+  // without a re-fit the second line is invisible while you type it.
+  useLayoutEffect(() => {
+    if (inputRef.current) fitToText(inputRef.current);
+  }, [value]);
 
   const commit = () => {
     const v = value.trim();
@@ -1131,6 +1152,12 @@ function ListSubtaskRow({
     el.focus();
     el.setSelectionRange(el.value.length, el.value.length);
   }, [editing]);
+  // Same one-line clipping as the task title above, minus the mirror —
+  // this textarea never had one, so a subtask that wraps loses every line
+  // but the first as soon as you click into it.
+  useLayoutEffect(() => {
+    if (editing && inputRef.current) fitToText(inputRef.current);
+  }, [editing, draft]);
   // One-shot: a freshly-minted subtask (Enter on previous, or Tab demote
   // from a task) gets stamped with autoEdit — drop into edit mode and
   // tell the parent to clear the flag so re-renders don't loop.
@@ -1387,6 +1414,11 @@ function TaskRow({
       }
     }
   }, [editingTitle]);
+  // Re-fit on every keystroke, not just on open: the draft changes width
+  // as the user types, and the row has to grow and shrink with it.
+  useLayoutEffect(() => {
+    if (editingTitle && titleRef.current) fitToText(titleRef.current);
+  }, [editingTitle, titleDraft]);
   // One-shot autoEdit handoff: a freshly-minted task (Enter on previous,
   // Shift+Tab promote from a subtask) gets stamped with autoEditTitle so
   // it lands in edit mode on mount.
