@@ -144,7 +144,7 @@ stay as historical record.
   yet. Manual issue links exist via `task.external_id` +
   `project.external_url_template`, but not automated sync.
 - `integration_tokens` for Jira/Notion API access — none.
-- `snapshots` — no replay UI.
+- `snapshots` — no snapshot table; plan history replays `processed_ops`.
 
 ## 4. API — current
 
@@ -192,6 +192,7 @@ membership and, where applicable, project membership.
 | `/api/invites/:id/decline`             | POST   | decline — recipient-only                              |
 | `/api/linked/calendar`                 | GET    | partner's blocks + `LinkedTask` projection (read-only overlay) |
 | `/api/personal/calendar`               | GET    | personal-workspace blocks + `LinkedTask` projection — empty when active workspace is already personal |
+| `/api/plan/at?project_id=…&t=…&seq=…`         | GET    | authorized historical plan entities, genesis and exact revisions |
 | `/api/ops`                             | POST   | push outbox ops, idempotent per `op_id`, per-op tx    |
 | `/api/changes?since=N`                 | GET    | pull change feed, scope-filtered, ≤ 500 rows          |
 | `/api/ws?workspace_id=…`               | WS     | nudge socket for the workspace's change feed; 30 s server ping |
@@ -648,7 +649,7 @@ marker; Y axis is tracks. Project-scoped; a workspace roll-up is later.
   state is self-healing. No plan-view gesture destroys a task — the
   board offers "remove from sprint", never delete; deletion stays in
   the task modal behind its existing confirm.
-- **The "Past" band.** A brand-new board would be empty, which is the
+- **The "Unplanned" band.** A brand-new board would be empty, which is the
   usual reason a roadmap feature is never adopted, so the past is
   reconstructed: fortnight buckets (anchored to even ISO weeks, so
   every project in a workspace agrees where a fortnight starts) over
@@ -721,7 +722,7 @@ marker; Y axis is tracks. Project-scoped; a workspace roll-up is later.
   numbers take the mono face and tabular figures, being codes; the
   month strip is shorter than the week row and carries the only strong
   rule on the axis, because grouping is all it does. `--plan-task-h` / `--plan-task-fs` are one task line, used by a
-  card's checklist, its add-task row, the Past band's rows **and** the
+  card's checklist, its add-task row, the Unplanned band's rows **and** the
   rail — every place a task appears. They were drifting badly: an 18px
   `--fs-xs` checklist sliver beside a 44px two-line rail row, on the
   same screen, for the same object.
@@ -739,6 +740,8 @@ marker; Y axis is tracks. Project-scoped; a workspace roll-up is later.
   does neither, so `stable` only parked 15px of dead space between the
   last character of a task and the board. The week grid is the same: it
   always scrolls horizontally and almost never vertically.
+- The project title appears in the breadcrumb; the Plan toolbar does not
+  repeat it.
 - **Every toolbar control is a segment of a `week-nav` pill** — pan,
   resize, window size, the three view switches, the two add actions —
   and the height is *inherited* from `.cal-toolbar .week-nav-btn`, a
@@ -751,12 +754,51 @@ marker; Y axis is tracks. Project-scoped; a workspace roll-up is later.
   and a three-week window on a phone answers nothing the list doesn't
   answer better. Renders a short panel with a button back to the list.
 - **`PlanView` renders only `PlanSnapshot`** — no component reads
-  `s.sprints`. That's the seam the version scrubber plugs into: sprint
-  32 adds a second producer of an already-rendered shape rather than a
-  second render path. Projection lives in Rust
+  `s.sprints` during rendering. Live store entities and replayed entities
+  share `buildPlanSnapshot`; replay displays only the selected historical
+  entities. Projection lives in Rust
   ([api/src/plan.rs](../api/src/plan.rs)) because the client doesn't
   have the op log; assembly stays in `plan.ts` with one implementation
   serving both modes.
+- **History scrubber (sprint 32).** `GET /api/plan/at?project_id=…&t=…&seq=…`
+  returns projected entities, the effective timestamp, earliest recorded
+  plan op, selected revision, and changes with sequence, kind and timestamp,
+  requiring current project access. Optional `seq` selects an exact revision,
+  distinguishing changes that share a timestamp; optional `t` selects a time.
+  The **Past** toggle opens a separate history panel below the board (hidden
+  by default). Its continuous time axis has its own zoom and pan, independent
+  of the roadmap's weeks and horizontal scrolling. Click to select a time,
+  drag the timeline to pan, or drag the playhead to scrub continuously. Scroll
+  or use zoom buttons to zoom from years down to seconds. Tick labels adapt
+  to seconds, days, calendar months and years; Fit shows all recorded history
+  from genesis to the browsing session's current-time boundary. That boundary
+  stays stable during zoom and pan, extending only when new recorded changes
+  arrive. Zoom stops at Fit and at a one-second window. No state is
+  reconstructible before genesis. Change
+  markers, a revision picker and
+  previous/next controls select exact operations. Left/Right keys step to
+  earlier/later revisions whether the picker or timeline has focus, independent
+  of the picker's newest-first list order. The picker displays the selected
+  revision/time; the duplicate footer timestamp and date input are removed.
+  The range runs from genesis to now. **Live plan**
+  restores editing; hiding Past also returns to live immediately.
+  **Unplanned** controls the reconstructed finished-work band and its
+  identically named row. Panel visibility persists, historical selection
+  does not. The board shows only the selected revision, without live cards
+  or drift labels overlaid. Scrubbing reveals changes by moving the cards
+  through their historical states. Deleted tasks reappear in historical
+  checklists. Replay is read-only, including the inbox;
+  Unplanned remains available using creation and completion dates reconstructed
+  from task ops, with promotion, dragging and live task editing disabled.
+  Historical Unplanned uses recorded finish dates (creation dates as fallback),
+  since completed calendar block spans are not replayed. Tag filters are hidden
+  because tags are not projected. Card counters remain removed. Selection resets on project
+  and workspace changes. Requests are throttled during dragging; the last
+  completed snapshot remains visible with a loading status until the selected
+  read completes. Status and retry use a fixed-height footer caption, blank
+  when idle, keeping the board still; there is
+  no top history banner. Stale responses are ignored; failed reads show retry.
+  The snapshot-only playground has no historical controls.
 - **Picking a project in the sidebar scopes the view you're in**, it
   does not jump to the list: plan → `planProjectId`, dashboard →
   `dashboardProjectId`, list → `listFilter.project_id`, calendar →
@@ -817,9 +859,6 @@ hand-porting.
 - Compare mode (two people side-by-side)
 - Date scope on list (today / this week / a date)
 - Recurring template / instance model (the section bucket exists; per-cycle instance auto-spawn does not)
-- Plan-view version scrubber — the projection (`api/src/plan.rs`) and
-  the backdated seed history exist; `GET /api/plan/at`, the timeline
-  strip and the drift overlay are sprint 32
 - Real Jira / Notion / GCal sync — `external_id` + `external_url` are
   manual; no automation, no calendar ingest, no GCal rendering
 - Email invites for non-Fira accounts (linking and workspace adds
@@ -856,9 +895,6 @@ Stated up front so future me doesn't speculate:
 - Sync to Jira / Notion / GCal (write-back, status pull, calendar
   ingest). Manual `external_id` / `external_url` links exist;
   automated sync doesn't.
-- Plan-view version scrubber — the projection (`api/src/plan.rs`) and
-  the backdated seed history exist; `GET /api/plan/at`, the timeline
-  strip and the drift overlay are sprint 32 UI.
 - Recurring task templates + per-cycle instances.
 - Conflict-divergence UI. Today is last-write-wins on intent ops.
 - Op-log compaction / archival of `processed_ops`. Migration 0010

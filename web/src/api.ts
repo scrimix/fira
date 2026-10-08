@@ -139,6 +139,8 @@ export interface ChangesResponse {
 }
 
 export const api = {
+  planAt: (projectId: UUID, at: string | null = null, seq: number | null = null) =>
+    req<import('./planHistory').PlanHistory>('GET', `/plan/at?${new URLSearchParams({ project_id: projectId, ...(at ? { t: at } : {}), ...(seq !== null ? { seq: String(seq) } : {}) })}`),
   me: () => req<User>('GET', '/me'),
   bootstrap: () => req<Bootstrap>('GET', '/bootstrap'),
   /// Which SPA build the server currently ships. Unauthenticated, and the

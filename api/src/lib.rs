@@ -20,6 +20,7 @@ pub mod models;
 pub mod move_task;
 pub mod ops;
 pub mod plan;
+pub mod plan_history;
 pub mod pubsub;
 pub mod seed;
 pub mod storage;

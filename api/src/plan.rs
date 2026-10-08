@@ -7,8 +7,8 @@
 //
 // Pure and DB-free on purpose: it takes a slice and returns a struct, so
 // it is the one piece of the plan view that `cargo test` can cover
-// without infrastructure. The /api/plan/at handler that feeds it rows is
-// sprint 32.
+// without infrastructure. `plan_history` supplies authorized log rows for
+// the /api/plan/at endpoint.
 //
 // Projection lives here rather than in TypeScript because the client
 // does not have the op log — it has current state plus a cursor — so
@@ -92,6 +92,8 @@ pub struct PlanTask {
     pub section: String,
     pub status: String,
     pub sort_key: String,
+    pub created_at: Option<DateTime<Utc>>,
+    pub finished_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Default, PartialEq, Serialize)]
@@ -150,6 +152,8 @@ impl Fold {
                                 section: t.section.clone(),
                                 status: t.status.clone(),
                                 sort_key: t.sort_key.clone(),
+                                created_at: t.created_at,
+                                finished_at: t.finished_at,
                             },
                         )
                     });
@@ -159,6 +163,12 @@ impl Fold {
                     entry.1.sprint_id = None;
                     entry.1.title = t.title;
                     entry.1.section = t.section;
+                    entry.1.created_at = t.created_at.or(entry.1.created_at);
+                    entry.1.finished_at = if t.status == "done" {
+                        t.finished_at.or(entry.1.finished_at)
+                    } else {
+                        None
+                    };
                     entry.1.status = t.status;
                     entry.1.sort_key = t.sort_key;
                 }
@@ -184,6 +194,8 @@ impl Fold {
                             section: task.section,
                             status: task.status,
                             sort_key: task.sort_key,
+                            created_at: Some(logged.applied_at),
+                            finished_at: None,
                         },
                     ),
                 );
@@ -205,10 +217,7 @@ impl Fold {
             Op::TaskDelete { task_id } => {
                 self.tasks.remove(&task_id);
             }
-            Op::TaskSetSprint {
-                task_id,
-                sprint_id,
-            } => {
+            Op::TaskSetSprint { task_id, sprint_id } => {
                 if let Some((_, t)) = self.tasks.get_mut(&task_id) {
                     t.sprint_id = sprint_id;
                 }
@@ -216,10 +225,12 @@ impl Fold {
             Op::TaskTick { task_id, done } => {
                 if let Some((_, t)) = self.tasks.get_mut(&task_id) {
                     t.status = if done { "done" } else { "in_progress" }.into();
+                    t.finished_at = done.then_some(logged.applied_at);
                 }
             }
             Op::TaskSetStatus { task_id, status } => {
                 if let Some((_, t)) = self.tasks.get_mut(&task_id) {
+                    t.finished_at = (status == "done").then_some(logged.applied_at);
                     t.status = status;
                 }
             }
@@ -357,6 +368,8 @@ struct MovedTask {
     status: String,
     #[serde(default = "m")]
     sort_key: String,
+    created_at: Option<DateTime<Utc>>,
+    finished_at: Option<DateTime<Utc>>,
 }
 
 fn m() -> String {
@@ -454,7 +467,10 @@ mod tests {
         ]);
         let span = |day| {
             let s = project_at(&ops, t(day));
-            (s.sprints[0].starts_on.unwrap(), s.sprints[0].ends_on.unwrap())
+            (
+                s.sprints[0].starts_on.unwrap(),
+                s.sprints[0].ends_on.unwrap(),
+            )
         };
         assert_eq!(span(2), (date("2026-09-07"), date("2026-09-21")));
         assert_eq!(span(9), (date("2026-09-14"), date("2026-09-28")));
@@ -498,9 +514,18 @@ mod tests {
             (1, sprint_create(10, None, "2026-09-07", "2026-09-21")),
             (1, sprint_create(11, None, "2026-09-21", "2026-10-05")),
             (2, task_create(20, None, "Drifter")),
-            (5, json!({"kind":"task.set_sprint","task_id":uid(20),"sprint_id":uid(10)})),
-            (10, json!({"kind":"task.set_sprint","task_id":uid(20),"sprint_id":uid(11)})),
-            (15, json!({"kind":"task.set_sprint","task_id":uid(20),"sprint_id":null})),
+            (
+                5,
+                json!({"kind":"task.set_sprint","task_id":uid(20),"sprint_id":uid(10)}),
+            ),
+            (
+                10,
+                json!({"kind":"task.set_sprint","task_id":uid(20),"sprint_id":uid(11)}),
+            ),
+            (
+                15,
+                json!({"kind":"task.set_sprint","task_id":uid(20),"sprint_id":null}),
+            ),
         ]);
         let at = |day| project_at(&ops, t(day)).tasks[0].sprint_id;
         assert_eq!(at(3), None);
@@ -515,7 +540,10 @@ mod tests {
             (1, track_create(30)),
             (1, track_create(31)),
             (2, sprint_create(10, Some(30), "2026-09-07", "2026-09-21")),
-            (9, json!({"kind":"sprint.set_track","sprint_id":uid(10),"track_id":uid(31)})),
+            (
+                9,
+                json!({"kind":"sprint.set_track","sprint_id":uid(10),"track_id":uid(31)}),
+            ),
         ]);
         assert_eq!(project_at(&ops, t(5)).sprints[0].track_id, Some(uid(30)));
         assert_eq!(project_at(&ops, t(10)).sprints[0].track_id, Some(uid(31)));
@@ -582,8 +610,14 @@ mod tests {
     fn an_unknown_kind_is_skipped_not_fatal() {
         let ops = log(&[
             (1, task_create(20, None, "Real")),
-            (2, json!({"kind":"sprint.set_vibe","sprint_id":uid(10),"vibe":"ominous"})),
-            (3, json!({"kind":"task.set_title","task_id":uid(20),"title":"Renamed"})),
+            (
+                2,
+                json!({"kind":"sprint.set_vibe","sprint_id":uid(10),"vibe":"ominous"}),
+            ),
+            (
+                3,
+                json!({"kind":"task.set_title","task_id":uid(20),"title":"Renamed"}),
+            ),
         ]);
         let s = project_at(&ops, t(9));
         assert_eq!(s.tasks.len(), 1);
@@ -594,8 +628,14 @@ mod tests {
     fn a_malformed_payload_for_a_known_kind_is_skipped_not_fatal() {
         let ops = log(&[
             (1, task_create(20, None, "Real")),
-            (2, json!({"kind":"sprint.set_dates","sprint_id":"not-a-uuid"})),
-            (3, json!({"kind":"task.set_title","task_id":uid(20),"title":"Renamed"})),
+            (
+                2,
+                json!({"kind":"sprint.set_dates","sprint_id":"not-a-uuid"}),
+            ),
+            (
+                3,
+                json!({"kind":"task.set_title","task_id":uid(20),"title":"Renamed"}),
+            ),
         ]);
         assert_eq!(project_at(&ops, t(9)).tasks[0].title, "Renamed");
     }
@@ -735,13 +775,78 @@ mod tests {
     fn an_op_targeting_an_unknown_id_is_a_no_op() {
         // Happens whenever the window starts after an entity was born.
         let ops = log(&[
-            (1, json!({"kind":"task.set_sprint","task_id":uid(99),"sprint_id":uid(10)})),
-            (1, json!({"kind":"sprint.set_dates","sprint_id":uid(99),
-                       "starts_on":"2026-09-07","ends_on":"2026-09-21"})),
+            (
+                1,
+                json!({"kind":"task.set_sprint","task_id":uid(99),"sprint_id":uid(10)}),
+            ),
+            (
+                1,
+                json!({"kind":"sprint.set_dates","sprint_id":uid(99),
+                       "starts_on":"2026-09-07","ends_on":"2026-09-21"}),
+            ),
             (2, task_create(20, None, "Real")),
         ]);
         let s = project_at(&ops, t(9));
         assert_eq!(s.tasks.len(), 1);
         assert!(s.sprints.is_empty());
+    }
+
+    #[test]
+    fn unplanned_dates_follow_completion_recompletion_and_reopening() {
+        let ops = log(&[
+            (1, task_create(20, None, "Unplanned")),
+            (3, json!({"kind":"task.tick","task_id":uid(20),"done":true})),
+            (4, json!({"kind":"task.tick","task_id":uid(20),"done":true})),
+            (
+                5,
+                json!({"kind":"task.tick","task_id":uid(20),"done":false}),
+            ),
+            (
+                6,
+                json!({"kind":"task.set_status","task_id":uid(20),"status":"done"}),
+            ),
+            (
+                7,
+                json!({"kind":"task.set_status","task_id":uid(20),"status":"todo"}),
+            ),
+            (8, json!({"kind":"task.delete","task_id":uid(20)})),
+        ]);
+        for (day, finished) in [
+            (2, None),
+            (3, Some(t(3))),
+            (4, Some(t(4))),
+            (5, None),
+            (6, Some(t(6))),
+            (7, None),
+        ] {
+            let state = project_at(&ops, t(day));
+            assert_eq!(state.tasks[0].created_at, Some(t(1)));
+            assert_eq!(state.tasks[0].finished_at, finished);
+        }
+        assert!(project_at(&ops, t(8)).tasks.is_empty());
+    }
+
+    #[test]
+    fn a_done_creation_retains_creation_date_as_the_unplanned_fallback() {
+        let mut create = task_create(20, None, "Imported completed task");
+        create["task"]["status"] = json!("done");
+        let state = project_at(&log(&[(1, create)]), t(2));
+        assert_eq!(state.tasks[0].created_at, Some(t(1)));
+        assert_eq!(state.tasks[0].finished_at, None);
+        assert_eq!(state.tasks[0].status, "done");
+    }
+
+    #[test]
+    fn incoming_moves_keep_the_embedded_unplanned_dates() {
+        let ops = log(&[(
+            7,
+            json!({"kind":"task.move_project", "task": {
+                "id":uid(20), "project_id":uid(PROJ), "title":"Moved completed work",
+                "section":"done", "status":"done", "created_at":t(1), "finished_at":t(3)
+            }}),
+        )]);
+        let state = project_at(&ops, t(8));
+        assert_eq!(state.tasks[0].created_at, Some(t(1)));
+        assert_eq!(state.tasks[0].finished_at, Some(t(3)));
     }
 }

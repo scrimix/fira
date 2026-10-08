@@ -62,14 +62,6 @@
   margin: 0 calc(2px * var(--density));
   background: var(--rule);
 }
-.plan-project {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-weight: 500;
-  white-space: nowrap;
-}
-
 /* Every control in this toolbar is a segment of a `.week-nav` pill —
  * pan, resize, window size, the three view switches, the two add
  * actions. The bar previously mixed 24px segmented pills with 26px
@@ -825,3 +817,45 @@
   color: var(--ink-3);
   font-size: var(--fs-sm);
 }
+
+/* History has its own time axis below the roadmap, independent of week columns. */
+.plan-history-panel { flex: 0 0 auto; border-top: 1px solid var(--rule-2); background: var(--paper); }
+.plan-history-status { color: var(--ink-3); }
+.plan-history-status button { color: var(--ink); text-decoration: underline; }
+.plan-history-message { display: inline-block; max-width: 180px; vertical-align: bottom; overflow: hidden; text-overflow: ellipsis; }
+.plan-timeline {
+  flex: 0 0 auto;
+  min-width: 0;
+  padding: 10px 16px 8px;
+  background: var(--paper);
+}
+.plan-revision-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: var(--fs-xs); }
+.plan-revision-toolbar strong { font-weight: 500; margin-right: 4px; }
+.plan-revision-picker { flex: 1; min-width: 180px; max-width: 420px; }
+.plan-revision-toolbar select {
+  height: 27px; border: 1px solid var(--rule); padding: 2px 6px; color: var(--ink); background: var(--paper);
+  font: inherit;
+}
+.plan-revision-zoom { margin-left: auto; }
+.plan-revision-axis {
+  position: relative; height: 80px; margin: 12px 10px 0;
+  cursor: grab; touch-action: none; user-select: none;
+}
+.plan-revision-axis:active { cursor: grabbing; }
+.plan-revision-axis:focus-visible { outline: 1px solid var(--accent); outline-offset: 4px; }
+.plan-revision-baseline { position: absolute; left: 0; right: 0; top: 46px; height: 2px; background: var(--rule-2); }
+.plan-revision-tick { position: absolute; top: 0; height: 48px; border-left: 1px solid var(--rule); pointer-events: none; }
+.plan-revision-tick span { position: absolute; top: 1px; left: 5px; white-space: nowrap; color: var(--ink-4); font-size: var(--fs-xs); }
+.plan-revision-marker {
+  position: absolute; top: 24px; width: 7px; height: 32px; margin-left: -3px;
+  background: var(--ink-3); opacity: .6; border: 2px solid var(--paper); border-radius: 2px; cursor: pointer;
+}
+.plan-revision-marker:hover, .plan-revision-marker[data-selected] { background: var(--accent); opacity: 1; z-index: 2; }
+.plan-revision-playhead { position: absolute; top: 0; height: 68px; width: 12px; margin-left: -6px; cursor: ew-resize; background: linear-gradient(90deg, transparent 5px, var(--accent) 5px, var(--accent) 7px, transparent 7px); }
+.plan-revision-playhead span { position: absolute; top: 60px; left: 1px; width: 10px; height: 10px; background: var(--accent); transform: rotate(45deg); }
+.plan-revision-caption { display: flex; justify-content: space-between; gap: 16px; height: calc(var(--fs-xs) * 1.4); line-height: 1.4; white-space: nowrap; color: var(--ink-3); font-size: var(--fs-xs); }
+.plan-revision-caption > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.plan-revision-caption > span:last-child { color: var(--ink-4); }
+.plan-wrap[data-history] .plan-card-head,
+.plan-wrap[data-history] .plan-task,
+.plan-wrap[data-history] .plan-rail-task { cursor: default; }

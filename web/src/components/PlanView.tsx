@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ChevronDown, ChevronLeft, ChevronRight, History, ListChecks, Minus,
+  Archive, ChevronDown, ChevronLeft, ChevronRight, History, ListChecks, Minus,
   ChevronUp, PanelLeft, Plus, Trash2,
 } from 'lucide-react';
 import { useFira } from '../store';
+import { api } from '../api';
+import type { PlanHistory } from '../planHistory';
+import { PlanTimeline } from './PlanTimeline';
 import { useIsMobile } from '../hooks';
 import {
   buildPlanSnapshot, type PlanSnapshot, type PlanTask, type PlanTrackRow,
@@ -13,10 +16,9 @@ import {
   fmtDateKey, isoWeekLabel, monthSpansFor, parseDateKey,
   weekStartFor, weekStartOf,
 } from '../time';
-import type { Project, Section, Tag, UUID } from '../types';
+import type { Section, Tag, UUID } from '../types';
 import { PlanSprintCard, PLAN_TASK_MIME } from './PlanSprintCard';
 import { ConfirmDelete } from './ConfirmDelete';
-import { ProjectIcon } from './ProjectIcon';
 import { ListTagFilter } from './TagFilter';
 
 const WEEK_W = { s: 72, m: 104, l: 150 } as const;
@@ -60,7 +62,6 @@ export function PlanView() {
   const projects = useFira((s) => s.projects);
   const planProjectId = useFira((s) => s.planProjectId);
   const listProjectId = useFira((s) => s.listFilter.project_id);
-  const setPlanProject = useFira((s) => s.setPlanProject);
   const setView = useFira((s) => s.setView);
 
   // Fall back to whatever the list is scoped to, so switching surfaces
@@ -93,17 +94,44 @@ export function PlanView() {
     <PlanBoard
       key={projectId}
       projectId={projectId}
-      projects={projects}
-      onPickProject={setPlanProject}
     />
   );
 }
 
-function PlanBoard({ projectId, projects, onPickProject }: {
-  projectId: UUID;
-  projects: Project[];
-  onPickProject: (id: UUID | null) => void;
-}) {
+function PlanBoard({ projectId }: { projectId: UUID }) {
+  const versionAt = useFira((s) => s.planVersionAt);
+  const versionSeq = useFira((s) => s.planVersionSeq);
+  const setVersionAt = useFira((s) => s.setPlanVersionAt);
+  const playground = useFira((s) => s.playgroundMode);
+  const workspaceId = useFira((s) => s.activeWorkspaceId);
+  const cursor = useFira((s) => s.cursor);
+  const showHistory = useFira((s) => s.planShowHistory);
+  const toggleHistory = useFira((s) => s.togglePlanHistory);
+  const readOnly = versionAt !== null;
+  const [history, setHistory] = useState<{ data: PlanHistory; requestedAt: string | null; requestedSeq: number | null } | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [retryHistory, setRetryHistory] = useState(0);
+  const lastHistoryRequest = useRef(0);
+  useEffect(() => { setHistory(null); }, [projectId, workspaceId]);
+  useEffect(() => {
+    if (playground || !showHistory) { setHistoryLoading(false); return; }
+    let cancelled = false;
+    setHistoryLoading(true);
+    setHistoryError(null);
+    // Throttle continuous scrubbing; cleanup ignores superseded reads.
+    // Keep the last completed projection visible while the playhead moves.
+    const timer = window.setTimeout(() => {
+      lastHistoryRequest.current = performance.now();
+      api.planAt(projectId, versionAt, versionSeq).then((data) => {
+        if (!cancelled) setHistory({ data, requestedAt: versionAt, requestedSeq: versionSeq });
+      }).catch((error: unknown) => {
+        if (!cancelled) setHistoryError(error instanceof Error ? error.message : 'Could not load history');
+      }).finally(() => { if (!cancelled) setHistoryLoading(false); });
+    }, Math.max(0, 100 - (performance.now() - lastHistoryRequest.current)));
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [projectId, workspaceId, versionAt, versionSeq, cursor, playground, showHistory, retryHistory]);
+
   const tracks = useFira((s) => s.tracks);
   const sprints = useFira((s) => s.sprints);
   const tasks = useFira((s) => s.tasks);
@@ -170,14 +198,25 @@ function PlanBoard({ projectId, projects, onPickProject }: {
 
   const weekStartMs = weekStartFor(weekOffset);
 
-  const snapshot: PlanSnapshot = useMemo(
+  const liveSnapshot: PlanSnapshot = useMemo(
     () => buildPlanSnapshot({
       projectId, tracks, sprints, tasks, blocks, weekStartMs, weekCount,
     }),
     [projectId, tracks, sprints, tasks, blocks, weekStartMs, weekCount],
   );
 
-  const project = projects.find((p) => p.id === projectId) ?? null;
+  const snapshot: PlanSnapshot = useMemo(() => {
+    if (!readOnly) return liveSnapshot;
+    const data = history && !historyError ? history.data : null;
+    const past = buildPlanSnapshot({ projectId, tracks: data?.tracks ?? [],
+      sprints: data?.sprints ?? [], tasks: data?.tasks ?? [], blocks: [], weekStartMs, weekCount });
+    return past;
+  }, [readOnly, liveSnapshot, history, versionAt, versionSeq, historyError, projectId, weekStartMs, weekCount]);
+
+  useEffect(() => {
+    if (readOnly) { setDrag(null); setPlacing(false); setRange(null); setConfirmTrack(null); setConfirmSprint(null); }
+  }, [readOnly]);
+
   const monthSpans = useMemo(() => monthSpansFor(snapshot.weeks), [snapshot.weeks]);
 
   // Open near "now" rather than at the left edge. The window reaches
@@ -203,6 +242,7 @@ function PlanBoard({ projectId, projects, onPickProject }: {
   // `now` resets the window *and* re-centres; resetting alone would
   // leave the user looking at wherever they had scrolled to.
   const backToNow = () => {
+    setVersionAt(null);
     setPlanWindow(-6, 16);
     requestAnimationFrame(scrollToNow);
   };
@@ -210,6 +250,7 @@ function PlanBoard({ projectId, projects, onPickProject }: {
   // --- span drag (move / resize along the week axis) ---------------------
 
   const beginDrag = (e: React.PointerEvent, sprintId: UUID, mode: SpanDrag['mode']) => {
+    if (readOnly) return;
     if (e.button !== 0) return;
     const s = sprints.find((x) => x.id === sprintId);
     if (!s || !s.starts_on || !s.ends_on) return;
@@ -455,6 +496,7 @@ function PlanBoard({ projectId, projects, onPickProject }: {
   /// Lands on "No track" rather than guessing one — the orphan row is
   /// visible and the card drags onto a track from there.
   const promoteBucket = (b: RetroBucket) => {
+    if (readOnly) return;
     const id = addSprint(projectId, null, b.label, b.startsOn, b.endsOn);
     if (!id) return;
     for (const t of b.tasks) setTaskSprint(t.id, id);
@@ -477,15 +519,12 @@ function PlanBoard({ projectId, projects, onPickProject }: {
 
   return (
     <div className="plan-wrap"
+         data-history={readOnly || undefined}
+         data-revision={readOnly && !historyError ? history?.data.revision : undefined}
+         aria-busy={historyLoading}
          data-placing={placing || undefined}
          data-dragging={drag ? true : undefined}>
       <div className="cal-toolbar plan-toolbar">
-        {project && (
-          <span className="plan-project">
-            <ProjectIcon name={project.icon} color={project.color} size={14} />
-            {project.title}
-          </span>
-        )}
         {/* Panning and sizing are separate controls. They used to be
             one cluster where every button changed the window's *size* —
             chevrons that grew it rather than moving it, and a lone "−"
@@ -533,7 +572,7 @@ function PlanBoard({ projectId, projects, onPickProject }: {
 
         <span className="plan-toolbar-sep" />
 
-        {/* Three independent switches, so one segmented control with a
+        {/* Independent switches, so one segmented control with a
             filled on-state rather than three loose buttons: they are a
             set, they are not exclusive, and `aria-pressed` says which.
             Each is also reachable from the thing it hides — the rail has
@@ -557,20 +596,32 @@ function PlanBoard({ projectId, projects, onPickProject }: {
                     ? 'Hide the finished-work band'
                     : 'Show finished work that was never planned'}
                   onClick={togglePlanRetro}>
-            <History size={12} strokeWidth={1.75} /> Past
+            <Archive size={12} strokeWidth={1.75} /> Unplanned
           </button>
+          {!playground && <button className="week-nav-btn" data-on={showHistory}
+                  aria-pressed={showHistory}
+                  title={showHistory ? 'Hide history and return to the live plan' : 'Show the plan history scrubber'}
+                  onClick={toggleHistory}>
+            <History size={12} strokeWidth={1.75} /> Past
+          </button>}
         </div>
 
         <span className="plan-toolbar-sep" />
 
+        {!playground && showHistory && <div className="week-nav">
+          <button className="week-nav-btn" aria-label="Return to live plan"
+            data-on={!readOnly} onClick={() => setVersionAt(null)}>Live</button>
+        </div>}
         <div className="week-nav plan-adds" role="group" aria-label="Add">
           <button className="week-nav-btn"
+                  disabled={readOnly}
                   title="Add a track — one row on the board"
                   onClick={() => addTrack(projectId, 'New track')}>
             <Plus size={12} strokeWidth={1.75} /> Track
           </button>
           <button className="week-nav-btn" data-on={placing}
                   aria-pressed={placing}
+                  disabled={readOnly}
                   title="Click, then drag across the weeks the sprint should cover"
                   onClick={() => { setPlacing((v) => !v); setRange(null); }}>
             <Plus size={12} strokeWidth={1.75} /> Sprint
@@ -585,7 +636,9 @@ function PlanBoard({ projectId, projects, onPickProject }: {
         {showInbox && (
           <PlanRail
             tasks={snapshot.inbox}
-            tags={railTags}
+            key={readOnly ? 'history' : 'live'}
+            readOnly={readOnly}
+            tags={readOnly ? [] : railTags}
             onOpen={openTask}
             onDropOut={(taskId) => setTaskSprint(taskId, null)}
             projectId={projectId}
@@ -622,6 +675,7 @@ function PlanBoard({ projectId, projects, onPickProject }: {
             {realRows.map((row, i) => (
               <TrackRow
                 key={row.id ?? 'orphan'}
+                readOnly={readOnly}
                 row={row}
                 sprints={previewOf(row)}
                 showTasks={showTasks}
@@ -660,6 +714,7 @@ function PlanBoard({ projectId, projects, onPickProject }: {
 
             {orphanRow && (
               <TrackRow
+                readOnly={readOnly}
                 row={orphanRow}
                 sprints={previewOf(orphanRow)}
                 showTasks={showTasks}
@@ -698,7 +753,8 @@ function PlanBoard({ projectId, projects, onPickProject }: {
             {showRetro && snapshot.retro.length > 0 && (
               <div className="plan-row plan-row-retro">
                 <div className="plan-row-head plan-row-head-stacked"
-                     title={'Finished work that was never planned into a sprint, '
+                     title={readOnly ? 'Finished work outside sprints at this revision, grouped by its recorded finish date (or creation date).'
+                       : 'Finished work that was never planned into a sprint, '
                        + 'grouped by fortnight and rebuilt from completed time '
                        + 'blocks (or the finish date when there are none).\n\n'
                        + 'Derived live — there is nothing to regenerate. To plan '
@@ -706,7 +762,7 @@ function PlanBoard({ projectId, projects, onPickProject }: {
                        + 'Promote to turn the whole fortnight into one.'}>
                   {/* Named for the toolbar switch that shows it, so the
                       button and the band are visibly the same thing. */}
-                  <span className="plan-row-title">Past</span>
+                  <span className="plan-row-title">Unplanned</span>
                   <span className="plan-row-sub">finished, never planned</span>
                 </div>
                 <div className="plan-row-grid">
@@ -721,7 +777,7 @@ function PlanBoard({ projectId, projects, onPickProject }: {
                         {/* Only offered for a bucket wholly inside the
                             window: promoting a clipped one would invent a
                             span out of the part you can see. */}
-                        {!b.clipStart && !b.clipEnd && (
+                        {!readOnly && !b.clipStart && !b.clipEnd && (
                           <button className="plan-card-promote"
                                   title={`Make a real sprint from ${b.label} `
                                     + `with these ${b.totalCount} task`
@@ -736,14 +792,15 @@ function PlanBoard({ projectId, projects, onPickProject }: {
                         <ul className="plan-card-tasks">
                           {b.tasks.map((t) => (
                             <li key={t.id} className="plan-task" data-done
-                                draggable
+                                draggable={!readOnly}
                                 title={t.title}
                                 onDragStart={(e) => {
+                                  if (readOnly) { e.preventDefault(); return; }
                                   e.dataTransfer.effectAllowed = 'move';
                                   e.dataTransfer.setData(PLAN_TASK_MIME, t.id);
                                   e.dataTransfer.setData('text/plain', t.title);
                                 }}
-                                onClick={() => openTask(t.id)}>
+                                onClick={() => !readOnly && openTask(t.id)}>
                               <span className="plan-task-title">{t.title}</span>
                             </li>
                           ))}
@@ -757,6 +814,14 @@ function PlanBoard({ projectId, projects, onPickProject }: {
           </div>
         </div>
       </div>
+
+      {!playground && showHistory && <section className="plan-history-panel" aria-label="Plan history">
+        <PlanTimeline history={history?.data ?? null}
+          selectedAt={versionAt} selectedSeq={versionSeq} onSelect={setVersionAt}
+          status={historyError ? <><span className="plan-history-message" title={historyError}>{historyError}</span> <button onClick={() => setRetryHistory((v) => v + 1)}>Retry</button></>
+            : historyLoading || !history ? 'Loading…'
+            : !history.data.genesis ? 'No recorded plan history yet' : null} />
+      </section>}
 
       {confirmSprintCard && (
         <ConfirmDelete
@@ -808,6 +873,7 @@ function PlanBoard({ projectId, projects, onPickProject }: {
 }
 
 function TrackRow(props: {
+  readOnly?: boolean;
   row: PlanTrackRow;
   sprints: PlanTrackRow['sprints'];
   showTasks: boolean;
@@ -868,12 +934,12 @@ function TrackRow(props: {
                  }} />
         ) : (
           <button className="plan-row-title" title={row.title}
-                  disabled={props.onRename == null}
+                  disabled={props.readOnly || props.onRename == null}
                   onClick={() => props.onRename && setRenaming(true)}>
             {row.title}
           </button>
         )}
-        {props.onDelete && <div className="plan-row-actions" role="group" aria-label="Track controls">
+        {!props.readOnly && props.onDelete && <div className="plan-row-actions" role="group" aria-label="Track controls">
             <button className="plan-row-btn" title="Move track up" aria-label="Move track up"
                     disabled={!props.onMoveUp} onClick={props.onMoveUp}>
               <ChevronUp size={12} strokeWidth={2} />
@@ -884,7 +950,7 @@ function TrackRow(props: {
             </button>
             <button className="plan-row-btn plan-row-del" title="Delete track"
                     aria-label="Delete track"
-                    onClick={props.onDelete}>
+                    onClick={props.readOnly ? undefined : props.onDelete}>
               <Trash2 size={11} strokeWidth={1.75} />
             </button>
         </div>}
@@ -924,16 +990,16 @@ function TrackRow(props: {
             sprint={sp}
             showTasks={showTasks}
             dragging={props.dragging === sp.id}
-            onMovePointerDown={(e) => props.onSprintPointerDown(e, sp.id)}
-            onResizePointerDown={(e, edge) => props.onSprintResizeDown(e, sp.id, edge)}
-            onRename={(title) => props.onSprintRename(sp.id, title)}
-            onDelete={() => props.onSprintDelete(sp.id)}
-            onDropTask={(taskId) => props.onDropTask(taskId, sp.id)}
-            onTick={props.onTick}
-            onRemoveTask={props.onRemoveTask}
-            onAddTask={(title) => props.onAddTask(sp.id, title)}
-            onOpenTask={props.onOpenTask}
-            onReorderTask={props.onReorderTask}
+            onMovePointerDown={props.readOnly ? undefined : (e) => props.onSprintPointerDown(e, sp.id)}
+            onResizePointerDown={props.readOnly ? undefined : (e, edge) => props.onSprintResizeDown(e, sp.id, edge)}
+            onRename={props.readOnly ? undefined : (title) => props.onSprintRename(sp.id, title)}
+            onDelete={props.readOnly ? undefined : () => props.onSprintDelete(sp.id)}
+            onDropTask={props.readOnly ? undefined : (taskId) => props.onDropTask(taskId, sp.id)}
+            onTick={props.readOnly ? undefined : props.onTick}
+            onRemoveTask={props.readOnly ? undefined : props.onRemoveTask}
+            onAddTask={props.readOnly ? undefined : (title) => props.onAddTask(sp.id, title)}
+            onOpenTask={props.readOnly ? undefined : props.onOpenTask}
+            onReorderTask={props.readOnly ? undefined : props.onReorderTask}
           />
         ))}
       </div>
@@ -964,7 +1030,8 @@ const RAIL_SECTIONS: { key: Section; label: string }[] = [
 /// scoped to one. Groups are **sections** and the filter panel is
 /// **tags** — the two axes that actually divide a single project's
 /// unplanned work.
-function PlanRail({ tasks, tags, projectId, onOpen, onDropOut }: {
+function PlanRail({ tasks, tags, projectId, onOpen, onDropOut, readOnly = false }: {
+  readOnly?: boolean;
   tasks: PlanTask[];
   tags: Tag[];
   projectId: UUID;
@@ -1008,7 +1075,7 @@ function PlanRail({ tasks, tags, projectId, onOpen, onDropOut }: {
   return (
     <aside className="cal-rail plan-rail" data-over={over || undefined}
            onDragOver={(e) => {
-             if (!e.dataTransfer.types.includes(PLAN_TASK_MIME)) return;
+             if (readOnly || !e.dataTransfer.types.includes(PLAN_TASK_MIME)) return;
              e.preventDefault();
              e.dataTransfer.dropEffect = 'move';
              setOver(true);
@@ -1016,7 +1083,7 @@ function PlanRail({ tasks, tags, projectId, onOpen, onDropOut }: {
            onDragLeave={() => setOver(false)}
            onDrop={(e) => {
              setOver(false);
-             if (!e.dataTransfer.types.includes(PLAN_TASK_MIME)) return;
+             if (readOnly || !e.dataTransfer.types.includes(PLAN_TASK_MIME)) return;
              e.preventDefault();
              const id = e.dataTransfer.getData(PLAN_TASK_MIME);
              if (id) onDropOut(id);
@@ -1098,13 +1165,13 @@ function PlanRail({ tasks, tags, projectId, onOpen, onDropOut }: {
                   tag. */}
               {!shut && g.tasks.map((t) => (
                 <div key={t.id} className="plan-rail-task"
-                     draggable
+                     draggable={!readOnly}
                      onDragStart={(e) => {
                        e.dataTransfer.effectAllowed = 'move';
                        e.dataTransfer.setData(PLAN_TASK_MIME, t.id);
                        e.dataTransfer.setData('text/plain', t.title);
                      }}
-                     onClick={() => onOpen(t.id)}
+                     onClick={() => !readOnly && onOpen(t.id)}
                      title={t.title}>
                   {t.title}
                 </div>

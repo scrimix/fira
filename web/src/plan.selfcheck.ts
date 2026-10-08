@@ -20,6 +20,7 @@ import {
   fmtDateKey, fortnightStartOf, isoWeekNumber, parseDateKey, weeksBetween,
 } from './time';
 import type { TimeBlock } from './types';
+import { clampHistoryWindow, historyTicks } from './components/PlanTimeline';
 
 let failures = 0;
 
@@ -366,12 +367,24 @@ function checkRetro(): void {
     0);
 }
 
+function checkHistory(): void {
+  const months = historyTicks(day('2026-01-15'), day('2026-06-15'));
+  eq('history month ticks use calendar boundaries', months.every(({ at }) => new Date(at).getDate() === 1), true);
+  const years = historyTicks(day('2020-01-01'), day('2030-01-01'));
+  eq('history long ranges use year labels', years.every(({ label }) => /^\d{4}$/.test(label)), true);
+  eq('history year ticks are not empty', years.length > 0, true);
+  eq('history zoom clamps left boundary', clampHistoryWindow(-5000, 2000, 0, 10000), { start: 0, end: 2000 });
+  eq('history zoom clamps right boundary', clampHistoryWindow(9500, 2000, 0, 10000), { start: 8000, end: 10000 });
+  eq('history zoom fits full range', clampHistoryWindow(0, 20000, 0, 10000), { start: 0, end: 10000 });
+}
+
 export function runPlanSelfCheck(): void {
   checkTime();
   checkPackLanes();
   checkPlanCode();
   checkSnapshot();
   checkRetro();
+  checkHistory();
   if (failures > 0) {
     // Thrown, not logged: visual-check.mjs watches `pageerror` and fails
     // the sweep on one, which is the only automation that sees this.

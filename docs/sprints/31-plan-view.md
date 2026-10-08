@@ -911,6 +911,13 @@ quarter — and the dashboard is the aggregate, so it belongs last.
 
 ## 12. Deferred to sprint 32
 
+Implemented in [Sprint 32 — Plan history](32-plan-history.md). The
+following records the original deferral from this sprint. Sprint 32
+also renames the reconstructed Past band and its row to Unplanned;
+Past now toggles a separate historical timeline with continuous scrubbing,
+precise revision selection and independent zoom/pan. The week-stop design
+recorded below was superseded during sprint 32.
+
 The board ships **live only**. The reason is structural, not scheduling:
 `sprint.*` and `task.set_sprint` ship *in* 31, so the placement timeline
 is empty on the day it lands — "this was planned 3 weeks earlier" is

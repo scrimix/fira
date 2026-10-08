@@ -46,11 +46,10 @@ export interface PlanTaskInput {
   section: Section;
   status: Status;
   sort_key: string;
-  /// Optional because the replayed entity doesn't carry them — the
-  /// retro band is derived from current data and hidden in replay. Live
-  /// mode passes the full `Task`, which has both.
+  /// Replay derives these from recorded creation/completion ops. Legacy
+  /// incoming moves can lack dates; live mode supplies the full task.
   finished_at?: string | null;
-  created_at?: string;
+  created_at?: string | null;
   /// Rail-only, and only for *filtering* — the rail renders titles and
   /// nothing else. Optional, so the projection never has to invent them.
   external_id?: string | null;

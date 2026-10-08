@@ -20,7 +20,7 @@ use fira_api::{
     error::{self, ApiResult},
     gcal, invites, jira, links, load_bootstrap,
     models::*,
-    move_task, ops,
+    move_task, ops, plan_history,
     pubsub::{self, Hub},
     storage, workspaces, ws, AppState, Bootstrap,
 };
@@ -654,6 +654,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/jira/tasks/:task_id", post(jira::push_task))
         .route("/jira/blocks/:block_id", post(jira::push_block))
         .route("/bootstrap", get(bootstrap))
+        .route("/plan/at", get(plan_history::get_at))
         .route("/projects", get(projects).post(create_project))
         .route(
             "/projects/:id",

@@ -192,9 +192,11 @@ interface FiraState {
   planShowInbox: boolean;
   planShowTasks: boolean;
   planShowRetro: boolean;
+  planShowHistory: boolean;
   // Scrubber position (sprint 32). Deliberately not persisted —
   // reopening the app into a historical view is a trap.
   planVersionAt: string | null;
+  planVersionSeq: number | null;
 
   // Your goals in the active workspace. Server data — treated like
   // `blocks`, never persisted through `partialize`.
@@ -373,6 +375,7 @@ interface FiraState {
 
   // --- plan board ---
   setPlanProject: (id: UUID | null) => void;
+  setPlanVersionAt: (at: string | null, seq?: number | null) => void;
   /// Shift the visible window. `+ Earlier week` moves the left edge back
   /// *and* widens, so the existing columns don't slide out from under
   /// the cursor — hence the separate count.
@@ -381,6 +384,7 @@ interface FiraState {
   togglePlanInbox: () => void;
   togglePlanTasks: () => void;
   togglePlanRetro: () => void;
+  togglePlanHistory: () => void;
   /// Returns the new id, or null if the title was blank.
   addTrack: (projectId: UUID, title: string, color?: string) => UUID | null;
   setTrackTitle: (trackId: UUID, title: string) => void;
@@ -1194,7 +1198,9 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
   planShowInbox: true,
   planShowTasks: true,
   planShowRetro: true,
+  planShowHistory: false,
   planVersionAt: null,
+  planVersionSeq: null,
   goals: [],
   goalModal: null,
   sidebarOpen: false,
@@ -1454,6 +1460,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
       dashboardProjectId: null,
       planProjectId: null,
       planVersionAt: null,
+      planVersionSeq: null,
     });
     const data = await api.bootstrap();
     applyBootstrap(set, get, data, me, ws, get().workspaces, get().playgroundMode);
@@ -2737,7 +2744,8 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
 
   // --- plan board ---
 
-  setPlanProject: (id) => set({ planProjectId: id }),
+  setPlanProject: (id) => set({ planProjectId: id, planVersionAt: null, planVersionSeq: null }),
+  setPlanVersionAt: (at, seq = null) => set({ planVersionAt: at, planVersionSeq: at ? seq : null, ...(at ? { planShowHistory: true } : {}) }),
   setPlanWindow: (weekOffset, weekCount) => set({
     planWeekOffset: weekOffset,
     planWeekCount: Math.max(1, Math.min(52, weekCount)),
@@ -2746,6 +2754,11 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
   togglePlanInbox: () => set((s) => ({ planShowInbox: !s.planShowInbox })),
   togglePlanTasks: () => set((s) => ({ planShowTasks: !s.planShowTasks })),
   togglePlanRetro: () => set((s) => ({ planShowRetro: !s.planShowRetro })),
+  togglePlanHistory: () => set((s) => ({
+    planShowHistory: !s.planShowHistory,
+    planVersionAt: s.planShowHistory ? null : s.planVersionAt,
+    planVersionSeq: s.planShowHistory ? null : s.planVersionSeq,
+  })),
 
   addTrack: (projectId, title, color) => {
     const trimmed = title.trim();
@@ -3100,6 +3113,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     planShowInbox: s.planShowInbox,
     planShowTasks: s.planShowTasks,
     planShowRetro: s.planShowRetro,
+    planShowHistory: s.planShowHistory,
   // partialize is loosely typed — zustand expects S but we're returning a
   // subset of fields. Cast through unknown is the canonical workaround.
   }) as unknown as FiraState,
