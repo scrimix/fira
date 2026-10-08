@@ -19,6 +19,7 @@ import {
 } from '../playground';
 import { setFrozenNow } from '../time';
 import { syncLog } from '../synclog';
+import { PLAN_HISTORY_KINDS } from '../planHistory';
 
 // Sync state machine. The TopBar pill reads this directly.
 //   idle  — nothing queued, last attempt either succeeded or never ran
@@ -140,6 +141,7 @@ interface FiraState {
   // `cursor` is the highest server-side `seq` we've ingested. Polls send
   // it as `?since=cursor` and the server returns rows strictly after it.
   cursor: number;
+  planHistoryVersions: Record<string, number>;
   // `appliedOpIds` records op_ids this client already applied locally so
   // when the server echoes them back via /changes we skip re-applying.
   // Value is the wallclock timestamp at insertion — used for GC.
@@ -1107,6 +1109,7 @@ function applyBootstrap(
     jiraLastSyncError: data.jira?.last_sync_error ?? null,
     jiraAutoSyncNewBlocks: data.jira?.auto_sync_new_blocks ?? false,
     cursor: data.cursor ?? 0,
+    planHistoryVersions: Object.fromEntries(data.projects.map((p) => [p.id, data.cursor ?? 0])),
     appliedOpIds: new Map(),
     outbox: [],
     meId: me.id,
@@ -1152,6 +1155,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
   bootBuild: null,
   newBuildAvailable: false,
   cursor: 0,
+  planHistoryVersions: {},
   appliedOpIds: new Map(),
 
   meId: null,
@@ -1383,6 +1387,10 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
         // Cursor advances to the bootstrap watermark; the appliedOpIds
         // dedup map is reset because it's now scoped to a fresh window.
         cursor: data.cursor ?? s.cursor,
+        // Bootstrap can skip unseen feed rows; check cached revision lists
+        // conservatively in this recovery path, using incremental requests.
+        planHistoryVersions: data.cursor !== undefined && data.cursor !== s.cursor
+          ? Object.fromEntries(data.projects.map((p) => [p.id, data.cursor])) : s.planHistoryVersions,
         appliedOpIds: new Map(),
         lastSyncedAt: Date.now(),
 
@@ -1780,7 +1788,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     if (changesPollInFlight) return;
     changesPollInFlight = true;
     try {
-      const { cursor, appliedOpIds, applyRemoteOp } = get();
+      const { cursor, activeWorkspaceId, appliedOpIds, applyRemoteOp } = get();
       let resp;
       try {
         resp = await api.getChanges(cursor);
@@ -1789,7 +1797,15 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
         // reflects server reachability through the push side.
         return;
       }
+      if (get().activeWorkspaceId !== activeWorkspaceId) return;
+      const historyVersions = { ...get().planHistoryVersions };
+      let historyChanged = false;
       for (const entry of resp.ops) {
+        // Include our own acknowledged writes, even when their entity echo is skipped.
+        if (entry.project_id && PLAN_HISTORY_KINDS.has(entry.kind)) {
+          historyVersions[entry.project_id] = entry.seq;
+          historyChanged = true;
+        }
         if (appliedOpIds.has(entry.op_id)) continue;
         applyRemoteOp(entry);
       }
@@ -1803,6 +1819,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
       }
       set({
         cursor: resp.cursor,
+        ...(historyChanged ? { planHistoryVersions: historyVersions } : {}),
         appliedOpIds: didTrim ? trimmed : appliedOpIds,
       });
     } finally {

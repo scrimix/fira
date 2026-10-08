@@ -125,6 +125,10 @@ if (process.env.VISUAL_CHECK_HISTORY === '1') {
   const historyContext = await browser.newContext({ viewport: { width: 1280, height: 900 }, timezoneId: 'Europe/Riga' });
   const historyPage = await historyContext.newPage();
   historyPage.on('pageerror', (error) => thrown.push(error.message));
+  let revisionRequests = 0;
+  historyPage.on('request', (request) => {
+    if (new globalThis.URL(request.url()).pathname === '/api/plan/history') revisionRequests++;
+  });
   const login = await historyContext.request.get(`${URL}/api/auth/dev-login?email=maya%40fira.dev`, { maxRedirects: 0 });
   if (![302, 303].includes(login.status()) && !login.ok()) throw new Error(`Fixture login failed: ${login.status()}`);
   const workspaces = await (await historyContext.request.get(`${URL}/api/workspaces`)).json();
@@ -152,13 +156,14 @@ if (process.env.VISUAL_CHECK_HISTORY === '1') {
     'Revision timeline is still inside the roadmap scroll container');
   const bootstrap = await (await historyContext.request.get(`${URL}/api/bootstrap`, { headers: { 'x-workspace-id': team.id } })).json();
   const atlas = bootstrap.projects.find((project) => project.title === 'Atlas');
-  const metadata = await (await historyContext.request.get(`${URL}/api/plan/at?project_id=${atlas.id}`, { headers: { 'x-workspace-id': team.id } })).json();
+  const metadata = await (await historyContext.request.get(`${URL}/api/plan/history?project_id=${atlas.id}`, { headers: { 'x-workspace-id': team.id } })).json();
   const deletionIndex = metadata.changes.findIndex((change) => change.kind === 'task.delete');
   must(deletionIndex > 0, 'Fixture has no deleted-task revision to inspect');
   const revision = metadata.changes[deletionIndex - 1];
   const picker = historyPage.getByLabel('Revision', { exact: true });
   const waitRevision = (seq) => historyPage.waitForSelector(`.plan-wrap[data-history][data-revision="${seq}"][aria-busy="false"]`);
   await historyPage.waitForSelector('.plan-wrap[aria-busy="false"]');
+  const initialRevisionRequests = revisionRequests;
   const fullAxis = historyPage.getByRole('slider', { name: 'Scrub plan history', exact: true });
   const fullRange = async () => ({
     start: await fullAxis.getAttribute('data-start'), end: await fullAxis.getAttribute('data-end'),
@@ -320,6 +325,7 @@ if (process.env.VISUAL_CHECK_HISTORY === '1') {
   await historyPage.waitForSelector('.plan-wrap:not([data-history])');
   must(await historyPage.locator('.plan-card[data-ghost]').count() === 0, 'Live plan retained replay ghosts');
   must(await historyPage.locator('.plan-card-grip').count() > 0, 'Live plan did not restore editing');
+  must(revisionRequests === initialRevisionRequests, 'Scrubbing or reopening fetched the unchanged revision list');
   await historyPage.screenshot({ path: shot('plan-history-return-live') });
   await historyContext.close();
 }

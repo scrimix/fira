@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode, type KeyboardEvent } from 'react';
 import { ChevronLeft, ChevronRight, Minus, Plus } from 'lucide-react';
-import type { PlanHistory } from '../planHistory';
+import type { PlanRevisionList } from '../planHistory';
 
 const labels: Record<string, string> = {
   'task.create': 'Task added', 'task.delete': 'Task deleted', 'task.set_sprint': 'Task placement changed',
@@ -52,7 +52,7 @@ export function historyTicks(start: number, end: number): { at: number; label: s
   return ticks;
 }
 export function PlanTimeline({ history, selectedAt, selectedSeq, onSelect, status }: {
-  history: PlanHistory | null; status: ReactNode; selectedAt: string | null; selectedSeq: number | null;
+  history: PlanRevisionList | null; status: ReactNode; selectedAt: string | null; selectedSeq: number | null;
   onSelect: (at: string | null, seq?: number | null) => void;
 }) {
   const rail = useRef<HTMLDivElement>(null);

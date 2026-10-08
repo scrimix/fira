@@ -87,14 +87,8 @@ export function Sidebar() {
             document, one project's quarter, then the aggregate. The
             dashboard is the roll-up and belongs last.
 
-            Gated out of production builds until the UX is settled. The
-            plan ops land in `processed_ops`, which is never pruned and
-            must stay replayable forever — so an op shape that reaches a
-            real user's log is permanent. While the entry point is
-            dev-only every shape stays revisable at the cost of one
-            TRUNCATE and a reseed. The `p` shortcut and the view itself
-            stay live either way; it's the door that waits. */}
-        {import.meta.env.DEV && !isMobile && (
+            Plan is available on desktop in production too. */}
+        {!isMobile && (
           <button className="nav-btn" data-active={view === 'plan'}
                   onClick={() => { setView('plan'); close(); }} title="Plan (P)">
             <GanttChartSquare size={16} strokeWidth={1.75} />

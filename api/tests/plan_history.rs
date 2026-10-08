@@ -317,3 +317,57 @@ async fn historical_unplanned_dates_come_from_logged_completion(pool: PgPool) {
     assert!(json["created_at"].is_string());
     assert!(json["finished_at"].is_string());
 }
+
+#[sqlx::test]
+async fn revision_metadata_is_incremental_and_snapshots_omit_the_list(pool: PgPool) {
+    use fira_api::plan_history::{read_history, read_snapshot};
+    fixture(&pool).await;
+    let user = seed::primary_user_id();
+    let ws = seed::id(seed::TEAM_WORKSPACE_SLUG);
+    let project = seed::id("p_atlas");
+    let list = read_history(&pool, user, ws, project, None).await.unwrap();
+    assert!(!list.changes.is_empty());
+    let middle = list.changes[list.changes.len() / 2].seq;
+    let delta = read_history(&pool, user, ws, project, Some(middle))
+        .await
+        .unwrap();
+    assert_eq!(delta.genesis, list.genesis);
+    assert_eq!(
+        delta.changes.iter().map(|c| c.seq).collect::<Vec<_>>(),
+        list.changes
+            .iter()
+            .filter(|c| c.seq > middle)
+            .map(|c| c.seq)
+            .collect::<Vec<_>>()
+    );
+    let end = list.changes.last().unwrap().seq;
+    assert!(read_history(&pool, user, ws, project, Some(end))
+        .await
+        .unwrap()
+        .changes
+        .is_empty());
+    let snapshot = read_snapshot(&pool, user, ws, project, None, Some(middle))
+        .await
+        .unwrap();
+    let combined =
+        fira_api::plan_history::read_revision(&pool, user, ws, project, None, Some(middle))
+            .await
+            .unwrap();
+    assert_eq!(
+        serde_json::to_value(&snapshot.state).unwrap(),
+        serde_json::to_value(&combined.state).unwrap()
+    );
+    assert_eq!(snapshot.revision, Some(middle));
+    assert!(serde_json::to_value(&snapshot)
+        .unwrap()
+        .get("changes")
+        .is_none());
+    assert!(matches!(
+        read_history(&pool, user, seed::id("w_personal_u_maya"), project, None).await,
+        Err(ApiError::Forbidden)
+    ));
+    assert!(matches!(
+        read_snapshot(&pool, user, ws, project, None, Some(i64::MAX)).await,
+        Err(ApiError::BadRequest(_))
+    ));
+}

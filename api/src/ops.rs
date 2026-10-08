@@ -1238,6 +1238,7 @@ pub struct ChangesResponse {
 
 #[derive(Debug, Serialize)]
 pub struct ChangeEntry {
+    pub project_id: Option<Uuid>,
     pub seq: i64,
     pub op_id: String,
     pub kind: String,
@@ -1266,8 +1267,8 @@ pub async fn get_changes(
     // the authorship filter, creating a goal would broadcast its name to
     // the whole team. Giving goal ops a project_id instead would only
     // narrow the leak from the workspace to the project.
-    let rows: Vec<(i64, String, String, serde_json::Value, DateTime<Utc>)> = sqlx::query_as(
-        "SELECT po.seq, po.op_id, po.kind, po.payload, po.applied_at
+    let rows: Vec<(i64, String, String, serde_json::Value, DateTime<Utc>, Option<Uuid>)> = sqlx::query_as(
+        "SELECT po.seq, po.op_id, po.kind, po.payload, po.applied_at, po.project_id
          FROM processed_ops po
          WHERE po.seq > $1
            AND po.workspace_id = $3
@@ -1301,7 +1302,8 @@ pub async fn get_changes(
     let cursor = rows.last().map(|r| r.0).unwrap_or(since);
     let ops = rows
         .into_iter()
-        .map(|(seq, op_id, kind, payload, applied_at)| ChangeEntry {
+        .map(|(seq, op_id, kind, payload, applied_at, project_id)| ChangeEntry {
+            project_id,
             seq,
             op_id,
             kind,

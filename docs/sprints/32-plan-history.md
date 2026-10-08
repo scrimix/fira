@@ -14,11 +14,15 @@ through successive historical states.
 
 - `GET /api/plan/at?project_id=…&t=…&seq=…` returns projected tracks, sprints and
   tasks, the effective timestamp, the earliest recorded plan op (`genesis`),
-  the selected revision, and each plan change with its sequence, kind and
-  timestamp. Omitting `t` reads now; optional `seq` selects an exact revision
+  the selected revision. Revision metadata comes separately from
+  `/api/plan/history?project_id=…&since=…`; it loads once and then appends deltas
+  after relevant project operations arrive through the change feed, including
+  echoes of local edits. Scrubbing and reopening retain the list; unrelated
+  operations do not refresh it. Bootstrap recovery checks deltas if its cursor
+  skips unseen operations. Omitting `t` reads now; optional `seq` selects an exact revision
   and takes precedence over `t`, including when timestamps are identical.
 - Reads require current workspace/project access. Queries filter by both
-  workspace and project and by `PLAN_KINDS`. Metadata and replay share a
+  workspace and project and by `PLAN_KINDS`. Each read uses a
   repeatable-read transaction. Outgoing project moves are filtered from the
   source's response; incoming moves supply their embedded task state.
 - Requested timestamps clamp to the project's first recorded plan op and
@@ -73,14 +77,19 @@ through successive historical states.
   offer retry. Project/workspace changes clear the previous history metadata.
 
 The snapshot-only playground has no op log, so history controls are not
-shown there. The existing desktop restriction and development-only Plan
-sidebar entry remain in effect; this sprint does not expose the feature
-through the production sidebar.
+shown there. The desktop restriction remains. Following UX acceptance, the
+Plan sidebar entry is enabled in production as well as development.
 
 ## Validation
 
+- Opt-in release-mode backend and production-browser performance harnesses
+  cover up to 100,000 ops / 10,000 tasks and 50,000 revision markers/options.
+  [Measured results and caching proposal](../performance/plan-history.md) show
+  that large revision lists require bounded rendering. Metadata fetches are
+  now separated; snapshot caching is proposed, not implemented.
+
 - 22 pure projection tests and 9 existing plan-op DB tests pass.
-- 6 new DB integration tests cover replay/live equivalence for every
+- 7 DB integration tests cover replay/live equivalence for every
   seeded team project, deleted-task resurrection, genesis/future clamping,
   current access, workspace/project scope, outgoing/incoming moves, and exact
   sequence selection for changes with identical timestamps, and historical
@@ -106,3 +115,14 @@ VISUAL_CHECK_HISTORY=1 VISUAL_CHECK_URL=http://localhost:5173 pnpm visual-check
 
 Point that URL at a dev frontend backed by the updated API and the standard
 fixture. The sweep signs in as Maya; it does not reseed or edit task content.
+
+- `web/scripts/plan-history-sync-check.mjs` exercises the real store and WS
+  nudge handler with synthetic feed entries: scrub/reopen reuse, unrelated
+  project and non-plan operations, own-write deduplication, incremental refresh
+  and unchanged historical snapshots. It uses the dev frontend and makes no DB
+  writes. The visual sweep also checks metadata request reuse.
+
+A separate [browseable history stress seeder](../performance/plan-history-stress-seeder.md)
+adds 1k/10k/50k revision projects to the existing Default workspace and
+configured database, using the normal API/frontend ports. [Current browser measurements](../performance/plan-history.md#browser-measurements-after-metadata-separation)
+confirm that rendering remains slow at 10k/50k despite one metadata fetch.

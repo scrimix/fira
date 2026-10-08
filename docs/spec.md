@@ -762,8 +762,13 @@ marker; Y axis is tracks. Project-scoped; a workspace roll-up is later.
   serving both modes.
 - **History scrubber (sprint 32).** `GET /api/plan/at?project_id=…&t=…&seq=…`
   returns projected entities, the effective timestamp, earliest recorded
-  plan op, selected revision, and changes with sequence, kind and timestamp,
-  requiring current project access. Optional `seq` selects an exact revision,
+  plan op and selected revision, requiring current project access.
+  `GET /api/plan/history?project_id=…&since=…` supplies revision metadata
+  separately; `since` returns only newer plan operations. The list is retained
+  while scrubbing and reopening the panel. Relevant project operations in the
+  WebSocket-nudged change feed refresh it, including acknowledged local writes;
+  unrelated operations do not. Bootstrap recovery conservatively checks for
+  deltas when it advances past unseen operations. Optional `seq` selects an exact revision,
   distinguishing changes that share a timestamp; optional `t` selects a time.
   The **Past** toggle opens a separate history panel below the board (hidden
   by default). Its continuous time axis has its own zoom and pan, independent
@@ -809,11 +814,9 @@ marker; Y axis is tracks. Project-scoped; a workspace roll-up is later.
   follows whichever cursor the current view uses; on the calendar it
   appears only when exactly one project is visible, which is the only
   time a single-project highlight is true.
-- **Gated out of production builds** (`import.meta.env.DEV` on the
-  sidebar entry) until the UX is confirmed. The reason is the op log:
-  `processed_ops` is never pruned, so an op shape that reaches a real
-  user is permanent. While the door is dev-only, every shape stays
-  revisable at the cost of one `TRUNCATE processed_ops` and a reseed.
+- **Available in production on desktop.** The UX was accepted after the
+  sprint 32 scrubber revisions. The Plan sidebar entry and `P` shortcut
+  open the same surface; the existing mobile fallback remains.
 
 ### 7.5 Playground mode
 

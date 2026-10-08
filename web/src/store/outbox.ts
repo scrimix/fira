@@ -91,6 +91,7 @@ export type AnyOpKind = OpKind | RemoteOnlyOpKind;
 
 /// One row of the server's change log.
 export interface ChangeEntry {
+  project_id: string | null;
   seq: number;
   op_id: string;
   kind: string;

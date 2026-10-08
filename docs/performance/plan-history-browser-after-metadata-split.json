@@ -1,0 +1,44 @@
+{
+  "url": "http://localhost:5180",
+  "note": "Production frontend; synthetic revision metadata, fixture snapshot, mocked history responses",
+  "results": [
+    {
+      "revisions": 1000,
+      "metadata_bytes": 81001,
+      "open_ms": 110.46153499999991,
+      "select_ms": 207.52353300000004,
+      "zoom_ms": 100.24123499999996,
+      "requests": 1,
+      "metadata_requests": 1,
+      "full_history_heap_delta_mb": 0.9667587280273438,
+      "options": 1001,
+      "visible_markers_after_zoom": 501
+    },
+    {
+      "revisions": 10000,
+      "metadata_bytes": 810001,
+      "open_ms": 1257.7107670000005,
+      "select_ms": 1939.138645,
+      "zoom_ms": 479.77939699999934,
+      "requests": 1,
+      "metadata_requests": 1,
+      "full_history_heap_delta_mb": 13.04287338256836,
+      "options": 10001,
+      "visible_markers_after_zoom": 5001
+    },
+    {
+      "revisions": 50000,
+      "metadata_bytes": 4050001,
+      "open_ms": 9277.34949,
+      "select_ms": 15458.988834999996,
+      "zoom_ms": 5476.689809999996,
+      "requests": 1,
+      "metadata_requests": 1,
+      "full_history_heap_delta_mb": 71.78282165527344,
+      "options": 50001,
+      "visible_markers_after_zoom": 25000
+    }
+  ],
+  "date": "2026-10-08",
+  "protocol": "Separate revision metadata and snapshot requests; metadata fetched once per profile"
+}

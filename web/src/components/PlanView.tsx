@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { useFira } from '../store';
 import { api } from '../api';
-import type { PlanHistory } from '../planHistory';
+import type { PlanHistory, PlanRevisionList } from '../planHistory';
 import { PlanTimeline } from './PlanTimeline';
 import { useIsMobile } from '../hooks';
 import {
@@ -104,21 +104,51 @@ function PlanBoard({ projectId }: { projectId: UUID }) {
   const setVersionAt = useFira((s) => s.setPlanVersionAt);
   const playground = useFira((s) => s.playgroundMode);
   const workspaceId = useFira((s) => s.activeWorkspaceId);
-  const cursor = useFira((s) => s.cursor);
+  const historyVersion = useFira((s) => s.planHistoryVersions[projectId] ?? 0);
   const showHistory = useFira((s) => s.planShowHistory);
   const toggleHistory = useFira((s) => s.togglePlanHistory);
   const readOnly = versionAt !== null;
   const [history, setHistory] = useState<{ data: PlanHistory; requestedAt: string | null; requestedSeq: number | null } | null>(null);
-  const [historyLoading, setHistoryLoading] = useState(false);
-  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [snapshotLoading, setSnapshotLoading] = useState(false);
+  const [metadataLoading, setMetadataLoading] = useState(false);
+  const [metadata, setMetadata] = useState<PlanRevisionList | null>(null);
+  const metadataCache = useRef<{ scope: string; version: number; data: PlanRevisionList } | null>(null);
+  const [metadataError, setMetadataError] = useState<string | null>(null);
+  const [snapshotError, setSnapshotError] = useState<string | null>(null);
   const [retryHistory, setRetryHistory] = useState(0);
   const lastHistoryRequest = useRef(0);
-  useEffect(() => { setHistory(null); }, [projectId, workspaceId]);
+  const historyLoading = snapshotLoading || metadataLoading;
+  const historyError = snapshotError || metadataError;
+  useEffect(() => { setHistory(null); setMetadata(null); }, [projectId, workspaceId]);
   useEffect(() => {
-    if (playground || !showHistory) { setHistoryLoading(false); return; }
+    if (playground || !showHistory) { setMetadataLoading(false); return; }
+    const scope = `${workspaceId}/${projectId}`;
+    const cached = metadataCache.current?.scope === scope ? metadataCache.current : null;
+    if (cached && cached.version === historyVersion) {
+      setMetadata(cached.data);
+      setMetadataLoading(false);
+      setMetadataError(null);
+      return;
+    }
     let cancelled = false;
-    setHistoryLoading(true);
-    setHistoryError(null);
+    setMetadataLoading(true);
+    setMetadataError(null);
+    const since = cached?.data.changes.at(-1)?.seq ?? 0;
+    api.planHistory(projectId, since).then((delta) => {
+      if (cancelled) return;
+      const data = { genesis: delta.genesis, changes: [...(cached?.data.changes ?? []), ...delta.changes] };
+      metadataCache.current = { scope, version: historyVersion, data };
+      setMetadata(data);
+    }).catch((error: unknown) => {
+      if (!cancelled) setMetadataError(error instanceof Error ? error.message : 'Could not load revisions');
+    }).finally(() => { if (!cancelled) setMetadataLoading(false); });
+    return () => { cancelled = true; };
+  }, [projectId, workspaceId, historyVersion, playground, showHistory, retryHistory]);
+  useEffect(() => {
+    if (playground || !showHistory || versionAt === null) { setSnapshotLoading(false); setSnapshotError(null); return; }
+    let cancelled = false;
+    setSnapshotLoading(true);
+    setSnapshotError(null);
     // Throttle continuous scrubbing; cleanup ignores superseded reads.
     // Keep the last completed projection visible while the playhead moves.
     const timer = window.setTimeout(() => {
@@ -126,11 +156,11 @@ function PlanBoard({ projectId }: { projectId: UUID }) {
       api.planAt(projectId, versionAt, versionSeq).then((data) => {
         if (!cancelled) setHistory({ data, requestedAt: versionAt, requestedSeq: versionSeq });
       }).catch((error: unknown) => {
-        if (!cancelled) setHistoryError(error instanceof Error ? error.message : 'Could not load history');
-      }).finally(() => { if (!cancelled) setHistoryLoading(false); });
+        if (!cancelled) setSnapshotError(error instanceof Error ? error.message : 'Could not load history');
+      }).finally(() => { if (!cancelled) setSnapshotLoading(false); });
     }, Math.max(0, 100 - (performance.now() - lastHistoryRequest.current)));
     return () => { cancelled = true; window.clearTimeout(timer); };
-  }, [projectId, workspaceId, versionAt, versionSeq, cursor, playground, showHistory, retryHistory]);
+  }, [projectId, workspaceId, versionAt, versionSeq, playground, showHistory, retryHistory]);
 
   const tracks = useFira((s) => s.tracks);
   const sprints = useFira((s) => s.sprints);
@@ -816,11 +846,11 @@ function PlanBoard({ projectId }: { projectId: UUID }) {
       </div>
 
       {!playground && showHistory && <section className="plan-history-panel" aria-label="Plan history">
-        <PlanTimeline history={history?.data ?? null}
+        <PlanTimeline history={metadata}
           selectedAt={versionAt} selectedSeq={versionSeq} onSelect={setVersionAt}
           status={historyError ? <><span className="plan-history-message" title={historyError}>{historyError}</span> <button onClick={() => setRetryHistory((v) => v + 1)}>Retry</button></>
-            : historyLoading || !history ? 'Loading…'
-            : !history.data.genesis ? 'No recorded plan history yet' : null} />
+            : historyLoading || !metadata ? 'Loading…'
+            : !metadata.genesis ? 'No recorded plan history yet' : null} />
       </section>}
 
       {confirmSprintCard && (

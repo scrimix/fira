@@ -655,6 +655,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/jira/blocks/:block_id", post(jira::push_block))
         .route("/bootstrap", get(bootstrap))
         .route("/plan/at", get(plan_history::get_at))
+        .route("/plan/history", get(plan_history::get_history))
         .route("/projects", get(projects).post(create_project))
         .route(
             "/projects/:id",

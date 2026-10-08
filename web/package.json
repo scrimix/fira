@@ -13,7 +13,9 @@
     "preview": "vite preview",
     "typecheck": "tsc -b --noEmit",
     "playground:dump": "cd ../api && cargo run --quiet --bin dump-bootstrap > ../web/src/playground/bootstrap.json && echo 'wrote web/src/playground/bootstrap.json'",
-    "visual-check": "node scripts/visual-check.mjs"
+    "visual-check": "node scripts/visual-check.mjs",
+    "plan-history:perf": "node scripts/plan-history-perf.mjs",
+    "plan-history:sync-check": "node scripts/plan-history-sync-check.mjs"
   },
   "dependencies": {
     "@fontsource/inter-tight": "^5.3.0",
