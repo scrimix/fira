@@ -213,7 +213,7 @@ sprint. One attribute, and there's a unit test pinning it.
 ## 5. Removal: three different things, and conflating them loses trust
 
 1. **Remove a task from a sprint** — `task.set_sprint(null)`. Row leaves
-   the card, task reappears in the inbox, counter goes `3/4` → `3/3`.
+   the card and the task reappears in the inbox.
    Fully reversible. **This is the only removal the board's UI offers**:
    drag out, or the `×` on the checklist row.
 2. **Delete the task** — the existing `task.delete`. **The board does
@@ -922,9 +922,11 @@ What 32 owes: the `GET /api/plan/at` handler, `PlanTimeline.tsx` (week
 -granular stops, ticks only on weeks with ≥1 op so the strip doubles as
 a change-density sparkline, inside the horizontal scroll container so
 each tick sits over its week column), the drift overlay (solid =
-scrubbed, ghost = live, `→ +3w` badges, `3/4 (now 5/7)` counters),
-deleted-task resurrection in the projection, the live-vs-replay
-equivalence assertion, and a `visual-check` block that scrubs and shoots.
+scrubbed, ghost = live, `→ +3w` badges), the live-vs-replay equivalence
+assertion, and a `visual-check` block that scrubs and shoots. Card
+counters stay removed (§11c); the checklist and all-done dimming already
+show completion. Deleted-task resurrection is already implemented and
+covered by the pure projection tests (§8).
 
 Also deferred, deliberately: a genesis clamp. The scrubber's left stop is
 the project's earliest op, with one honest banner ("History for this

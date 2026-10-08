@@ -34,6 +34,7 @@ pub const PLAN_KINDS: &[&str] = &[
     "task.set_status",
     "task.set_section",
     "task.set_title",
+    "task.reorder",
     "task.move_project",
     "track.create",
     "track.set_title",
@@ -159,6 +160,7 @@ impl Fold {
                     entry.1.title = t.title;
                     entry.1.section = t.section;
                     entry.1.status = t.status;
+                    entry.1.sort_key = t.sort_key;
                 }
             }
             return;
@@ -185,6 +187,20 @@ impl Fold {
                         },
                     ),
                 );
+            }
+            Op::TaskReorder {
+                project_id,
+                ordered,
+            } => {
+                // Mirror the live handler's project predicate and key format.
+                // Unknown or foreign ids still occupy their input positions.
+                for (i, task_id) in ordered.iter().enumerate() {
+                    if let Some((_, t)) = self.tasks.get_mut(task_id) {
+                        if t.project_id == project_id {
+                            t.sort_key = format!("{:08}", (i + 1) * 1000);
+                        }
+                    }
+                }
             }
             Op::TaskDelete { task_id } => {
                 self.tasks.remove(&task_id);
@@ -638,6 +654,55 @@ mod tests {
     }
 
     #[test]
+    fn task_reorder_replays_sort_keys_at_each_point_in_time() {
+        let ops = log(&[
+            (1, task_create(20, None, "First")),
+            (1, task_create(21, None, "Second")),
+            (
+                2,
+                json!({"kind":"task.reorder","project_id":uid(PROJ),
+                       "ordered":[uid(21), uid(20)]}),
+            ),
+            (
+                8,
+                json!({"kind":"task.reorder","project_id":uid(PROJ),
+                       "ordered":[uid(20), uid(21)]}),
+            ),
+        ]);
+        let keys = |day| {
+            project_at(&ops, t(day))
+                .tasks
+                .into_iter()
+                .map(|task| task.sort_key)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(keys(1), ["M", "M"]);
+        assert_eq!(keys(5), ["00002000", "00001000"]);
+        assert_eq!(keys(9), ["00001000", "00002000"]);
+    }
+
+    #[test]
+    fn task_reorder_ignores_foreign_and_unknown_ids_without_closing_gaps() {
+        let mut foreign = task_create(22, None, "Foreign");
+        foreign["task"]["project_id"] = json!(uid(2));
+        let ops = log(&[
+            (1, task_create(20, None, "First")),
+            (1, task_create(21, None, "Unchanged")),
+            (1, foreign),
+            (
+                2,
+                json!({"kind":"task.reorder","project_id":uid(PROJ),
+                       "ordered":[uid(22), uid(99), uid(20)]}),
+            ),
+        ]);
+        let state = project_at(&ops, t(9));
+        assert_eq!(state.tasks.len(), 3);
+        assert_eq!(state.tasks[0].sort_key, "00003000");
+        assert_eq!(state.tasks[1].sort_key, "M");
+        assert_eq!(state.tasks[2].sort_key, "M");
+    }
+
+    #[test]
     fn a_moved_task_loses_both_plan_links() {
         let ops = log(&[
             (1, sprint_create(10, None, "2026-09-07", "2026-09-21")),
@@ -650,7 +715,7 @@ mod tests {
                     "to_project_id": uid(2),
                     "task": {
                         "id": uid(20), "project_id": uid(2), "title": "Emigrant",
-                        "section": "later", "status": "todo", "sort_key": "M",
+                        "section": "later", "status": "todo", "sort_key": "00009000~",
                     },
                     "blocks": [],
                 }),
@@ -663,6 +728,7 @@ mod tests {
         assert_eq!(after.tasks[0].project_id, uid(2));
         assert_eq!(after.tasks[0].sprint_id, None);
         assert_eq!(after.tasks[0].track_id, None);
+        assert_eq!(after.tasks[0].sort_key, "00009000~");
     }
 
     #[test]
