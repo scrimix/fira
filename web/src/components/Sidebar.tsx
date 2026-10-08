@@ -1,4 +1,4 @@
-import { CalendarDays, LayoutDashboard, List, Settings } from 'lucide-react';
+import { CalendarDays, GanttChartSquare, LayoutDashboard, List, Settings } from 'lucide-react';
 import { useFira } from '../store';
 import { useIsMobile } from '../hooks';
 import { ProjectIcon } from './ProjectIcon';
@@ -19,12 +19,42 @@ export function Sidebar() {
   // On mobile, every nav action should also close the slide-over so the
   // user lands on the destination view without an extra tap-outside step.
   const close = () => { if (isMobile) setSidebarOpen(false); };
-  // The "active project" is whichever one the list is filtered to. We only
-  // surface the highlight while the list view is open — on the calendar,
-  // every project is in scope simultaneously so a single-project highlight
-  // would lie about the visible content.
-  const activeProjectId = useFira((s) => s.listFilter.project_id);
-  const showProjectActive = view === 'list';
+  // Every surface here is project-scopable, so picking a project scopes
+  // the view you are in rather than throwing it away for the list.
+  // Each view already owns its own cursor; this just routes to it.
+  const setPlanProject = useFira((s) => s.setPlanProject);
+  const setDashboardProject = useFira((s) => s.setDashboardProject);
+  const soloProjectFilter = useFira((s) => s.soloProjectFilter);
+  const listProjectId = useFira((s) => s.listFilter.project_id);
+  const planProjectId = useFira((s) => s.planProjectId);
+  const dashboardProjectId = useFira((s) => s.dashboardProjectId);
+  const projectFilter = useFira((s) => s.projectFilter);
+
+  const pickProject = (id: string) => {
+    if (view === 'plan') setPlanProject(id);
+    else if (view === 'dashboard') setDashboardProject(id);
+    // The calendar is a time surface across every project, so its
+    // scoping gesture is its own visibility filter — the same solo a
+    // double-click on the rail's project row performs.
+    else if (view === 'calendar') soloProjectFilter(id);
+    else setView('list', id);
+    close();
+  };
+
+  // The highlight follows whatever the current view is actually scoped
+  // to. On the calendar that's only truthful when exactly one project
+  // is visible — otherwise a single-project highlight would lie about
+  // what's on screen, which is why this used to be list-only.
+  const soloedOnCalendar = () => {
+    const visible = projects.filter((p) => projectFilter[p.id] !== false);
+    return visible.length === 1 ? visible[0].id : null;
+  };
+  const activeProjectId =
+    view === 'plan' ? planProjectId
+      : view === 'dashboard' ? dashboardProjectId
+        : view === 'calendar' ? soloedOnCalendar()
+          : listProjectId;
+  const showProjectActive = activeProjectId != null;
   // Project create is owner-only. Leads administer existing projects
   // (rename, set members) but resource allocation — adding new projects
   // to a workspace — stays with the workspace owner.
@@ -52,6 +82,18 @@ export function Sidebar() {
                 onClick={() => { setView('list'); close(); }} title="List (I)">
           <List size={16} strokeWidth={1.75} />
         </button>
+        {/* Plan sits between List and Dashboard: the three are a
+            widening sequence over the same tasks — one project's
+            document, one project's quarter, then the aggregate. The
+            dashboard is the roll-up and belongs last.
+
+            Plan is available on desktop in production too. */}
+        {!isMobile && (
+          <button className="nav-btn" data-active={view === 'plan'}
+                  onClick={() => { setView('plan'); close(); }} title="Plan (P)">
+            <GanttChartSquare size={16} strokeWidth={1.75} />
+          </button>
+        )}
         <button className="nav-btn" data-active={view === 'dashboard'}
                 onClick={() => { setView('dashboard'); close(); }} title="Dashboard (D)">
           <LayoutDashboard size={16} strokeWidth={1.75} />
@@ -68,7 +110,7 @@ export function Sidebar() {
               data-proj-inactive={inactive}
               style={active ? { ['--proj-color' as string]: p.color } : undefined}
               title={inactive ? `${p.title} (inactive)` : p.title}
-              onClick={() => { setView('list', p.id); close(); }}
+              onClick={() => pickProject(p.id)}
             >
               <ProjectIcon name={p.icon} color={inactive ? 'var(--ink-4)' : p.color} size={16} />
             </button>

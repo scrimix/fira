@@ -4,7 +4,7 @@
 // authorization (`ensure_scope.rs`), for calendar visibility
 // (`db::list_blocks_in_scope` joins blocks through the task's project),
 // for the change feed (`processed_ops.project_id`), and for the four
-// things a task points at: tags, epic, sprint, Jira project. Moving a
+// things a task points at: tags, track, sprint, Jira project. Moving a
 // task moves all of that out from under it, so this is a REST endpoint
 // with a confirm gate rather than an outbox op:
 //
@@ -127,14 +127,14 @@ pub async fn move_task(
     .fetch_one(&mut *tx)
     .await?;
 
-    // epic_id / sprint_id both FK into project-scoped tables and have no
+    // track_id / sprint_id both FK into project-scoped tables and have no
     // sane counterpart in the target, so they clear. Together with the
     // tag drop below this is the irreversible part of the move — moving
     // the task back does not restore any of it.
     sqlx::query(
         "UPDATE tasks
          SET project_id = $2,
-             epic_id = NULL,
+             track_id = NULL,
              sprint_id = NULL,
              sort_key = $3,
              external_url = COALESCE(external_url, $4::text),

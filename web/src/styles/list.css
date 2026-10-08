@@ -457,7 +457,6 @@
   display: grid;
   place-items: center;
 }
-}
 .assignee-head .ah-rule { flex: 1; height: 1px; background: var(--rule); }
 .assignee-head .ah-count {
   font-size: calc(11px * var(--fs-scale) * var(--label-size));

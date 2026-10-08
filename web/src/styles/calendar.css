@@ -34,7 +34,7 @@
 .cal-toolbar { white-space: nowrap; }
 .cal-toolbar > * { flex-shrink: 0; }
 .cal-toolbar .week-label { font-weight: 500; white-space: nowrap; }
-.cal-toolbar .week-nav {
+:is(.cal-toolbar, .plan-revision-toolbar) .week-nav {
   display: inline-flex;
   align-items: stretch;
   border: 1px solid var(--rule-2);
@@ -44,7 +44,7 @@
   overflow: hidden;
   background: var(--paper);
 }
-.cal-toolbar .week-nav-btn {
+:is(.cal-toolbar, .plan-revision-toolbar) .week-nav-btn {
   padding: 0 8px;
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
@@ -57,8 +57,8 @@
   display: inline-grid;
   place-items: center;
 }
-.cal-toolbar .week-nav-btn:last-child { border-right: 0; }
-.cal-toolbar .week-nav-btn:hover { color: var(--ink); background: var(--paper-3); }
+:is(.cal-toolbar, .plan-revision-toolbar) .week-nav-btn:last-child { border-right: 0; }
+:is(.cal-toolbar, .plan-revision-toolbar) .week-nav-btn:hover { color: var(--ink); background: var(--paper-3); }
 .cal-toolbar .week-nav-btn.week-nav-today { letter-spacing: 0.06em; text-transform: uppercase; font-size: calc(10px * var(--fs-scale)); }
 .cal-toolbar .week-nav-btn.week-nav-today[data-active="true"] {
   color: var(--accent);

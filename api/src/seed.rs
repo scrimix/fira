@@ -9,9 +9,15 @@
 // seed time so the demo always shows a believable "morning done, rest
 // planned" snapshot regardless of which day of the week the seeder runs on.
 
+use anyhow::Context;
 use chrono::{DateTime, Datelike, Duration, NaiveDate, TimeZone, Utc};
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
+
+use crate::ops::{
+    BlockInput, GoalInput, Op, SprintInput, SubtaskInput, TagInput, TaskInput, TrackInput,
+};
+use crate::storage::{LocalStorage, StorageBackend};
 
 const NS: Uuid = Uuid::from_bytes([
     0x6f, 0x9b, 0x4e, 0xa1, 0x12, 0x3d, 0x4a, 0x8e, 0xb1, 0x77, 0xc2, 0x91, 0x05, 0xe6, 0xfa, 0x42,
@@ -49,13 +55,6 @@ fn fmt_md(d: NaiveDate) -> String {
     format!("{} {}", MONTHS[d.month0() as usize], d.day())
 }
 
-fn sprint_dates(start_offset: i64, end_offset: i64) -> String {
-    let anchor = week_anchor().date_naive();
-    let start = anchor + Duration::days(start_offset);
-    let end = anchor + Duration::days(end_offset);
-    format!("{} – {}", fmt_md(start), fmt_md(end))
-}
-
 /// Wipe the per-tenant fixture tables. Leaves auth-only tables (`sessions`,
 /// `processed_ops`) alone so the calling user's session survives a reseed.
 pub async fn wipe(tx: &mut Transaction<'_, Postgres>) -> sqlx::Result<()> {
@@ -73,7 +72,7 @@ pub async fn wipe(tx: &mut Transaction<'_, Postgres>) -> sqlx::Result<()> {
         "subtasks",
         "tasks",
         "sprints",
-        "epics",
+        "tracks",
         "project_members",
         "projects",
         "workspace_members",
@@ -98,7 +97,7 @@ pub const TEAM_WORKSPACE_SLUG: &str = "w_team";
 
 /// Insert all fixture data. Caller is responsible for opening/committing
 /// the transaction and for any preceding wipe.
-pub async fn seed_all(tx: &mut Transaction<'_, Postgres>) -> sqlx::Result<()> {
+pub async fn seed_all(tx: &mut Transaction<'_, Postgres>) -> anyhow::Result<()> {
     // ---- Users ----
     // google_sub is filled with a stable `dev-*` placeholder so a real Google
     // login doesn't collide with these fixture users (real subs are numeric
@@ -250,96 +249,20 @@ pub async fn seed_all(tx: &mut Transaction<'_, Postgres>) -> sqlx::Result<()> {
         }
     }
 
-    // ---- Epics ----
-    let epics = [
-        ("e_auth_v2", "p_atlas", "Auth v2 (refresh + SSO)"),
-        ("e_billing", "p_atlas", "Billing reliability"),
-        ("e_perf", "p_atlas", "Perf + observability"),
-        ("e_sync_engine", "p_relay", "Sync engine v1"),
-        ("e_onboarding", "p_relay", "Source onboarding"),
-        ("e_search", "p_helix", "Semantic task search"),
-        ("e_explore", "p_helix", "Misc exploration"),
-    ];
-    for (slug, proj, title) in epics {
-        sqlx::query("INSERT INTO epics (id, project_id, title) VALUES ($1,$2,$3)")
-            .bind(id(slug))
-            .bind(id(proj))
-            .bind(title)
-            .execute(&mut **tx)
-            .await?;
-    }
-
-    // ---- Sprints ----
-    // Dates are computed relative to this week's Monday so the active sprint
-    // always brackets "today". Offsets in days from week_anchor.
-    let anchor_date = week_anchor().date_naive();
-    let q_start = anchor_date;
-    let q_end = anchor_date + Duration::days(60);
-    let sprints = [
-        (
-            "s_apr27",
-            "p_atlas",
-            format!("Atlas · {}", fmt_md(anchor_date)),
-            sprint_dates(0, 11),
-            true,
-        ),
-        (
-            "s_may11",
-            "p_atlas",
-            format!("Atlas · {}", fmt_md(anchor_date + Duration::days(14))),
-            sprint_dates(14, 25),
-            false,
-        ),
-        (
-            "s_relay9",
-            "p_relay",
-            "Relay · Sprint 9".to_string(),
-            sprint_dates(-5, 8),
-            true,
-        ),
-        (
-            "s_relay10",
-            "p_relay",
-            "Relay · Sprint 10".to_string(),
-            sprint_dates(9, 22),
-            false,
-        ),
-        (
-            "s_helix_q2",
-            "p_helix",
-            "Helix · Q2".to_string(),
-            format!(
-                "{} – {}",
-                MONTHS[q_start.month0() as usize],
-                MONTHS[q_end.month0() as usize]
-            ),
-            true,
-        ),
-    ];
-    for (slug, proj, title, dates, active) in &sprints {
-        let (slug, proj, title, dates, active) =
-            (*slug, *proj, title.as_str(), dates.as_str(), *active);
-        sqlx::query(
-            "INSERT INTO sprints (id, project_id, title, dates, active)
-             VALUES ($1,$2,$3,$4,$5)",
-        )
-        .bind(id(slug))
-        .bind(id(proj))
-        .bind(title)
-        .bind(dates)
-        .bind(active)
-        .execute(&mut **tx)
-        .await?;
-    }
-
-    // ---- Tasks ----
-    seed_tasks(tx).await?;
-
-    // ---- Time blocks ----
-    seed_blocks(tx).await?;
-    // After blocks: the goals reference tasks and tags that must already
-    // exist, and their grids are only interesting once there's history.
-    seed_goals(tx).await?;
+    // ---- Content, as a backdated op log ----
+    // Everything below tenancy goes through the real op handlers rather
+    // than direct INSERTs, so the fixture's end state is by construction
+    // what its history produces. See `Fixture`.
+    let mut f = Fixture::new();
+    fixture_tracks(&mut f);
+    fixture_sprints(&mut f);
+    fixture_tags(&mut f);
+    fixture_tasks(&mut f);
+    fixture_plan_history(&mut f);
+    fixture_blocks(&mut f);
+    fixture_goals(&mut f);
+    f.apply(tx).await?;
+    backdate_fixups(tx).await?;
 
     // ---- GCal events ----
     let gcals = [
@@ -367,10 +290,87 @@ pub async fn seed_all(tx: &mut Transaction<'_, Postgres>) -> sqlx::Result<()> {
     Ok(())
 }
 
+// --- Content as ops ---
+//
+// Tenancy above is direct INSERT (there is no `user.create` op — users
+// arrive via OAuth). Everything below it is a backdated op script fed
+// through `ops::apply_payload`, which is the same seam production uses.
+// Two payoffs: a reseed exercises every content op handler, and the dev
+// DB gets a real `processed_ops` history for the plan view's version
+// scrubber to replay.
+
+/// Anchor-relative. `w(-8)` = Monday, eight weeks back.
+fn w(weeks: i64) -> DateTime<Utc> {
+    week_anchor() + Duration::weeks(weeks)
+}
+
+struct FixtureOp {
+    when: DateTime<Utc>,
+    /// Whoever "made" the change. `task.create` stamps `created_by` from
+    /// it, so passing the assignee preserves the pre-conversion fixture.
+    actor: Uuid,
+    op: Op,
+}
+
+struct Fixture {
+    ops: Vec<FixtureOp>,
+    /// Only reached by `task.delete`, and the fixture has no
+    /// attachments, so nothing ever touches the filesystem.
+    storage: StorageBackend,
+}
+
+impl Fixture {
+    fn new() -> Self {
+        Fixture {
+            ops: Vec::new(),
+            storage: StorageBackend::Local(LocalStorage::new("/tmp/fira-seed-storage".into())),
+        }
+    }
+
+    fn at(&mut self, when: DateTime<Utc>, actor: Uuid, op: Op) -> &mut Self {
+        self.ops.push(FixtureOp { when, actor, op });
+        self
+    }
+
+    /// One transaction, not one per op: production isolates ops so a bad
+    /// one doesn't poison its neighbours, but a seeder wants
+    /// all-or-nothing.
+    async fn apply(mut self, tx: &mut Transaction<'_, Postgres>) -> anyhow::Result<()> {
+        // Chronological so `seq` agrees with `applied_at`, as in
+        // production — the projection orders by `seq`. Stable, so ops
+        // sharing a timestamp keep their emission order and a create
+        // still precedes the tick that follows it.
+        self.ops.sort_by_key(|o| o.when);
+        let workspace_id = id(TEAM_WORKSPACE_SLUG);
+        for FixtureOp { when, actor, op } in self.ops {
+            let kind = op.kind_str();
+            let payload = serde_json::to_value(&op)?;
+            let mut project_id = None;
+            crate::ops::apply_payload(tx, actor, workspace_id, op, &mut project_id, &self.storage)
+                .await
+                .with_context(|| format!("seed op {kind} at {when}"))?;
+            crate::ops::record_fixture_op(
+                tx,
+                actor,
+                workspace_id,
+                kind,
+                payload,
+                project_id,
+                when,
+            )
+            .await?;
+        }
+        Ok(())
+    }
+}
+
 struct TaskSpec {
     slug: &'static str,
+    /// Weeks before `week_anchor()` the task was created. Anything a
+    /// time block references must predate the earliest block (week -5).
+    created_w: i64,
     project: &'static str,
-    epic: Option<&'static str>,
+    track: Option<&'static str>,
     sprint: Option<&'static str>,
     assignee: &'static str,
     title: &'static str,
@@ -386,393 +386,682 @@ struct TaskSpec {
     subtasks: &'static [(&'static str, bool)], // (title, done)
 }
 
-async fn seed_tasks(tx: &mut Transaction<'_, Postgres>) -> sqlx::Result<()> {
-    let tasks: &[TaskSpec] = &[
-        // ---- ATLAS Now ----
-        TaskSpec {
-            slug: "t_atlas_oauth", project: "p_atlas", epic: Some("e_auth_v2"), sprint: Some("s_apr27"),
-            assignee: "u_maya", title: "OAuth refresh token rotation",
-            description: "Rotate refresh tokens on every use. Invalidate the old token within a 30-second grace window.\n\nFollow RFC 6749 §10.4 + §6 recommendations.",
-            section: "now", status: "in_progress", priority: Some("p1"),
-            source: "jira", external_id: Some("ATL-412"),
-            estimate_min: Some(360), spent_min: 120, tags: &["auth", "security"],
-            subtasks: &[
-                ("Audit current refresh logic", true),
-                ("Add rotation endpoint", true),
-                ("Migrate existing tokens", false),
-                ("Backfill metrics dashboard", false),
-            ],
-        },
-        TaskSpec {
-            slug: "t_atlas_billing", project: "p_atlas", epic: Some("e_billing"), sprint: Some("s_apr27"),
-            assignee: "u_maya", title: "Stripe webhook idempotency",
-            description: "Webhook delivery is at-least-once. Dedup by event id, store last 30 days.",
-            section: "now", status: "in_progress", priority: Some("p1"),
-            source: "jira", external_id: Some("ATL-433"),
-            estimate_min: Some(240), spent_min: 60, tags: &["billing"],
-            subtasks: &[
-                ("Create dedup table", true),
-                ("Wrap webhook handlers", false),
-                ("Add metrics", false),
-            ],
-        },
-        TaskSpec {
-            slug: "t_atlas_review", project: "p_atlas", epic: Some("e_perf"), sprint: Some("s_apr27"),
-            assignee: "u_maya", title: "Code review: rate-limit middleware",
-            description: "Bob's PR. Token bucket per IP + per user. Check the redis fallback.",
-            section: "now", status: "todo", priority: Some("p2"),
-            source: "jira", external_id: Some("ATL-440"),
-            estimate_min: Some(60), spent_min: 0, tags: &["review"],
-            subtasks: &[],
-        },
-        TaskSpec {
-            slug: "t_atlas_sso", project: "p_atlas", epic: Some("e_auth_v2"), sprint: Some("s_may11"),
-            assignee: "u_anna", title: "SAML SSO for enterprise tier",
-            description: "",
-            section: "now", status: "todo", priority: Some("p1"),
-            source: "jira", external_id: Some("ATL-451"),
-            estimate_min: Some(480), spent_min: 0, tags: &["auth", "enterprise"],
-            subtasks: &[],
-        },
-        TaskSpec {
-            slug: "t_atlas_logs", project: "p_atlas", epic: Some("e_perf"), sprint: Some("s_may11"),
-            assignee: "u_anna", title: "Audit log retention policy",
-            description: "",
-            section: "now", status: "todo", priority: Some("p2"),
-            source: "jira", external_id: Some("ATL-446"),
-            estimate_min: Some(180), spent_min: 0, tags: &["compliance"],
-            subtasks: &[],
-        },
-        TaskSpec {
-            slug: "t_atlas_perf", project: "p_atlas", epic: Some("e_perf"), sprint: Some("s_apr27"),
-            assignee: "u_bob", title: "Investigate p99 spike on /sessions",
-            description: "p99 went from 80ms → 320ms after the auth refactor merge. Bisect commits.",
-            section: "now", status: "in_progress", priority: Some("p0"),
-            source: "jira", external_id: Some("ATL-449"),
-            estimate_min: Some(240), spent_min: 60, tags: &["perf"],
-            subtasks: &[],
-        },
-        // ---- RELAY Now ----
-        TaskSpec {
-            slug: "t_relay_jira", project: "p_relay", epic: Some("e_sync_engine"), sprint: Some("s_relay9"),
-            assignee: "u_maya", title: "Jira webhook → task upsert",
-            description: "Receive Jira webhook, debounce 500ms, upsert task by external_id.",
-            section: "now", status: "in_progress", priority: Some("p1"),
-            source: "notion", external_id: Some("sync-engine/47"),
-            estimate_min: Some(300), spent_min: 90, tags: &["sync"],
-            subtasks: &[
-                ("Webhook signature verification", true),
-                ("Debounce queue", false),
-                ("Conflict detection (source_updated_at > last_synced_at)", false),
-            ],
-        },
-        TaskSpec {
-            slug: "t_relay_diff", project: "p_relay", epic: Some("e_sync_engine"), sprint: Some("s_relay9"),
-            assignee: "u_maya", title: "Diff viewer for diverged tasks",
-            description: "When a task is diverged, show side-by-side diff so user picks a side.",
-            section: "now", status: "todo", priority: Some("p2"),
-            source: "notion", external_id: Some("sync-engine/52"),
-            estimate_min: Some(240), spent_min: 0, tags: &["ui"],
-            subtasks: &[],
-        },
-        TaskSpec {
-            slug: "t_relay_notion", project: "p_relay", epic: Some("e_onboarding"), sprint: Some("s_relay10"),
-            assignee: "u_jin", title: "Notion column-mapping flow",
-            description: "",
-            section: "now", status: "todo", priority: Some("p1"),
-            source: "notion", external_id: Some("sync-engine/55"),
-            estimate_min: Some(360), spent_min: 0, tags: &["onboarding"],
-            subtasks: &[],
-        },
-        // ---- HELIX Now ----
-        TaskSpec {
-            slug: "t_helix_emb", project: "p_helix", epic: Some("e_search"), sprint: Some("s_helix_q2"),
-            assignee: "u_maya", title: "Sentence embeddings for task search",
-            description: "Try bge-small + qdrant, measure recall@10 on held-out set.",
-            section: "now", status: "in_progress", priority: Some("p2"),
-            source: "local", external_id: None,
-            estimate_min: Some(240), spent_min: 30, tags: &["research"],
-            subtasks: &[
-                ("Spin up qdrant locally", true),
-                ("Index 1k sample tasks", false),
-                ("Build held-out eval", false),
-            ],
-        },
-        TaskSpec {
-            slug: "t_helix_idea", project: "p_helix", epic: Some("e_explore"), sprint: Some("s_helix_q2"),
-            assignee: "u_maya", title: "Sketch: estimate-confidence band on tasks",
-            description: "",
-            section: "now", status: "todo", priority: Some("p3"),
-            source: "local", external_id: None,
-            estimate_min: Some(60), spent_min: 0, tags: &["design"],
-            subtasks: &[],
-        },
-        // ---- RECURRING ----
-        // Ongoing commitments — the task itself is the schedule, the
-        // calendar blocks are the instances. Demoes the recurring-section
-        // styling: completed blocks tint muted/strikethrough; planned
-        // blocks stay normal (no "stale planned" warning).
-        TaskSpec {
-            slug: "t_atlas_standup", project: "p_atlas", epic: None, sprint: None,
-            assignee: "u_maya", title: "Daily standup",
-            description: "Atlas + Relay team. 30 min before OAuth kickoff. Skip Wednesdays — design review day.",
-            section: "recurring", status: "in_progress", priority: None,
-            source: "local", external_id: None,
-            estimate_min: None, spent_min: 0, tags: &[],
-            subtasks: &[],
-        },
-        TaskSpec {
-            slug: "t_atlas_codereview", project: "p_atlas", epic: None, sprint: None,
-            assignee: "u_maya", title: "Weekly code review block",
-            description: "Tue afternoon. Burn down the PR queue.",
-            section: "recurring", status: "in_progress", priority: None,
-            source: "local", external_id: None,
-            estimate_min: None, spent_min: 0, tags: &["review"],
-            subtasks: &[],
-        },
-        // ---- LATER ----
-        TaskSpec {
-            slug: "t_atlas_later1", project: "p_atlas", epic: Some("e_auth_v2"), sprint: None,
-            assignee: "u_maya", title: "Magic-link auth fallback",
-            description: "",
-            section: "later", status: "backlog", priority: Some("p2"),
-            source: "jira", external_id: Some("ATL-501"),
-            estimate_min: None, spent_min: 0, tags: &[],
-            subtasks: &[],
-        },
-        TaskSpec {
-            slug: "t_atlas_later2", project: "p_atlas", epic: Some("e_auth_v2"), sprint: None,
-            assignee: "u_maya", title: "Admin UI: revoke session",
-            description: "",
-            section: "later", status: "backlog", priority: Some("p3"),
-            source: "jira", external_id: Some("ATL-510"),
-            estimate_min: Some(180), spent_min: 0, tags: &[],
-            subtasks: &[],
-        },
-        TaskSpec {
-            slug: "t_atlas_later3", project: "p_atlas", epic: Some("e_auth_v2"), sprint: None,
-            assignee: "u_maya", title: "Investigate FIDO2 / passkeys",
-            description: "",
-            section: "later", status: "backlog", priority: Some("p3"),
-            source: "jira", external_id: Some("ATL-515"),
-            estimate_min: None, spent_min: 0, tags: &[],
-            subtasks: &[],
-        },
-        TaskSpec {
-            slug: "t_relay_later1", project: "p_relay", epic: Some("e_onboarding"), sprint: None,
-            assignee: "u_maya", title: "GitHub Issues source adapter",
-            description: "",
-            section: "later", status: "backlog", priority: Some("p3"),
-            source: "notion", external_id: Some("sync-engine/61"),
-            estimate_min: None, spent_min: 0, tags: &[],
-            subtasks: &[],
-        },
-        TaskSpec {
-            slug: "t_relay_later2", project: "p_relay", epic: Some("e_sync_engine"), sprint: None,
-            assignee: "u_maya", title: "Bug: Notion poll skips archived pages",
-            description: "Spotted in standup 2026-04-28. Repro: archive a page, watch poll cycle.",
-            section: "later", status: "backlog", priority: Some("p2"),
-            source: "local", external_id: None,
-            estimate_min: Some(60), spent_min: 0, tags: &[],
-            subtasks: &[],
-        },
-        TaskSpec {
-            slug: "t_helix_later1", project: "p_helix", epic: Some("e_explore"), sprint: None,
-            assignee: "u_maya", title: "Read: \"Notion Calendar postmortem\" blog",
-            description: "",
-            section: "later", status: "backlog", priority: Some("p3"),
-            source: "local", external_id: None,
-            estimate_min: Some(30), spent_min: 0, tags: &[],
-            subtasks: &[],
-        },
-        TaskSpec {
-            slug: "t_helix_later2", project: "p_helix", epic: Some("e_explore"), sprint: None,
-            assignee: "u_maya", title: "Try DuckDB for snapshot replay queries",
-            description: "",
-            section: "later", status: "backlog", priority: Some("p3"),
-            source: "local", external_id: None,
-            estimate_min: None, spent_min: 0, tags: &[],
-            subtasks: &[],
-        },
-        // ---- SOMEDAY ----
-        TaskSpec {
-            slug: "t_atlas_someday1", project: "p_atlas", epic: Some("e_auth_v2"), sprint: None,
-            assignee: "u_maya", title: "Hardware token (YubiKey) onboarding flow",
-            description: "",
-            section: "someday", status: "backlog", priority: Some("p3"),
-            source: "jira", external_id: Some("ATL-602"),
-            estimate_min: None, spent_min: 0, tags: &[],
-            subtasks: &[],
-        },
-        TaskSpec {
-            slug: "t_relay_someday1", project: "p_relay", epic: Some("e_onboarding"), sprint: None,
-            assignee: "u_maya", title: "Linear source adapter",
-            description: "",
-            section: "someday", status: "backlog", priority: Some("p3"),
-            source: "local", external_id: None,
-            estimate_min: None, spent_min: 0, tags: &[],
-            subtasks: &[],
-        },
-        TaskSpec {
-            slug: "t_helix_someday1", project: "p_helix", epic: Some("e_explore"), sprint: None,
-            assignee: "u_maya", title: "Voice-input for quick-capture (research)",
-            description: "",
-            section: "someday", status: "backlog", priority: Some("p3"),
-            source: "local", external_id: None,
-            estimate_min: None, spent_min: 0, tags: &[],
-            subtasks: &[],
-        },
-        // ---- DONE ----
-        TaskSpec {
-            slug: "t_atlas_done_today", project: "p_atlas", epic: Some("e_auth_v2"), sprint: None,
-            assignee: "u_maya", title: "Publish API rate-limit guide", description: "",
-            section: "done", status: "done", priority: Some("p2"), source: "local", external_id: None,
-            estimate_min: Some(60), spent_min: 45, tags: &["auth"], subtasks: &[],
-        },
-        TaskSpec {
-            slug: "t_atlas_done_yesterday", project: "p_atlas", epic: Some("e_auth_v2"), sprint: None,
-            assignee: "u_maya", title: "Tighten billing export permissions", description: "",
-            section: "done", status: "done", priority: Some("p1"), source: "local", external_id: None,
-            estimate_min: Some(90), spent_min: 75, tags: &["billing"], subtasks: &[],
-        },
-        TaskSpec {
-            slug: "t_atlas_done_recent", project: "p_atlas", epic: Some("e_auth_v2"), sprint: None,
-            assignee: "u_maya", title: "Clean up stale webhook subscriptions", description: "",
-            section: "done", status: "done", priority: Some("p2"), source: "local", external_id: None,
-            estimate_min: Some(120), spent_min: 110, tags: &[], subtasks: &[],
-        },
-        TaskSpec {
-            slug: "t_atlas_done_last_week", project: "p_atlas", epic: Some("e_auth_v2"), sprint: None,
-            assignee: "u_maya", title: "Retire legacy OAuth callback", description: "",
-            section: "done", status: "done", priority: Some("p3"), source: "local", external_id: None,
-            estimate_min: Some(45), spent_min: 30, tags: &[], subtasks: &[],
-        },
-        TaskSpec {
-            slug: "t_atlas_done_july_one", project: "p_atlas", epic: Some("e_auth_v2"), sprint: None,
-            assignee: "u_maya", title: "Document the recovery runbook", description: "",
-            section: "done", status: "done", priority: Some("p2"), source: "local", external_id: None,
-            estimate_min: Some(180), spent_min: 165, tags: &["security"], subtasks: &[],
-        },
-        TaskSpec {
-            slug: "t_atlas_done_july_two", project: "p_atlas", epic: Some("e_auth_v2"), sprint: None,
-            assignee: "u_maya", title: "Replace the email delivery retry worker", description: "",
-            section: "done", status: "done", priority: Some("p2"), source: "local", external_id: None,
-            estimate_min: Some(240), spent_min: 210, tags: &[], subtasks: &[],
-        },
-        TaskSpec {
-            slug: "t_atlas_done_older", project: "p_atlas", epic: Some("e_auth_v2"), sprint: None,
-            assignee: "u_maya", title: "Audit infrastructure access grants", description: "",
-            section: "done", status: "done", priority: Some("p1"), source: "local", external_id: None,
-            estimate_min: Some(300), spent_min: 275, tags: &[], subtasks: &[],
-        },
-        TaskSpec {
-            slug: "t_atlas_done1", project: "p_atlas", epic: Some("e_auth_v2"), sprint: Some("s_apr27"),
-            assignee: "u_maya", title: "Migrate session store to Redis 7",
-            description: "",
-            section: "done", status: "done", priority: None,
-            source: "jira", external_id: Some("ATL-401"),
-            estimate_min: Some(240), spent_min: 280, tags: &[],
-            subtasks: &[],
-        },
-        TaskSpec {
-            slug: "t_relay_done1", project: "p_relay", epic: Some("e_sync_engine"), sprint: Some("s_relay9"),
-            assignee: "u_maya", title: "Initial Jira OAuth flow",
-            description: "",
-            section: "done", status: "done", priority: None,
-            source: "notion", external_id: Some("sync-engine/40"),
-            estimate_min: Some(360), spent_min: 420, tags: &[],
-            subtasks: &[],
-        },
-        TaskSpec {
-            slug: "t_helix_done1", project: "p_helix", epic: Some("e_search"), sprint: Some("s_helix_q2"),
-            assignee: "u_maya", title: "Spike: pgvector vs qdrant benchmark",
-            description: "",
-            section: "done", status: "done", priority: None,
-            source: "local", external_id: None,
-            estimate_min: Some(180), spent_min: 240, tags: &[],
-            subtasks: &[],
-        },
-    ];
+static TASKS: &[TaskSpec] = &[
+    // ---- ATLAS Now ----
+    TaskSpec {
+        slug: "t_atlas_oauth", created_w: -9, project: "p_atlas", track: Some("e_auth_v2"), sprint: Some("s_apr27"),
+        assignee: "u_maya", title: "OAuth refresh token rotation",
+        description: "Rotate refresh tokens on every use. Invalidate the old token within a 30-second grace window.\n\nFollow RFC 6749 §10.4 + §6 recommendations.",
+        section: "now", status: "in_progress", priority: Some("p1"),
+        source: "jira", external_id: Some("ATL-412"),
+        estimate_min: Some(360), spent_min: 120, tags: &["auth", "security"],
+        subtasks: &[
+            ("Audit current refresh logic", true),
+            ("Add rotation endpoint", true),
+            ("Migrate existing tokens", false),
+            ("Backfill metrics dashboard", false),
+        ],
+    },
+    TaskSpec {
+        slug: "t_atlas_billing", created_w: -9, project: "p_atlas", track: Some("e_billing"), sprint: Some("s_apr27"),
+        assignee: "u_maya", title: "Stripe webhook idempotency",
+        description: "Webhook delivery is at-least-once. Dedup by event id, store last 30 days.",
+        section: "now", status: "in_progress", priority: Some("p1"),
+        source: "jira", external_id: Some("ATL-433"),
+        estimate_min: Some(240), spent_min: 60, tags: &["billing"],
+        subtasks: &[
+            ("Create dedup table", true),
+            ("Wrap webhook handlers", false),
+            ("Add metrics", false),
+        ],
+    },
+    TaskSpec {
+        slug: "t_atlas_review", created_w: -8, project: "p_atlas", track: Some("e_perf"), sprint: Some("s_apr27"),
+        assignee: "u_maya", title: "Code review: rate-limit middleware",
+        description: "Bob's PR. Token bucket per IP + per user. Check the redis fallback.",
+        section: "now", status: "todo", priority: Some("p2"),
+        source: "jira", external_id: Some("ATL-440"),
+        estimate_min: Some(60), spent_min: 0, tags: &["review"],
+        subtasks: &[],
+    },
+    TaskSpec {
+        slug: "t_atlas_sso", created_w: -8, project: "p_atlas", track: Some("e_auth_v2"), sprint: Some("s_may11"),
+        assignee: "u_anna", title: "SAML SSO for enterprise tier",
+        description: "",
+        section: "now", status: "todo", priority: Some("p1"),
+        source: "jira", external_id: Some("ATL-451"),
+        estimate_min: Some(480), spent_min: 0, tags: &["auth", "enterprise"],
+        subtasks: &[],
+    },
+    TaskSpec {
+        slug: "t_atlas_logs", created_w: -7, project: "p_atlas", track: Some("e_perf"), sprint: Some("s_may11"),
+        assignee: "u_anna", title: "Audit log retention policy",
+        description: "",
+        section: "now", status: "todo", priority: Some("p2"),
+        source: "jira", external_id: Some("ATL-446"),
+        estimate_min: Some(180), spent_min: 0, tags: &["compliance"],
+        subtasks: &[],
+    },
+    TaskSpec {
+        slug: "t_atlas_perf", created_w: -8, project: "p_atlas", track: Some("e_perf"), sprint: Some("s_apr27"),
+        assignee: "u_bob", title: "Investigate p99 spike on /sessions",
+        description: "p99 went from 80ms → 320ms after the auth refactor merge. Bisect commits.",
+        section: "now", status: "in_progress", priority: Some("p0"),
+        source: "jira", external_id: Some("ATL-449"),
+        estimate_min: Some(240), spent_min: 60, tags: &["perf"],
+        subtasks: &[],
+    },
+    // ---- RELAY Now ----
+    TaskSpec {
+        slug: "t_relay_jira", created_w: -9, project: "p_relay", track: Some("e_sync_engine"), sprint: Some("s_relay9"),
+        assignee: "u_maya", title: "Jira webhook → task upsert",
+        description: "Receive Jira webhook, debounce 500ms, upsert task by external_id.",
+        section: "now", status: "in_progress", priority: Some("p1"),
+        source: "notion", external_id: Some("sync-engine/47"),
+        estimate_min: Some(300), spent_min: 90, tags: &["sync"],
+        subtasks: &[
+            ("Webhook signature verification", true),
+            ("Debounce queue", false),
+            ("Conflict detection (source_updated_at > last_synced_at)", false),
+        ],
+    },
+    TaskSpec {
+        slug: "t_relay_diff", created_w: -7, project: "p_relay", track: Some("e_sync_engine"), sprint: Some("s_relay9"),
+        assignee: "u_maya", title: "Diff viewer for diverged tasks",
+        description: "When a task is diverged, show side-by-side diff so user picks a side.",
+        section: "now", status: "todo", priority: Some("p2"),
+        source: "notion", external_id: Some("sync-engine/52"),
+        estimate_min: Some(240), spent_min: 0, tags: &["ui"],
+        subtasks: &[],
+    },
+    TaskSpec {
+        slug: "t_relay_notion", created_w: -7, project: "p_relay", track: Some("e_onboarding"), sprint: Some("s_relay10"),
+        assignee: "u_jin", title: "Notion column-mapping flow",
+        description: "",
+        section: "now", status: "todo", priority: Some("p1"),
+        source: "notion", external_id: Some("sync-engine/55"),
+        estimate_min: Some(360), spent_min: 0, tags: &["onboarding"],
+        subtasks: &[],
+    },
+    // ---- HELIX Now ----
+    TaskSpec {
+        slug: "t_helix_emb", created_w: -9, project: "p_helix", track: Some("e_search"), sprint: Some("s_helix_q2"),
+        assignee: "u_maya", title: "Sentence embeddings for task search",
+        description: "Try bge-small + qdrant, measure recall@10 on held-out set.",
+        section: "now", status: "in_progress", priority: Some("p2"),
+        source: "local", external_id: None,
+        estimate_min: Some(240), spent_min: 30, tags: &["research"],
+        subtasks: &[
+            ("Spin up qdrant locally", true),
+            ("Index 1k sample tasks", false),
+            ("Build held-out eval", false),
+        ],
+    },
+    TaskSpec {
+        slug: "t_helix_idea", created_w: -7, project: "p_helix", track: Some("e_explore"), sprint: Some("s_helix_q2"),
+        assignee: "u_maya", title: "Sketch: estimate-confidence band on tasks",
+        description: "",
+        section: "now", status: "todo", priority: Some("p3"),
+        source: "local", external_id: None,
+        estimate_min: Some(60), spent_min: 0, tags: &["design"],
+        subtasks: &[],
+    },
+    // ---- RECURRING ----
+    // Ongoing commitments — the task itself is the schedule, the
+    // calendar blocks are the instances. Demoes the recurring-section
+    // styling: completed blocks tint muted/strikethrough; planned
+    // blocks stay normal (no "stale planned" warning).
+    TaskSpec {
+        slug: "t_atlas_standup", created_w: -10, project: "p_atlas", track: None, sprint: None,
+        assignee: "u_maya", title: "Daily standup",
+        description: "Atlas + Relay team. 30 min before OAuth kickoff. Skip Wednesdays — design review day.",
+        section: "recurring", status: "in_progress", priority: None,
+        source: "local", external_id: None,
+        estimate_min: None, spent_min: 0, tags: &[],
+        subtasks: &[],
+    },
+    TaskSpec {
+        slug: "t_atlas_codereview", created_w: -10, project: "p_atlas", track: None, sprint: None,
+        assignee: "u_maya", title: "Weekly code review block",
+        description: "Tue afternoon. Burn down the PR queue.",
+        section: "recurring", status: "in_progress", priority: None,
+        source: "local", external_id: None,
+        estimate_min: None, spent_min: 0, tags: &["review"],
+        subtasks: &[],
+    },
+    // ---- LATER ----
+    TaskSpec {
+        slug: "t_atlas_later1", created_w: -4, project: "p_atlas", track: Some("e_auth_v2"), sprint: None,
+        assignee: "u_maya", title: "Magic-link auth fallback",
+        description: "",
+        section: "later", status: "backlog", priority: Some("p2"),
+        source: "jira", external_id: Some("ATL-501"),
+        estimate_min: None, spent_min: 0, tags: &[],
+        subtasks: &[],
+    },
+    TaskSpec {
+        slug: "t_atlas_later2", created_w: -5, project: "p_atlas", track: Some("e_auth_v2"), sprint: None,
+        assignee: "u_maya", title: "Admin UI: revoke session",
+        description: "",
+        section: "later", status: "backlog", priority: Some("p3"),
+        source: "jira", external_id: Some("ATL-510"),
+        estimate_min: Some(180), spent_min: 0, tags: &[],
+        subtasks: &[],
+    },
+    TaskSpec {
+        slug: "t_atlas_later3", created_w: -4, project: "p_atlas", track: Some("e_auth_v2"), sprint: None,
+        assignee: "u_maya", title: "Investigate FIDO2 / passkeys",
+        description: "",
+        section: "later", status: "backlog", priority: Some("p3"),
+        source: "jira", external_id: Some("ATL-515"),
+        estimate_min: None, spent_min: 0, tags: &[],
+        subtasks: &[],
+    },
+    TaskSpec {
+        slug: "t_relay_later1", created_w: -4, project: "p_relay", track: Some("e_onboarding"), sprint: None,
+        assignee: "u_maya", title: "GitHub Issues source adapter",
+        description: "",
+        section: "later", status: "backlog", priority: Some("p3"),
+        source: "notion", external_id: Some("sync-engine/61"),
+        estimate_min: None, spent_min: 0, tags: &[],
+        subtasks: &[],
+    },
+    TaskSpec {
+        slug: "t_relay_later2", created_w: -2, project: "p_relay", track: Some("e_sync_engine"), sprint: None,
+        assignee: "u_maya", title: "Bug: Notion poll skips archived pages",
+        description: "Spotted in standup 2026-04-28. Repro: archive a page, watch poll cycle.",
+        section: "later", status: "backlog", priority: Some("p2"),
+        source: "local", external_id: None,
+        estimate_min: Some(60), spent_min: 0, tags: &[],
+        subtasks: &[],
+    },
+    TaskSpec {
+        slug: "t_helix_later1", created_w: -3, project: "p_helix", track: Some("e_explore"), sprint: None,
+        assignee: "u_maya", title: "Read: \"Notion Calendar postmortem\" blog",
+        description: "",
+        section: "later", status: "backlog", priority: Some("p3"),
+        source: "local", external_id: None,
+        estimate_min: Some(30), spent_min: 0, tags: &[],
+        subtasks: &[],
+    },
+    TaskSpec {
+        slug: "t_helix_later2", created_w: -1, project: "p_helix", track: Some("e_explore"), sprint: None,
+        assignee: "u_maya", title: "Try DuckDB for snapshot replay queries",
+        description: "",
+        section: "later", status: "backlog", priority: Some("p3"),
+        source: "local", external_id: None,
+        estimate_min: None, spent_min: 0, tags: &[],
+        subtasks: &[],
+    },
+    // ---- SOMEDAY ----
+    TaskSpec {
+        slug: "t_atlas_someday1", created_w: -8, project: "p_atlas", track: Some("e_auth_v2"), sprint: None,
+        assignee: "u_maya", title: "Hardware token (YubiKey) onboarding flow",
+        description: "",
+        section: "someday", status: "backlog", priority: Some("p3"),
+        source: "jira", external_id: Some("ATL-602"),
+        estimate_min: None, spent_min: 0, tags: &[],
+        subtasks: &[],
+    },
+    TaskSpec {
+        slug: "t_relay_someday1", created_w: -5, project: "p_relay", track: Some("e_onboarding"), sprint: None,
+        assignee: "u_maya", title: "Linear source adapter",
+        description: "",
+        section: "someday", status: "backlog", priority: Some("p3"),
+        source: "local", external_id: None,
+        estimate_min: None, spent_min: 0, tags: &[],
+        subtasks: &[],
+    },
+    TaskSpec {
+        slug: "t_helix_someday1", created_w: -4, project: "p_helix", track: Some("e_explore"), sprint: None,
+        assignee: "u_maya", title: "Voice-input for quick-capture (research)",
+        description: "",
+        section: "someday", status: "backlog", priority: Some("p3"),
+        source: "local", external_id: None,
+        estimate_min: None, spent_min: 0, tags: &[],
+        subtasks: &[],
+    },
+    // ---- DONE ----
+    TaskSpec {
+        slug: "t_atlas_done_today", created_w: -8, project: "p_atlas", track: Some("e_auth_v2"), sprint: None,
+        assignee: "u_maya", title: "Publish API rate-limit guide", description: "",
+        section: "done", status: "done", priority: Some("p2"), source: "local", external_id: None,
+        estimate_min: Some(60), spent_min: 45, tags: &["auth"], subtasks: &[],
+    },
+    TaskSpec {
+        slug: "t_atlas_done_yesterday", created_w: -8, project: "p_atlas", track: Some("e_auth_v2"), sprint: None,
+        assignee: "u_maya", title: "Tighten billing export permissions", description: "",
+        section: "done", status: "done", priority: Some("p1"), source: "local", external_id: None,
+        estimate_min: Some(90), spent_min: 75, tags: &["billing"], subtasks: &[],
+    },
+    TaskSpec {
+        slug: "t_atlas_done_recent", created_w: -7, project: "p_atlas", track: Some("e_auth_v2"), sprint: None,
+        assignee: "u_maya", title: "Clean up stale webhook subscriptions", description: "",
+        section: "done", status: "done", priority: Some("p2"), source: "local", external_id: None,
+        estimate_min: Some(120), spent_min: 110, tags: &[], subtasks: &[],
+    },
+    TaskSpec {
+        slug: "t_atlas_done_last_week", created_w: -10, project: "p_atlas", track: Some("e_auth_v2"), sprint: None,
+        assignee: "u_maya", title: "Retire legacy OAuth callback", description: "",
+        section: "done", status: "done", priority: Some("p3"), source: "local", external_id: None,
+        estimate_min: Some(45), spent_min: 30, tags: &[], subtasks: &[],
+    },
+    TaskSpec {
+        slug: "t_atlas_done_july_one", created_w: -10, project: "p_atlas", track: Some("e_auth_v2"), sprint: None,
+        assignee: "u_maya", title: "Document the recovery runbook", description: "",
+        section: "done", status: "done", priority: Some("p2"), source: "local", external_id: None,
+        estimate_min: Some(180), spent_min: 165, tags: &["security"], subtasks: &[],
+    },
+    TaskSpec {
+        slug: "t_atlas_done_july_two", created_w: -12, project: "p_atlas", track: Some("e_auth_v2"), sprint: None,
+        assignee: "u_maya", title: "Replace the email delivery retry worker", description: "",
+        section: "done", status: "done", priority: Some("p2"), source: "local", external_id: None,
+        estimate_min: Some(240), spent_min: 210, tags: &[], subtasks: &[],
+    },
+    TaskSpec {
+        slug: "t_atlas_done_older", created_w: -12, project: "p_atlas", track: Some("e_auth_v2"), sprint: None,
+        assignee: "u_maya", title: "Audit infrastructure access grants", description: "",
+        section: "done", status: "done", priority: Some("p1"), source: "local", external_id: None,
+        estimate_min: Some(300), spent_min: 275, tags: &[], subtasks: &[],
+    },
+    // ---- DONE, AND NEVER PLANNED ----
+    //
+    // The retro band's whole case: work that got finished without going
+    // through a sprint. Every other done task here is placed, so without
+    // these the band is empty on a fresh seed and the feature can't be
+    // seen — and "we kept working without sprints for a fortnight" is
+    // the ordinary case it exists to answer, not an edge one.
+    //
+    // No `sprint`, recent enough to land inside the board's default
+    // -6..+10 window, and spread over three fortnights so the band shows
+    // more than one bucket.
+    TaskSpec {
+        slug: "t_atlas_loose1", created_w: -6, project: "p_atlas", track: None, sprint: None,
+        assignee: "u_maya", title: "Swap the staging TLS certificate", description: "",
+        section: "done", status: "done", priority: Some("p1"), source: "local", external_id: None,
+        estimate_min: Some(60), spent_min: 50, tags: &["security"], subtasks: &[],
+    },
+    TaskSpec {
+        slug: "t_atlas_loose2", created_w: -5, project: "p_atlas", track: None, sprint: None,
+        assignee: "u_maya", title: "Unblock the finance CSV export", description: "",
+        section: "done", status: "done", priority: Some("p1"), source: "local", external_id: None,
+        estimate_min: Some(90), spent_min: 120, tags: &["billing"], subtasks: &[],
+    },
+    TaskSpec {
+        slug: "t_atlas_loose3", created_w: -4, project: "p_atlas", track: None, sprint: None,
+        assignee: "u_maya", title: "Answer the SOC2 evidence request", description: "",
+        section: "done", status: "done", priority: Some("p2"), source: "local", external_id: None,
+        estimate_min: Some(120), spent_min: 150, tags: &["compliance"], subtasks: &[],
+    },
+    TaskSpec {
+        slug: "t_atlas_loose4", created_w: -3, project: "p_atlas", track: None, sprint: None,
+        assignee: "u_maya", title: "Rotate the webhook signing secret", description: "",
+        section: "done", status: "done", priority: Some("p2"), source: "local", external_id: None,
+        estimate_min: Some(45), spent_min: 40, tags: &["security"], subtasks: &[],
+    },
+    TaskSpec {
+        slug: "t_atlas_loose5", created_w: -2, project: "p_atlas", track: None, sprint: None,
+        assignee: "u_maya", title: "Trim the noisy pager rule", description: "",
+        section: "done", status: "done", priority: Some("p3"), source: "local", external_id: None,
+        estimate_min: Some(30), spent_min: 25, tags: &[], subtasks: &[],
+    },
+    TaskSpec {
+        slug: "t_atlas_done1", created_w: -8, project: "p_atlas", track: Some("e_auth_v2"), sprint: Some("s_apr27"),
+        assignee: "u_maya", title: "Migrate session store to Redis 7",
+        description: "",
+        section: "done", status: "done", priority: None,
+        source: "jira", external_id: Some("ATL-401"),
+        estimate_min: Some(240), spent_min: 280, tags: &[],
+        subtasks: &[],
+    },
+    TaskSpec {
+        slug: "t_relay_done1", created_w: -8, project: "p_relay", track: Some("e_sync_engine"), sprint: Some("s_relay9"),
+        assignee: "u_maya", title: "Initial Jira OAuth flow",
+        description: "",
+        section: "done", status: "done", priority: None,
+        source: "notion", external_id: Some("sync-engine/40"),
+        estimate_min: Some(360), spent_min: 420, tags: &[],
+        subtasks: &[],
+    },
+    TaskSpec {
+        slug: "t_helix_done1", created_w: -8, project: "p_helix", track: Some("e_search"), sprint: Some("s_helix_q2"),
+        assignee: "u_maya", title: "Spike: pgvector vs qdrant benchmark",
+        description: "",
+        section: "done", status: "done", priority: None,
+        source: "local", external_id: None,
+        estimate_min: Some(180), spent_min: 240, tags: &[],
+        subtasks: &[],
+    },
+];
 
-    // Distinct (project, tag-title) pairs across all task specs become real
-    // tag rows. Slug for the tag's deterministic UUID is `tag_<project>_<title>`
-    // so the same name in two projects gets two distinct tag rows.
-    let palette = [
-        "#0F766E", "#B45309", "#6D28D9", "#1D4ED8", "#BE123C", "#4D7C0F", "#9333EA",
+fn fixture_tracks(f: &mut Fixture) {
+    for (i, (slug, project, title, color)) in TRACKS.iter().enumerate() {
+        // Before every sprint and task, so their track_id resolves.
+        f.at(
+            w(-13),
+            primary_user_id(),
+            track_create(slug, project, title, color, i),
+        );
+    }
+}
+
+/// `(slug, project, title, color)`.
+const TRACKS: [(&str, &str, &str, &str); 7] = [
+    ("e_auth_v2", "p_atlas", "Auth v2 (refresh + SSO)", "#0F766E"),
+    ("e_billing", "p_atlas", "Billing reliability", "#B45309"),
+    ("e_perf", "p_atlas", "Perf + observability", "#6D28D9"),
+    ("e_sync_engine", "p_relay", "Sync engine v1", "#1D4ED8"),
+    ("e_onboarding", "p_relay", "Source onboarding", "#BE123C"),
+    ("e_search", "p_helix", "Semantic task search", "#4D7C0F"),
+    ("e_explore", "p_helix", "Misc exploration", "#9333EA"),
+];
+
+/// Sprints the current-week fixture needs, with real week spans. The
+/// ones bracketing `w(0)` are what makes "this sprint" meaningful in the
+/// list; `fixture_plan_history` adds the past.
+fn fixture_sprints(f: &mut Fixture) {
+    let anchor = week_anchor().date_naive();
+    let title_dated = |weeks: i64| format!("Atlas · {}", fmt_md(anchor + Duration::weeks(weeks)));
+    let sprints: [(&str, &str, &str, String, i64, i64); 5] = [
+        ("s_apr27", "p_atlas", "e_auth_v2", title_dated(0), 0, 2),
+        ("s_may11", "p_atlas", "e_perf", title_dated(2), 2, 4),
+        (
+            "s_relay9",
+            "p_relay",
+            "e_sync_engine",
+            "Relay · Sprint 9".into(),
+            -1,
+            1,
+        ),
+        (
+            "s_relay10",
+            "p_relay",
+            "e_onboarding",
+            "Relay · Sprint 10".into(),
+            1,
+            3,
+        ),
+        ("s_helix_q2", "p_helix", "e_search", "Helix · Q2".into(), 0, 8),
     ];
-    let mut seen: std::collections::HashSet<(&'static str, &'static str)> = Default::default();
-    let mut palette_cursor: usize = 0;
-    for t in tasks {
-        for tag_title in t.tags.iter().copied() {
-            if seen.insert((t.project, tag_title)) {
-                let color = palette[palette_cursor % palette.len()];
-                palette_cursor += 1;
-                let tag_slug = format!("tag_{}_{}", t.project, tag_title);
-                sqlx::query(
-                    "INSERT INTO tags (id, project_id, title, color)
-                     VALUES ($1, $2, $3, $4)",
-                )
-                .bind(id(&tag_slug))
-                .bind(id(t.project))
-                .bind(tag_title)
-                .bind(color)
-                .execute(&mut **tx)
-                .await?;
+    for (i, (slug, project, track, title, from, to)) in sprints.iter().enumerate() {
+        f.at(
+            w(-12),
+            primary_user_id(),
+            sprint_create(slug, project, Some(track), title, *from, *to, i),
+        );
+    }
+}
+
+fn track_create(slug: &str, project: &str, title: &str, color: &str, i: usize) -> Op {
+    Op::TrackCreate {
+        track: TrackInput {
+            id: id(slug),
+            project_id: id(project),
+            title: title.to_string(),
+            color: color.to_string(),
+            sort_key: format!("M{i:03}"),
+        },
+    }
+}
+
+/// `from`/`to` are weeks relative to the anchor; `to` is exclusive.
+fn sprint_create(
+    slug: &str,
+    project: &str,
+    track: Option<&str>,
+    title: &str,
+    from: i64,
+    to: i64,
+    i: usize,
+) -> Op {
+    Op::SprintCreate {
+        sprint: SprintInput {
+            id: id(slug),
+            project_id: id(project),
+            track_id: track.map(id),
+            title: title.to_string(),
+            starts_on: Some(w(from).date_naive()),
+            ends_on: Some(w(to).date_naive()),
+            sort_key: format!("M{i:03}"),
+        },
+    }
+}
+
+fn set_dates(slug: &str, from: i64, to: i64) -> Op {
+    Op::SprintSetDates {
+        sprint_id: id(slug),
+        starts_on: w(from).date_naive(),
+        ends_on: w(to).date_naive(),
+    }
+}
+
+fn set_sprint(task: &str, sprint: Option<&str>) -> Op {
+    Op::TaskSetSprint {
+        task_id: id(task),
+        sprint_id: sprint.map(id),
+    }
+}
+
+/// Twelve weeks of plan history for Atlas. Hand-written because it *is*
+/// a narrative — the point of the version scrubber is that specific
+/// things slipped on specific weeks, and random churn demonstrates
+/// nothing. Every state the drift overlay can render appears here once.
+fn fixture_plan_history(f: &mut Fixture) {
+    let me = primary_user_id();
+    let d = |days: i64| Duration::days(days);
+
+    // ---- W-12: the baseline board ----
+    f.at(w(-12), me, sprint_create("sp_a1", "p_atlas", Some("e_auth_v2"), "Atlas · Groundwork", -12, -10, 10));
+    f.at(w(-12), me, sprint_create("sp_a2", "p_atlas", Some("e_auth_v2"), "Atlas · Token rotation", -10, -8, 11));
+    f.at(w(-12), me, sprint_create("sp_a3", "p_atlas", Some("e_billing"), "Atlas · Billing hardening", -8, -6, 12));
+    f.at(w(-12) + d(1), me, set_sprint("t_atlas_done_older", Some("sp_a1")));
+    f.at(w(-12) + d(1), me, set_sprint("t_atlas_done_july_two", Some("sp_a1")));
+
+    // ---- W-10: a healthy climbing done-count ----
+    f.at(w(-10), me, set_sprint("t_atlas_done_july_one", Some("sp_a2")));
+    f.at(w(-10), me, set_sprint("t_atlas_done_last_week", Some("sp_a2")));
+
+    // ---- W-8: the headline slip ----
+    f.at(w(-8), me, set_dates("sp_a2", -8, -6));
+    f.at(w(-8) + d(1), me, set_sprint("t_atlas_done_yesterday", Some("sp_a3")));
+    f.at(w(-8) + d(1), me, set_sprint("t_atlas_done_today", Some("sp_a3")));
+    f.at(w(-8) + d(1), me, set_sprint("t_atlas_someday1", Some("sp_a3")));
+
+    // ---- W-7: a sprint that won't survive ----
+    f.at(w(-7), me, sprint_create("sp_a5", "p_atlas", Some("e_perf"), "Atlas · Scratch", -6, -4, 13));
+
+    // ---- W-6: the retrack, and scope creep mid-sprint ----
+    f.at(w(-6), me, Op::SprintSetTrack { sprint_id: id("sp_a3"), track_id: Some(id("e_perf")) });
+    f.at(w(-6) + d(1), me, set_sprint("t_atlas_done_recent", Some("sp_a2")));
+
+    // ---- W-5: a task that is later deleted outright. Not in TASKS: its
+    // end state is "gone", and it exists to give the scrubber's
+    // resurrection path something real to rebuild.
+    f.at(w(-5), me, Op::TaskCreate {
+        task: TaskInput {
+            id: id("t_atlas_dropped"),
+            project_id: id("p_atlas"),
+            track_id: Some(id("e_perf")),
+            sprint_id: None,
+            assignee_id: Some(me),
+            title: "Retire the v1 metrics pipeline".to_string(),
+            description_md: String::new(),
+            section: "later".to_string(),
+            status: "todo".to_string(),
+            priority: None,
+            source: "local".to_string(),
+            external_id: None,
+            external_url: None,
+            estimate_min: Some(90),
+            spent_min: 0,
+            tag_ids: vec![],
+            sort_key: "M".into(),
+        },
+    });
+    f.at(w(-5) + d(1), me, set_sprint("t_atlas_dropped", Some("sp_a2")));
+    f.at(w(-4) + d(3), me, Op::TaskTick { task_id: id("t_atlas_dropped"), done: true });
+
+    // ---- W-4: "added since T", and a membership drop ----
+    f.at(w(-4), me, sprint_create("sp_a4", "p_atlas", Some("e_perf"), "Atlas · Observability", -4, -2, 14));
+    f.at(w(-4) + d(1), me, set_sprint("t_atlas_later1", Some("sp_a4")));
+    f.at(w(-4) + d(1), me, set_sprint("t_atlas_later2", Some("sp_a4")));
+    f.at(w(-4) + d(2), me, set_sprint("t_atlas_someday1", None));
+
+    // ---- W-3 ----
+    f.at(w(-3), me, set_sprint("t_atlas_later3", Some("sp_a5")));
+
+    // ---- W-2: the resurrection case, and tasks returning to the inbox ----
+    f.at(w(-2), me, Op::TaskDelete { task_id: id("t_atlas_dropped") });
+    f.at(w(-2) + d(1), me, Op::SprintDelete { sprint_id: id("sp_a5") });
+
+    // ---- W-1: cumulative drift, not a one-off ----
+    f.at(w(-1), me, set_dates("sp_a2", -8, -5));
+}
+
+/// Palette for the derived tag rows. Cursor advances per distinct
+/// (project, title) pair, in TASKS order.
+const TAG_PALETTE: [&str; 7] = [
+    "#0F766E", "#B45309", "#6D28D9", "#1D4ED8", "#BE123C", "#4D7C0F", "#9333EA",
+];
+
+fn tag_slug(project: &str, title: &str) -> String {
+    format!("tag_{project}_{title}")
+}
+
+/// Distinct (project, tag-title) pairs across TASKS become tag rows.
+/// The same name in two projects gets two distinct tags.
+fn fixture_tags(f: &mut Fixture) {
+    let mut seen: std::collections::HashSet<(&str, &str)> = Default::default();
+    let mut cursor = 0usize;
+    for t in TASKS {
+        for title in t.tags.iter().copied() {
+            if !seen.insert((t.project, title)) {
+                continue;
             }
+            let color = TAG_PALETTE[cursor % TAG_PALETTE.len()];
+            cursor += 1;
+            // Before every task, so `task.create`'s tag_ids resolve.
+            f.at(
+                w(-13),
+                id(t.assignee),
+                Op::TagCreate {
+                    tag: TagInput {
+                        id: id(&tag_slug(t.project, title)),
+                        project_id: id(t.project),
+                        title: title.to_string(),
+                        color: color.to_string(),
+                    },
+                },
+            );
         }
     }
+}
 
-    for t in tasks {
-        sqlx::query(
-            "INSERT INTO tasks (id, project_id, epic_id, sprint_id, assignee_id,
-                title, description_md, section, status, priority,
-                source, external_id, estimate_min, spent_min, created_by,
-                finished_at)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,
-                CASE WHEN $9 = 'done' THEN now() ELSE NULL END)",
+fn fixture_tasks(f: &mut Fixture) {
+    for t in TASKS {
+        let actor = id(t.assignee);
+        let created = w(t.created_w);
+        f.at(
+            created,
+            actor,
+            Op::TaskCreate {
+                task: TaskInput {
+                    id: id(t.slug),
+                    project_id: id(t.project),
+                    track_id: t.track.map(id),
+                    sprint_id: t.sprint.map(id),
+                    assignee_id: Some(actor),
+                    title: t.title.to_string(),
+                    description_md: t.description.to_string(),
+                    section: t.section.to_string(),
+                    status: t.status.to_string(),
+                    priority: t.priority.map(str::to_string),
+                    source: t.source.to_string(),
+                    external_id: t.external_id.map(str::to_string),
+                    external_url: None,
+                    estimate_min: t.estimate_min,
+                    spent_min: t.spent_min,
+                    tag_ids: t
+                        .tags
+                        .iter()
+                        .map(|title| id(&tag_slug(t.project, title)))
+                        .collect(),
+                    sort_key: "M".into(),
+                },
+            },
+        );
+
+        for (i, (title, done)) in t.subtasks.iter().enumerate() {
+            f.at(
+                created,
+                actor,
+                Op::SubtaskCreate {
+                    subtask: SubtaskInput {
+                        id: id(&format!("{}_s{}", t.slug, i)),
+                        task_id: id(t.slug),
+                        title: title.to_string(),
+                        done: false,
+                        sort_key: format!("M{i:03}"),
+                    },
+                },
+            );
+            if *done {
+                f.at(
+                    created + Duration::days(1),
+                    actor,
+                    Op::SubtaskTick {
+                        subtask_id: id(&format!("{}_s{}", t.slug, i)),
+                        done: true,
+                    },
+                );
+            }
+        }
+
+        // `task.create` doesn't stamp `finished_at` — only a transition
+        // into done does. Ticking is also the truer history: the task
+        // existed before it was finished.
+        if t.status == "done" {
+            f.at(
+                created + Duration::days(2),
+                actor,
+                Op::TaskTick {
+                    task_id: id(t.slug),
+                    done: true,
+                },
+            );
+        }
+    }
+}
+
+/// Timestamps no op writes. Has to be a post-pass: `created_at` and
+/// `finished_at` are both server-managed (`DEFAULT now()`, and the tick
+/// handler hardcodes `now()`), and teaching production SQL about
+/// seeding would be backwards.
+async fn backdate_fixups(tx: &mut Transaction<'_, Postgres>) -> sqlx::Result<()> {
+    // Match the row to the op log that created it, or the retro band's
+    // created_at fallback disagrees with the history it replays.
+    for t in TASKS {
+        sqlx::query("UPDATE tasks SET created_at = $2 WHERE id = $1")
+            .bind(id(t.slug))
+            .bind(w(t.created_w))
+            .execute(&mut **tx)
+            .await?;
+    }
+    // No op writes `active` — the plan board reads the span and its
+    // "now" marker instead. Set here so the list's sprint filter keeps
+    // the same three current sprints it had before the op conversion.
+    sqlx::query("UPDATE sprints SET active = true WHERE id = ANY($1)")
+        .bind(
+            ["s_apr27", "s_relay9", "s_helix_q2"]
+                .iter()
+                .map(|s| id(s))
+                .collect::<Vec<_>>(),
         )
-        .bind(id(t.slug))
-        .bind(id(t.project))
-        .bind(t.epic.map(id))
-        .bind(t.sprint.map(id))
-        .bind(id(t.assignee))
-        .bind(t.title)
-        .bind(t.description)
-        .bind(t.section)
-        .bind(t.status)
-        .bind(t.priority)
-        .bind(t.source)
-        .bind(t.external_id)
-        .bind(t.estimate_min)
-        .bind(t.spent_min)
-        .bind(id(t.assignee))
         .execute(&mut **tx)
         .await?;
 
-        for tag_title in t.tags.iter().copied() {
-            sqlx::query("INSERT INTO task_tags (task_id, tag_id) VALUES ($1, $2)")
-                .bind(id(t.slug))
-                .bind(id(&format!("tag_{}_{}", t.project, tag_title)))
-                .execute(&mut **tx)
-                .await?;
-        }
-
-        for (i, (title, done)) in t.subtasks.iter().enumerate() {
-            sqlx::query(
-                "INSERT INTO subtasks (id, task_id, title, done, sort_key)
-                 VALUES ($1,$2,$3,$4,$5)",
-            )
-            .bind(id(&format!("{}_s{}", t.slug, i)))
-            .bind(id(t.slug))
-            .bind(*title)
-            .bind(*done)
-            .bind(format!("M{:03}", i))
-            .execute(&mut **tx)
-            .await?;
-        }
-    }
-    // Spread completed Atlas fixtures across archive periods so the Done
-    // grouping UI is useful immediately after each backend reseed.
+    // Spread the completed Atlas fixtures across archive periods so the
+    // Done grouping is useful immediately.
     for (slug, days_ago) in [
         ("t_atlas_done_today", 0_i64),
         ("t_atlas_done_yesterday", 1),
@@ -781,6 +1070,13 @@ async fn seed_tasks(tx: &mut Transaction<'_, Postgres>) -> sqlx::Result<()> {
         ("t_atlas_done_july_one", 14),
         ("t_atlas_done_july_two", 35),
         ("t_atlas_done_older", 75),
+        // Unplanned finishes, newest first. Three fortnights' worth, so
+        // the retro band renders as a band rather than one lone bucket.
+        ("t_atlas_loose5", 6),
+        ("t_atlas_loose4", 11),
+        ("t_atlas_loose3", 18),
+        ("t_atlas_loose2", 25),
+        ("t_atlas_loose1", 31),
     ] {
         sqlx::query("UPDATE tasks SET finished_at = now() - ($2 * INTERVAL '1 day') WHERE id = $1")
             .bind(id(slug))
@@ -788,11 +1084,10 @@ async fn seed_tasks(tx: &mut Transaction<'_, Postgres>) -> sqlx::Result<()> {
             .execute(&mut **tx)
             .await?;
     }
-
     Ok(())
 }
 
-async fn seed_blocks(tx: &mut Transaction<'_, Postgres>) -> sqlx::Result<()> {
+fn fixture_blocks(f: &mut Fixture) {
     // (day, start_min, dur_min, state, task_slug). State is hardcoded per
     // block — explicitly NOT derived from the wallclock at seed time. The
     // dump-bootstrap snapshot freezes "now", so a wallclock-driven state
@@ -843,22 +1138,26 @@ async fn seed_blocks(tx: &mut Transaction<'_, Postgres>) -> sqlx::Result<()> {
     ];
     for (i, (day, start_min, dur, state, slug)) in blocks.iter().enumerate() {
         let start_at = ts(*day, *start_min);
-        let end_at = ts(*day, *start_min + *dur);
-        sqlx::query(
-            "INSERT INTO time_blocks (id, task_id, user_id, start_at, end_at, state)
-             VALUES ($1,$2,$3,$4,$5,$6)",
-        )
-        .bind(id(&format!("b_{i}")))
-        .bind(id(slug))
-        .bind(primary_user_id())
-        .bind(start_at)
-        .bind(end_at)
-        .bind(*state)
-        .execute(&mut **tx)
-        .await?;
+        // Logged at the moment the block starts: the fixture's history
+        // then reads as "planned the week it happened", and `seq`
+        // follows the calendar.
+        f.at(
+            start_at,
+            primary_user_id(),
+            Op::BlockCreate {
+                block: BlockInput {
+                    id: id(&format!("b_{i}")),
+                    task_id: id(slug),
+                    user_id: primary_user_id(),
+                    start_at,
+                    end_at: ts(*day, *start_min + *dur),
+                    state: state.to_string(),
+                },
+            },
+        );
     }
 
-    seed_block_history(tx, blocks.len()).await
+    fixture_block_history(f, blocks.len());
 }
 
 /// Five prior weeks of history, so the month dashboard has something to
@@ -875,10 +1174,7 @@ async fn seed_blocks(tx: &mut Transaction<'_, Postgres>) -> sqlx::Result<()> {
 /// the standup lapses. A perfectly regular fixture makes the heatmap and
 /// the day-of-week bars look synthetic and hides bugs in the "active
 /// days" / "avg per active day" maths.
-async fn seed_block_history(
-    tx: &mut Transaction<'_, Postgres>,
-    id_offset: usize,
-) -> sqlx::Result<()> {
+fn fixture_block_history(f: &mut Fixture, id_offset: usize) {
     // (week, day, start_min, dur_min, task_slug). `week` counts back from
     // the current week: -1 is last week. `day` is 0=Mon .. 6=Sun.
     let h: &[(i64, i64, i64, i64, &str)] = &[
@@ -957,27 +1253,28 @@ async fn seed_block_history(
     for (i, (week, day, start_min, dur, slug)) in h.iter().enumerate() {
         let day_index = week * 7 + day;
         let start_at = ts(day_index, *start_min);
-        let end_at = ts(day_index, *start_min + *dur);
-        sqlx::query(
-            "INSERT INTO time_blocks (id, task_id, user_id, start_at, end_at, state)
-             VALUES ($1,$2,$3,$4,$5,'completed')",
-        )
-        .bind(id(&format!("b_{}", id_offset + i)))
-        .bind(id(slug))
-        .bind(primary_user_id())
-        .bind(start_at)
-        .bind(end_at)
-        .execute(&mut **tx)
-        .await?;
+        f.at(
+            start_at,
+            primary_user_id(),
+            Op::BlockCreate {
+                block: BlockInput {
+                    id: id(&format!("b_{}", id_offset + i)),
+                    task_id: id(slug),
+                    user_id: primary_user_id(),
+                    start_at,
+                    end_at: ts(day_index, *start_min + *dur),
+                    state: "completed".into(),
+                },
+            },
+        );
     }
-    Ok(())
 }
 
 /// Maya's goals in the team workspace. Deliberately one of each shape,
 /// so the dashboard's goal card has to handle all of them on first run:
 /// a task-scoped daily floor, a project-scoped daily floor, a
 /// tag-scoped weekly floor, and a cap.
-async fn seed_goals(tx: &mut Transaction<'_, Postgres>) -> sqlx::Result<()> {
+fn fixture_goals(f: &mut Fixture) {
     struct GoalSpec {
         slug: &'static str,
         name: &'static str,
@@ -1015,25 +1312,23 @@ async fn seed_goals(tx: &mut Transaction<'_, Postgres>) -> sqlx::Result<()> {
     ];
 
     for (i, g) in goals.iter().enumerate() {
-        sqlx::query(
-            "INSERT INTO goals
-                (id, workspace_id, user_id, name, cadence, direction,
-                 target_min, project_id, tag_id, task_id, sort_key)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)",
-        )
-        .bind(id(g.slug))
-        .bind(id(TEAM_WORKSPACE_SLUG))
-        .bind(primary_user_id())
-        .bind(g.name)
-        .bind(g.cadence)
-        .bind(g.direction)
-        .bind(g.target_min)
-        .bind(g.project.map(id))
-        .bind(g.tag.map(id))
-        .bind(g.task.map(id))
-        .bind(format!("M{i:03}"))
-        .execute(&mut **tx)
-        .await?;
+        // workspace_id / user_id come from the actor, not the payload.
+        f.at(
+            w(-6),
+            primary_user_id(),
+            Op::GoalCreate {
+                goal: GoalInput {
+                    id: id(g.slug),
+                    name: g.name.to_string(),
+                    cadence: g.cadence.to_string(),
+                    direction: g.direction.to_string(),
+                    target_min: g.target_min,
+                    project_id: g.project.map(id),
+                    tag_id: g.tag.map(id),
+                    task_id: g.task.map(id),
+                    sort_key: format!("M{i:03}"),
+                },
+            },
+        );
     }
-    Ok(())
 }

@@ -7,9 +7,11 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type {
-  Bootstrap, Project, User, Epic, Sprint, Task, TimeBlock, GcalEvent, UUID, Section, Subtask, Status,
+  Bootstrap, Project, User, Track, Sprint, Task, TimeBlock, GcalEvent, UUID, Section, Subtask, Status,
   Workspace, WorkspaceRole, UserLink, LinkedTask, WorkTask, WorkspaceInvite, Tag, Goal, Theme, UiStyle,
+  ViewName,
 } from '../types';
+import { VIEWS } from '../types';
 import { api, HttpError, setActiveWorkspaceId } from '../api';
 import { newOp, type Op, type OpKind, type AnyOpKind, type ChangeEntry } from './outbox';
 import {
@@ -17,6 +19,7 @@ import {
 } from '../playground';
 import { setFrozenNow } from '../time';
 import { syncLog } from '../synclog';
+import { PLAN_HISTORY_KINDS } from '../planHistory';
 
 // Sync state machine. The TopBar pill reads this directly.
 //   idle  — nothing queued, last attempt either succeeded or never ran
@@ -42,7 +45,7 @@ const SYNC_BATCH_SIZE = 50;
 // One key per user means each account keeps its own breadcrumb.
 type LastView = {
   workspaceId: UUID | null;
-  view: 'calendar' | 'list' | 'dashboard';
+  view: ViewName;
   projectId: UUID | null; // listFilter.project_id
 };
 
@@ -66,10 +69,12 @@ function loadLastView(userId: UUID): LastView | null {
     const view = parsed.view === 'inbox' ? 'list' : parsed.view;
     // Defensive: future-proof against shape drift. If the stored blob
     // is missing required fields, ignore it rather than half-applying.
-    if (view !== 'calendar' && view !== 'list') return null;
+    // Validated against VIEWS so this check can't fall behind the union
+    // again (it had: 'dashboard' was silently rejected here).
+    if (!view || !(VIEWS as readonly string[]).includes(view)) return null;
     return {
       workspaceId: parsed.workspaceId ?? null,
-      view,
+      view: view as ViewName,
       projectId: parsed.projectId ?? null,
     };
   } catch { return null; }
@@ -77,7 +82,7 @@ function loadLastView(userId: UUID): LastView | null {
 
 interface ListFilter {
   project_id: UUID | null;
-  epic_id: UUID | null;
+  track_id: UUID | null;
   sprint_id: UUID | 'active' | 'all' | 'none';
   status: 'open' | 'all' | 'in_progress' | 'todo' | 'done';
   assignee_id: UUID | 'all' | null;
@@ -112,7 +117,7 @@ interface FiraState {
 
   users: User[];
   projects: Project[];
-  epics: Epic[];
+  tracks: Track[];
   sprints: Sprint[];
   tasks: Task[];
   tags: Tag[];
@@ -136,6 +141,7 @@ interface FiraState {
   // `cursor` is the highest server-side `seq` we've ingested. Polls send
   // it as `?since=cursor` and the server returns rows strictly after it.
   cursor: number;
+  planHistoryVersions: Record<string, number>;
   // `appliedOpIds` records op_ids this client already applied locally so
   // when the server echoes them back via /changes we skip re-applying.
   // Value is the wallclock timestamp at insertion — used for GC.
@@ -150,7 +156,7 @@ interface FiraState {
   // The caller's role in the active workspace — drives UI gating.
   myWorkspaceRole: WorkspaceRole | null;
   workspaceModal: { kind: 'new' } | { kind: 'edit'; id: UUID } | null;
-  view: 'calendar' | 'list' | 'dashboard';
+  view: ViewName;
   // Pinned set of people the user can flip between, like browser tabs.
   selectedPersonIds: UUID[];
   // The currently-viewed person (must be in selectedPersonIds).
@@ -173,6 +179,27 @@ interface FiraState {
   // dashboard needs a real unscoped state for its workspace overview.
   // null = overview. Not persisted: a session always opens unscoped.
   dashboardProjectId: UUID | null;
+
+  // --- plan board ---
+  // Same rationale as dashboardProjectId: the board is project-scoped
+  // and needs a real "none" state, which listFilter can't express.
+  // null = no project chosen; the board prompts. Not persisted.
+  planProjectId: UUID | null;
+  // Left edge of the visible window, in weeks from this week's Monday.
+  planWeekOffset: number;
+  // How many week columns are drawn. Grown by the toolbar's
+  // "+ Week" / "+ Earlier week" controls.
+  planWeekCount: number;
+  planWeekWidth: 's' | 'm' | 'l';
+  planShowInbox: boolean;
+  planShowTasks: boolean;
+  planShowRetro: boolean;
+  planShowHistory: boolean;
+  // Scrubber position (sprint 32). Deliberately not persisted —
+  // reopening the app into a historical view is a trap.
+  planVersionAt: string | null;
+  planVersionSeq: number | null;
+
   // Your goals in the active workspace. Server data — treated like
   // `blocks`, never persisted through `partialize`.
   goals: Goal[];
@@ -336,7 +363,7 @@ interface FiraState {
   // Apply a remote op — upsert-tolerant for create kinds so an echo of an
   // op the local client already created does nothing.
   applyRemoteOp: (entry: ChangeEntry) => void;
-  setView: (v: 'calendar' | 'list' | 'dashboard', projectId?: UUID) => void;
+  setView: (v: ViewName, projectId?: UUID) => void;
   addPerson: (id: UUID) => void;
   removePerson: (id: UUID) => void;
   setActivePerson: (id: UUID) => void;
@@ -347,6 +374,34 @@ interface FiraState {
   /// clicking a bar inside the dashboard; left via the breadcrumb month
   /// crumb on desktop or the toolbar back button on mobile.
   setDashboardProject: (id: UUID | null) => void;
+
+  // --- plan board ---
+  setPlanProject: (id: UUID | null) => void;
+  setPlanVersionAt: (at: string | null, seq?: number | null) => void;
+  /// Shift the visible window. `+ Earlier week` moves the left edge back
+  /// *and* widens, so the existing columns don't slide out from under
+  /// the cursor — hence the separate count.
+  setPlanWindow: (weekOffset: number, weekCount: number) => void;
+  setPlanWeekWidth: (w: 's' | 'm' | 'l') => void;
+  togglePlanInbox: () => void;
+  togglePlanTasks: () => void;
+  togglePlanRetro: () => void;
+  togglePlanHistory: () => void;
+  /// Returns the new id, or null if the title was blank.
+  addTrack: (projectId: UUID, title: string, color?: string) => UUID | null;
+  setTrackTitle: (trackId: UUID, title: string) => void;
+  setTrackColor: (trackId: UUID, color: string) => void;
+  reorderTracks: (projectId: UUID, ordered: UUID[]) => void;
+  deleteTrack: (trackId: UUID) => void;
+  /// `endsOn` is exclusive; both must be week-aligned Mondays
+  /// (`fmtDateKey(weekStartOf(...))`).
+  addSprint: (projectId: UUID, trackId: UUID | null, title: string,
+              startsOn: string, endsOn: string) => UUID | null;
+  setSprintTitle: (sprintId: UUID, title: string) => void;
+  setSprintDates: (sprintId: UUID, startsOn: string, endsOn: string) => void;
+  setSprintTrack: (sprintId: UUID, trackId: UUID | null) => void;
+  deleteSprint: (sprintId: UUID) => void;
+  setTaskSprint: (taskId: UUID, sprintId: UUID | null) => void;
   /// Create a goal in the active workspace. Returns the new id, or null
   /// if the name was blank. `workspace_id`/`user_id` are server-side.
   createGoal: (goal: Omit<Goal, 'id' | 'sort_key'> & { sort_key?: string }) => UUID | null;
@@ -582,7 +637,7 @@ function normalizeTask(t: Task): Task {
   return {
     id: t.id,
     project_id: t.project_id,
-    epic_id: t.epic_id ?? null,
+    track_id: t.track_id ?? null,
     sprint_id: t.sprint_id ?? null,
     assignee_id: t.assignee_id ?? null,
     title: t.title,
@@ -807,6 +862,61 @@ function applyOpToState(s: FiraState, op: AnyOpKind): Partial<FiraState> {
       return {
         tasks: s.tasks.map((t) => t.id === op.task_id ? { ...t, tag_ids: op.tag_ids } : t),
       };
+
+    // --- plan board ---
+    case 'track.create': {
+      if (s.tracks.some((t) => t.id === op.track.id)) return {};
+      return { tracks: [...s.tracks, op.track] };
+    }
+    case 'track.set_title':
+      return { tracks: s.tracks.map((t) => t.id === op.track_id ? { ...t, title: op.title } : t) };
+    case 'track.set_color':
+      return { tracks: s.tracks.map((t) => t.id === op.track_id ? { ...t, color: op.color } : t) };
+    case 'track.reorder': {
+      const at = new Map(op.ordered.map((id, i) => [id, `M${String(i).padStart(3, '0')}`]));
+      return {
+        tracks: s.tracks.map((t) => at.has(t.id) ? { ...t, sort_key: at.get(t.id)! } : t),
+      };
+    }
+    case 'track.delete':
+      // Mirror the server's ON DELETE SET NULL. Children are orphaned,
+      // not destroyed: the sprints drop into the board's "No track" row
+      // and the tasks return to the inbox. Dropping them instead would
+      // read as data loss.
+      return {
+        tracks: s.tracks.filter((t) => t.id !== op.track_id),
+        sprints: s.sprints.map((sp) => sp.track_id === op.track_id ? { ...sp, track_id: null } : sp),
+        tasks: s.tasks.map((t) => t.track_id === op.track_id ? { ...t, track_id: null } : t),
+      };
+    case 'sprint.create': {
+      if (s.sprints.some((sp) => sp.id === op.sprint.id)) return {};
+      return { sprints: [...s.sprints, op.sprint] };
+    }
+    case 'sprint.set_title':
+      return {
+        sprints: s.sprints.map((sp) => sp.id === op.sprint_id ? { ...sp, title: op.title } : sp),
+      };
+    case 'sprint.set_dates':
+      return {
+        sprints: s.sprints.map((sp) => sp.id === op.sprint_id
+          ? { ...sp, starts_on: op.starts_on, ends_on: op.ends_on }
+          : sp),
+      };
+    case 'sprint.set_track':
+      return {
+        sprints: s.sprints.map((sp) => sp.id === op.sprint_id
+          ? { ...sp, track_id: op.track_id }
+          : sp),
+      };
+    case 'sprint.delete':
+      return {
+        sprints: s.sprints.filter((sp) => sp.id !== op.sprint_id),
+        tasks: s.tasks.map((t) => t.sprint_id === op.sprint_id ? { ...t, sprint_id: null } : t),
+      };
+    case 'task.set_sprint':
+      return {
+        tasks: s.tasks.map((t) => t.id === op.task_id ? { ...t, sprint_id: op.sprint_id } : t),
+      };
     case 'task.add_attachment':
       return {
         tasks: s.tasks.map((t) => t.id === op.task_id ? { ...t, attachments: [...(t.attachments ?? []), op.attachment] } : t)
@@ -864,7 +974,7 @@ function applyOpToState(s: FiraState, op: AnyOpKind): Partial<FiraState> {
         return {
           projects: nextProjects,
           tasks: s.tasks.filter((t) => t.project_id !== op.project_id),
-          epics: s.epics.filter((e) => e.project_id !== op.project_id),
+          tracks: s.tracks.filter((e) => e.project_id !== op.project_id),
           sprints: s.sprints.filter((sp) => sp.project_id !== op.project_id),
           blocks: s.blocks.filter((b) => !droppedTaskIds.has(b.task_id)),
           projectFilter: remainingFilter,
@@ -897,7 +1007,7 @@ function applyOpToState(s: FiraState, op: AnyOpKind): Partial<FiraState> {
       return {
         projects: nextProjects,
         tasks: s.tasks.filter((t) => t.project_id !== op.project_id),
-        epics: s.epics.filter((e) => e.project_id !== op.project_id),
+        tracks: s.tracks.filter((e) => e.project_id !== op.project_id),
         sprints: s.sprints.filter((sp) => sp.project_id !== op.project_id),
         blocks: s.blocks.filter((b) => !droppedTaskIds.has(b.task_id)),
         projectFilter: remainingFilter,
@@ -979,7 +1089,7 @@ function applyBootstrap(
     playgroundMode: playground,
     users: data.users,
     projects: data.projects,
-    epics: data.epics,
+    tracks: data.tracks,
     sprints: data.sprints,
     tasks: data.tasks.map(normalizeTask),
     tags: data.tags ?? [],
@@ -999,6 +1109,7 @@ function applyBootstrap(
     jiraLastSyncError: data.jira?.last_sync_error ?? null,
     jiraAutoSyncNewBlocks: data.jira?.auto_sync_new_blocks ?? false,
     cursor: data.cursor ?? 0,
+    planHistoryVersions: Object.fromEntries(data.projects.map((p) => [p.id, data.cursor ?? 0])),
     appliedOpIds: new Map(),
     outbox: [],
     meId: me.id,
@@ -1031,7 +1142,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
 
   users: [],
   projects: [],
-  epics: [],
+  tracks: [],
   sprints: [],
   tasks: [],
   tags: [],
@@ -1044,6 +1155,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
   bootBuild: null,
   newBuildAvailable: false,
   cursor: 0,
+  planHistoryVersions: {},
   appliedOpIds: new Map(),
 
   meId: null,
@@ -1083,6 +1195,16 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
   dayOffset: 0,
   monthOffset: 0,
   dashboardProjectId: null,
+  planProjectId: null,
+  planWeekOffset: -6,
+  planWeekCount: 16,
+  planWeekWidth: 'm',
+  planShowInbox: true,
+  planShowTasks: true,
+  planShowRetro: true,
+  planShowHistory: false,
+  planVersionAt: null,
+  planVersionSeq: null,
   goals: [],
   goalModal: null,
   sidebarOpen: false,
@@ -1092,7 +1214,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
   projectFilter: {},
   listFilter: {
     project_id: null,
-    epic_id: null,
+    track_id: null,
     sprint_id: 'active',
     status: 'open' as const,
     assignee_id: null,
@@ -1174,7 +1296,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
           loaded: false,
           error: null,
           meId: null,
-          users: [], projects: [], epics: [], sprints: [], tasks: [], blocks: [], gcal: [],
+          users: [], projects: [], tracks: [], sprints: [], tasks: [], blocks: [], gcal: [],
           workspaces: [], activeWorkspaceId: null, myWorkspaceRole: null,
           outbox: [], cursor: 0, appliedOpIds: new Map(),
         });
@@ -1244,7 +1366,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
       set((s) => ({
         users: data.users,
         projects: data.projects,
-        epics: data.epics,
+        tracks: data.tracks,
         sprints: data.sprints,
         tasks: data.tasks.map(normalizeTask),
         tags: data.tags ?? [],
@@ -1265,6 +1387,10 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
         // Cursor advances to the bootstrap watermark; the appliedOpIds
         // dedup map is reset because it's now scoped to a fresh window.
         cursor: data.cursor ?? s.cursor,
+        // Bootstrap can skip unseen feed rows; check cached revision lists
+        // conservatively in this recovery path, using incremental requests.
+        planHistoryVersions: data.cursor !== undefined && data.cursor !== s.cursor
+          ? Object.fromEntries(data.projects.map((p) => [p.id, data.cursor])) : s.planHistoryVersions,
         appliedOpIds: new Map(),
         lastSyncedAt: Date.now(),
 
@@ -1340,6 +1466,9 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
       // new workspace, so it resets to the overview.
       goals: [],
       dashboardProjectId: null,
+      planProjectId: null,
+      planVersionAt: null,
+      planVersionSeq: null,
     });
     const data = await api.bootstrap();
     applyBootstrap(set, get, data, me, ws, get().workspaces, get().playgroundMode);
@@ -1659,7 +1788,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     if (changesPollInFlight) return;
     changesPollInFlight = true;
     try {
-      const { cursor, appliedOpIds, applyRemoteOp } = get();
+      const { cursor, activeWorkspaceId, appliedOpIds, applyRemoteOp } = get();
       let resp;
       try {
         resp = await api.getChanges(cursor);
@@ -1668,7 +1797,15 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
         // reflects server reachability through the push side.
         return;
       }
+      if (get().activeWorkspaceId !== activeWorkspaceId) return;
+      const historyVersions = { ...get().planHistoryVersions };
+      let historyChanged = false;
       for (const entry of resp.ops) {
+        // Include our own acknowledged writes, even when their entity echo is skipped.
+        if (entry.project_id && PLAN_HISTORY_KINDS.has(entry.kind)) {
+          historyVersions[entry.project_id] = entry.seq;
+          historyChanged = true;
+        }
         if (appliedOpIds.has(entry.op_id)) continue;
         applyRemoteOp(entry);
       }
@@ -1682,6 +1819,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
       }
       set({
         cursor: resp.cursor,
+        ...(historyChanged ? { planHistoryVersions: historyVersions } : {}),
         appliedOpIds: didTrim ? trimmed : appliedOpIds,
       });
     } finally {
@@ -2243,12 +2381,12 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
 
     if (state.playgroundMode) {
       // No backend: mirror the server's writes locally. Same drops —
-      // tags, epic and sprint don't survive a move.
+      // tags, track and sprint don't survive a move.
       set((s) => applyOpToState(s, {
         kind: 'task.move_project',
         from_project_id: task.project_id,
         to_project_id: toProjectId,
-        task: { ...task, project_id: toProjectId, epic_id: null, sprint_id: null, tag_ids: [] },
+        task: { ...task, project_id: toProjectId, track_id: null, sprint_id: null, tag_ids: [] },
         blocks: s.blocks.filter((b) => b.task_id === taskId),
       }));
       return;
@@ -2292,7 +2430,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     const newTask: Task = {
       id: crypto.randomUUID(),
       project_id: projectId,
-      epic_id: null,
+      track_id: null,
       sprint_id: null,
       assignee_id: assigneeId !== undefined ? assigneeId : state.meId,
       title: trimmed,
@@ -2343,7 +2481,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     const newTask: Task = {
       id: crypto.randomUUID(),
       project_id: after.project_id,
-      epic_id: null,
+      track_id: null,
       sprint_id: null,
       assignee_id: after.assignee_id,
       title: (title ?? '').trim(),
@@ -2621,6 +2759,138 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     ...pushOp(s, { kind: 'task.set_tags', task_id: taskId, tag_ids: tagIds }),
   })),
 
+  // --- plan board ---
+
+  setPlanProject: (id) => set({ planProjectId: id, planVersionAt: null, planVersionSeq: null }),
+  setPlanVersionAt: (at, seq = null) => set({ planVersionAt: at, planVersionSeq: at ? seq : null, ...(at ? { planShowHistory: true } : {}) }),
+  setPlanWindow: (weekOffset, weekCount) => set({
+    planWeekOffset: weekOffset,
+    planWeekCount: Math.max(1, Math.min(52, weekCount)),
+  }),
+  setPlanWeekWidth: (w) => set({ planWeekWidth: w }),
+  togglePlanInbox: () => set((s) => ({ planShowInbox: !s.planShowInbox })),
+  togglePlanTasks: () => set((s) => ({ planShowTasks: !s.planShowTasks })),
+  togglePlanRetro: () => set((s) => ({ planShowRetro: !s.planShowRetro })),
+  togglePlanHistory: () => set((s) => ({
+    planShowHistory: !s.planShowHistory,
+    planVersionAt: s.planShowHistory ? null : s.planVersionAt,
+    planVersionSeq: s.planShowHistory ? null : s.planVersionSeq,
+  })),
+
+  addTrack: (projectId, title, color) => {
+    const trimmed = title.trim();
+    if (!trimmed) return null;
+    const state = get();
+    if (!state.projects.some((p) => p.id === projectId)) return null;
+    // Append: the highest existing key plus a suffix, the same
+    // fractional scheme the rest of the schema uses.
+    const peers = state.tracks.filter((t) => t.project_id === projectId);
+    const maxSort = peers.reduce((m, t) => (t.sort_key > m ? t.sort_key : m), '0');
+    const track: Track = {
+      id: crypto.randomUUID(),
+      project_id: projectId,
+      title: trimmed,
+      color: color ?? '#334155',
+      sort_key: `${maxSort}~`,
+      created_at: new Date().toISOString(),
+    };
+    set((s) => ({
+      tracks: [...s.tracks, track],
+      ...pushOp(s, { kind: 'track.create', track }),
+    }));
+    return track.id;
+  },
+
+  setTrackTitle: (trackId, title) => set((s) => ({
+    tracks: s.tracks.map((t) => t.id === trackId ? { ...t, title } : t),
+    ...pushOp(s, { kind: 'track.set_title', track_id: trackId, title }),
+  })),
+
+  setTrackColor: (trackId, color) => set((s) => ({
+    tracks: s.tracks.map((t) => t.id === trackId ? { ...t, color } : t),
+    ...pushOp(s, { kind: 'track.set_color', track_id: trackId, color }),
+  })),
+
+  reorderTracks: (projectId, ordered) => set((s) => {
+    const at = new Map(ordered.map((id, i) => [id, `M${String(i).padStart(3, '0')}`]));
+    return {
+      tracks: s.tracks.map((t) => at.has(t.id) ? { ...t, sort_key: at.get(t.id)! } : t),
+      ...pushOp(s, { kind: 'track.reorder', project_id: projectId, ordered }),
+    };
+  }),
+
+  deleteTrack: (trackId) => set((s) => ({
+    tracks: s.tracks.filter((t) => t.id !== trackId),
+    // Mirror the server's ON DELETE SET NULL, as deleteTag mirrors its
+    // cascade. Nothing is destroyed: the sprints appear under "No track"
+    // and the tasks return to the inbox.
+    sprints: s.sprints.map((sp) => sp.track_id === trackId ? { ...sp, track_id: null } : sp),
+    tasks: s.tasks.map((t) => t.track_id === trackId ? { ...t, track_id: null } : t),
+    ...pushOp(s, { kind: 'track.delete', track_id: trackId }),
+  })),
+
+  addSprint: (projectId, trackId, title, startsOn, endsOn) => {
+    const trimmed = title.trim();
+    if (!trimmed) return null;
+    const state = get();
+    if (!state.projects.some((p) => p.id === projectId)) return null;
+    if (endsOn <= startsOn) return null;
+    const peers = state.sprints.filter((sp) => sp.project_id === projectId);
+    const maxSort = peers.reduce((m, sp) => (sp.sort_key > m ? sp.sort_key : m), '0');
+    const sprint: Sprint = {
+      id: crypto.randomUUID(),
+      project_id: projectId,
+      track_id: trackId,
+      title: trimmed,
+      starts_on: startsOn,
+      ends_on: endsOn,
+      // Legacy column; nothing writes it. `active` likewise: the board
+      // reads the span against its "now" marker instead.
+      dates: null,
+      active: false,
+      sort_key: `${maxSort}~`,
+      created_at: new Date().toISOString(),
+    };
+    set((s) => ({
+      sprints: [...s.sprints, sprint],
+      ...pushOp(s, { kind: 'sprint.create', sprint }),
+    }));
+    return sprint.id;
+  },
+
+  setSprintTitle: (sprintId, title) => set((s) => ({
+    sprints: s.sprints.map((sp) => sp.id === sprintId ? { ...sp, title } : sp),
+    ...pushOp(s, { kind: 'sprint.set_title', sprint_id: sprintId, title }),
+  })),
+
+  setSprintDates: (sprintId, startsOn, endsOn) => set((s) => {
+    // Guard rather than emit: the server has CHECKs for both of these,
+    // and a rejected op surfaces as a sync error the user can't act on.
+    if (endsOn <= startsOn) return {};
+    return {
+      sprints: s.sprints.map((sp) => sp.id === sprintId
+        ? { ...sp, starts_on: startsOn, ends_on: endsOn }
+        : sp),
+      ...pushOp(s, { kind: 'sprint.set_dates', sprint_id: sprintId, starts_on: startsOn, ends_on: endsOn }),
+    };
+  }),
+
+  setSprintTrack: (sprintId, trackId) => set((s) => ({
+    sprints: s.sprints.map((sp) => sp.id === sprintId ? { ...sp, track_id: trackId } : sp),
+    ...pushOp(s, { kind: 'sprint.set_track', sprint_id: sprintId, track_id: trackId }),
+  })),
+
+  deleteSprint: (sprintId) => set((s) => ({
+    sprints: s.sprints.filter((sp) => sp.id !== sprintId),
+    tasks: s.tasks.map((t) => t.sprint_id === sprintId ? { ...t, sprint_id: null } : t),
+    ...pushOp(s, { kind: 'sprint.delete', sprint_id: sprintId }),
+  })),
+
+  setTaskSprint: (taskId, sprintId) => set((s) => ({
+    tasks: s.tasks.map((t) => t.id === taskId ? { ...t, sprint_id: sprintId } : t),
+    ...pushOp(s, { kind: 'task.set_sprint', task_id: taskId, sprint_id: sprintId }),
+  })),
+
   addSubtask: (taskId, title, afterId) => {
     const trimmed = title.trim();
     // Empty title is only allowed for "insert after" — that path seeds
@@ -2802,7 +3072,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
   partialize: (s) => ({
     users: s.users,
     projects: s.projects,
-    epics: s.epics,
+    tracks: s.tracks,
     sprints: s.sprints,
     tasks: s.tasks,
     tags: s.tags,
@@ -2851,6 +3121,16 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     // -down is a transient investigation and every session should open on
     // the workspace overview.
     monthOffset: s.monthOffset,
+    // Same split for the plan board: the window and the toolbar
+    // preferences persist, the project drill-down and the scrubber
+    // position don't.
+    planWeekOffset: s.planWeekOffset,
+    planWeekCount: s.planWeekCount,
+    planWeekWidth: s.planWeekWidth,
+    planShowInbox: s.planShowInbox,
+    planShowTasks: s.planShowTasks,
+    planShowRetro: s.planShowRetro,
+    planShowHistory: s.planShowHistory,
   // partialize is loosely typed — zustand expects S but we're returning a
   // subset of fields. Cast through unknown is the canonical workaround.
   }) as unknown as FiraState,

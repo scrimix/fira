@@ -15,7 +15,7 @@ import type { Project, UUID } from '../types';
 // combination ate the option click outright.
 //
 // This dialog is the *only* place any consequence of a move is ever
-// visible: tags vanish, the epic clears, and someone's calendar quietly
+// visible: tags vanish, the track and sprint clear, and someone's calendar quietly
 // empties, with no other notification anywhere in the product. So it is
 // exhaustive by design, and it names every item rather than counting
 // them — "3 tags will be dropped" makes the user go and look, listing
@@ -29,7 +29,7 @@ import type { Project, UUID } from '../types';
 // The two sections are separated because they are different kinds of
 // worry. Access loss is recoverable — the blocks are never deleted, and
 // adding the person to the target project brings them back on the next
-// hydrate. The dropped tags/epic/sprint are not.
+// hydrate. The dropped tags/track/sprint are not.
 
 // One person's line in the access-loss list. The assignee flag folds
 // into the same sentence rather than becoming a second row, so somebody
@@ -97,7 +97,7 @@ export function MoveTaskModal({
   const downOnBackdropRef = useRef(false);
 
   const losesSomething = impact != null
-    && (impact.droppedTags.length > 0 || impact.droppedEpic != null || impact.droppedSprint != null);
+    && (impact.droppedTags.length > 0 || impact.droppedTrack != null || impact.droppedSprint != null);
   const toTitle = toProject?.title ?? '';
 
   return (
@@ -173,8 +173,8 @@ export function MoveTaskModal({
                     ))}
                   </li>
                 )}
-                {impact!.droppedEpic && (
-                  <li className="move-list-row">Epic <strong>{impact!.droppedEpic.title}</strong></li>
+                {impact!.droppedTrack && (
+                  <li className="move-list-row">Track <strong>{impact!.droppedTrack.title}</strong></li>
                 )}
                 {impact!.droppedSprint && (
                   <li className="move-list-row">Sprint <strong>{impact!.droppedSprint.title}</strong></li>

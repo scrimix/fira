@@ -9,6 +9,13 @@ export type Priority = 'p0' | 'p1' | 'p2' | 'p3';
 export type Source = 'local' | 'jira' | 'notion';
 export type BlockState = 'planned' | 'completed';
 
+/// The app's top-level surfaces. Single source of truth: the type is
+/// derived from the array, so a runtime whitelist (`loadLastView`) and
+/// the compile-time union can't drift — they did, and `'dashboard'`
+/// breadcrumbs were silently discarded for two sprints as a result.
+export const VIEWS = ['calendar', 'list', 'dashboard', 'plan'] as const;
+export type ViewName = (typeof VIEWS)[number];
+
 export interface User {
   id: UUID;
   email: string;
@@ -71,18 +78,32 @@ export interface Project {
   members: ProjectMember[];
 }
 
-export interface Epic {
+/// A plan-board row. `epics` pre-migration 0034.
+export interface Track {
   id: UUID;
   project_id: UUID;
   title: string;
+  color: string;
+  sort_key: string;
+  created_at: string;
 }
 
 export interface Sprint {
   id: UUID;
   project_id: UUID;
+  /// null = "No track" — reachable, not an error. Deleting a track
+  /// orphans its sprints rather than destroying them.
+  track_id: UUID | null;
   title: string;
+  /// Week-aligned Monday, `YYYY-MM-DD`. Start of the card's span.
+  starts_on: string | null;
+  /// EXCLUSIVE. Colspan is (ends_on - starts_on)/7, no +1.
+  ends_on: string | null;
+  /// Legacy free-text label. Nothing writes it any more.
   dates: string | null;
   active: boolean;
+  sort_key: string;
+  created_at: string;
 }
 
 export interface Subtask {
@@ -106,7 +127,9 @@ export interface Attachment {
 export interface Task {
   id: UUID;
   project_id: UUID;
-  epic_id: UUID | null;
+  /// Workstream when the task isn't in a sprint yet. A task's track
+  /// resolves as its sprint's track if it has a sprint, else this.
+  track_id: UUID | null;
   sprint_id: UUID | null;
   assignee_id: UUID | null;
   title: string;
@@ -343,7 +366,7 @@ export interface JiraStatus {
 export interface Bootstrap {
   users: User[];
   projects: Project[];
-  epics: Epic[];
+  tracks: Track[];
   sprints: Sprint[];
   tasks: Task[];
   tags: Tag[];

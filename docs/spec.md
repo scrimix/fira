@@ -88,8 +88,8 @@ applied in order on boot via `sqlx::migrate!`).
 | `workspace_members`| M:N user↔workspace, `role text check (role in ('owner','member'))`, `removed_at` for soft-delete. |
 | `projects`         | id, title, icon, color, source (`local`/`jira`/`notion`), `owner_id`, `external_url_template`, `workspace_id NOT NULL`. |
 | `project_members`  | M:N user↔project, `workspace_id` mirrored from parent project by trigger, `role text check (role in ('owner','lead','member','inactive'))`, `removed_at` for soft-delete. Composite FK `(workspace_id, user_id) → workspace_members(workspace_id, user_id)` makes it structurally impossible to add a user to a project who isn't in the workspace. |
-| `epics`            | unit of work bigger than a task, smaller than a project. |
-| `sprints`          | time-boxed; `active` flag drives the list's sprint filter. |
+| `tracks`           | a plan-board row — a workstream. `(id, project_id, title, color, sort_key, created_at)`. Renamed from `epics` in migration 0034; the word "epic" is spoken for by Jira's. |
+| `sprints`          | a plan-board card: a titled span of weeks on one track. `track_id` (nullable — "No track"), `starts_on`/`ends_on` as week-aligned Monday `DATE`s with `ends_on` **exclusive**, `sort_key`. Three CHECKs enforce the geometry. `dates TEXT` is legacy and unwritten; `active` is unread by the board (the "now" marker makes it redundant). |
 | `tasks`            | section (`now`/`later`/`recurring`/`someday`/`done`), status, estimate, assignee, sort_key, optional `external_id`, optional per-task `external_url`. |
 | `tags`             | per-project, identity-bearing label: `(id, project_id, title, color)`. Case-insensitive unique on `(project_id, lower(title))`. Renaming is a `set_title` op against the row, no rewrite of attached tasks. |
 | `task_tags`        | M:N task ↔ tag, PK `(task_id, tag_id)`, FK cascades on tag delete. |
@@ -144,7 +144,7 @@ stay as historical record.
   yet. Manual issue links exist via `task.external_id` +
   `project.external_url_template`, but not automated sync.
 - `integration_tokens` for Jira/Notion API access — none.
-- `snapshots` — no replay UI.
+- `snapshots` — no snapshot table; plan history replays `processed_ops`.
 
 ## 4. API — current
 
@@ -192,6 +192,7 @@ membership and, where applicable, project membership.
 | `/api/invites/:id/decline`             | POST   | decline — recipient-only                              |
 | `/api/linked/calendar`                 | GET    | partner's blocks + `LinkedTask` projection (read-only overlay) |
 | `/api/personal/calendar`               | GET    | personal-workspace blocks + `LinkedTask` projection — empty when active workspace is already personal |
+| `/api/plan/at?project_id=…&t=…&seq=…`         | GET    | authorized historical plan entities, genesis and exact revisions |
 | `/api/ops`                             | POST   | push outbox ops, idempotent per `op_id`, per-op tx    |
 | `/api/changes?since=N`                 | GET    | pull change feed, scope-filtered, ≤ 500 rows          |
 | `/api/ws?workspace_id=…`               | WS     | nudge socket for the workspace's change feed; 30 s server ping |
@@ -202,7 +203,7 @@ non-null):
 
 ```ts
 {
-  me, users, projects, epics, sprints, tasks, tags, blocks,
+  me, users, projects, tracks, sprints, tasks, tags, blocks,
   workspace, links, workspace_invites, cursor
 }
 ```
@@ -216,14 +217,35 @@ start polling `/api/changes` from there, not from 0. The shape
 otherwise mirrors `web/src/types.ts`; no pagination, no filtering —
 the dataset is small enough to send in one shot.
 
-**Op kinds accepted by `/api/ops`** (~26):
+**Op kinds accepted by `/api/ops`** (~40):
 `task.create`, `task.tick`, `task.set_section`, `task.set_title`,
 `task.set_description`, `task.set_estimate`, `task.set_assignee`,
 `task.set_status`, `task.set_external_id`, `task.set_external_url`,
-`task.set_tags`, `task.reorder`, `task.delete`, `subtask.create`,
-`subtask.tick`, `subtask.set_title`, `subtask.delete`,
-`subtask.reorder`, `block.create`, `block.update`, `block.delete`,
-`tag.create`, `tag.set_title`, `tag.set_color`, `tag.delete`.
+`task.set_tags`, `task.set_sprint`, `task.reorder`, `task.delete`,
+`subtask.create`, `subtask.tick`, `subtask.set_title`,
+`subtask.delete`, `subtask.reorder`, `block.create`, `block.update`,
+`block.delete`, `tag.create`, `tag.set_title`, `tag.set_color`,
+`tag.delete`, `track.create`, `track.set_title`, `track.set_color`,
+`track.reorder`, `track.delete`, `sprint.create`, `sprint.set_title`,
+`sprint.set_dates`, `sprint.set_track`, `sprint.delete`, plus the
+three private `goal.*` kinds.
+
+The plan-board family (sprint 31) is all **narrow per-field setters**,
+following `task.set_assignee`: `track_id` on a sprint is meaningfully
+nullable ("No track" is reachable, not an error), so `block.update`'s
+`patch: Partial<T>` shape would need `Option<Option<Uuid>>` to tell
+absent from null, and `goal.update`'s whole-entity shape would mean
+reconstructing an entity from a drag. `sprint.set_dates` carries both
+columns because a span is one value — move and resize both emit it,
+and the two are never independently null. `track.reorder` authorizes
+through its WHERE clause (`AND project_id = $3`) exactly as
+`task.reorder` does, so ids inside `ordered` are never trusted.
+
+Because `processed_ops` is never pruned and must stay replayable,
+`TaskInput.track_id` carries `#[serde(alias = "epic_id")]`: every
+`task.create` written before migration 0034 still says `epic_id` on
+the wire, and dropping the alias would null the track link of every
+task the version scrubber replays from before that point.
 
 `task.create.tag_ids` is a `Vec<Uuid>` of tag ids to attach atomically;
 the tag rows must already exist (the outbox pushes `tag.create` first
@@ -235,7 +257,7 @@ concurrent edits.
 **Moving a task between projects** (`POST /api/tasks/:id/move`) is REST
 rather than an op for two reasons: it needs a confirm gate the user sees
 *before* the write, and it spans two project scopes, which an op
-envelope's single `project_id` can't carry. It clears `epic_id` /
+envelope's single `project_id` can't carry. It clears `track_id` /
 `sprint_id`, deletes the task's `task_tags` (tags are identity-bearing
 rows scoped to a project, so they don't travel), re-keys `sort_key` to
 the tail of the target's same section, and materializes the resolved
@@ -253,7 +275,7 @@ both projects applies the same idempotent upsert twice.
 
 Visibility loss here is recoverable and worth stating as such: blocks are
 never deleted, and adding someone to the target project restores them on
-the next hydrate. The irreversible part is the tags / epic / sprint.
+the next hydrate. The irreversible part is the tags / track / sprint.
 
 Workspace, project, and link mutations write synthesized
 `workspace.create` / `workspace.update` / `workspace.set_members` /
@@ -562,6 +584,240 @@ the topbar hamburger.
   click X to dismiss early. Used for surfacing server-rejected op
   messages and workspace/project save/delete failures.
 
+### 7.4b Plan view — the project roadmap board
+
+([web/src/components/PlanView.tsx](../web/src/components/PlanView.tsx),
+[PlanSprintCard.tsx](../web/src/components/PlanSprintCard.tsx),
+[plan.ts](../web/src/plan.ts), [plan.css](../web/src/styles/plan.css))
+
+The fourth surface, reached with `p` or the sidebar button. X axis is
+weeks grouped under month headers with ISO `W38` labels and a "now"
+marker; Y axis is tracks. Project-scoped; a workspace roll-up is later.
+
+- **Cards** span a week range on one track, carry a derived `A1`/`A2`
+  badge, a title and a checklist of real tasks. Tick one on the board
+  and it ticks in List and Calendar — same `task.tick`. A checklist row
+  opens the task modal on click, reorders by drag (the list's own
+  section-scoped `task.reorder`), and carries an arrow back to the rail
+  that clears `sprint_id`. **Finished rows sink to the foot of the card
+  and take no part in ordering** — `task.tick` sets `status` and leaves
+  `section` alone, so section rank alone would float a ticked task to
+  the top of its own card, and honouring a cross-section drop for a
+  done row would silently un-archive it.
+- **Completeness is dullness, not a readout.** A card whose every task
+  is ticked is dimmed, exactly as a done row is in the list and a
+  completed block is on the calendar. There is no `3/4` counter, no
+  progress bar, and no marking of the "running" sprint — a card's
+  position on the week axis already says when it runs, beside the
+  axis's own now marker.
+- **The now marker is the calendar's today marker**, token for token
+  (`--accent-soft` fill, 2px `--accent` underscore, `--accent` label,
+  and a 1px `--accent` line down the column). A week board and a day
+  board disagreeing about where "now" is would be absurd. This is the
+  only `--accent` on the board; the cards speak in track colour.
+- **Membership is single-valued**: `task.sprint_id → sprint.track_id →
+  track`. Nothing can render twice, so no validation rule is needed to
+  stop it. Tags are orthogonal and untouched.
+- **A task's track** is its sprint's track if it has a sprint, else its
+  own `tasks.track_id` (the per-track backlog). Resolved at render time,
+  so it can't drift.
+- **The rail** holds unplanned, not-done project tasks. Its *frame* is
+  the calendar's (`.cal-rail`, `.rail-head`, `.rail-body`); its
+  **groups** are the list's `.section-head` — all four sections, always
+  shown, always counted, even at zero, because a section that vanishes
+  when it empties makes the rail's shape jump as you plan. Headings sit
+  flush with the left gutter and the rows indent under them, with no
+  trailing rule: the list's wide columns can carry one as an underline,
+  but in 220px it reads as a line *closing* the group above. The filter
+  is **tags**, specifically the list's `ListTagFilter` extracted to
+  [TagFilter.tsx](../web/src/components/TagFilter.tsx) and shared.
+  (The calendar groups by project and filters by project, both
+  meaningless on a board already scoped to one.)
+  **A rail row is one line: its title.** It is the same object as a
+  card's checklist row sitting a few hundred pixels away, so it is
+  built to the same `--plan-task-h`. The estimate, external id and tag
+  dots that used to ride along doubled its height to answer questions
+  this view doesn't ask — a plan board asks *where does this go*. Both
+  are still carried on `PlanTask` for the filter box and the tag chips,
+  just not drawn.
+  Drag onto a card to plan, drag back out to unplan. `+ Add task`
+  inside a card is the ListView quick-add pattern (`task.create` into
+  `later`, then `task.set_sprint`).
+- **Orphan row.** Deleting a track SET NULLs its sprints, which then
+  render in a "No track" row at the foot of the board. SET NULL
+  *without* that row would be data loss by invisibility; with it the
+  state is self-healing. No plan-view gesture destroys a task — the
+  board offers "remove from sprint", never delete; deletion stays in
+  the task modal behind its existing confirm.
+- **The "Unplanned" band.** A brand-new board would be empty, which is the
+  usual reason a roadmap feature is never adopted, so the past is
+  reconstructed: fortnight buckets (anchored to even ISO weeks, so
+  every project in a workspace agrees where a fortnight starts) over
+  finished work **that was never planned into a sprint**. That last
+  clause is load-bearing. Without it a finished task rendered both in
+  its card and in the band — the exact double-render the single-valued
+  `task.sprint_id` model exists to make impossible — and the band had
+  no rule by which anything ever left it.
+  The splitter is best-evidence-first: completed block span →
+  `finished_at` → `created_at`.
+  **Derived, never materialized**, and recomputed on every render, so
+  there is no generation step and nothing to refresh: work finished
+  today lands in today's fortnight by itself, whether or not anyone is
+  using sprints. It is named for the toolbar switch that shows it, and
+  rendered muted in its own full-width row outside every track, because
+  a record is not a plan and the two must not share a visual slot.
+  It is read-only *as a record* but not a dead end — the two ways out
+  are the two ways it empties: drag a row onto a card
+  (`task.set_sprint`), or **Promote** the bucket, which materializes it
+  as a real sprint over the computed span plus one `task.set_sprint`
+  per member. Promote lands the card on "No track" rather than guessing
+  one, and is offered only for a bucket wholly inside the window, since
+  promoting a clipped one would invent a span from the visible part.
+- **Creating a sprint** is `+ Sprint` in the toolbar, which *arms* the
+  board: the grid lights up, the cursor becomes a crosshair, and you
+  drag across the weeks the sprint should cover. A live dashed band
+  shows the span and its week count; Esc cancels. The span is the whole
+  point of a card, so picking it is the create gesture rather than
+  something you fix up afterwards.
+- **Moving a card is one pointer drag carrying both axes** — week span
+  (x) and track row (y) — like the calendar's block drag carrying time
+  and day. It commits `sprint.set_dates` and/or `sprint.set_track`.
+  Resizing is a full-height grip at each card edge, which
+  `preventDefault`s on pointerdown — otherwise the native selection
+  starts there and the drag paints every checklist it crosses. The
+  header can't do the same without killing its own click, so the board
+  also sets `user-select: none` for the duration of a drag.
+  **The title is plain text, not a click-to-edit control.** The header
+  is the move handle and the title fills most of it, so anything
+  clickable there fights the drag: either it swallows pointerdown and
+  the card won't move from the place everyone grabs it, or it doesn't
+  and every short drag ends in an edit box. Renaming is a pencil button;
+  deleting is a trash button behind `ConfirmDelete`, which counts the
+  tasks that will return to the rail.
+  **The card is deliberately not an HTML5 drag source.** It is already a
+  *drop target* for tasks, and making it a native drag source too meant
+  `dragstart` fired on the first pointermove and killed the pointer
+  stream — move and resize both silently did nothing. HTML5 DnD is used
+  only where the card is the target: tasks, via
+  `application/x-fira-plan-task`.
+- **No time figures on a card.** `taskTimeLeft` filters against the real
+  clock, so any such number would read "as of now" inside a board
+  scrubbed to an earlier week. The rail shows an estimate, not time
+  left, for the same reason.
+- **A handful of layout tokens are the whole rhythm.**
+  `--plan-week-w` is the column width, so the toolbar's S·M·L control is
+  a single variable write. `--plan-axis-month-h` / `--plan-axis-week-h`
+  are the two axis rows, declared rather than left to fall out of font
+  metrics because the rail's header has to close on exactly the same
+  line as the board's axis — and that constraint is why the axis stays
+  two rows: the rail's filter box sets a floor on the header's height,
+  so folding the month into the week row would buy ~20px at the cost of
+  the alignment. The saving came from type size instead. A rule under
+  the month strip gives the week columns' verticals something to start
+  from; without it they began in mid-air at the row junction. Axis labels
+  are `--plan-axis-label-fs` (10px × `--fs-scale`), deliberately
+  *smaller* than the task text they label; they had been
+  `--fs-xs × --label-size`, which is 15.8px in modern against 13.8px of
+  content — scaffolding outranking the thing standing on it. Week
+  numbers take the mono face and tabular figures, being codes; the
+  month strip is shorter than the week row and carries the only strong
+  rule on the axis, because grouping is all it does. `--plan-task-h` / `--plan-task-fs` are one task line, used by a
+  card's checklist, its add-task row, the Unplanned band's rows **and** the
+  rail — every place a task appears. They were drifting badly: an 18px
+  `--fs-xs` checklist sliver beside a 44px two-line rail row, on the
+  same screen, for the same object.
+  Both row tokens are **line box + density-scaled padding**, never
+  `calc(Npx * var(--density))`: `--density` is defined as "padding /
+  gaps that are allowed to breathe", and multiplying a whole row by it
+  made modern 45% taller rather than 30% roomier. `--plan-rail-w` and
+  `--plan-head-w` are **fixed per style** (220/180 classic, 248/200
+  modern) for the same reason `--side-w` is 220/248 and the calendar's
+  rail is a flat 320px — scaling panel widths by density put the rail
+  at 319px while the week columns, a JS constant, didn't move at all.
+- **Neither scroll container reserves a scrollbar gutter.** The calendar
+  reserves one on its rail so rows keep the head's content edge, and
+  subtracts `--scrollbar-w` from every row to compensate; the plan rail
+  does neither, so `stable` only parked 15px of dead space between the
+  last character of a task and the board. The week grid is the same: it
+  always scrolls horizontally and almost never vertically.
+- The project title appears in the breadcrumb; the Plan toolbar does not
+  repeat it.
+- **Every toolbar control is a segment of a `week-nav` pill** — pan,
+  resize, window size, the three view switches, the two add actions —
+  and the height is *inherited* from `.cal-toolbar .week-nav-btn`, a
+  flat 22px in both styles, so the plan bar lands on exactly the
+  calendar bar's metrics. The bar previously mixed 24px segmented pills
+  with 26px standalone chips, then briefly took `--control-h`, which is
+  `calc(26px * var(--density))` and so 37.7px in modern for a row of
+  12.65px labels.
+- **Desktop only** below 700px: a week-column board is inherently wide
+  and a three-week window on a phone answers nothing the list doesn't
+  answer better. Renders a short panel with a button back to the list.
+- **`PlanView` renders only `PlanSnapshot`** — no component reads
+  `s.sprints` during rendering. Live store entities and replayed entities
+  share `buildPlanSnapshot`; replay displays only the selected historical
+  entities. Projection lives in Rust
+  ([api/src/plan.rs](../api/src/plan.rs)) because the client doesn't
+  have the op log; assembly stays in `plan.ts` with one implementation
+  serving both modes.
+- **History scrubber (sprint 32).** `GET /api/plan/at?project_id=…&t=…&seq=…`
+  returns projected entities, the effective timestamp, earliest recorded
+  plan op and selected revision, requiring current project access.
+  `GET /api/plan/history?project_id=…&since=…` supplies revision metadata
+  separately; `since` returns only newer plan operations. The list is retained
+  while scrubbing and reopening the panel. Relevant project operations in the
+  WebSocket-nudged change feed refresh it, including acknowledged local writes;
+  unrelated operations do not. Bootstrap recovery conservatively checks for
+  deltas when it advances past unseen operations. Optional `seq` selects an exact revision,
+  distinguishing changes that share a timestamp; optional `t` selects a time.
+  The **Past** toggle opens a separate history panel below the board (hidden
+  by default). Its continuous time axis has its own zoom and pan, independent
+  of the roadmap's weeks and horizontal scrolling. Click to select a time,
+  drag the timeline to pan, or drag the playhead to scrub continuously. Scroll
+  or use zoom buttons to zoom from years down to seconds. Tick labels adapt
+  to seconds, days, calendar months and years; Fit shows all recorded history
+  from genesis to the browsing session's current-time boundary. That boundary
+  stays stable during zoom and pan, extending only when new recorded changes
+  arrive. Zoom stops at Fit and at a one-second window. No state is
+  reconstructible before genesis. Change
+  markers, a revision picker and
+  previous/next controls select exact operations. Left/Right keys step to
+  earlier/later revisions whether the picker or timeline has focus, independent
+  of the picker's newest-first list order. The picker displays the selected
+  revision/time; the duplicate footer timestamp and date input are removed.
+  The range runs from genesis to now. **Live plan**
+  restores editing; hiding Past also returns to live immediately.
+  **Unplanned** controls the reconstructed finished-work band and its
+  identically named row. Panel visibility persists, historical selection
+  does not. The board shows only the selected revision, without live cards
+  or drift labels overlaid. Scrubbing reveals changes by moving the cards
+  through their historical states. Deleted tasks reappear in historical
+  checklists. Replay is read-only, including the inbox;
+  Unplanned remains available using creation and completion dates reconstructed
+  from task ops, with promotion, dragging and live task editing disabled.
+  Historical Unplanned uses recorded finish dates (creation dates as fallback),
+  since completed calendar block spans are not replayed. Tag filters are hidden
+  because tags are not projected. Card counters remain removed. Selection resets on project
+  and workspace changes. Requests are throttled during dragging; the last
+  completed snapshot remains visible with a loading status until the selected
+  read completes. Status and retry use a fixed-height footer caption, blank
+  when idle, keeping the board still; there is
+  no top history banner. Stale responses are ignored; failed reads show retry.
+  The snapshot-only playground has no historical controls.
+- **Picking a project in the sidebar scopes the view you're in**, it
+  does not jump to the list: plan → `planProjectId`, dashboard →
+  `dashboardProjectId`, list → `listFilter.project_id`, calendar →
+  `soloProjectFilter` (its scoping gesture is its own visibility
+  filter, since it's a time surface across every project). The nav
+  order is Calendar · List · Plan · Dashboard — a widening sequence
+  over the same tasks, with the roll-up last. The project highlight
+  follows whichever cursor the current view uses; on the calendar it
+  appears only when exactly one project is visible, which is the only
+  time a single-project highlight is true.
+- **Available in production on desktop.** The UX was accepted after the
+  sprint 32 scrubber revisions. The Plan sidebar entry and `P` shortcut
+  open the same surface; the existing mobile fallback remains.
+
 ### 7.5 Playground mode
 
 "Try as Maya in your browser" on the login screen drops the user into
@@ -602,11 +858,10 @@ hand-porting.
 
 - Drag-to-create on calendar grid (free-draw a block on empty space)
 - Inline editing of title / estimate in the list row (modal works)
-- Filter chips (epic / sprint / status) on the list toolbar
+- Filter chips (track / sprint / status) on the list toolbar
 - Compare mode (two people side-by-side)
 - Date scope on list (today / this week / a date)
 - Recurring template / instance model (the section bucket exists; per-cycle instance auto-spawn does not)
-- Snapshots / replay
 - Real Jira / Notion / GCal sync — `external_id` + `external_url` are
   manual; no automation, no calendar ingest, no GCal rendering
 - Email invites for non-Fira accounts (linking and workspace adds
@@ -643,7 +898,6 @@ Stated up front so future me doesn't speculate:
 - Sync to Jira / Notion / GCal (write-back, status pull, calendar
   ingest). Manual `external_id` / `external_url` links exist;
   automated sync doesn't.
-- Snapshots / replay UI.
 - Recurring task templates + per-cycle instances.
 - Conflict-divergence UI. Today is last-write-wins on intent ops.
 - Op-log compaction / archival of `processed_ops`. Migration 0010
