@@ -219,7 +219,7 @@ async fn main() -> anyhow::Result<()> {
     println!("stress_seed: truncating tenant tables...");
     sqlx::query(
         "TRUNCATE TABLE processed_ops, gcal_events, time_blocks, subtasks, task_tags,
-         tags, tasks, sprints, epics, project_members, projects,
+         tags, tasks, sprints, tracks, project_members, projects,
          workspace_members, workspaces, sessions, users RESTART IDENTITY CASCADE",
     )
     .execute(&pool)
@@ -390,7 +390,7 @@ async fn main() -> anyhow::Result<()> {
     let mut conn = pool.acquire().await?;
     let mut copy = conn
         .copy_in_raw(
-            "COPY tasks (id,project_id,epic_id,sprint_id,assignee_id,title,description_md,\
+            "COPY tasks (id,project_id,track_id,sprint_id,assignee_id,title,description_md,\
              section,status,priority,source,external_id,estimate_min,spent_min,sort_key,\
              created_at,updated_at,external_url,created_by,finished_at) FROM STDIN",
         )

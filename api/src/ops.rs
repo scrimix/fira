@@ -19,7 +19,7 @@ use axum::{
     http::StatusCode,
     response::Json,
 };
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Datelike, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
@@ -37,7 +37,7 @@ pub struct OpEnvelope {
     pub payload: serde_json::Value,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(tag = "kind")]
 pub enum Op {
     #[serde(rename = "task.create")]
@@ -108,6 +108,47 @@ pub enum Op {
     TagDelete { tag_id: Uuid },
     #[serde(rename = "task.set_tags")]
     TaskSetTags { task_id: Uuid, tag_ids: Vec<Uuid> },
+    // Plan-board ops. Narrow per-field setters, like task.set_assignee:
+    // `track_id` is meaningfully nullable ("No track") and sprints are
+    // edited by drag rather than a form, so neither goal.update's
+    // whole-entity shape nor block.update's `Partial<>` fits.
+    #[serde(rename = "track.create")]
+    TrackCreate { track: TrackInput },
+    #[serde(rename = "track.set_title")]
+    TrackSetTitle { track_id: Uuid, title: String },
+    #[serde(rename = "track.set_color")]
+    TrackSetColor { track_id: Uuid, color: String },
+    #[serde(rename = "track.reorder")]
+    TrackReorder {
+        project_id: Uuid,
+        ordered: Vec<Uuid>,
+    },
+    #[serde(rename = "track.delete")]
+    TrackDelete { track_id: Uuid },
+    #[serde(rename = "sprint.create")]
+    SprintCreate { sprint: SprintInput },
+    #[serde(rename = "sprint.set_title")]
+    SprintSetTitle { sprint_id: Uuid, title: String },
+    // One op for two columns: a span is a single value, and move and
+    // resize both emit it. Never independently null.
+    #[serde(rename = "sprint.set_dates")]
+    SprintSetDates {
+        sprint_id: Uuid,
+        starts_on: NaiveDate,
+        ends_on: NaiveDate,
+    },
+    #[serde(rename = "sprint.set_track")]
+    SprintSetTrack {
+        sprint_id: Uuid,
+        track_id: Option<Uuid>,
+    },
+    #[serde(rename = "sprint.delete")]
+    SprintDelete { sprint_id: Uuid },
+    #[serde(rename = "task.set_sprint")]
+    TaskSetSprint {
+        task_id: Uuid,
+        sprint_id: Option<Uuid>,
+    },
     // Goal ops are *private kinds*: see `is_private_kind` and the
     // authorship arm in `get_changes`.
     #[serde(rename = "goal.create")]
@@ -127,7 +168,7 @@ fn is_private_kind(kind: &str) -> bool {
 }
 
 impl Op {
-    fn kind_str(&self) -> &'static str {
+    pub(crate) fn kind_str(&self) -> &'static str {
         match self {
             Op::TaskCreate { .. } => "task.create",
             Op::TaskTick { .. } => "task.tick",
@@ -154,6 +195,17 @@ impl Op {
             Op::TagSetColor { .. } => "tag.set_color",
             Op::TagDelete { .. } => "tag.delete",
             Op::TaskSetTags { .. } => "task.set_tags",
+            Op::TrackCreate { .. } => "track.create",
+            Op::TrackSetTitle { .. } => "track.set_title",
+            Op::TrackSetColor { .. } => "track.set_color",
+            Op::TrackReorder { .. } => "track.reorder",
+            Op::TrackDelete { .. } => "track.delete",
+            Op::SprintCreate { .. } => "sprint.create",
+            Op::SprintSetTitle { .. } => "sprint.set_title",
+            Op::SprintSetDates { .. } => "sprint.set_dates",
+            Op::SprintSetTrack { .. } => "sprint.set_track",
+            Op::SprintDelete { .. } => "sprint.delete",
+            Op::TaskSetSprint { .. } => "task.set_sprint",
             Op::GoalCreate { .. } => "goal.create",
             Op::GoalUpdate { .. } => "goal.update",
             Op::GoalDelete { .. } => "goal.delete",
@@ -171,7 +223,7 @@ impl Op {
 /// Note what is *absent*: `workspace_id` and `user_id`. Both come from
 /// `AuthCtx` at apply time, so a client cannot write a goal into
 /// another user's row or another workspace.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct GoalInput {
     pub id: Uuid,
     pub name: String,
@@ -194,12 +246,15 @@ fn default_direction() -> String {
     "at_least".into()
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct TaskInput {
     pub id: Uuid,
     pub project_id: Uuid,
-    #[serde(default)]
-    pub epic_id: Option<Uuid>,
+    /// `epic_id` pre-0034. The alias is load-bearing: processed_ops is
+    /// never pruned, so older payloads still say `epic_id` and the
+    /// scrubber would otherwise null their track link on replay.
+    #[serde(default, alias = "epic_id")]
+    pub track_id: Option<Uuid>,
     #[serde(default)]
     pub sprint_id: Option<Uuid>,
     #[serde(default)]
@@ -226,7 +281,37 @@ pub struct TaskInput {
     pub sort_key: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
+pub struct TrackInput {
+    pub id: Uuid,
+    pub project_id: Uuid,
+    pub title: String,
+    #[serde(default = "default_track_color")]
+    pub color: String,
+    #[serde(default = "default_sort")]
+    pub sort_key: String,
+}
+
+fn default_track_color() -> String {
+    "#334155".into()
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct SprintInput {
+    pub id: Uuid,
+    pub project_id: Uuid,
+    #[serde(default)]
+    pub track_id: Option<Uuid>,
+    pub title: String,
+    #[serde(default)]
+    pub starts_on: Option<NaiveDate>,
+    #[serde(default)]
+    pub ends_on: Option<NaiveDate>,
+    #[serde(default = "default_sort")]
+    pub sort_key: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
 pub struct TagInput {
     pub id: Uuid,
     pub project_id: Uuid,
@@ -237,7 +322,7 @@ fn default_sort() -> String {
     "M".into()
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct SubtaskInput {
     pub id: Uuid,
     pub task_id: Uuid,
@@ -248,7 +333,7 @@ pub struct SubtaskInput {
     pub sort_key: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct BlockInput {
     pub id: Uuid,
     pub task_id: Uuid,
@@ -258,7 +343,7 @@ pub struct BlockInput {
     pub state: String,
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize, Serialize, Default)]
 pub struct BlockPatch {
     #[serde(default)]
     pub start_at: Option<DateTime<Utc>>,
@@ -524,7 +609,24 @@ async fn validate_goal(
     Ok(())
 }
 
-async fn apply_payload(
+/// Mirror of the CHECKs in 0034, caught here so the client gets a
+/// readable per-op error instead of a raw constraint violation.
+/// `[starts_on, ends_on)` — end-exclusive, both week-aligned Mondays.
+fn validate_span(starts_on: NaiveDate, ends_on: NaiveDate) -> anyhow::Result<()> {
+    if ends_on <= starts_on {
+        anyhow::bail!("a sprint's ends_on must be after its starts_on");
+    }
+    if starts_on.weekday().number_from_monday() != 1 || ends_on.weekday().number_from_monday() != 1 {
+        anyhow::bail!("a sprint's starts_on and ends_on must both be Mondays");
+    }
+    Ok(())
+}
+
+/// The single apply seam: every content mutation in the system goes
+/// through here. `/ops` calls it per-op, the seeder replays its backdated
+/// fixture through it, and the integration tests drive it directly — so
+/// there is exactly one implementation of what an op means.
+pub async fn apply_payload(
     tx: &mut Transaction<'_, Postgres>,
     user_id: Uuid,
     workspace_id: Uuid,
@@ -537,7 +639,7 @@ async fn apply_payload(
             require_project_access(tx, user_id, workspace_id, task.project_id).await?;
             *out_project_id = Some(task.project_id);
             sqlx::query(
-                "INSERT INTO tasks (id, project_id, epic_id, sprint_id, assignee_id,
+                "INSERT INTO tasks (id, project_id, track_id, sprint_id, assignee_id,
                     title, description_md, section, status, priority,
                     source, external_id, external_url, estimate_min, spent_min, sort_key,
                     created_by)
@@ -546,7 +648,7 @@ async fn apply_payload(
             )
             .bind(task.id)
             .bind(task.project_id)
-            .bind(task.epic_id)
+            .bind(task.track_id)
             .bind(task.sprint_id)
             .bind(task.assignee_id)
             .bind(&task.title)
@@ -948,6 +1050,174 @@ async fn apply_payload(
                 .await?;
             }
         }
+        Op::TrackCreate { track } => {
+            require_project_access(tx, user_id, workspace_id, track.project_id).await?;
+            *out_project_id = Some(track.project_id);
+            sqlx::query(
+                "INSERT INTO tracks (id, project_id, title, color, sort_key)
+                 VALUES ($1,$2,$3,$4,$5)
+                 ON CONFLICT (id) DO NOTHING",
+            )
+            .bind(track.id)
+            .bind(track.project_id)
+            .bind(&track.title)
+            .bind(&track.color)
+            .bind(&track.sort_key)
+            .execute(&mut **tx)
+            .await?;
+        }
+        Op::TrackSetTitle { track_id, title } => {
+            *out_project_id =
+                Some(ensure_track_in_scope(tx, user_id, workspace_id, track_id).await?);
+            sqlx::query("UPDATE tracks SET title = $2 WHERE id = $1")
+                .bind(track_id)
+                .bind(&title)
+                .execute(&mut **tx)
+                .await?;
+        }
+        Op::TrackSetColor { track_id, color } => {
+            *out_project_id =
+                Some(ensure_track_in_scope(tx, user_id, workspace_id, track_id).await?);
+            sqlx::query("UPDATE tracks SET color = $2 WHERE id = $1")
+                .bind(track_id)
+                .bind(&color)
+                .execute(&mut **tx)
+                .await?;
+        }
+        Op::TrackReorder {
+            project_id,
+            ordered,
+        } => {
+            require_project_access(tx, user_id, workspace_id, project_id).await?;
+            *out_project_id = Some(project_id);
+            // The project_id predicate *is* the authorization: ids inside
+            // `ordered` are never trusted, so a forged list can't touch
+            // another project's rows. Same shape as task.reorder.
+            for (i, track_id) in ordered.iter().enumerate() {
+                let sort_key = format!("M{:03}", i);
+                sqlx::query("UPDATE tracks SET sort_key = $2 WHERE id = $1 AND project_id = $3")
+                    .bind(track_id)
+                    .bind(&sort_key)
+                    .bind(project_id)
+                    .execute(&mut **tx)
+                    .await?;
+            }
+        }
+        Op::TrackDelete { track_id } => {
+            *out_project_id =
+                Some(ensure_track_in_scope(tx, user_id, workspace_id, track_id).await?);
+            // Child sprints' track_id and member tasks' track_id both go
+            // NULL via ON DELETE SET NULL (0001/0034). Nothing is
+            // destroyed; the board shows the orphans in a "No track" row.
+            sqlx::query("DELETE FROM tracks WHERE id = $1")
+                .bind(track_id)
+                .execute(&mut **tx)
+                .await?;
+        }
+        Op::SprintCreate { sprint } => {
+            require_project_access(tx, user_id, workspace_id, sprint.project_id).await?;
+            *out_project_id = Some(sprint.project_id);
+            if let (Some(a), Some(b)) = (sprint.starts_on, sprint.ends_on) {
+                validate_span(a, b)?;
+            } else if sprint.starts_on.is_some() != sprint.ends_on.is_some() {
+                anyhow::bail!("a sprint's span needs both starts_on and ends_on, or neither");
+            }
+            if let Some(track_id) = sprint.track_id {
+                let track_project =
+                    ensure_track_in_scope(tx, user_id, workspace_id, track_id).await?;
+                if track_project != sprint.project_id {
+                    anyhow::bail!("track_id belongs to a different project");
+                }
+            }
+            sqlx::query(
+                "INSERT INTO sprints (id, project_id, track_id, title, starts_on, ends_on, sort_key)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7)
+                 ON CONFLICT (id) DO NOTHING",
+            )
+            .bind(sprint.id)
+            .bind(sprint.project_id)
+            .bind(sprint.track_id)
+            .bind(&sprint.title)
+            .bind(sprint.starts_on)
+            .bind(sprint.ends_on)
+            .bind(&sprint.sort_key)
+            .execute(&mut **tx)
+            .await?;
+        }
+        Op::SprintSetTitle { sprint_id, title } => {
+            *out_project_id =
+                Some(ensure_sprint_in_scope(tx, user_id, workspace_id, sprint_id).await?);
+            sqlx::query("UPDATE sprints SET title = $2 WHERE id = $1")
+                .bind(sprint_id)
+                .bind(&title)
+                .execute(&mut **tx)
+                .await?;
+        }
+        Op::SprintSetDates {
+            sprint_id,
+            starts_on,
+            ends_on,
+        } => {
+            *out_project_id =
+                Some(ensure_sprint_in_scope(tx, user_id, workspace_id, sprint_id).await?);
+            validate_span(starts_on, ends_on)?;
+            sqlx::query("UPDATE sprints SET starts_on = $2, ends_on = $3 WHERE id = $1")
+                .bind(sprint_id)
+                .bind(starts_on)
+                .bind(ends_on)
+                .execute(&mut **tx)
+                .await?;
+        }
+        Op::SprintSetTrack {
+            sprint_id,
+            track_id,
+        } => {
+            let project_id = ensure_sprint_in_scope(tx, user_id, workspace_id, sprint_id).await?;
+            *out_project_id = Some(project_id);
+            // Resolve the target through its own scope helper, so the op
+            // can't be used to probe for ids the caller can't see.
+            if let Some(track_id) = track_id {
+                let track_project =
+                    ensure_track_in_scope(tx, user_id, workspace_id, track_id).await?;
+                if track_project != project_id {
+                    anyhow::bail!("track_id belongs to a different project");
+                }
+            }
+            sqlx::query("UPDATE sprints SET track_id = $2 WHERE id = $1")
+                .bind(sprint_id)
+                .bind(track_id)
+                .execute(&mut **tx)
+                .await?;
+        }
+        Op::SprintDelete { sprint_id } => {
+            *out_project_id =
+                Some(ensure_sprint_in_scope(tx, user_id, workspace_id, sprint_id).await?);
+            // Member tasks' sprint_id goes NULL, so they return to the
+            // plan inbox rather than being destroyed.
+            sqlx::query("DELETE FROM sprints WHERE id = $1")
+                .bind(sprint_id)
+                .execute(&mut **tx)
+                .await?;
+        }
+        Op::TaskSetSprint {
+            task_id,
+            sprint_id,
+        } => {
+            let project_id = ensure_task_in_scope(tx, user_id, workspace_id, task_id).await?;
+            *out_project_id = Some(project_id);
+            if let Some(sprint_id) = sprint_id {
+                let sprint_project =
+                    ensure_sprint_in_scope(tx, user_id, workspace_id, sprint_id).await?;
+                if sprint_project != project_id {
+                    anyhow::bail!("sprint_id belongs to a different project");
+                }
+            }
+            sqlx::query("UPDATE tasks SET sprint_id = $2, updated_at = now() WHERE id = $1")
+                .bind(task_id)
+                .bind(sprint_id)
+                .execute(&mut **tx)
+                .await?;
+        }
     }
     Ok(())
 }
@@ -1116,5 +1386,35 @@ pub async fn record_workspace_op(
         .bind(crate::pubsub::format_payload(workspace_id, seq.0))
         .execute(&mut **tx)
         .await?;
+    Ok(())
+}
+
+/// Seeder-only twin of `record_synthesized_op` with an explicit
+/// `applied_at`, so the fixture's op log carries the dates its narrative
+/// claims instead of all collapsing onto `now()`. No `pg_notify`: the
+/// seeder wipes and rewrites everything, and nudging live clients
+/// mid-reseed only makes them fetch a half-built world.
+pub(crate) async fn record_fixture_op(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+    workspace_id: Uuid,
+    kind: &str,
+    payload: serde_json::Value,
+    project_id: Option<Uuid>,
+    applied_at: DateTime<Utc>,
+) -> anyhow::Result<()> {
+    sqlx::query(
+        "INSERT INTO processed_ops (op_id, user_id, kind, payload, project_id, workspace_id, applied_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)",
+    )
+    .bind(Uuid::new_v4().to_string())
+    .bind(user_id)
+    .bind(kind)
+    .bind(payload)
+    .bind(project_id)
+    .bind(workspace_id)
+    .bind(applied_at)
+    .execute(&mut **tx)
+    .await?;
     Ok(())
 }

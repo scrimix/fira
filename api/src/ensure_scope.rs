@@ -184,3 +184,61 @@ pub async fn ensure_block_in_scope(
     row.map(|(p,)| p)
         .ok_or_else(|| anyhow::anyhow!("block not in scope"))
 }
+
+pub async fn ensure_track_in_scope(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+    workspace_id: Uuid,
+    track_id: Uuid,
+) -> anyhow::Result<Uuid> {
+    let row: Option<(Uuid,)> = sqlx::query_as(
+        "SELECT t.project_id FROM tracks t
+         JOIN projects p ON p.id = t.project_id
+         WHERE t.id = $1 AND p.workspace_id = $3
+           AND (
+             p.owner_id = $2
+             OR p.id IN (SELECT project_id FROM project_members WHERE user_id = $2 AND removed_at IS NULL)
+             OR EXISTS (
+               SELECT 1 FROM workspace_members wm
+               WHERE wm.workspace_id = $3 AND wm.user_id = $2
+                 AND wm.removed_at IS NULL AND wm.role = 'owner'
+             )
+           )",
+    )
+    .bind(track_id)
+    .bind(user_id)
+    .bind(workspace_id)
+    .fetch_optional(&mut **tx)
+    .await?;
+    row.map(|(p,)| p)
+        .ok_or_else(|| anyhow::anyhow!("track not in scope"))
+}
+
+pub async fn ensure_sprint_in_scope(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+    workspace_id: Uuid,
+    sprint_id: Uuid,
+) -> anyhow::Result<Uuid> {
+    let row: Option<(Uuid,)> = sqlx::query_as(
+        "SELECT s.project_id FROM sprints s
+         JOIN projects p ON p.id = s.project_id
+         WHERE s.id = $1 AND p.workspace_id = $3
+           AND (
+             p.owner_id = $2
+             OR p.id IN (SELECT project_id FROM project_members WHERE user_id = $2 AND removed_at IS NULL)
+             OR EXISTS (
+               SELECT 1 FROM workspace_members wm
+               WHERE wm.workspace_id = $3 AND wm.user_id = $2
+                 AND wm.removed_at IS NULL AND wm.role = 'owner'
+             )
+           )",
+    )
+    .bind(sprint_id)
+    .bind(user_id)
+    .bind(workspace_id)
+    .fetch_optional(&mut **tx)
+    .await?;
+    row.map(|(p,)| p)
+        .ok_or_else(|| anyhow::anyhow!("sprint not in scope"))
+}

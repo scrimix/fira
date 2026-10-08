@@ -1,6 +1,6 @@
 import { Menu } from 'lucide-react';
 import { useFira } from '../store';
-import { weekStartFor, fmtWeekRange, fmtMonth } from '../time';
+import { weekStartFor, fmtWeekRange, fmtWeekSpan, fmtMonth } from '../time';
 import { useIsMobile } from '../hooks';
 import { ProjectIcon } from './ProjectIcon';
 import { SyncPill, RefreshButton } from './SyncPill';
@@ -14,6 +14,12 @@ export function TopBar() {
   const weekOffset = useFira((s) => s.weekOffset);
   const monthOffset = useFira((s) => s.monthOffset);
   const dashboardProjectId = useFira((s) => s.dashboardProjectId);
+  const planWeekOffset = useFira((s) => s.planWeekOffset);
+  const planWeekCount = useFira((s) => s.planWeekCount);
+  const planProject = useFira((s) =>
+    s.projects.find((p) => p.id === (s.planProjectId ?? s.listFilter.project_id))
+    ?? s.projects[0] ?? null
+  );
   const dashboardProject = useFira((s) =>
     s.projects.find((p) => p.id === s.dashboardProjectId) ?? null
   );
@@ -39,7 +45,13 @@ export function TopBar() {
       ? `Week of ${fmtWeekRange(weekStartFor(weekOffset))}`
       : view === 'dashboard'
         ? fmtMonth(monthOffset)
-        : project?.title ?? 'List';
+        : view === 'plan'
+          // The board's own axis names the weeks; the crumb names the
+          // whole span, which is what the toolbar's window controls
+          // change. One range over both ends — chaining two week labels
+          // read as "Aug 31 - Sep 6 - Feb 22 - 28".
+          ? fmtWeekSpan(planWeekOffset, planWeekCount, { compact: true })
+          : project?.title ?? 'List';
 
   // In a dashboard project scope the month becomes a clickable crumb that
   // returns to the workspace overview — "August 2026 / Atlas". Desktop
@@ -66,6 +78,18 @@ export function TopBar() {
       )}
       <WorkspaceSwitcher />
       <span className="crumb-sep">/</span>
+      {view === 'plan' && planProject && !isMobile && (
+        <>
+          <ProjectIcon
+            name={planProject.icon}
+            color={planProject.color}
+            size={13}
+            className="title-icon"
+          />
+          <span className="title">{planProject.title}</span>
+          <span className="crumb-sep">/</span>
+        </>
+      )}
       {view === 'list' && project && !isMobile && (
         <ProjectIcon
           name={project.icon}

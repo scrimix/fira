@@ -3,18 +3,18 @@
 // `project_id` isn't a label on a task: it's the scope key for who can
 // see the task, for who can see the time blocks logged against it
 // (blocks are reached through task → project, not through their own
-// owner), and for the four things a task points at — tags, epic, sprint,
+// owner), and for the four things a task points at — tags, track, sprint,
 // issue-link template. All of that changes on a move, and the confirm
 // dialog is the only place in the product where any of it is ever
 // surfaced. If a consequence isn't reported here, it happens invisibly.
 //
 // Computed entirely from local state — the store already holds project
-// members, blocks, tags, epics and sprints, all correctly scoped — so
+// members, blocks, tags, tracks and sprints, all correctly scoped — so
 // the dialog renders on picker change with no preflight round trip. The
 // server recomputes the `strandedUsers` half as the authority and
 // refuses an unacknowledged move with 409.
 
-import type { Epic, Project, Sprint, Tag, Task, TimeBlock, User, UUID } from './types';
+import type { Project, Sprint, Tag, Task, TimeBlock, Track, User, UUID } from './types';
 
 export interface StrandedUser {
   user: User;
@@ -36,7 +36,7 @@ export interface MoveImpact {
   /// Dropped from the task for good. Moving it back doesn't restore any
   /// of these.
   droppedTags: Tag[];
-  droppedEpic: Epic | null;
+  droppedTrack: Track | null;
   droppedSprint: Sprint | null;
   /// True when the move costs nothing — the dialog still shows, but as a
   /// one-line confirm.
@@ -66,7 +66,7 @@ export function computeMoveImpact(
     users: User[];
     blocks: TimeBlock[];
     tags: Tag[];
-    epics: Epic[];
+    tracks: Track[];
     sprints: Sprint[];
     workspaceOwnerIds: ReadonlySet<UUID>;
   },
@@ -96,8 +96,8 @@ export function computeMoveImpact(
     .map((id) => ctx.tags.find((t) => t.id === id))
     .filter((t): t is Tag => t != null)
     .sort((a, b) => a.title.localeCompare(b.title));
-  const droppedEpic = task.epic_id
-    ? ctx.epics.find((e) => e.id === task.epic_id) ?? null
+  const droppedTrack = task.track_id
+    ? ctx.tracks.find((e) => e.id === task.track_id) ?? null
     : null;
   const droppedSprint = task.sprint_id
     ? ctx.sprints.find((sp) => sp.id === task.sprint_id) ?? null
@@ -106,11 +106,11 @@ export function computeMoveImpact(
   return {
     stranded,
     droppedTags,
-    droppedEpic,
+    droppedTrack,
     droppedSprint,
     harmless: stranded.length === 0
       && droppedTags.length === 0
-      && droppedEpic == null
+      && droppedTrack == null
       && droppedSprint == null,
   };
 }

@@ -394,7 +394,7 @@ export function ProjectModal({ project }: Props) {
             body={
               <p>
                 <strong>{project.title}</strong> will be deleted along with every task, subtask,
-                epic, sprint, and time block it contains. This can't be undone.
+                track, sprint, and time block it contains. This can't be undone.
               </p>
             }
             onCancel={() => setConfirmingDelete(false)}

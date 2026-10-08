@@ -28,6 +28,15 @@ import './styles/globals.css';
 import './styles/calendar.css';
 import './styles/list.css';
 import './styles/dashboard.css';
+import './styles/plan.css';
+
+// Dev-only: the plan board's pure logic checks itself on boot. Vite
+// tree-shakes the whole module out of production. A failure throws,
+// which is what makes `pnpm visual-check` (watching `pageerror`) the
+// gate on it.
+if (import.meta.env.DEV) {
+  void import('./plan.selfcheck').then((m) => m.runPlanSelfCheck());
+}
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

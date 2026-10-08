@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -109,27 +109,41 @@ pub struct WorkspaceMember {
     pub role: String,
 }
 
+/// A plan-board row. Renamed from `Epic` in 0034.
 #[derive(Debug, Serialize, sqlx::FromRow)]
-pub struct Epic {
+pub struct Track {
     pub id: Uuid,
     pub project_id: Uuid,
     pub title: String,
+    pub color: String,
+    pub sort_key: String,
+    pub created_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
 pub struct Sprint {
     pub id: Uuid,
     pub project_id: Uuid,
+    /// NULL = "No track" — reachable, not an error (0034).
+    pub track_id: Option<Uuid>,
     pub title: String,
+    /// `[starts_on, ends_on)` — end-exclusive, week-aligned Mondays.
+    pub starts_on: Option<NaiveDate>,
+    pub ends_on: Option<NaiveDate>,
+    /// Legacy free-text label from 0001. Nothing writes it any more.
     pub dates: Option<String>,
     pub active: bool,
+    pub sort_key: String,
+    pub created_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
 pub struct Task {
     pub id: Uuid,
     pub project_id: Uuid,
-    pub epic_id: Option<Uuid>,
+    /// Workstream when the task isn't in a sprint yet. A task's track
+    /// resolves as its sprint's track if it has a sprint, else this.
+    pub track_id: Option<Uuid>,
     pub sprint_id: Option<Uuid>,
     pub assignee_id: Option<Uuid>,
     pub title: String,

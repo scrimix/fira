@@ -1,0 +1,32 @@
+import { chromium } from 'playwright';
+const b = await chromium.launch({ args: ['--no-sandbox'] });
+const p = await b.newPage({ viewport: { width: 1600, height: 950 } });
+const errs = []; p.on('pageerror', (e) => { console.log('PAGE ERROR:', e.message); errs.push(e.message); });
+await p.goto('http://localhost:5199');
+await p.waitForSelector('button.login-playground', { timeout: 20000 });
+await p.click('button.login-playground');
+await p.waitForSelector('.avatar', { timeout: 20000 });
+await p.keyboard.press('p');
+await p.waitForSelector('.plan-rows', { timeout: 20000 });
+await p.waitForTimeout(400);
+const card = p.locator('.plan-card:not(.plan-card-retro)').nth(1);
+const rows = card.locator('.plan-task');
+const n = await rows.count();
+const drag = async (from, to) => {
+  const s = await rows.nth(from).boundingBox(), d = await rows.nth(to).boundingBox();
+  await p.mouse.move(s.x + 40, s.y + s.height/2); await p.mouse.down();
+  await p.mouse.move(d.x + 40, d.y + 3, { steps: 14 });
+  await p.mouse.move(d.x + 40, d.y + 2, { steps: 4 }); await p.mouse.up();
+  await p.waitForTimeout(500);
+};
+let before = await card.locator('.plan-task-title').allTextContents();
+await drag(3, 0);
+let after = await card.locator('.plan-task-title').allTextContents();
+console.log('open row reorder:', before[3] === after[0]);
+// last row is archived (section done) — dragging it up must be refused
+before = await card.locator('.plan-task-title').allTextContents();
+await drag(n - 1, 0);
+after = await card.locator('.plan-task-title').allTextContents();
+console.log('archived row refuses to leave the archive:', JSON.stringify(before) === JSON.stringify(after));
+await b.close();
+console.log('page errors:', errs.length);

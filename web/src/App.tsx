@@ -10,6 +10,7 @@ import { TopBar } from './components/TopBar';
 import { CalendarView } from './components/CalendarView';
 import { ListView } from './components/ListView';
 import { DashboardView } from './components/DashboardView';
+import { PlanView } from './components/PlanView';
 import { GoalModal } from './components/GoalModal';
 import { TaskModal } from './components/TaskModal';
 import { TaskModalDraft } from './components/TaskModalDraft';
@@ -412,6 +413,7 @@ export default function App() {
       if (e.key === 'g') useFira.getState().setView('calendar');
       if (e.key === 'i') useFira.getState().setView('list');
       if (e.key === 'd') useFira.getState().setView('dashboard');
+      if (e.key === 'p') useFira.getState().setView('plan');
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -454,8 +456,11 @@ export default function App() {
       <Sidebar />
       <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
         <TopBar />
+        {/* Four arms is where a ternary chain stops reading; a
+            VIEW_COMPONENTS map is the next step if a fifth lands. */}
         {view === 'calendar' ? <CalendarView />
           : view === 'dashboard' ? <DashboardView />
+          : view === 'plan' ? <PlanView />
           : <ListView />}
       </div>
       {openTaskId && <TaskModal taskId={openTaskId} />}

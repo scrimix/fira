@@ -139,6 +139,94 @@ export function weekStartOf(ms: number): number {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate() - dayFromMon).getTime();
 }
 
+// --- Week-axis helpers (plan board) ---
+//
+// Same rules as above: local midnights, Date-method arithmetic, `now()`
+// re-read per call.
+
+/// Local-midnight ms -> `YYYY-MM-DD`.
+///
+/// NOT `toISOString().slice(0, 10)`. A local midnight east of UTC is the
+/// *previous* day in UTC, so that would turn every Monday into a Sunday
+/// for anyone ahead of Greenwich — and the sprint span columns are
+/// Monday-aligned by CHECK constraint.
+export function fmtDateKey(ms: number): string {
+  const d = new Date(ms);
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${mm}-${dd}`;
+}
+
+/// `YYYY-MM-DD` -> local-midnight ms. Inverse of `fmtDateKey`.
+/// `new Date('2026-10-05')` parses as UTC midnight, hence the explicit
+/// component constructor.
+export function parseDateKey(key: string): number {
+  const [y, m, d] = key.split('-').map(Number);
+  return new Date(y, m - 1, d).getTime();
+}
+
+/// `[start, end)` over `weekCount` weeks from `weekOffset`, mirroring
+/// `monthRangeFor`'s end-exclusive convention.
+export function weekRangeFor(weekOffset: number, weekCount: number): { start: number; end: number } {
+  const start = weekStartFor(weekOffset);
+  return { start, end: addDaysLocal(start, weekCount * 7).getTime() };
+}
+
+/// Whole weeks from `aMs` to `bMs`. Both are anchored to their Monday
+/// first, and the result is rounded: a span crossing a DST transition is
+/// 2.9583 weeks of elapsed milliseconds, and the board needs 3.
+export function weeksBetween(aMs: number, bMs: number): number {
+  return Math.round((weekStartOf(bMs) - weekStartOf(aMs)) / (7 * 86400000));
+}
+
+/// Ascending local-midnight Mondays, `weekCount` of them.
+export function weekStartsFor(weekOffset: number, weekCount: number): number[] {
+  const first = weekStartFor(weekOffset);
+  return Array.from({ length: weekCount }, (_, i) => addDaysLocal(first, i * 7).getTime());
+}
+
+/// ISO-8601 week number. The real nearest-Thursday algorithm, not
+/// `floor(dayOfYear / 7)` — that gets every year boundary wrong (2027
+/// opens in W53 of 2026, and 2024-12-30 is already W01 of 2025).
+export function isoWeekNumber(ms: number): number {
+  const d = new Date(ms);
+  // Thursday of this ISO week decides which year the week belongs to.
+  const thursday = new Date(d.getFullYear(), d.getMonth(), d.getDate() - ((d.getDay() + 6) % 7) + 3);
+  const jan4 = new Date(thursday.getFullYear(), 0, 4);
+  const firstThursday = new Date(
+    jan4.getFullYear(), 0, 4 - ((jan4.getDay() + 6) % 7) + 3,
+  );
+  return 1 + Math.round((thursday.getTime() - firstThursday.getTime()) / (7 * 86400000));
+}
+
+export function isoWeekLabel(ms: number): string {
+  return `W${String(isoWeekNumber(ms)).padStart(2, '0')}`;
+}
+
+/// Month header row for the board, computed from the week list rather
+/// than re-derived per column. A week is attributed to the month its
+/// Monday falls in, so a week straddling a boundary sits under one
+/// header rather than being split.
+export function monthSpansFor(weekStarts: number[]): { label: string; weeks: number }[] {
+  const out: { label: string; weeks: number }[] = [];
+  for (const ms of weekStarts) {
+    const d = new Date(ms);
+    const label = d.toLocaleDateString(undefined, { month: 'short', year: '2-digit' });
+    const last = out[out.length - 1];
+    if (last && last.label === label) last.weeks += 1;
+    else out.push({ label, weeks: 1 });
+  }
+  return out;
+}
+
+/// Monday starting the fortnight containing `ms`, anchored to *even* ISO
+/// weeks so every project in a workspace shares boundaries — two people
+/// must never describe the same fortnight differently.
+export function fortnightStartOf(ms: number): number {
+  const monday = weekStartOf(ms);
+  return isoWeekNumber(monday) % 2 === 0 ? monday : addDaysLocal(monday, -7).getTime();
+}
+
 export function todayMidnight(): number {
   const n = now();
   return new Date(n.getFullYear(), n.getMonth(), n.getDate()).getTime();
@@ -148,20 +236,45 @@ export function blockMinutes(b: { start_at: string; end_at: string }): number {
   return (Date.parse(b.end_at) - Date.parse(b.start_at)) / 60000;
 }
 export function fmtWeekRange(weekStart: number, opts?: { compact?: boolean }): string {
-  const start = new Date(weekStart);
-  const end = addDaysLocal(weekStart, 6);
+  return fmtDateRange(weekStart, addDaysLocal(weekStart, 6).getTime(), opts);
+}
+
+/// The plan board's window as one label: first Monday to last Sunday.
+/// Lives here rather than in the crumb so the trailing-day arithmetic
+/// stays on `addDaysLocal` — a raw `+ 6 * 86400000` lands at 23:00 the
+/// day before across a spring-forward and names the wrong date.
+export function fmtWeekSpan(
+  weekOffset: number, weekCount: number, opts?: { compact?: boolean },
+): string {
+  const first = weekStartFor(weekOffset);
+  const last = addDaysLocal(weekStartFor(weekOffset + Math.max(1, weekCount) - 1), 6);
+  return fmtDateRange(first, last.getTime(), opts);
+}
+
+// Inclusive calendar span, collapsing whatever the two ends share:
+// "Aug 31 – Sep 6", "Oct 5 – 11", "Aug 31, 2026 – Feb 28, 2027". The
+// plan board's crumb spans months, so it needs the general form rather
+// than fmtWeekRange's seven-day special case — joining two week labels
+// produced "Aug 31 – Sep 6 – Feb 22 – 28".
+export function fmtDateRange(
+  startMs: number, endMs: number, opts?: { compact?: boolean },
+): string {
+  const start = new Date(startMs);
+  const end = new Date(endMs);
   const sameMonth = start.getMonth() === end.getMonth();
   const sameYear = start.getFullYear() === end.getFullYear();
   const sm = MONTHS[start.getMonth()];
   const em = MONTHS[end.getMonth()];
+  // Same month in different years is not the same month.
+  const sameMonthSameYear = sameMonth && sameYear;
   // Compact: drop the year — that's the part most likely to push the
   // title to a second line on phones, and it's rarely the disambiguating
   // info in normal use.
   if (opts?.compact) {
-    if (sameMonth) return `${sm} ${start.getDate()} – ${end.getDate()}`;
+    if (sameMonthSameYear) return `${sm} ${start.getDate()} – ${end.getDate()}`;
     return `${sm} ${start.getDate()} – ${em} ${end.getDate()}`;
   }
-  if (sameMonth) {
+  if (sameMonthSameYear) {
     return `${sm} ${start.getDate()} – ${end.getDate()}, ${start.getFullYear()}`;
   }
   if (sameYear) {

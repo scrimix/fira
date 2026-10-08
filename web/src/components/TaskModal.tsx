@@ -61,10 +61,10 @@ export function TaskModal({ taskId }: Props) {
   const blocks = useFira((s) => s.blocks);
   const allTags = useFira((s) => s.tags);
   // Move-to-project needs the whole visible project set plus the
-  // project-scoped things a move drops (epics, sprints) so the confirm
+  // project-scoped things a move drops (tracks, sprints) so the confirm
   // dialog can name them.
   const projects = useFira((s) => s.projects);
-  const epics = useFira((s) => s.epics);
+  const tracks = useFira((s) => s.tracks);
   const sprints = useFira((s) => s.sprints);
   const workspaceMembers = useFira((s) =>
     s.workspaces.find((w) => w.id === s.activeWorkspaceId)?.members ?? null);
@@ -171,7 +171,7 @@ export function TaskModal({ taskId }: Props) {
     [pendingMoveTo, projects],
   );
   // Everything the move costs, from local state — the store already
-  // holds members, blocks, tags, epics and sprints, correctly scoped, so
+  // holds members, blocks, tags, tracks and sprints, correctly scoped, so
   // the dialog renders on picker change with no preflight round trip.
   const moveImpact = useMemo(() => {
     if (!task || !moveTarget) return null;
@@ -179,9 +179,9 @@ export function TaskModal({ taskId }: Props) {
       (workspaceMembers ?? []).filter((m) => m.role === 'owner').map((m) => m.user_id),
     );
     return computeMoveImpact(task, moveTarget, {
-      users, blocks, tags: allTags, epics, sprints, workspaceOwnerIds,
+      users, blocks, tags: allTags, tracks, sprints, workspaceOwnerIds,
     });
-  }, [task, moveTarget, users, blocks, allTags, epics, sprints, workspaceMembers]);
+  }, [task, moveTarget, users, blocks, allTags, tracks, sprints, workspaceMembers]);
 
   const isMobile = useIsMobile();
 

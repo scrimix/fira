@@ -36,8 +36,19 @@ const COMBOS = [
 
 const browser = await chromium.launch({ args: ['--no-sandbox'] });
 const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
-page.on('console', (msg) => { if (msg.type() === 'error') console.log('CONSOLE ERROR:', msg.text()); });
-page.on('pageerror', (err) => console.log('PAGE ERROR:', err.message));
+// `plan.selfcheck.ts` throws in dev when one of its assertions fails, so
+// this script is the only automation that can see it. Uncaught exceptions
+// fail the sweep; console errors are logged but don't, because the
+// pre-login `/api/me` probe legitimately 401s and the browser reports
+// that as a console error. Gate on the signal, not on the noise.
+const thrown = [];
+page.on('console', (msg) => {
+  if (msg.type() === 'error') console.log('CONSOLE ERROR:', msg.text());
+});
+page.on('pageerror', (err) => {
+  console.log('PAGE ERROR:', err.message);
+  thrown.push(err.message);
+});
 
 await page.goto(URL);
 await page.waitForSelector('button.login-playground', { timeout: 15000 });
@@ -93,7 +104,24 @@ for (const [theme, style] of COMBOS) {
     await page.keyboard.press('Escape');
     await page.waitForTimeout(300);
   }
+
+  // Plan board. Reached by the `p` shortcut rather than the sidebar
+  // button, which is gated out of production builds.
+  await page.keyboard.press('p');
+  await page.waitForTimeout(500);
+  await page.screenshot({ path: shot(`plan-view-${tag}`) });
+  // Tight crop of the rows: card corners, the track rail, the badge and
+  // the dashed retro band all read at this zoom and nowhere else.
+  const board = page.locator('.plan-rows').first();
+  if (await board.count()) {
+    await board.screenshot({ path: shot(`plan-board-${tag}`) }).catch(() => {});
+  }
 }
 
 await browser.close();
 console.log(`Screenshots written to ${OUT_DIR}/`);
+if (thrown.length) {
+  console.log(`\n${thrown.length} uncaught page error(s) — failing the sweep:`);
+  for (const e of thrown) console.log(`  - ${e}`);
+  process.exit(1);
+}

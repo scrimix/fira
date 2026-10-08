@@ -200,7 +200,7 @@ pub async fn ensure_personal_workspace(
 }
 
 /// Hard-delete a workspace. Cascades through projects → tasks/subtasks/
-/// blocks/epics/sprints/project_members and through workspace_members.
+/// blocks/tracks/sprints/project_members and through workspace_members.
 /// processed_ops is decoupled by migration 0010; the per-user nudge channel
 /// (pubsub::Hub::notify_user) is what tells (former) members to refetch
 /// their workspace list, since the change-feed scope is now gone.
@@ -568,12 +568,16 @@ pub async fn list_projects_in_scope(pool: &PgPool, scope: &[Uuid]) -> sqlx::Resu
     Ok(projects)
 }
 
-pub async fn list_epics_in_scope(pool: &PgPool, scope: &[Uuid]) -> sqlx::Result<Vec<Epic>> {
+// `query_as` binds positionally, so these SELECT lists must match the
+// field order in `models::Track` / `models::Sprint`.
+
+pub async fn list_tracks_in_scope(pool: &PgPool, scope: &[Uuid]) -> sqlx::Result<Vec<Track>> {
     if scope.is_empty() {
         return Ok(vec![]);
     }
     sqlx::query_as(
-        "SELECT id, project_id, title FROM epics WHERE project_id = ANY($1) ORDER BY title",
+        "SELECT id, project_id, title, color, sort_key, created_at FROM tracks
+         WHERE project_id = ANY($1) ORDER BY sort_key, title",
     )
     .bind(scope)
     .fetch_all(pool)
@@ -584,9 +588,13 @@ pub async fn list_sprints_in_scope(pool: &PgPool, scope: &[Uuid]) -> sqlx::Resul
     if scope.is_empty() {
         return Ok(vec![]);
     }
+    // Span order: it's what the derived A1/A2 badges number by.
     sqlx::query_as(
-        "SELECT id, project_id, title, dates, active FROM sprints
-         WHERE project_id = ANY($1) ORDER BY title",
+        "SELECT id, project_id, track_id, title, starts_on, ends_on, dates, active,
+                sort_key, created_at
+         FROM sprints
+         WHERE project_id = ANY($1)
+         ORDER BY starts_on NULLS LAST, sort_key, created_at",
     )
     .bind(scope)
     .fetch_all(pool)
@@ -598,7 +606,7 @@ pub async fn list_tasks_in_scope(pool: &PgPool, scope: &[Uuid]) -> sqlx::Result<
         return Ok(vec![]);
     }
     let mut tasks: Vec<Task> = sqlx::query_as(
-        "SELECT id, project_id, epic_id, sprint_id, assignee_id, title, description_md,
+        "SELECT id, project_id, track_id, sprint_id, assignee_id, title, description_md,
                 section, status, priority, source, external_id, external_url,
                 estimate_min, spent_min, sort_key, created_at, created_by, finished_at
          FROM tasks WHERE project_id = ANY($1)
@@ -665,7 +673,7 @@ pub async fn list_tasks_in_scope(pool: &PgPool, scope: &[Uuid]) -> sqlx::Result<
 
 pub async fn get_task(pool: &PgPool, task_id: Uuid) -> sqlx::Result<Option<Task>> {
     let row: Option<Task> = sqlx::query_as(
-        "SELECT id, project_id, epic_id, sprint_id, assignee_id, title, description_md,
+        "SELECT id, project_id, track_id, sprint_id, assignee_id, title, description_md,
                 section, status, priority, source, external_id, external_url,
                 estimate_min, spent_min, sort_key, created_at, created_by, finished_at
          FROM tasks WHERE id = $1",
@@ -716,7 +724,7 @@ pub async fn get_task_tx(
     task_id: Uuid,
 ) -> sqlx::Result<Option<Task>> {
     let row: Option<Task> = sqlx::query_as(
-        "SELECT id, project_id, epic_id, sprint_id, assignee_id, title, description_md,
+        "SELECT id, project_id, track_id, sprint_id, assignee_id, title, description_md,
                 section, status, priority, source, external_id, external_url,
                 estimate_min, spent_min, sort_key, created_at, created_by, finished_at
          FROM tasks WHERE id = $1",
@@ -937,7 +945,7 @@ pub async fn update_project_tx(
     }))
 }
 
-/// Hard-delete a project. Tasks, subtasks, time_blocks, epics, sprints, and
+/// Hard-delete a project. Tasks, subtasks, time_blocks, tracks, sprints, and
 /// project_members all have ON DELETE CASCADE pointing at projects, so a
 /// single DELETE handles the entity tree. processed_ops is decoupled from
 /// the cascade by migration 0010 — log rows survive entity deletion.

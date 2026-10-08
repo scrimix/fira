@@ -1677,7 +1677,14 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   height: 22px;
   padding: 0 8px;
   font-family: var(--font-label);
-  font-size: calc(10px * var(--fs-scale) * var(--label-size));
+  /* One size for the welded pair, set optically rather than
+     numerically. `.sync-pill` and the avatar are mono at
+     calc(10px * var(--fs-scale)); a sans label at the same nominal
+     size reads a notch smaller, so this takes 11px to land level with
+     them. What it does NOT take is the `--label-size` factor it used
+     to: that made "Playground" 25% larger than the chip fused to its
+     own right edge, in modern only. */
+  font-size: calc(11px * var(--fs-scale));
   letter-spacing: calc(0.04em * var(--label-track));
   text-transform: var(--label-case);
   border: 1px solid var(--rule-2);

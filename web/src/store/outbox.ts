@@ -26,6 +26,23 @@ export type OpKind =
   | { kind: 'tag.set_color'; tag_id: string; color: string }
   | { kind: 'tag.delete'; tag_id: string }
   | { kind: 'task.set_tags'; task_id: string; tag_ids: string[] }
+  // Plan-board ops. Narrow per-field setters, like task.set_assignee:
+  // `track_id` is meaningfully nullable ("No track") and sprints are
+  // edited by drag rather than a form, so neither goal.update's
+  // whole-entity shape nor block.update's `patch` fits.
+  | { kind: 'track.create'; track: import('../types').Track }
+  | { kind: 'track.set_title'; track_id: string; title: string }
+  | { kind: 'track.set_color'; track_id: string; color: string }
+  | { kind: 'track.reorder'; project_id: string; ordered: string[] }
+  | { kind: 'track.delete'; track_id: string }
+  | { kind: 'sprint.create'; sprint: import('../types').Sprint }
+  | { kind: 'sprint.set_title'; sprint_id: string; title: string }
+  // One op for two columns: a span is a single value, and move and
+  // resize both emit it. `ends_on` is exclusive.
+  | { kind: 'sprint.set_dates'; sprint_id: string; starts_on: string; ends_on: string }
+  | { kind: 'sprint.set_track'; sprint_id: string; track_id: string | null }
+  | { kind: 'sprint.delete'; sprint_id: string }
+  | { kind: 'task.set_sprint'; task_id: string; sprint_id: string | null }
   | { kind: 'task.add_attachment'; task_id: string; attachment: import('../types').Attachment }
   | { kind: 'task.remove_attachment'; task_id: string; attachment: import('../types').Attachment }
   | { kind: 'task.move_attachment'; from_task_id: string; to_task_id: string; attachment: import('../types').Attachment }
