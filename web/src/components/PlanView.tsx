@@ -404,7 +404,9 @@ function PlanBoard({ projectId }: { projectId: UUID }) {
       endWeek: Math.min(weekCount, rawEnd),
       clipStart: rawStart < 0,
       clipEnd: rawEnd > weekCount,
-      lane: 0,
+      // Resizing changes the span, not its vertical position. Preserve the
+      // original lane for gestures within this track.
+      lane: row.id === drag.origTrackId ? draggedSprint.lane : 0,
       lanes: Math.max(1, row.lanes),
     }];
   };
