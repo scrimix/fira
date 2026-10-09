@@ -691,7 +691,7 @@ marker; Y axis is tracks. Project-scoped; a workspace roll-up is later.
   is the move handle and the title fills most of it, so anything
   clickable there fights the drag: either it swallows pointerdown and
   the card won't move from the place everyone grabs it, or it doesn't
-  and every short drag ends in an edit box. Renaming is a pencil button;
+  and every short drag ends in an edit box. Renaming and deletion use a compact dots menu;
   deleting is a trash button behind `ConfirmDelete`, which counts the
   tasks that will return to the rail.
   **The card is deliberately not an HTML5 drag source.** It is already a
@@ -760,6 +760,23 @@ marker; Y axis is tracks. Project-scoped; a workspace roll-up is later.
   ([api/src/plan.rs](../api/src/plan.rs)) because the client doesn't
   have the op log; assembly stays in `plan.ts` with one implementation
   serving both modes.
+- Sprint headers show a grey `?` with estimated task time versus full sprint
+  capacity (40h per calendar work week, one person's capacity). Missing
+  estimates are listed separately. It turns amber when current member tasks
+  have planned or completed blocks outside the sprint's local date boundaries.
+  The underlined `?` opens a styled tooltip immediately on click, with outside
+  click and Escape dismissal. It separates scheduled/logged outside minutes; boundary-crossing
+  blocks count only their outside portions. The tooltip lists affected task names, dated outside
+  portions and durations, grouped into Before sprint / After sprint, with
+  logged and scheduled time labelled separately. Blocks spanning both
+  boundaries appear in both groups. Viewport clipping does not affect
+  these calculations. Live snapshots provide task estimates and blocks;
+  historical snapshots currently omit both and explicitly report unavailable
+  information. Sprint Rename/Delete actions share a dots menu rendered outside
+  the card to avoid clipping at narrow widths.
+- Track colors can be edited from the swatch in each track’s controls, using
+  the shared project/tag palette and `track.set_color`. The palette overlays
+  the board without shifting rows; historical views hide editing controls.
 - **History scrubber (sprint 32).** `GET /api/plan/at?project_id=…&t=…&seq=…`
   returns projected entities, the effective timestamp, earliest recorded
   plan op and selected revision, requiring current project access.

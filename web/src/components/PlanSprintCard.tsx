@@ -1,7 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Check, Pencil, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, Check, MoreVertical, Pencil, Plus, Trash2 } from 'lucide-react';
 import type { PlanSprint, PlanTask } from '../plan';
 import type { UUID } from '../types';
+import { createPortal } from 'react-dom';
+import { fmtMin } from '../time';
+import { ClickTooltip } from './ClickTooltip';
+
+const outsideDate = (ms: number) => new Date(ms).toLocaleString(undefined, {
+  day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+});
 
 export const PLAN_TASK_MIME = 'application/x-fira-plan-task';
 
@@ -44,6 +51,37 @@ export function PlanSprintCard({
   const [renaming, setRenaming] = useState(false);
   const [titleDraft, setTitleDraft] = useState(sprint.title);
   const [over, setOver] = useState(false);
+  const [menuRect, setMenuRect] = useState<DOMRect | null>(null);
+  const menuButton = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!menuRect) return;
+    menuRef.current?.querySelector('button')?.focus();
+    const outside = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (!menuRef.current?.contains(target) && !menuButton.current?.contains(target)) setMenuRect(null);
+    };
+    const close = () => setMenuRect(null);
+    document.addEventListener('pointerdown', outside);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    return () => {
+      document.removeEventListener('pointerdown', outside);
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+    };
+  }, [menuRect]);
+  useEffect(() => { if (!onRename && !onDelete) setMenuRect(null); }, [onRename, onDelete]);
+  const info = sprint.information;
+  const information = !info ? 'Task estimates and time blocks are unavailable in historical snapshots.' : [
+    `Load: ${fmtMin(Math.round(info.estimatedMinutes))} estimated / ${fmtMin(info.capacityMinutes)} capacity (${Math.round(info.estimatedMinutes / info.capacityMinutes * 100)}%)`,
+    'Capacity: 40 hours per week, for the full sprint.',
+    ...(info.missingEstimates ? [`${info.missingEstimates} task${info.missingEstimates === 1 ? '' : 's'} without estimates.`] : []),
+    ...(info.outsideBlocks ? [
+      `${info.outsideBlocks} block${info.outsideBlocks === 1 ? '' : 's'} outside the sprint across ${info.outsideTasks} task${info.outsideTasks === 1 ? '' : 's'}.`,
+      `Logged outside: ${fmtMin(Math.round(info.loggedOutsideMinutes))}. Scheduled outside: ${fmtMin(Math.round(info.plannedOutsideMinutes))}.`,
+    ] : ['No time blocks outside the sprint.']),
+  ].join('\n');
   const addRef = useRef<HTMLInputElement>(null);
   const renameRef = useRef<HTMLInputElement>(null);
 
@@ -130,27 +168,56 @@ export function PlanSprintCard({
             {sprint.title}
           </span>
         )}
-        {onRename && !renaming && (
-          <button
-            className="plan-card-btn"
-            title="Rename sprint"
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={() => setRenaming(true)}
-          >
-            <Pencil size={11} strokeWidth={2} />
-          </button>
-        )}
-        {onDelete && (
-          <button
-            className="plan-card-btn plan-card-del"
-            title="Delete sprint"
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={onDelete}
-          >
-            <Trash2 size={11} strokeWidth={1.75} />
-          </button>
-        )}
+        {(onRename || onDelete) && <button ref={menuButton} type="button"
+          className="plan-card-btn plan-sprint-menu-button" aria-label="Sprint actions" title="Sprint actions"
+          aria-haspopup="menu" aria-expanded={!!menuRect}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={() => setMenuRect(menuRect ? null : menuButton.current!.getBoundingClientRect())}>
+          <MoreVertical size={13} strokeWidth={1.75} />
+        </button>}
+        <ClickTooltip className="plan-sprint-info" warning={!!info?.outsideBlocks}
+          label="Sprint information" trigger="?">
+          <div>{information}</div>
+          {!!info?.outsidePortions.length && <div className="plan-sprint-outside-list"
+            tabIndex={0} role="region" aria-label="Time outside sprint">
+          {(['before', 'after'] as const).map(side => {
+            const portions = info?.outsidePortions.filter(portion => portion.side === side) ?? [];
+            return portions.length > 0 && <section className="plan-sprint-outside" key={side}>
+              <strong>{side === 'before' ? 'Before sprint' : 'After sprint'}</strong>
+              <ul>{portions.map((portion, index) => <li key={`${portion.blockId}-${index}`}>
+                <span className="plan-sprint-outside-task">{portion.taskTitle}</span>
+                <span>{portion.state === 'completed' ? 'Logged' : 'Scheduled'} · {fmtMin(Math.round((portion.to - portion.from) / 60_000))}</span>
+                <span>{outsideDate(portion.from)} – {outsideDate(portion.to)}</span>
+              </li>)}</ul>
+            </section>;
+          })}
+          </div>}
+        </ClickTooltip>
       </div>
+
+      {menuRect && (onRename || onDelete) && createPortal(<div ref={menuRef}
+        className="plan-sprint-menu" role="menu" aria-label="Sprint actions"
+        style={{ left: Math.max(8, Math.min(menuRect.right - 140, window.innerWidth - 148)),
+          top: menuRect.bottom + 76 < window.innerHeight ? menuRect.bottom + 4 : Math.max(8, menuRect.top - 76) }}
+        onPointerDown={(e) => e.stopPropagation()}
+        onBlur={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null) && e.relatedTarget !== menuButton.current) setMenuRect(null);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') { e.stopPropagation(); setMenuRect(null); menuButton.current?.focus(); }
+          if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+            e.preventDefault(); e.stopPropagation();
+            const items = [...e.currentTarget.querySelectorAll<HTMLButtonElement>('button')];
+            const index = items.indexOf(document.activeElement as HTMLButtonElement);
+            items[(index + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length]?.focus();
+          }
+        }}>
+        {onRename && <button role="menuitem" onClick={() => { setMenuRect(null); setRenaming(true); }}>
+          <Pencil size={12} /> Rename sprint
+        </button>}
+        {onDelete && <button role="menuitem" className="plan-sprint-menu-delete"
+          onClick={() => { setMenuRect(null); onDelete(); }}><Trash2 size={12} /> Delete sprint</button>}
+      </div>, document.body)}
 
       {showTasks && (
         <ul className="plan-card-tasks">

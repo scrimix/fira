@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { useFira } from '../store';
 import { api } from '../api';
+import { EDITORIAL_COLORS } from '../colors';
 import type { PlanHistory, PlanRevisionList } from '../planHistory';
 import { PlanTimeline } from './PlanTimeline';
 import { useIsMobile } from '../hooks';
@@ -184,6 +185,7 @@ function PlanBoard({ projectId }: { projectId: UUID }) {
 
   const addTrack = useFira((s) => s.addTrack);
   const setTrackTitle = useFira((s) => s.setTrackTitle);
+  const setTrackColor = useFira((s) => s.setTrackColor);
   const deleteTrack = useFira((s) => s.deleteTrack);
   const reorderTracks = useFira((s) => s.reorderTracks);
   const addSprint = useFira((s) => s.addSprint);
@@ -239,7 +241,7 @@ function PlanBoard({ projectId }: { projectId: UUID }) {
     if (!readOnly) return liveSnapshot;
     const data = history && !historyError ? history.data : null;
     const past = buildPlanSnapshot({ projectId, tracks: data?.tracks ?? [],
-      sprints: data?.sprints ?? [], tasks: data?.tasks ?? [], blocks: [], weekStartMs, weekCount });
+      sprints: data?.sprints ?? [], tasks: data?.tasks ?? [], blocks: [], timeDataAvailable: false, weekStartMs, weekCount });
     return past;
   }, [readOnly, liveSnapshot, history, versionAt, versionSeq, historyError, projectId, weekStartMs, weekCount]);
 
@@ -714,6 +716,7 @@ function PlanBoard({ projectId }: { projectId: UUID }) {
                 dragging={drag?.moved ? drag.sprintId : null}
                 dropping={drag?.moved ? drag.curTrackId === row.id : false}
                 onRename={(title) => row.id && setTrackTitle(row.id, title)}
+                onColor={(color) => row.id && setTrackColor(row.id, color)}
                 onDelete={() => setConfirmTrack(row.id)}
                 onMoveUp={i > 0 ? () => {
                   const ids = realRows.map((r) => r.id!) ;
@@ -915,6 +918,7 @@ function TrackRow(props: {
   /// This row is the drag's current destination.
   dropping: boolean;
   onRename?: (title: string) => void;
+  onColor?: (color: string) => void;
   onDelete?: () => void;
   onMoveUp?: () => void;
   onMoveDown?: () => void;
@@ -934,6 +938,9 @@ function TrackRow(props: {
 }) {
   const { row, sprints, showTasks, dropping, weeks, placing, range } = props;
   const [renaming, setRenaming] = useState(false);
+  const [colorsOpen, setColorsOpen] = useState(false);
+  const colorButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => { if (props.readOnly) setColorsOpen(false); }, [props.readOnly]);
   const [draft, setDraft] = useState(row.title);
   useEffect(() => { setDraft(row.title); }, [row.title]);
 
@@ -953,7 +960,13 @@ function TrackRow(props: {
          data-track={row.id ?? ''}
          data-over={dropping || undefined}
          style={{ '--track-color': row.color } as React.CSSProperties}>
-      <div className="plan-row-head">
+      <div className="plan-row-head" onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setColorsOpen(false);
+      }} onKeyDown={(e) => {
+          if (colorsOpen && e.key === 'Escape') {
+            e.stopPropagation(); setColorsOpen(false); colorButton.current?.focus();
+          }
+      }}>
         {renaming ? (
           <input autoFocus className="plan-row-title-input" value={draft}
                  onChange={(e) => setDraft(e.target.value)}
@@ -969,7 +982,15 @@ function TrackRow(props: {
             {row.title}
           </button>
         )}
-        {!props.readOnly && props.onDelete && <div className="plan-row-actions" role="group" aria-label="Track controls">
+        {!props.readOnly && props.onDelete && <div className="plan-row-controls">
+          <div className="plan-row-actions" role="group" aria-label="Track controls">
+            {!props.readOnly && props.onColor && <button
+              ref={colorButton} className="plan-row-btn plan-track-color" type="button"
+              title={`Change color for ${row.title}`} aria-label={`Change color for ${row.title}`}
+              aria-expanded={colorsOpen}
+              onClick={() => setColorsOpen((open) => !open)}>
+              <span style={{ background: row.color }} />
+            </button>}
             <button className="plan-row-btn" title="Move track up" aria-label="Move track up"
                     disabled={!props.onMoveUp} onClick={props.onMoveUp}>
               <ChevronUp size={12} strokeWidth={2} />
@@ -983,6 +1004,21 @@ function TrackRow(props: {
                     onClick={props.readOnly ? undefined : props.onDelete}>
               <Trash2 size={11} strokeWidth={1.75} />
             </button>
+          </div>
+          {!props.readOnly && colorsOpen && props.onColor && <div
+            className="np-colors plan-track-colors" role="group" aria-label={`Color for ${row.title}`}>
+            {EDITORIAL_COLORS.map((color) => <button
+              key={color.hex} type="button" className="np-color"
+              style={{ '--swatch': color.hex } as React.CSSProperties}
+              data-active={color.hex.toLowerCase() === row.color.toLowerCase()}
+              title={color.name} aria-label={color.name}
+              aria-pressed={color.hex.toLowerCase() === row.color.toLowerCase()}
+              onClick={() => {
+                if (color.hex.toLowerCase() !== row.color.toLowerCase()) props.onColor?.(color.hex);
+                setColorsOpen(false);
+                colorButton.current?.focus();
+              }}><span className="np-color-fill" /></button>)}
+          </div>}
         </div>}
       </div>
       {/* `minmax` rather than `auto`: a track with no cards collapses its

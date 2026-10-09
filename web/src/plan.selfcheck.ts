@@ -13,7 +13,7 @@
 // `time.ts` or `plan.ts` must run `pnpm visual-check` before merging.
 
 import {
-  buildPlanSnapshot, buildRetroBuckets, packLanes, planCode,
+  buildPlanSnapshot, buildRetroBuckets, packLanes, planCode, sprintInformation,
   type PlanInput, type PlanSprintInput, type PlanTaskInput,
 } from './plan';
 import {
@@ -378,6 +378,43 @@ function checkHistory(): void {
   eq('history zoom fits full range', clampHistoryWindow(0, 20000, 0, 10000), { start: 0, end: 10000 });
 }
 
+function checkSprintInformation(): void {
+  // Two weeks across the spring DST transition still have 80h of capacity.
+  const span = sprint({ id: 'metrics', starts_on: '2026-03-23', ends_on: '2026-04-06' });
+  const members = [task({ id: 'a', estimate_min: 600 }), task({ id: 'b', estimate_min: 3000 }), task({ id: 'c' })];
+  const info = sprintInformation(span, members, [
+    block('a', '2026-03-24', '2026-03-25'),
+    block('b', '2026-03-22', '2026-03-24', 'planned'),
+    block('a', '2026-04-05', '2026-04-07'),
+    block('c', '2026-03-22', '2026-04-07'),
+    block('a', '2026-03-23', '2026-04-06'),
+    block('unrelated', '2026-03-22', '2026-03-24'),
+    block('a', '2026-04-08', '2026-04-07'),
+  ])!;
+  eq('sprint capacity ignores DST hour changes', info.capacityMinutes, 80 * 60);
+  eq('sprint load sums member estimates', info.estimatedMinutes, 60 * 60);
+  eq('sprint tracks missing estimates', info.missingEstimates, 1);
+  eq('sprint excludes in-range, unrelated and invalid blocks', info.outsideBlocks, 3);
+  eq('sprint outside distinct tasks', info.outsideTasks, 3);
+  eq('sprint counts only logged portions outside', info.loggedOutsideMinutes, 72 * 60);
+  eq('sprint separates planned outside portions', info.plannedOutsideMinutes, 24 * 60);
+  eq('sprint lists tasks and exact before/after portions, splitting a spanning block',
+    info.outsidePortions.map(({ taskId, taskTitle, side, state, from, to }) => ({ taskId, taskTitle, side, state, from, to })), [
+      { taskId: 'b', taskTitle: members[1].title, side: 'before', state: 'planned', from: day('2026-03-22'), to: day('2026-03-23') },
+      { taskId: 'c', taskTitle: members[2].title, side: 'before', state: 'completed', from: day('2026-03-22'), to: day('2026-03-23') },
+      { taskId: 'a', taskTitle: members[0].title, side: 'after', state: 'completed', from: day('2026-04-06'), to: day('2026-04-07') },
+      { taskId: 'c', taskTitle: members[2].title, side: 'after', state: 'completed', from: day('2026-04-06'), to: day('2026-04-07') },
+    ]);
+  const clipped = buildPlanSnapshot(input({
+    sprints: [span], tasks: members.map((t) => ({ ...t, sprint_id: span.id })),
+    weekStartMs: day('2026-03-30'), weekCount: 1,
+  }));
+  eq('viewport clipping does not reduce sprint capacity', clipped.tracks[0].sprints[0].information?.capacityMinutes, 80 * 60);
+  const historical = buildPlanSnapshot(input({ sprints: [span], tasks: members,
+    timeDataAvailable: false, weekStartMs: day('2026-03-23') }));
+  eq('history does not fabricate missing time data', historical.tracks[0].sprints[0].information, null);
+}
+
 export function runPlanSelfCheck(): void {
   checkTime();
   checkPackLanes();
@@ -385,6 +422,7 @@ export function runPlanSelfCheck(): void {
   checkSnapshot();
   checkRetro();
   checkHistory();
+  checkSprintInformation();
   if (failures > 0) {
     // Thrown, not logged: visual-check.mjs watches `pageerror` and fails
     // the sweep on one, which is the only automation that sees this.
