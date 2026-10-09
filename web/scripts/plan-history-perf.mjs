@@ -64,6 +64,30 @@ try {
     await page.waitForFunction((n) => document.querySelectorAll('.plan-revision-marker').length === n, count);
     const openMs = performance.now() - openStart;
     const fullHeap = await heap();
+    // Count painted pixels, not just DOM nodes: opaque marker borders once
+    // erased dense histories even though every button existed in the DOM.
+    const axis = page.getByRole('slider', { name: 'Scrub plan history', exact: true });
+    const axisWidth = (await axis.boundingBox()).width;
+    if (count >= axisWidth) {
+      const png = (await axis.screenshot()).toString('base64');
+      const coverage = await page.evaluate(async (base64) => {
+        const img = new Image();
+        img.src = `data:image/png;base64,${base64}`;
+        await img.decode();
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width; canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+        const background = ctx.getImageData(Math.floor(img.width / 2), 20, 1, 1).data;
+        const pixels = ctx.getImageData(0, 40, img.width, 1).data;
+        let visible = 0;
+        for (let x = 0; x < img.width; x++) {
+          if ([0, 1, 2].some((c) => Math.abs(pixels[x * 4 + c] - background[c]) > 16)) visible++;
+        }
+        return visible / img.width;
+      }, png);
+      if (coverage < .5) throw new Error(`Dense revision markers are invisible (${(coverage * 100).toFixed(1)}% painted)`);
+    }
     const picker = page.getByLabel('Revision', { exact: true });
     const selectStart = performance.now();
     const middle = changes[Math.floor(count / 2)];

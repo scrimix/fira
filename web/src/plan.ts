@@ -46,6 +46,7 @@ export interface PlanTaskInput {
   section: Section;
   status: Status;
   sort_key: string;
+  estimate_min?: number | null;
   /// Replay derives these from recorded creation/completion ops. Legacy
   /// incoming moves can lack dates; live mode supplies the full task.
   finished_at?: string | null;
@@ -61,8 +62,9 @@ export interface PlanInput {
   tracks: PlanTrackInput[];
   sprints: PlanSprintInput[];
   tasks: PlanTaskInput[];
-  /// Only used by the retro band, and only completed ones.
+  /// Current task blocks used for sprint information and the Unplanned band.
   blocks: TimeBlock[];
+  timeDataAvailable?: boolean;
   /// Local-midnight Monday of the leftmost column.
   weekStartMs: number;
   weekCount: number;
@@ -79,6 +81,67 @@ export interface PlanTask {
   /// doesn't have them.
   externalId: string | null;
   tagIds: UUID[];
+}
+
+export interface SprintInformation {
+  estimatedMinutes: number;
+  capacityMinutes: number;
+  missingEstimates: number;
+  outsideBlocks: number;
+  outsideTasks: number;
+  loggedOutsideMinutes: number;
+  plannedOutsideMinutes: number;
+  outsidePortions: {
+    blockId: UUID;
+    taskId: UUID;
+    taskTitle: string;
+    side: 'before' | 'after';
+    state: TimeBlock['state'];
+    from: number;
+    to: number;
+  }[];
+}
+
+/// Compare current task membership and blocks with the complete sprint span,
+/// independent of viewport clipping. Calendar date boundaries use local time.
+export function sprintInformation(sprint: PlanSprintInput, tasks: PlanTaskInput[], blocks: TimeBlock[]): SprintInformation | null {
+  if (!sprint.starts_on || !sprint.ends_on) return null;
+  const start = parseDateKey(sprint.starts_on), end = parseDateKey(sprint.ends_on);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return null;
+  const members = new Map(tasks.map((task) => [task.id, task]));
+  const affected = new Set<UUID>();
+  const info: SprintInformation = {
+    estimatedMinutes: tasks.reduce((sum, task) => sum + Math.max(0, task.estimate_min ?? 0), 0),
+    capacityMinutes: weeksBetween(start, end) * 40 * 60,
+    missingEstimates: tasks.filter((task) => task.estimate_min == null).length,
+    outsideBlocks: 0, outsideTasks: 0, loggedOutsideMinutes: 0, plannedOutsideMinutes: 0,
+    outsidePortions: [],
+  };
+  for (const block of blocks) {
+    const task = members.get(block.task_id);
+    if (!task) continue;
+    const from = Date.parse(block.start_at), to = Date.parse(block.end_at);
+    if (!Number.isFinite(from) || !Number.isFinite(to) || to <= from) continue;
+    const overlap = Math.max(0, Math.min(to, end) - Math.max(from, start));
+    const outside = (to - from - overlap) / 60_000;
+    if (outside <= 0) continue;
+    info.outsideBlocks++;
+    affected.add(block.task_id);
+    if (block.state === 'completed') info.loggedOutsideMinutes += outside;
+    else info.plannedOutsideMinutes += outside;
+    // A block spanning both boundaries has two separately dated portions.
+    if (from < start) info.outsidePortions.push({
+      blockId: block.id, taskId: task.id, taskTitle: task.title,
+      side: 'before', state: block.state, from, to: Math.min(to, start),
+    });
+    if (to > end) info.outsidePortions.push({
+      blockId: block.id, taskId: task.id, taskTitle: task.title,
+      side: 'after', state: block.state, from: Math.max(from, end), to,
+    });
+  }
+  info.outsideTasks = affected.size;
+  info.outsidePortions.sort((a, b) => a.from - b.from || a.taskTitle.localeCompare(b.taskTitle));
+  return info;
 }
 
 export interface PlanSprint {
@@ -107,6 +170,7 @@ export interface PlanSprint {
   tasks: PlanTask[];
   doneCount: number;
   totalCount: number;
+  information?: SprintInformation | null;
 }
 
 export interface PlanTrackRow {
@@ -289,6 +353,16 @@ export function buildPlanSnapshot(input: PlanInput): PlanSnapshot {
     tasksBySprint.set(t.sprint_id, arr);
   }
 
+  const taskById = new Map(tasks.map((task) => [task.id, task]));
+  const blocksBySprint = new Map<UUID, TimeBlock[]>();
+  for (const block of input.blocks) {
+    const sprintId = taskById.get(block.task_id)?.sprint_id;
+    if (!sprintId) continue;
+    const group = blocksBySprint.get(sprintId) ?? [];
+    group.push(block);
+    blocksBySprint.set(sprintId, group);
+  }
+
   // Badge ordinals are per track and ordered by span, so they have to be
   // numbered before the window clips anything — a card scrolled out of
   // view must not renumber the ones still on screen.
@@ -353,6 +427,7 @@ export function buildPlanSnapshot(input: PlanInput): PlanSnapshot {
         tasks: members.map(toPlanTask),
         doneCount: members.filter((t) => t.status === 'done').length,
         totalCount: members.length,
+        information: input.timeDataAvailable === false ? null : sprintInformation(s, members, blocksBySprint.get(s.id) ?? []),
       };
     });
     out.sort((a, b) => a.lane - b.lane || a.startWeek - b.startWeek);

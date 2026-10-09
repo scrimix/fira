@@ -402,6 +402,16 @@
      `.plan-row-grid` alignment. Don't add `position: relative` here —
      it overrides the sticky and the track names scroll away. */
 }
+.plan-row-controls { position: relative; align-self: flex-start; }
+.plan-track-color span { width: 12px; height: 12px; border-radius: var(--r-sm); }
+.plan-row-head:focus-within { z-index: 5; }
+.plan-track-colors {
+  position: absolute; top: calc(100% + 4px); left: 0; width: 148px;
+  grid-template-columns: repeat(4, 1fr); gap: 4px;
+  padding: 6px; border: 1px solid var(--rule); border-radius: var(--r-sm);
+  background: var(--paper);
+}
+.plan-track-colors .np-color { height: 24px; padding: 3px; }
 .plan-row-title,
 .plan-row-title-input {
   flex: 0 0 auto;
@@ -592,9 +602,9 @@
 .plan-card-head {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 3px;
   min-height: var(--plan-task-h);
-  padding: 0 6px;
+  padding: 0 4px;
   /* The whole header is the move handle; the edges resize. */
   cursor: grab;
   user-select: none;
@@ -664,9 +674,9 @@
 .plan-task {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 3px;
   min-height: var(--plan-task-h);
-  padding: 0 6px;
+  padding: 0 4px;
   font-size: var(--plan-task-fs);
   color: var(--ink-2);
   cursor: grab;
@@ -848,7 +858,9 @@
 .plan-revision-tick span { position: absolute; top: 1px; left: 5px; white-space: nowrap; color: var(--ink-4); font-size: var(--fs-xs); }
 .plan-revision-marker {
   position: absolute; top: 24px; width: 7px; height: 32px; margin-left: -3px;
-  background: var(--ink-3); opacity: .6; border: 2px solid var(--paper); border-radius: 2px; cursor: pointer;
+  /* Dense revisions overlap; opaque edges would erase neighboring markers. */
+  background: var(--ink-3); background-clip: padding-box; opacity: .6;
+  border: 2px solid transparent; border-radius: 2px; cursor: pointer;
 }
 .plan-revision-marker:hover, .plan-revision-marker[data-selected] { background: var(--accent); opacity: 1; z-index: 2; }
 .plan-revision-playhead { position: absolute; top: 0; height: 68px; width: 12px; margin-left: -6px; cursor: ew-resize; background: linear-gradient(90deg, transparent 5px, var(--accent) 5px, var(--accent) 7px, transparent 7px); }
@@ -859,3 +871,43 @@
 .plan-wrap[data-history] .plan-card-head,
 .plan-wrap[data-history] .plan-task,
 .plan-wrap[data-history] .plan-rail-task { cursor: default; }
+
+/* Sprint information stays visible; editing actions share a compact menu. */
+.plan-sprint-info {
+  flex: 0 0 14px; width: 14px; height: 15px; padding: 0;
+  border: 0; border-radius: var(--r-2xs); background: none;
+  font: inherit; font-size: var(--fs-xs); font-weight: 600;
+  color: var(--ink-4); cursor: pointer;
+  text-decoration: underline; text-underline-offset: 2px;
+}
+.plan-sprint-info[data-warning] { color: var(--warn); }
+.plan-sprint-info:focus-visible { outline: 1px solid var(--focus-line); }
+.plan-sprint-menu-button[aria-expanded="true"] { opacity: 1; }
+.plan-sprint-menu {
+  position: fixed; z-index: 1300; width: 140px; padding: 4px;
+  background: var(--paper); border: 1px solid var(--rule); border-radius: var(--r-sm);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.15);
+}
+.plan-sprint-menu button {
+  display: flex; align-items: center; gap: 6px; width: 100%; padding: 6px;
+  border: 0; border-radius: var(--r-2xs); background: none; color: var(--ink);
+  font: inherit; font-size: var(--fs-xs); text-align: left; cursor: pointer;
+}
+.plan-sprint-menu button:hover, .plan-sprint-menu button:focus-visible { background: var(--paper-3); }
+.plan-sprint-menu .plan-sprint-menu-delete { color: var(--danger); }
+
+.plan-sprint-menu-button { width: 14px; }
+
+.plan-sprint-outside-list {
+  max-height: min(240px, 40dvh); overflow-y: auto;
+  margin-top: 10px; margin-right: -12px; padding-right: 8px;
+  border-top: 1px solid var(--rule);
+  overscroll-behavior: contain; scrollbar-gutter: stable;
+}
+.plan-sprint-outside-list:focus-visible { outline: 1px solid var(--focus-line); outline-offset: 2px; }
+.plan-sprint-outside { padding-top: 8px; white-space: normal; }
+.plan-sprint-outside > strong { color: var(--warn); font-weight: 600; }
+.plan-sprint-outside ul { list-style: none; margin: 4px 0 0; padding: 0; }
+.plan-sprint-outside li { display: flex; flex-direction: column; gap: 2px; padding: 6px 0; color: var(--ink-3); }
+.plan-sprint-outside li + li { border-top: 1px solid var(--rule); }
+.plan-sprint-outside-task { color: var(--ink); font-weight: 500; overflow-wrap: anywhere; }

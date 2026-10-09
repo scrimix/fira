@@ -1,0 +1,18 @@
+.click-tooltip {
+  position: fixed;
+  z-index: 1300;
+  width: max-content;
+  max-width: min(320px, calc(100vw - 16px));
+  max-height: calc(100dvh - 16px);
+  overflow: auto;
+  padding: 10px 12px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-sm);
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: 0 3px 12px rgb(0 0 0 / 0.18);
+  font-size: var(--fs-xs);
+  line-height: 1.6;
+  white-space: pre-line;
+  user-select: text;
+}
