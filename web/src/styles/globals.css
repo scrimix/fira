@@ -1932,6 +1932,18 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
 .select-md { display: block; }
 .select-md .select-trigger { width: 100%; }
 .select-open .select-trigger { color: var(--ink); background: var(--paper-3); }
+.select-inline .select-trigger {
+  width: auto; max-width: 100%; height: auto; min-height: 0;
+  border: 0; border-radius: 0; padding: 0;
+  background: transparent; font-family: var(--font-label);
+  font-size: calc(11px * var(--fs-scale) * var(--label-size));
+  letter-spacing: calc(0.06em * var(--label-track)); text-transform: var(--label-case);
+}
+.select-inline .select-trigger:hover,
+.select-inline.select-open .select-trigger {
+  background: transparent; color: var(--ink); text-decoration: underline;
+  text-decoration-style: dotted; text-underline-offset: 3px;
+}
 .select-menu {
   /* Positioning is set inline by the component (position: fixed +
      measured top/left) so the popover can escape any ancestor with
@@ -1949,6 +1961,7 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
 }
 .select-option {
   display: flex;
+  width: 100%;
   flex-direction: column;
   gap: 1px;
   align-items: flex-start;
@@ -1965,6 +1978,13 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
 .select-option:disabled { color: var(--ink-4); cursor: not-allowed; }
 .select-option-label { font-size: calc(12px * var(--fs-scale)); }
 .select-option-hint { font-size: calc(10px * var(--fs-scale)); color: var(--ink-4); }
+.select-group-label {
+  padding: 8px 10px 4px;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--ink-3);
+  border-top: 1px solid var(--rule);
+}
 
 .toasts {
   position: fixed;

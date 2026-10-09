@@ -48,11 +48,11 @@
      modern, while the week columns — a JS constant — didn't move at
      all, so the board's proportions came apart. */
   --plan-rail-w: 220px;
-  --plan-head-w: 240px;
+  --plan-head-w: 160px;
 }
 :root[data-style="modern"] .plan-wrap {
   --plan-rail-w: 248px;
-  --plan-head-w: 260px;
+  --plan-head-w: 180px;
 }
 
 .plan-toolbar { gap: calc(8px * var(--density)); }
@@ -223,6 +223,9 @@
    at this height a border per row reads as a table; the hover tint is
    the separation, exactly as in a card's checklist. */
 .plan-rail-task {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   min-height: var(--plan-task-h);
   line-height: var(--plan-task-h);
   padding: 0 var(--plan-rail-gutter) 0 calc(var(--plan-rail-gutter) + 8px);
@@ -235,6 +238,8 @@
   user-select: none;
   -webkit-user-select: none;
 }
+.plan-rail-task > svg { flex: 0 0 auto; color: var(--ink-4); }
+.plan-rail-task > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .plan-rail-task:hover { background: var(--paper-3); color: var(--ink); }
 .plan-rail-task:active { cursor: grabbing; }
 .plan-rail-empty {
@@ -298,7 +303,7 @@
   position: sticky;
   left: 0;
   z-index: 4;
-  border-right: 0;
+  border-right: 1px solid var(--rule-2);
   background: var(--paper);
 }
 
@@ -394,8 +399,8 @@
   align-items: stretch;
   justify-content: flex-start;
   gap: calc(6px * var(--density));
-  padding: calc(6px * var(--density)) var(--gutter-x);
-  border-right: 0;
+  padding: calc(6px * var(--density)) 10px;
+  border-right: 1px solid var(--rule-2);
   border-left: 3px solid var(--track-color, var(--rule-3));
   background: var(--paper);
   /* NB: `position: sticky` above is also what anchors a track's
@@ -773,7 +778,9 @@
  * is not a plan, so the two must not share a visual slot. */
 .plan-row-retro { background: var(--paper-2); }
 .plan-row-retro .plan-row-actions { background: var(--paper-2); }
-.plan-row-retro .plan-row-head { border-left-color: transparent; }
+.plan-row-retro .plan-row-head { border-left-color: transparent; background: var(--paper-2); }
+.plan-row-retro .plan-row-title { color: var(--ink-3); }
+.plan-card-retro .plan-task-tick { cursor: inherit; }
 .plan-card-retro {
   border: 1px dashed var(--rule-2);
   border-left: 1px dashed var(--rule-2);

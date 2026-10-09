@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Archive, ChevronDown, ChevronLeft, ChevronRight, History, ListChecks, Minus,
+  Archive, Check, ChevronDown, ChevronLeft, ChevronRight, History, ListChecks, ListTodo, Minus,
   ChevronUp, PanelLeft, Plus, Trash2,
 } from 'lucide-react';
 import { useFira } from '../store';
@@ -251,18 +251,15 @@ function PlanBoard({ projectId }: { projectId: UUID }) {
 
   const monthSpans = useMemo(() => monthSpansFor(snapshot.weeks), [snapshot.weeks]);
 
-  // Open near "now" rather than at the left edge. The window reaches
-  // back far enough to show recent history, so without this the board
-  // opens on weeks that have already happened and the user has to
-  // scroll to find today. Once per project — after that the scroll
-  // position is theirs.
+  // Center the current week in the visible time columns, excluding the
+  // sticky track header. Once per project; subsequent scrolling is theirs.
   const scrolledFor = useRef<UUID | null>(null);
   const scrollToNow = useCallback(() => {
     const el = gridRef.current;
     if (!el || snapshot.nowWeek < 0) return;
-    // Two columns of lead-in, so "now" sits just inside the left edge
-    // with its immediate past still visible.
-    el.scrollLeft = Math.max(0, (snapshot.nowWeek - 2) * WEEK_W[weekWidth]);
+    const headerWidth = el.querySelector('.plan-axis-pad')?.getBoundingClientRect().width ?? 0;
+    const timelineWidth = el.clientWidth - headerWidth;
+    el.scrollLeft = Math.max(0, (snapshot.nowWeek + 0.5) * WEEK_W[weekWidth] - timelineWidth / 2);
   }, [snapshot.nowWeek, weekWidth]);
 
   useEffect(() => {
@@ -834,6 +831,7 @@ function PlanBoard({ projectId }: { projectId: UUID }) {
                                   e.dataTransfer.setData('text/plain', t.title);
                                 }}
                                 onClick={() => !readOnly && openTask(t.id)}>
+                              <span className="plan-task-tick" aria-hidden="true"><Check size={10} strokeWidth={2.5} /></span>
                               <span className="plan-task-title">{t.title}</span>
                             </li>
                           ))}
@@ -1239,7 +1237,8 @@ function PlanRail({ tasks, tags, projectId, onOpen, onDropOut, readOnly = false 
                      }}
                      onClick={() => !readOnly && onOpen(t.id)}
                      title={t.title}>
-                  {t.title}
+                  <ListTodo size={12} strokeWidth={1.75} aria-hidden="true" />
+                  <span>{t.title}</span>
                 </div>
               ))}
             </div>

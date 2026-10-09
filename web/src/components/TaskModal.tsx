@@ -16,7 +16,7 @@ import { Select } from './Select';
 import {
   fmtMin, fmtClockShort, parseEstimate,
   taskCompletedMin, taskPlannedMin, taskTimeLeft,
-  blockToGrid,
+  blockToGrid, parseDateKey,
 } from '../time';
 import type { Section, Status, Tag, Attachment, Project, Task, User, UUID } from '../types';
 import { api, HttpError } from '@/api';
@@ -84,6 +84,7 @@ export function TaskModal({ taskId }: Props) {
   const setTaskEstimate = useFira((s) => s.setTaskEstimate);
   const setTaskStatus = useFira((s) => s.setTaskStatus);
   const setTaskSection = useFira((s) => s.setTaskSection);
+  const setTaskSprint = useFira((s) => s.setTaskSprint);
   const setTaskExternalId = useFira((s) => s.setTaskExternalId);
   const setTaskExternalUrl = useFira((s) => s.setTaskExternalUrl);
   const setTaskAssignee = useFira((s) => s.setTaskAssignee);
@@ -166,6 +167,28 @@ export function TaskModal({ taskId }: Props) {
     () => projects.filter((p) => p.id !== task?.project_id),
     [projects, task?.project_id],
   );
+  const sprintOptions = useMemo(() => {
+    const projectTracks = tracks.filter(t => t.project_id === task?.project_id)
+      .sort((a, b) => a.sort_key.localeCompare(b.sort_key));
+    const ordered = projectTracks.map(t => ({ id: t.id as UUID | null, title: t.title }));
+    ordered.push({ id: null, title: 'No track' });
+    const date = (ms: number) => new Date(ms).toLocaleDateString(undefined, {
+      day: 'numeric', month: 'short', year: 'numeric',
+    });
+    return [
+      { value: '', label: 'No sprint' },
+      ...ordered.flatMap(track => sprints
+        .filter(s => s.project_id === task?.project_id && s.track_id === track.id)
+        .sort((a, b) => (a.starts_on ?? '9999').localeCompare(b.starts_on ?? '9999') || a.sort_key.localeCompare(b.sort_key))
+        .map(s => {
+          // Sprint end dates are exclusive; show the last included date.
+          const last = s.ends_on ? new Date(parseDateKey(s.ends_on)) : null;
+          if (last) last.setDate(last.getDate() - 1);
+          return { value: s.id, label: s.title, group: track.title,
+            hint: s.starts_on && last ? `${date(parseDateKey(s.starts_on))} – ${date(last.getTime())}` : 'Dates not set' };
+        })),
+    ];
+  }, [tracks, sprints, task?.project_id]);
   const moveTarget = useMemo(
     () => (pendingMoveTo ? projects.find((p) => p.id === pendingMoveTo) ?? null : null),
     [pendingMoveTo, projects],
@@ -514,6 +537,14 @@ export function TaskModal({ taskId }: Props) {
                 value={task.section}
                 onChange={(v) => setTaskSection(task.id, v)}
               />
+            </div>
+            <div className="field">
+              <h5>Sprint</h5>
+              <Select key={task.id} value={task.sprint_id ?? ''} options={sprintOptions}
+                title="Sprint" menuMinWidth={260} variant="inline"
+                onChange={value => {
+                  if (value !== (task.sprint_id ?? '')) setTaskSprint(task.id, value || null);
+                }} />
             </div>
           </div>
         </div>
@@ -2498,4 +2529,3 @@ function Field({ label, value, mono }: { label: string; value: React.ReactNode; 
     </div>
   );
 }
-

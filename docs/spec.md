@@ -524,6 +524,9 @@ the topbar hamburger.
   the editor). On phones the Tags section moves to the main pane
   (under the estimate bar) since the side pane is closed by default.
 - Estimate bar showing spent / planned / left.
+- Sprint dropdown lists this project's sprints grouped by track, with inclusive
+  date ranges and a No sprint option. Assignment uses `task.set_sprint` and
+  preserves task status and section, including completed Unplanned work.
 - Trash icon in the header opens `ConfirmDelete` (plain confirm).
 - **Copy as markdown** affordance (sprint 11) writes
   `# title` + description + `## Subtasks` checklist via

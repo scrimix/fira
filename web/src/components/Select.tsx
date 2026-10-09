@@ -14,6 +14,7 @@ export interface SelectOption<T extends string> {
   value: T;
   label: string;
   hint?: string;
+  group?: string;
   disabled?: boolean;
 }
 
@@ -32,10 +33,11 @@ interface Props<T extends string> {
   /// the hint lines, so callers can widen it.
   menuMinWidth?: number;
   title?: string;
+  variant?: 'default' | 'inline';
 }
 
 export function Select<T extends string>({
-  value, options, onChange, size = 'md', className, disabled, menuMinWidth, title,
+  value, options, onChange, size = 'md', className, disabled, menuMinWidth, title, variant = 'default',
 }: Props<T>) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -106,7 +108,7 @@ export function Select<T extends string>({
     [options, value],
   );
 
-  const cls = `select select-${size}${open ? ' select-open' : ''}${className ? ' ' + className : ''}`;
+  const cls = `select select-${size} select-${variant}${open ? ' select-open' : ''}${className ? ' ' + className : ''}`;
   return (
     <div className={cls} ref={wrapRef}>
       <button
@@ -121,7 +123,7 @@ export function Select<T extends string>({
         title={title}
       >
         <span className="select-value">{current?.label ?? '—'}</span>
-        <ChevronDown size={size === 'sm' ? 11 : 13} strokeWidth={1.75} />
+        {variant !== 'inline' && <ChevronDown size={size === 'sm' ? 11 : 13} strokeWidth={1.75} />}
       </button>
       {open && createPortal(
         <div
@@ -138,7 +140,9 @@ export function Select<T extends string>({
               }
             : { visibility: 'hidden', position: 'fixed', top: 0, left: 0 }}
         >
-          {options.map((o) => (
+          {options.map((o, index) => <div key={o.value}>
+            {o.group && o.group !== options[index - 1]?.group &&
+              <div className="select-group-label">{o.group}</div>}
             <button
               key={o.value}
               type="button"
@@ -157,7 +161,7 @@ export function Select<T extends string>({
               <span className="select-option-label">{o.label}</span>
               {o.hint && <span className="select-option-hint">{o.hint}</span>}
             </button>
-          ))}
+          </div>)}
         </div>,
         document.body,
       )}
