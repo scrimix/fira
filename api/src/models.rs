@@ -127,6 +127,8 @@ pub struct Sprint {
     /// NULL = "No track" — reachable, not an error (0034).
     pub track_id: Option<Uuid>,
     pub title: String,
+    pub default_assignee_id: Option<Uuid>,
+    pub default_tag_ids: Vec<Uuid>,
     /// `[starts_on, ends_on)` — end-exclusive, week-aligned Mondays.
     pub starts_on: Option<NaiveDate>,
     pub ends_on: Option<NaiveDate>,

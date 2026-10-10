@@ -95,6 +95,8 @@ export interface Sprint {
   /// orphans its sprints rather than destroying them.
   track_id: UUID | null;
   title: string;
+  default_assignee_id?: UUID | null;
+  default_tag_ids?: UUID[];
   /// Week-aligned Monday, `YYYY-MM-DD`. Start of the card's span.
   starts_on: string | null;
   /// EXCLUSIVE. Colspan is (ends_on - starts_on)/7, no +1.

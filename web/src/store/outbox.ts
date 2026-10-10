@@ -37,6 +37,7 @@ export type OpKind =
   | { kind: 'track.delete'; track_id: string }
   | { kind: 'sprint.create'; sprint: import('../types').Sprint }
   | { kind: 'sprint.set_title'; sprint_id: string; title: string }
+  | { kind: 'sprint.set_defaults'; sprint_id: string; default_assignee_id: string | null; default_tag_ids: string[] }
   // One op for two columns: a span is a single value, and move and
   // resize both emit it. `ends_on` is exclusive.
   | { kind: 'sprint.set_dates'; sprint_id: string; starts_on: string; ends_on: string }

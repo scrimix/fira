@@ -591,7 +591,8 @@ pub async fn list_sprints_in_scope(pool: &PgPool, scope: &[Uuid]) -> sqlx::Resul
     // Span order: it's what the derived A1/A2 badges number by.
     sqlx::query_as(
         "SELECT id, project_id, track_id, title, starts_on, ends_on, dates, active,
-                sort_key, created_at
+                sort_key, created_at, default_assignee_id,
+                ARRAY(SELECT tag_id FROM sprint_default_tags WHERE sprint_id = sprints.id ORDER BY tag_id) AS default_tag_ids
          FROM sprints
          WHERE project_id = ANY($1)
          ORDER BY starts_on NULLS LAST, sort_key, created_at",

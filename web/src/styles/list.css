@@ -223,7 +223,7 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   min-width: 0;
 }
 .list-tag-filter-controls {
@@ -254,6 +254,9 @@
  * dim (low-saturation outline only); on state fills with the same
  * color-mix wash the dropdown row uses for selection feedback. */
 .list-tag-filter-chip {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
   cursor: pointer;
   opacity: 0.55;
   transition: opacity 80ms ease;

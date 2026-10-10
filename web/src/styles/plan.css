@@ -132,6 +132,7 @@
  * tags rather than projects. */
 .plan-rail {
   --plan-rail-gutter: 8px;
+  --plan-rail-gutter-right: 20px;
   width: var(--plan-rail-w);
   flex: 0 0 auto;
   min-height: 0;
@@ -157,7 +158,7 @@
   /* +2px: the rule under the month strip, and the axis's own bottom
      rule. Both sit outside their rows but inside this box. */
   height: calc(var(--plan-axis-month-h) + var(--plan-axis-week-h) + 2px);
-  padding: 0 var(--plan-rail-gutter);
+  padding: 0 var(--plan-rail-gutter-right) 0 var(--plan-rail-gutter);
 }
 
 /* The list's `.section-head`, reused verbatim, so the rail's headings
@@ -173,7 +174,7 @@
 .plan-rail-group:first-child { padding-top: 8px; }
 .plan-rail-group .section-head {
   align-items: center;
-  padding: 0 var(--plan-rail-gutter) 4px;
+  padding: 0 var(--plan-rail-gutter-right) 4px var(--plan-rail-gutter);
   gap: 6px;
 }
 .plan-rail-spacer { flex: 1; }
@@ -198,7 +199,7 @@
    rule that visibly failed to reach the border beside it while
    `.rail-head`'s own rule above it spanned fully. */
 .plan-rail-tags {
-  padding: 6px var(--plan-rail-gutter) 8px;
+  padding: 6px var(--plan-rail-gutter-right) 8px var(--plan-rail-gutter);
   border-bottom: 1px solid var(--rule);
 }
 .plan-rail-tags .list-tag-filter {
@@ -219,16 +220,14 @@
 :root[data-style="modern"] .plan-rail-tags .list-tag-filter-mode {
   height: var(--plan-task-h);
 }
-/* Title only, one line, on the shared rhythm. No rules between rows —
-   at this height a border per row reads as a table; the hover tint is
-   the separation, exactly as in a card's checklist. */
+/* Compact task rows; the inbox's outer gutter supplies its breathing room. */
 .plan-rail-task {
   display: flex;
   align-items: center;
   gap: 6px;
   min-height: var(--plan-task-h);
   line-height: var(--plan-task-h);
-  padding: 0 var(--plan-rail-gutter) 0 calc(var(--plan-rail-gutter) + 8px);
+  padding: 0 var(--plan-rail-gutter-right) 0 calc(var(--plan-rail-gutter) + 8px);
   font-size: var(--plan-task-fs);
   color: var(--ink-2);
   white-space: nowrap;
@@ -244,7 +243,7 @@
 .plan-rail-task:active { cursor: grabbing; }
 .plan-rail-empty {
   margin: 0;
-  padding: 8px var(--plan-rail-gutter);
+  padding: 8px var(--plan-rail-gutter-right) 8px var(--plan-rail-gutter);
   font-size: var(--fs-xs);
   color: var(--ink-4);
   font-style: italic;

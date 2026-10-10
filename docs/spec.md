@@ -775,8 +775,13 @@ marker; Y axis is tracks. Project-scoped; a workspace roll-up is later.
   boundaries appear in both groups. Viewport clipping does not affect
   these calculations. Live snapshots provide task estimates and blocks;
   historical snapshots currently omit both and explicitly report unavailable
-  information. Sprint Rename/Delete actions share a dots menu rendered outside
+  information. Sprint Edit/Delete actions share a dots menu rendered outside
   the card to avoid clipping at narrow widths.
+- Edit sprint includes the name, default assignee and default tags, persisted
+  via `sprint.set_defaults`. These seed tasks created with Add task in the
+  sprint; existing or moved tasks keep their assignees and tags. Task creator
+  is the fallback when no default assignee is selected or the person becomes
+  inactive. Defaults are project-scoped; deleted tags are removed automatically.
 - Track colors can be edited from the swatch in each track’s controls, using
   the shared project/tag palette and `track.set_color`. The palette overlays
   the board without shifting rows; historical views hide editing controls.

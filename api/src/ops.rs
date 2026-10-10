@@ -129,6 +129,12 @@ pub enum Op {
     SprintCreate { sprint: SprintInput },
     #[serde(rename = "sprint.set_title")]
     SprintSetTitle { sprint_id: Uuid, title: String },
+    #[serde(rename = "sprint.set_defaults")]
+    SprintSetDefaults {
+        sprint_id: Uuid,
+        default_assignee_id: Option<Uuid>,
+        default_tag_ids: Vec<Uuid>,
+    },
     // One op for two columns: a span is a single value, and move and
     // resize both emit it. Never independently null.
     #[serde(rename = "sprint.set_dates")]
@@ -202,6 +208,7 @@ impl Op {
             Op::TrackDelete { .. } => "track.delete",
             Op::SprintCreate { .. } => "sprint.create",
             Op::SprintSetTitle { .. } => "sprint.set_title",
+            Op::SprintSetDefaults { .. } => "sprint.set_defaults",
             Op::SprintSetDates { .. } => "sprint.set_dates",
             Op::SprintSetTrack { .. } => "sprint.set_track",
             Op::SprintDelete { .. } => "sprint.delete",
@@ -1152,6 +1159,33 @@ pub async fn apply_payload(
                 .bind(&title)
                 .execute(&mut **tx)
                 .await?;
+        }
+        Op::SprintSetDefaults { sprint_id, default_assignee_id, mut default_tag_ids } => {
+            let project_id = ensure_sprint_in_scope(tx, user_id, workspace_id, sprint_id).await?;
+            *out_project_id = Some(project_id);
+            if let Some(assignee) = default_assignee_id {
+                let eligible: bool = sqlx::query_scalar(
+                    "SELECT EXISTS(SELECT 1 FROM projects p WHERE p.id = $1 AND
+                     (p.owner_id = $2 OR EXISTS(SELECT 1 FROM project_members m
+                      WHERE m.project_id = p.id AND m.user_id = $2 AND m.role <> 'inactive' AND m.removed_at IS NULL)))"
+                ).bind(project_id).bind(assignee).fetch_one(&mut **tx).await?;
+                if !eligible { anyhow::bail!("default assignee must be an active project member"); }
+            }
+            default_tag_ids.sort_unstable();
+            default_tag_ids.dedup();
+            let count: i64 = sqlx::query_scalar("SELECT count(*) FROM tags WHERE project_id = $1 AND id = ANY($2)")
+                .bind(project_id).bind(&default_tag_ids).fetch_one(&mut **tx).await?;
+            if count as usize != default_tag_ids.len() {
+                anyhow::bail!("default tags include unknown or cross-project tags");
+            }
+            sqlx::query("UPDATE sprints SET default_assignee_id = $2 WHERE id = $1")
+                .bind(sprint_id).bind(default_assignee_id).execute(&mut **tx).await?;
+            sqlx::query("DELETE FROM sprint_default_tags WHERE sprint_id = $1")
+                .bind(sprint_id).execute(&mut **tx).await?;
+            for tag_id in default_tag_ids {
+                sqlx::query("INSERT INTO sprint_default_tags (sprint_id, tag_id) VALUES ($1,$2)")
+                    .bind(sprint_id).bind(tag_id).execute(&mut **tx).await?;
+            }
         }
         Op::SprintSetDates {
             sprint_id,

@@ -30,6 +30,7 @@ interface Props {
   /// same `reorderTasks` the list drives.
   onReorderTask?: (draggedId: UUID, targetId: UUID, before: boolean) => void;
   onRename?: (title: string) => void;
+  onEdit?: () => void;
   onDelete?: () => void;
   onDropTask?: (taskId: UUID) => void;
   /// Pointer-drag handle for the card's whole position — week span and
@@ -43,7 +44,7 @@ interface Props {
 
 export function PlanSprintCard({
   sprint, showTasks, onTick, onRemoveTask, onAddTask, onOpenTask, onReorderTask,
-  onRename, onDelete, onDropTask, onMovePointerDown, onResizePointerDown,
+  onRename, onEdit, onDelete, onDropTask, onMovePointerDown, onResizePointerDown,
   dragging,
 }: Props) {
   const [adding, setAdding] = useState(false);
@@ -212,7 +213,10 @@ export function PlanSprintCard({
             items[(index + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length]?.focus();
           }
         }}>
-        {onRename && <button role="menuitem" onClick={() => { setMenuRect(null); setRenaming(true); }}>
+        {onEdit && <button role="menuitem" onClick={() => { setMenuRect(null); onEdit(); }}>
+          <Pencil size={12} /> Edit sprint
+        </button>}
+        {!onEdit && onRename && <button role="menuitem" onClick={() => { setMenuRect(null); setRenaming(true); }}>
           <Pencil size={12} /> Rename sprint
         </button>}
         {onDelete && <button role="menuitem" className="plan-sprint-menu-delete"

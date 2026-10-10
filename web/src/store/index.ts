@@ -398,6 +398,7 @@ interface FiraState {
   addSprint: (projectId: UUID, trackId: UUID | null, title: string,
               startsOn: string, endsOn: string) => UUID | null;
   setSprintTitle: (sprintId: UUID, title: string) => void;
+  setSprintDefaults: (sprintId: UUID, assigneeId: UUID | null, tagIds: UUID[]) => void;
   setSprintDates: (sprintId: UUID, startsOn: string, endsOn: string) => void;
   setSprintTrack: (sprintId: UUID, trackId: UUID | null) => void;
   deleteSprint: (sprintId: UUID) => void;
@@ -851,6 +852,7 @@ function applyOpToState(s: FiraState, op: AnyOpKind): Partial<FiraState> {
       // toolbar doesn't render a chip for a tag that no longer exists.
       return {
         tags: s.tags.filter((t) => t.id !== op.tag_id),
+        sprints: s.sprints.map(sp => ({ ...sp, default_tag_ids: sp.default_tag_ids?.filter(id => id !== op.tag_id) })),
         tasks: s.tasks.map((t) => t.tag_ids.includes(op.tag_id)
           ? { ...t, tag_ids: t.tag_ids.filter((id) => id !== op.tag_id) }
           : t),
@@ -896,6 +898,10 @@ function applyOpToState(s: FiraState, op: AnyOpKind): Partial<FiraState> {
       return {
         sprints: s.sprints.map((sp) => sp.id === op.sprint_id ? { ...sp, title: op.title } : sp),
       };
+    case 'sprint.set_defaults':
+      return { sprints: s.sprints.map(sp => sp.id === op.sprint_id ? {
+        ...sp, default_assignee_id: op.default_assignee_id, default_tag_ids: [...new Set<UUID>(op.default_tag_ids)],
+      } : sp) };
     case 'sprint.set_dates':
       return {
         sprints: s.sprints.map((sp) => sp.id === op.sprint_id
@@ -2743,6 +2749,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
 
   deleteTag: (tagId) => set((s) => ({
     tags: s.tags.filter((t) => t.id !== tagId),
+    sprints: s.sprints.map(sp => ({ ...sp, default_tag_ids: sp.default_tag_ids?.filter(id => id !== tagId) })),
     // Mirror the server-side cascade: every local task loses this tag id
     // immediately so the UI doesn't render a chip pointing at a tombstone.
     tasks: s.tasks.map((t) => t.tag_ids.includes(tagId)
@@ -2872,6 +2879,14 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
         ? { ...sp, starts_on: startsOn, ends_on: endsOn }
         : sp),
       ...pushOp(s, { kind: 'sprint.set_dates', sprint_id: sprintId, starts_on: startsOn, ends_on: endsOn }),
+    };
+  }),
+
+  setSprintDefaults: (sprintId, assigneeId, tagIds) => set(s => {
+    const ids = [...new Set(tagIds)];
+    return {
+      sprints: s.sprints.map(sp => sp.id === sprintId ? { ...sp, default_assignee_id: assigneeId, default_tag_ids: ids } : sp),
+      ...pushOp(s, { kind: 'sprint.set_defaults', sprint_id: sprintId, default_assignee_id: assigneeId, default_tag_ids: ids }),
     };
   }),
 

@@ -297,3 +297,56 @@ async fn task_set_sprint_round_trips_through_null(pool: PgPool) {
     apply(&mut tx, Op::TaskSetSprint { task_id: t, sprint_id: None }).await.unwrap();
     assert_eq!(sprint_of(&mut tx, t).await, None, "dragging out of a card is reversible");
 }
+
+#[sqlx::test]
+async fn sprint_defaults_persist_validate_and_cascade(pool: PgPool) {
+    tenancy(&pool).await;
+    let sp = Uuid::from_u128(0x91);
+    let tag = Uuid::from_u128(0x92);
+    let foreign_tag = Uuid::from_u128(0x93);
+    let t = Uuid::from_u128(0x94);
+    let mut tx = pool.begin().await.unwrap();
+    apply(&mut tx, sprint(sp, P1, None, "2026-10-05", "2026-10-19")).await.unwrap();
+    apply(&mut tx, task(t, P1, Some(sp))).await.unwrap();
+    for (id, project_id) in [(tag, P1), (foreign_tag, P2)] {
+        sqlx::query("INSERT INTO tags (id, project_id, title, color) VALUES ($1,$2,'Default','#334155')")
+            .bind(id).bind(project_id).execute(&mut *tx).await.unwrap();
+    }
+    assert_eq!(apply(&mut tx, Op::SprintSetDefaults {
+        sprint_id: sp, default_assignee_id: Some(U), default_tag_ids: vec![tag, tag],
+    }).await.unwrap(), Some(P1));
+    let assignee: Option<Uuid> = sqlx::query_scalar("SELECT default_assignee_id FROM sprints WHERE id=$1")
+        .bind(sp).fetch_one(&mut *tx).await.unwrap();
+    assert_eq!(assignee, Some(U));
+    let tags: Vec<Uuid> = sqlx::query_scalar("SELECT tag_id FROM sprint_default_tags WHERE sprint_id=$1")
+        .bind(sp).fetch_all(&mut *tx).await.unwrap();
+    assert_eq!(tags, vec![tag]);
+    // Editing defaults doesn't retroactively attach tags to member tasks.
+    let existing_tags: i64 = sqlx::query_scalar("SELECT count(*) FROM task_tags WHERE task_id=$1")
+        .bind(t).fetch_one(&mut *tx).await.unwrap();
+    assert_eq!(existing_tags, 0);
+    tx.commit().await.unwrap();
+    let fetched = fira_api::db::list_sprints_in_scope(&pool, &[P1]).await.unwrap();
+    let fetched = fetched.iter().find(|s| s.id == sp).unwrap();
+    assert_eq!(fetched.default_assignee_id, Some(U));
+    assert_eq!(fetched.default_tag_ids, vec![tag]);
+    let mut tx = pool.begin().await.unwrap();
+    assert!(apply(&mut tx, Op::SprintSetDefaults {
+        sprint_id: sp, default_assignee_id: None, default_tag_ids: vec![foreign_tag],
+    }).await.unwrap_err().to_string().contains("cross-project"));
+    assert!(apply(&mut tx, Op::SprintSetDefaults {
+        sprint_id: sp, default_assignee_id: Some(Uuid::from_u128(0x95)), default_tag_ids: vec![],
+    }).await.unwrap_err().to_string().contains("active project member"));
+    apply(&mut tx, Op::TagDelete { tag_id: tag }).await.unwrap();
+    let remaining: i64 = sqlx::query_scalar("SELECT count(*) FROM sprint_default_tags WHERE sprint_id=$1")
+        .bind(sp).fetch_one(&mut *tx).await.unwrap();
+    assert_eq!(remaining, 0);
+    apply(&mut tx, Op::SprintSetDefaults {
+        sprint_id: sp, default_assignee_id: None, default_tag_ids: vec![],
+    }).await.unwrap();
+    tx.commit().await.unwrap();
+    let fetched = fira_api::db::list_sprints_in_scope(&pool, &[P1]).await.unwrap();
+    let fetched = fetched.iter().find(|s| s.id == sp).unwrap();
+    assert_eq!(fetched.default_assignee_id, None);
+    assert!(fetched.default_tag_ids.is_empty());
+}

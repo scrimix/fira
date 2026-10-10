@@ -19,6 +19,7 @@ import {
 } from '../time';
 import type { Section, Tag, UUID } from '../types';
 import { PlanSprintCard, PLAN_TASK_MIME } from './PlanSprintCard';
+import { SprintModal } from './SprintModal';
 import { ConfirmDelete } from './ConfirmDelete';
 import { ListTagFilter } from './TagFilter';
 
@@ -215,6 +216,7 @@ function PlanBoard({ projectId }: { projectId: UUID }) {
   rangeRef.current = range;
   const [confirmTrack, setConfirmTrack] = useState<UUID | null>(null);
   const [confirmSprint, setConfirmSprint] = useState<UUID | null>(null);
+  const [editingSprint, setEditingSprint] = useState<UUID | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
 
   // The board resolves its own project when nothing has been picked
@@ -246,7 +248,7 @@ function PlanBoard({ projectId }: { projectId: UUID }) {
   }, [readOnly, liveSnapshot, history, versionAt, versionSeq, historyError, projectId, weekStartMs, weekCount]);
 
   useEffect(() => {
-    if (readOnly) { setDrag(null); setPlacing(false); setRange(null); setConfirmTrack(null); setConfirmSprint(null); }
+    if (readOnly) { setDrag(null); setPlacing(false); setRange(null); setConfirmTrack(null); setConfirmSprint(null); setEditingSprint(null); }
   }, [readOnly]);
 
   const monthSpans = useMemo(() => monthSpansFor(snapshot.weeks), [snapshot.weeks]);
@@ -474,7 +476,13 @@ function PlanBoard({ projectId }: { projectId: UUID }) {
   const addTaskToSprint = (sprintId: UUID, title: string) => {
     // 'later', not 'now': addTask derives status from section, and a task
     // planned into a future sprint isn't in progress.
-    const id = addTask(projectId, 'later', title);
+    const sprint = sprints.find(sp => sp.id === sprintId);
+    const project = useFira.getState().projects.find(p => p.id === projectId);
+    const assignee = sprint?.default_assignee_id;
+    const activeAssignee = assignee && project?.members.some(m => m.user_id === assignee && m.role !== 'inactive')
+      ? assignee : undefined;
+    const tags = sprint?.default_tag_ids?.filter(id => allTags.some(t => t.id === id && t.project_id === projectId));
+    const id = addTask(projectId, 'later', title, activeAssignee, tags);
     if (id) setTaskSprint(id, sprintId);
   };
 
@@ -734,6 +742,7 @@ function PlanBoard({ projectId }: { projectId: UUID }) {
                 onSprintResizeDown={(e, id, edge) =>
                   beginDrag(e, id, edge === 'start' ? 'resize-start' : 'resize-end')}
                 onSprintRename={setSprintTitle}
+                onSprintEdit={setEditingSprint}
                 onSprintDelete={setConfirmSprint}
                 onDropTask={setTaskSprint}
                 onTick={tickTask}
@@ -761,6 +770,7 @@ function PlanBoard({ projectId }: { projectId: UUID }) {
                 onSprintResizeDown={(e, id, edge) =>
                   beginDrag(e, id, edge === 'start' ? 'resize-start' : 'resize-end')}
                 onSprintRename={setSprintTitle}
+                onSprintEdit={setEditingSprint}
                 onSprintDelete={setConfirmSprint}
                 onDropTask={setTaskSprint}
                 onTick={tickTask}
@@ -878,6 +888,9 @@ function PlanBoard({ projectId }: { projectId: UUID }) {
         />
       )}
 
+      {!readOnly && editingSprint && sprints.find(sp => sp.id === editingSprint) &&
+        <SprintModal key={editingSprint} sprint={sprints.find(sp => sp.id === editingSprint)!}
+          onClose={() => setEditingSprint(null)} />}
       {confirmTrackRow && (
         <ConfirmDelete
           title={`Delete track "${confirmTrackRow.title}"?`}
@@ -928,6 +941,7 @@ function TrackRow(props: {
   onSprintPointerDown: (e: React.PointerEvent, id: UUID) => void;
   onSprintResizeDown: (e: React.PointerEvent, id: UUID, edge: 'start' | 'end') => void;
   onSprintRename: (id: UUID, title: string) => void;
+  onSprintEdit: (id: UUID) => void;
   onSprintDelete: (id: UUID) => void;
   onDropTask: (taskId: UUID, sprintId: UUID) => void;
   onTick: (taskId: UUID, done: boolean) => void;
@@ -1059,6 +1073,7 @@ function TrackRow(props: {
             onMovePointerDown={props.readOnly ? undefined : (e) => props.onSprintPointerDown(e, sp.id)}
             onResizePointerDown={props.readOnly ? undefined : (e, edge) => props.onSprintResizeDown(e, sp.id, edge)}
             onRename={props.readOnly ? undefined : (title) => props.onSprintRename(sp.id, title)}
+            onEdit={props.readOnly ? undefined : () => props.onSprintEdit(sp.id)}
             onDelete={props.readOnly ? undefined : () => props.onSprintDelete(sp.id)}
             onDropTask={props.readOnly ? undefined : (taskId) => props.onDropTask(taskId, sp.id)}
             onTick={props.readOnly ? undefined : props.onTick}
