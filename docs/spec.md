@@ -1,7 +1,7 @@
 # Fira — working spec
 
 > Authoritative spec for what's actually being built. The original
-> [brief_description.md](brief_description.md) and [fira_design_doc.md](fira_design_doc.md)
+> [brief_description.md](old/brief_description.md) and [fira_design_doc.md](old/fira_design_doc.md)
 > are the *long-form vision*; this document is the *current contract* between
 > what the code does and what it's supposed to do. When the two diverge, this
 > file wins — update it as decisions change.
@@ -10,19 +10,29 @@
 
 ## 1. The product, in one paragraph
 
-Fira is a task tool where the unit of planning is the **time block** —
-a discrete scheduled work session attached to a real task on a real day.
-A task accrues N blocks across the week; the plan is the set of blocks
-on the calendar; reality is the set of blocks marked complete. Capture
-happens in a sectioned document (Now / Later / Someday / Done), not a board.
-Prioritization is manual ordering. The product is two screens — List
-and Calendar — over a single shared task model, scoped by **workspace**
-(the company-level tenant) and project.
+Fira is a time, task, project, and team management tool built around
+**Calendar** and **List**. List is the working document for each project:
+capture and edit tasks, organize Now / Later / Recurring / Someday / Done,
+prioritize by ordering, break work into subtasks, add descriptions and
+attachments, filter by tags, estimate effort, and assign responsibilities.
+Calendar makes that work schedulable across projects and work/life accounts:
+create, move, and resize time blocks, see overlaps, switch between
+teammates' weeks, overlay personal and linked calendars and Google Calendar
+events, and mark blocks complete. The **time block** is a scheduled work
+session attached to a task on a real day; a task can accrue many time blocks.
+Task details connect estimates with spent, planned, and remaining time.
+These two core views share a task model scoped by **workspace** and project,
+supporting both individual execution and team coordination.
 
-The user we optimize for is a senior IC split across 3–5 projects, who
-needs to see their *own* week colored by project. Standup-friendly
-behavior comes free from the same data: scrub the list by date, see
-who finished what.
+**Plan** and **Dashboard** extend that foundation with a longer horizon
+and review. Plan arranges the same tasks into tracks and week-aligned
+sprints on a project timeline, with recorded revisions showing how the
+schedule and task membership evolved. Dashboard reviews personal monthly
+planned and completed time and daily or weekly goals. Project planning
+builds on the detailed task and time-block workflow in Calendar and List.
+Historical plans are read-only and currently omit task estimates and time
+blocks; they do not reconstruct historical time tracking. Plan is available
+on desktop; mobile offers a fallback to the list.
 
 The app is live at <https://usefira.app>.
 
