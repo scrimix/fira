@@ -55,7 +55,7 @@
   --plan-head-w: 180px;
 }
 
-.plan-toolbar { gap: calc(8px * var(--density)); }
+.plan-toolbar { gap: calc(8px * var(--density)); padding-left: var(--task-rail-inset); }
 .plan-toolbar-sep {
   width: 1px;
   align-self: stretch;
@@ -131,7 +131,7 @@
  * project panel (the board is already one project), and its filter is
  * tags rather than projects. */
 .plan-rail {
-  --plan-rail-gutter: 8px;
+  --plan-rail-gutter: var(--task-rail-inset);
   --plan-rail-gutter-right: 20px;
   width: var(--plan-rail-w);
   flex: 0 0 auto;

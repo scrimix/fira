@@ -153,6 +153,7 @@
    * right edge. These used to carry 16 / 12 / 8px of their own and
    * visibly stepped in and out. */
   --gutter-x: calc(16px * var(--density));
+  --task-rail-inset: 8px;
   /* Width the styled scrollbar takes inside a scrolling panel; kept in
    * sync with the ::-webkit-scrollbar rule near the bottom of this file.
    * A scrolling panel whose content edge has to stay level with a
@@ -395,6 +396,9 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   padding: 0 var(--gutter-x);
   gap: var(--bar-gap);
   background: var(--paper);
+}
+.topbar:is([data-view="plan"], [data-view="calendar"]) {
+  padding-left: var(--task-rail-inset);
 }
 .topbar .crumb {
   font-family: var(--font-label);

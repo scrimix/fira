@@ -59,7 +59,7 @@ export function TopBar() {
   const dashboardCrumb = view === 'dashboard' && dashboardProjectId != null && !isMobile;
 
   return (
-    <div className="topbar">
+    <div className="topbar" data-view={view}>
       {isMobile ? (
         <button
           className="topbar-menu"

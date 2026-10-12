@@ -32,6 +32,8 @@
   font-size: var(--fs-sm);
 }
 .cal-toolbar { white-space: nowrap; }
+.calendar .cal-toolbar,
+.calendar .rail-head { padding-left: var(--task-rail-inset); }
 .cal-toolbar > * { flex-shrink: 0; }
 .cal-toolbar .week-label { font-weight: 500; white-space: nowrap; }
 :is(.cal-toolbar, .plan-revision-toolbar) .week-nav {
