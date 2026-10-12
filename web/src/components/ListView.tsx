@@ -403,12 +403,8 @@ export function ListView() {
     suspendHover();
   };
 
-  // Touch-based drag for the grip column. HTML5 drag-and-drop doesn't
-  // fire from touch, so we run a parallel pointer-events flow that
-  // resolves to the same applyTaskMove / setTaskSection logic on
-  // release. The grip uses setPointerCapture so subsequent moves come
-  // back to it even when the finger leaves the row. (Refs are hoisted
-  // to the top — see the block after the useState declarations.)
+  // Shared hold-drag pipeline for touch, mouse, and pen. Native grip
+  // dragging uses the same drop rules through its HTML5 event handlers.
   const onGripTouchStart = (taskId: UUID) => {
     touchDraggedRef.current = taskId;
     touchDropAtRef.current = null;
@@ -498,7 +494,7 @@ export function ListView() {
     setDropTarget(null);
     setAssigneeDropTarget(null);
   };
-  const onGripTouchEnd = () => {
+  const onGripTouchEnd = (cancelled = false) => {
     const dragged = touchDraggedRef.current;
     const dropAt = touchDropAtRef.current;
     const section = touchSectionRef.current;
@@ -511,7 +507,7 @@ export function ListView() {
     setDropTarget(null);
     setAssigneeDropTarget(null);
     dragScrollStopRef.current?.();
-    if (!dragged) return;
+    if (!dragged || cancelled) return;
     if (dropAt) {
       const target = tasks.find((t) => t.id === dropAt.id);
       if (target) {
@@ -1275,7 +1271,7 @@ interface RowProps {
   onRowDragLeave: () => void;
   onGripTouchStart: (taskId: UUID) => void;
   onGripTouchMove: (clientX: number, clientY: number) => void;
-  onGripTouchEnd: () => void;
+  onGripTouchEnd: (cancelled?: boolean) => void;
   dropMark: 'before' | 'after' | 'merge' | null;
   expanded: boolean;
   onToggleExpanded: () => void;
@@ -1341,61 +1337,68 @@ function TaskRow({
     left >= 120 &&
     left >= task.estimate_min * 0.3;
 
-  // Long-press → drag for the whole row on touch. The hook drives
-  // `isPressing` (renders as `data-pressing="true"` for the CSS visual)
-  // and gives us the moment-of-lock callback in which we hand the
-  // gesture off to the drag pipeline. Tap (release before holdMs) and
-  // scroll-cancel (>8 px movement) just don't fire onLongPress — the
-  // row's normal onClick handles the tap path.
+  // Hold-to-drag follows the input type, independent of layout width.
+  // Touch retains document touch events so Safari cannot take over a locked drag.
   const docCleanupRef = useRef<(() => void) | null>(null);
+  const suppressDragClickUntil = useRef(0);
   const onLongPress = (e: React.PointerEvent) => {
-    // Skip only the children that own their own click action (checkboxes
-    // toggle done; we don't want a long-press on those to drag instead).
-    // The grip is *not* excluded — it's a pure visual hint on touch, so
-    // long-pressing on it should drag the row exactly like long-pressing
-    // anywhere else. The split is cleanly Desktop (HTML5 drag, grip
-    // mouse-down) vs Mobile (long-press, single path).
-    const target = e.target as HTMLElement;
-    if (target.closest('.task-check, .sc')) return;
     navigator.vibrate?.(8);
     onGripTouchStart(task.id);
-    // Once locked, attach a non-passive document touchmove so iOS can't
-    // scroll the page during the drag. Pointer events from React stop
-    // firing when iOS reroutes the gesture to its own scroller, so we
-    // route through document touch events for the move/end phase.
     let started = false;
-    const startX = e.clientX;
-    const startY = e.clientY;
-    const ENGAGE_PX = 4;
-    const onTouchMove = (ev: TouchEvent) => {
-      const t0 = ev.touches[0];
-      if (!t0) return;
-      ev.preventDefault();
+    const move = (clientX: number, clientY: number) => {
       if (!started) {
-        if (Math.abs(t0.clientX - startX) < ENGAGE_PX
-          && Math.abs(t0.clientY - startY) < ENGAGE_PX) return;
+        if (Math.abs(clientX - e.clientX) < 4 && Math.abs(clientY - e.clientY) < 4) return;
         started = true;
       }
-      onGripTouchMove(t0.clientX, t0.clientY);
+      onGripTouchMove(clientX, clientY);
     };
-    const detach = () => {
+    const finish = (cancelled = false) => {
+      docCleanupRef.current?.();
+      suppressDragClickUntil.current = Date.now() + 350;
+      onGripTouchEnd(cancelled);
+    };
+    if (e.pointerType !== 'touch') {
+      const row = (e.target as HTMLElement).closest('.task-row') as HTMLElement;
+      row.setPointerCapture(e.pointerId);
+      const onMove = (ev: PointerEvent) => {
+        if (ev.pointerId === e.pointerId) move(ev.clientX, ev.clientY);
+      };
+      const onEnd = (ev: PointerEvent) => { if (ev.pointerId === e.pointerId) finish(); };
+      const onCancel = (ev: PointerEvent) => { if (ev.pointerId === e.pointerId) finish(true); };
+      document.addEventListener('pointermove', onMove);
+      document.addEventListener('pointerup', onEnd);
+      document.addEventListener('pointercancel', onCancel);
+      docCleanupRef.current = () => {
+        document.removeEventListener('pointermove', onMove);
+        document.removeEventListener('pointerup', onEnd);
+        document.removeEventListener('pointercancel', onCancel);
+        docCleanupRef.current = null;
+      };
+      return;
+    }
+    const onTouchMove = (ev: TouchEvent) => {
+      const touch = ev.touches[0];
+      if (!touch) return;
+      ev.preventDefault();
+      move(touch.clientX, touch.clientY);
+    };
+    const onTouchEnd = () => finish();
+    const onTouchCancel = () => finish(true);
+    document.addEventListener('touchmove', onTouchMove, { passive: false });
+    document.addEventListener('touchend', onTouchEnd);
+    document.addEventListener('touchcancel', onTouchCancel);
+    docCleanupRef.current = () => {
       document.removeEventListener('touchmove', onTouchMove);
       document.removeEventListener('touchend', onTouchEnd);
       document.removeEventListener('touchcancel', onTouchCancel);
       docCleanupRef.current = null;
     };
-    const onTouchEnd = () => { detach(); onGripTouchEnd(); };
-    const onTouchCancel = () => { detach(); onGripTouchEnd(); };
-    document.addEventListener('touchmove', onTouchMove, { passive: false });
-    document.addEventListener('touchend', onTouchEnd);
-    document.addEventListener('touchcancel', onTouchCancel);
-    docCleanupRef.current = detach;
   };
 
-  // If the component unmounts mid-drag, drop the document listeners.
   useEffect(() => () => { docCleanupRef.current?.(); }, []);
-
-  const longPress = useLongPress(onLongPress, { holdMs: 220, cancelPx: 8 });
+  const longPress = useLongPress(onLongPress, { holdMs: 220, cancelPx: 8, acceptMouse: true });
+  const shouldSuppressDragClick = () =>
+    Date.now() < suppressDragClickUntil.current || longPress.shouldSuppressClick();
 
   // Inline title editor. Desktop only — mobile falls through to the
   // existing tap-to-open-modal flow because there's no Tab key on phones
@@ -1454,9 +1457,17 @@ function TaskRow({
          onDragOver={(e) => onRowDragOver(e, task)}
          onDragLeave={onRowDragLeave}
          onDrop={(e) => onRowDrop(e, task)}
-         {...(isMobile ? longPress.bind : {})}
+         {...longPress.bind}
+         onPointerDown={(e) => {
+           const target = e.target as HTMLElement;
+           if (e.button !== 0 || !e.isPrimary) return;
+           if (target.closest('button, a, input, textarea, [contenteditable="true"], .task-check, .sc, .task-toggle, .subtask')) return;
+           // The grip still starts an immediate native drag with a mouse.
+           if (e.pointerType === 'mouse' && target.closest('.task-grip')) return;
+           longPress.bind.onPointerDown(e);
+         }}
          onClick={(e) => {
-           if (longPress.shouldSuppressClick()) return;
+           if (shouldSuppressDragClick()) return;
            const el = e.target as HTMLElement;
            // Suppress the "open modal" path only for the controls that
            // own their own click action: tick / subtask tick / drag
@@ -1468,16 +1479,8 @@ function TaskRow({
            if (el.closest('.title-autosize, .subtask-edit-input')) return;
            onOpen(task.id);
          }}>
-      {/* Two drag paths, split by input type:
-       *   - Desktop: HTML5 drag-and-drop. The grip's mouse-down arms
-       *     `draggable={dragOnHandle}` on the row so a normal click
-       *     anywhere else on the row doesn't accidentally enter drag.
-       *   - Mobile: long-press anywhere on the row (the useLongPress
-       *     hook on the row itself). The grip is a pure visual hint;
-       *     it does not own its own touch handler. Touching the grip
-       *     bubbles to the row, the long-press timer arms, and the
-       *     same code path runs as if the user had pressed the title.
-       */}
+      {/* Mouse grip: immediate native drag. Hold anywhere else to drag
+          with touch, mouse, or pen at any viewport width. */}
       <div className="task-grip"
            title="Drag to reorder"
            onMouseDown={() => setDragOnHandle(true)}
@@ -1588,6 +1591,7 @@ function TaskRow({
                 // the surrounding row body still opens the modal. On
                 // mobile this is a no-op so taps fall through to the
                 // existing tap-to-open-modal flow.
+                if (shouldSuppressDragClick()) { e.stopPropagation(); return; }
                 if (!allowInlineEdit) return;
                 e.stopPropagation();
                 setEditingTitle(true);

@@ -123,10 +123,10 @@ export function useLongPress(
   const finish = (e: React.PointerEvent) => {
     const s = stateRef.current;
     if (!s || e.pointerId !== s.pointerId) return;
-    if (s.locked) {
-      // The gesture committed to a long-press; the synthetic click that
-      // iOS dispatches right after pointerup should be swallowed so
-      // it doesn't double-fire as a tap.
+    if (s.locked || s.cancelled) {
+      // A held drag or cancelled swipe must not turn into a click on
+      // release. Refresh the window here even if movement happened
+      // long before pointerup.
       s.suppressClickUntil = Date.now() + 50;
     }
     if (s.timer != null) window.clearTimeout(s.timer);
