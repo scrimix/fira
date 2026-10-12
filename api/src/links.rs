@@ -175,8 +175,8 @@ pub async fn linked_calendar(
     if !db::are_linked(&s.pool, ctx.user.id, partner_id).await? {
         return Err(ApiError::BadRequest("not linked".into()));
     }
-    let blocks = db::list_blocks_for_user(&s.pool, partner_id).await?;
-    let tasks = db::list_linked_tasks_for_blocks(&s.pool, partner_id).await?;
+    let blocks = db::list_blocks_for_user(&s.pool, partner_id, ctx.user.id).await?;
+    let tasks = db::list_linked_tasks_for_blocks(&s.pool, partner_id, ctx.user.id).await?;
     let gcal = db::list_gcal_for_user(&s.pool, partner_id).await?;
     Ok(Json(LinkedCalendarResponse {
         partner_id,

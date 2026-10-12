@@ -2045,9 +2045,29 @@
         "jira_sync_error": null
       },
       {
+        "id": "9275e512-371e-55cf-aef4-d645e8192b2e",
+        "task_id": "549d50ab-8db4-5a4b-a8c8-49720a384cd1",
+        "user_id": "b2ac03c3-49da-5183-8562-9566ac49624f",
+        "start_at": "2026-10-05T09:00:00Z",
+        "end_at": "2026-10-05T11:00:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
         "id": "bf521e6d-5903-5ca9-9515-f558f7c4ebdf",
         "task_id": "d7a540e7-b137-574b-8d2d-cea798f369aa",
         "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-10-05T10:30:00Z",
+        "end_at": "2026-10-05T11:30:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "032f2fcc-a103-5f59-b0f2-eb649ce26597",
+        "task_id": "d7a540e7-b137-574b-8d2d-cea798f369aa",
+        "user_id": "90cdb98a-ef9a-562c-aeef-c0c065a9989c",
         "start_at": "2026-10-05T10:30:00Z",
         "end_at": "2026-10-05T11:30:00Z",
         "state": "completed",
@@ -2060,6 +2080,16 @@
         "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
         "start_at": "2026-10-05T13:00:00Z",
         "end_at": "2026-10-05T15:00:00Z",
+        "state": "completed",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "5388832b-4d4b-5bc4-b9be-5423699db729",
+        "task_id": "027b9d13-09ea-522f-9c66-d558c2250ccd",
+        "user_id": "adf9eeb1-caa7-5647-b726-ee7b6e2e9901",
+        "start_at": "2026-10-05T13:00:00Z",
+        "end_at": "2026-10-05T14:30:00Z",
         "state": "completed",
         "jira_worklog_id": null,
         "jira_sync_error": null
@@ -2215,6 +2245,16 @@
         "jira_sync_error": null
       },
       {
+        "id": "0d7fa6a6-4fa9-5029-9d28-48791d7502d0",
+        "task_id": "027b9d13-09ea-522f-9c66-d558c2250ccd",
+        "user_id": "90cdb98a-ef9a-562c-aeef-c0c065a9989c",
+        "start_at": "2026-10-08T11:30:00Z",
+        "end_at": "2026-10-08T12:30:00Z",
+        "state": "planned",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
         "id": "ee5ae5b1-f99f-5a8e-84d0-4f30c915d9c2",
         "task_id": "549d50ab-8db4-5a4b-a8c8-49720a384cd1",
         "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
@@ -2225,9 +2265,29 @@
         "jira_sync_error": null
       },
       {
+        "id": "cb099885-dc70-5452-a4ac-b56382b30399",
+        "task_id": "198ad86d-7c58-5bac-9a96-1b20432d8d72",
+        "user_id": "adf9eeb1-caa7-5647-b726-ee7b6e2e9901",
+        "start_at": "2026-10-08T13:00:00Z",
+        "end_at": "2026-10-08T14:30:00Z",
+        "state": "planned",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
         "id": "22faba14-0cab-51c2-b204-f30bc915d696",
         "task_id": "e3033d1f-5344-5070-8e59-ab513339cc52",
         "user_id": "7bf1c8dc-ad79-57d4-b166-66376c75cbd2",
+        "start_at": "2026-10-08T15:00:00Z",
+        "end_at": "2026-10-08T17:00:00Z",
+        "state": "planned",
+        "jira_worklog_id": null,
+        "jira_sync_error": null
+      },
+      {
+        "id": "dfdc5411-1b2b-5f1d-9fc7-77a50ece3c5b",
+        "task_id": "e3033d1f-5344-5070-8e59-ab513339cc52",
+        "user_id": "b2ac03c3-49da-5183-8562-9566ac49624f",
         "start_at": "2026-10-08T15:00:00Z",
         "end_at": "2026-10-08T17:00:00Z",
         "state": "planned",

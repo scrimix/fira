@@ -37,7 +37,7 @@ export interface AccountSummary {
 }
 
 export type WorkspaceRole = 'owner' | 'member';
-export type ProjectRole = 'owner' | 'lead' | 'member' | 'inactive';
+export type ProjectRole = 'owner' | 'lead' | 'member' | 'dev' | 'inactive';
 
 export interface WorkspaceMember {
   user_id: UUID;
@@ -146,6 +146,7 @@ export interface Task {
   external_url: string | null;
   estimate_min: number | null;
   spent_min: number;
+  has_private_time?: boolean;
   tag_ids: UUID[];
   sort_key: string;
   /// ISO timestamp of when the task was created. Stable across edits.

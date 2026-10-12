@@ -47,6 +47,7 @@ export interface PlanTaskInput {
   status: Status;
   sort_key: string;
   estimate_min?: number | null;
+  has_private_time?: boolean;
   /// Replay derives these from recorded creation/completion ops. Legacy
   /// incoming moves can lack dates; live mode supplies the full task.
   finished_at?: string | null;
@@ -65,6 +66,7 @@ export interface PlanInput {
   /// Current task blocks used for sprint information and the Unplanned band.
   blocks: TimeBlock[];
   timeDataAvailable?: boolean;
+  ownTimeOnly?: boolean;
   /// Local-midnight Monday of the leftmost column.
   weekStartMs: number;
   weekCount: number;
@@ -84,6 +86,8 @@ export interface PlanTask {
 }
 
 export interface SprintInformation {
+  hasPrivateTime: boolean;
+  ownTimeOnly: boolean;
   estimatedMinutes: number;
   capacityMinutes: number;
   missingEstimates: number;
@@ -104,13 +108,14 @@ export interface SprintInformation {
 
 /// Compare current task membership and blocks with the complete sprint span,
 /// independent of viewport clipping. Calendar date boundaries use local time.
-export function sprintInformation(sprint: PlanSprintInput, tasks: PlanTaskInput[], blocks: TimeBlock[]): SprintInformation | null {
+export function sprintInformation(sprint: PlanSprintInput, tasks: PlanTaskInput[], blocks: TimeBlock[], ownTimeOnly = false): SprintInformation | null {
   if (!sprint.starts_on || !sprint.ends_on) return null;
   const start = parseDateKey(sprint.starts_on), end = parseDateKey(sprint.ends_on);
   if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return null;
   const members = new Map(tasks.map((task) => [task.id, task]));
   const affected = new Set<UUID>();
   const info: SprintInformation = {
+    hasPrivateTime: tasks.some((task) => task.has_private_time), ownTimeOnly,
     estimatedMinutes: tasks.reduce((sum, task) => sum + Math.max(0, task.estimate_min ?? 0), 0),
     capacityMinutes: weeksBetween(start, end) * 40 * 60,
     missingEstimates: tasks.filter((task) => task.estimate_min == null).length,
@@ -427,7 +432,7 @@ export function buildPlanSnapshot(input: PlanInput): PlanSnapshot {
         tasks: members.map(toPlanTask),
         doneCount: members.filter((t) => t.status === 'done').length,
         totalCount: members.length,
-        information: input.timeDataAvailable === false ? null : sprintInformation(s, members, blocksBySprint.get(s.id) ?? []),
+        information: input.timeDataAvailable === false ? null : sprintInformation(s, members, blocksBySprint.get(s.id) ?? [], input.ownTimeOnly),
       };
     });
     out.sort((a, b) => a.lane - b.lane || a.startWeek - b.startWeek);
@@ -498,7 +503,7 @@ export function buildRetroBuckets(input: PlanInput): RetroBucket[] {
   const taskIds = new Set(tasks.map((t) => t.id));
   // Completed blocks only: a planned block is intent, not record.
   const spans = new Map<UUID, { from: number; to: number }>();
-  for (const b of input.blocks) {
+  for (const b of input.ownTimeOnly ? [] : input.blocks) {
     if (b.state !== 'completed' || !taskIds.has(b.task_id)) continue;
     const from = Date.parse(b.start_at);
     const to = Date.parse(b.end_at);

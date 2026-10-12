@@ -291,14 +291,15 @@ export function TaskModal({ taskId }: Props) {
             <TitleEditor key={task.id} value={task.title} onSave={(v) => setTaskTitle(task.id, v)} />
             {task.estimate_min != null && (
               <>
-                <div className="est-bar">
+                <div className="est-bar" style={{ display: task.has_private_time ? 'none' : undefined }}>
                   <div className="seg-spent" style={{ width: `${Math.min(100, compPct)}%` }} />
                   <div className="seg-planned" style={{ width: `${Math.min(100 - compPct, planPct)}%` }} />
                 </div>
                 <div className="est-meta">
-                  <span><strong>{fmtMin(completed)}</strong> done</span>
-                  <span><strong>{fmtMin(planned)}</strong> planned</span>
-                  <span><strong>{fmtMin(Math.max(0, left ?? 0))}</strong> left</span>
+                  <span><strong>{fmtMin(completed)}</strong> {task.has_private_time ? 'visible done' : 'done'}</span>
+                  <span><strong>{fmtMin(planned)}</strong> {task.has_private_time ? 'visible planned' : 'planned'}</span>
+                  {task.has_private_time ? <span title="Time left cannot be calculated from visible blocks">Private time excluded</span>
+                    : <span><strong>{fmtMin(Math.max(0, left ?? 0))}</strong> left</span>}
                   <span style={{ marginLeft: 'auto' }}>of {fmtMin(task.estimate_min)} estimate</span>
                 </div>
               </>
@@ -499,7 +500,7 @@ export function TaskModal({ taskId }: Props) {
                 onSave={(v) => setTaskEstimate(task.id, v)}
               />
             </div>
-            <Field label="Time left" mono value={left != null ? fmtMin(left) : '—'} />
+            <Field label="Time left" mono value={task.has_private_time ? 'Private time excluded' : left != null ? fmtMin(left) : '—'} />
             {/* On mobile the side pane is closed by default, so the Tags
             * editor renders in the main pane instead — see below. */}
             {!isMobile && (

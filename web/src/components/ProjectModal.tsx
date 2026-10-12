@@ -508,6 +508,7 @@ function MembersEditor({
                     { value: 'owner', label: 'owner', hint: 'hidden from list unless tasks assigned' },
                     { value: 'lead', label: 'lead', hint: 'edits project + members' },
                     { value: 'member', label: 'member', hint: 'works tasks' },
+                    { value: 'dev', label: 'dev', hint: 'works tasks; sees only own time blocks' },
                     { value: 'inactive', label: 'inactive', hint: 'hidden from list unless tasks assigned' },
                   ]}
                 />

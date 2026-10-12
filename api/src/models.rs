@@ -160,6 +160,10 @@ pub struct Task {
     pub external_url: Option<String>,
     pub estimate_min: Option<i32>,
     pub spent_min: i32,
+    /// Viewer-specific presence flag; never contains private block amounts.
+    #[serde(default)]
+    #[sqlx(default)]
+    pub has_private_time: bool,
     pub sort_key: String,
     /// Creation wallclock. Set on INSERT (`DEFAULT now()`) and never
     /// touched after. Used by the web list to sort the Done section

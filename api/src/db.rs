@@ -34,6 +34,26 @@ pub async fn project_scope(
     Ok(rows.into_iter().map(|(id,)| id).collect())
 }
 
+/// Projects where the caller has the time-block privacy restriction.
+/// Include removed memberships: their terminal change-feed replay must
+/// retain the same privacy rule as when they belonged to the project.
+pub async fn dev_projects(
+    pool: &PgPool,
+    user_id: Uuid,
+    workspace_id: Uuid,
+) -> sqlx::Result<Vec<Uuid>> {
+    sqlx::query_scalar(
+        "SELECT pm.project_id FROM project_members pm
+         JOIN projects p ON p.id = pm.project_id
+         WHERE pm.user_id = $1 AND p.workspace_id = $2
+           AND pm.role = 'dev'",
+    )
+    .bind(user_id)
+    .bind(workspace_id)
+    .fetch_all(pool)
+    .await
+}
+
 /// Whether the caller is a workspace owner. Used wherever owner-only
 /// authority matters (workspace mutations, project creation, role
 /// changes on project members).
@@ -1131,11 +1151,15 @@ pub async fn set_project_members_tx(
     }))
 }
 
-// Blocks for any user, scoped to tasks in projects the caller can see.
+// Blocks scoped to visible projects. Dev members only see their own blocks.
 // The calendar pins multiple teammates (UserPicker) and switches between
-// their weeks — so we need everyone's blocks, not just the caller's. The
+// their weeks — normal members receive teammates' blocks too. The
 // task→project FK + scope filter keeps cross-tenant blocks out.
-pub async fn list_blocks_in_scope(pool: &PgPool, scope: &[Uuid]) -> sqlx::Result<Vec<TimeBlock>> {
+pub async fn list_blocks_in_scope(
+    pool: &PgPool,
+    scope: &[Uuid],
+    user_id: Uuid,
+) -> sqlx::Result<Vec<TimeBlock>> {
     if scope.is_empty() {
         return Ok(vec![]);
     }
@@ -1144,9 +1168,15 @@ pub async fn list_blocks_in_scope(pool: &PgPool, scope: &[Uuid]) -> sqlx::Result
          FROM time_blocks b
          JOIN tasks t ON t.id = b.task_id
          WHERE t.project_id = ANY($1)
+           AND (b.user_id = $2 OR NOT EXISTS (
+             SELECT 1 FROM project_members pm
+             WHERE pm.project_id = t.project_id AND pm.user_id = $2
+               AND pm.removed_at IS NULL AND pm.role = 'dev'
+           ))
          ORDER BY b.start_at",
     )
     .bind(scope)
+    .bind(user_id)
     .fetch_all(pool)
     .await
 }
@@ -1566,13 +1596,24 @@ pub async fn accepted_partner_id(pool: &PgPool, user_id: Uuid) -> sqlx::Result<O
 
 /// Linked partner's blocks across **every** workspace they belong to.
 /// Linking is mutual consent to share the calendar — the workspace
-/// scope rule that gates everything else doesn't apply here.
-pub async fn list_blocks_for_user(pool: &PgPool, user_id: Uuid) -> sqlx::Result<Vec<TimeBlock>> {
+/// scope rule that gates everything else doesn't apply here. An explicit
+/// dev role still restricts blocks in that project.
+pub async fn list_blocks_for_user(
+    pool: &PgPool,
+    user_id: Uuid,
+    viewer_id: Uuid,
+) -> sqlx::Result<Vec<TimeBlock>> {
     sqlx::query_as(
-        "SELECT id, task_id, user_id, start_at, end_at, state, jira_worklog_id, jira_sync_error
-         FROM time_blocks WHERE user_id = $1 ORDER BY start_at",
+        "SELECT b.id, b.task_id, b.user_id, b.start_at, b.end_at, b.state, b.jira_worklog_id, b.jira_sync_error
+         FROM time_blocks b JOIN tasks t ON t.id = b.task_id
+         WHERE b.user_id = $1 AND (b.user_id = $2 OR NOT EXISTS (
+           SELECT 1 FROM project_members pm
+           WHERE pm.project_id = t.project_id AND pm.user_id = $2
+             AND pm.removed_at IS NULL AND pm.role = 'dev'
+         )) ORDER BY b.start_at",
     )
     .bind(user_id)
+    .bind(viewer_id)
     .fetch_all(pool)
     .await
 }
@@ -1583,15 +1624,21 @@ pub async fn list_blocks_for_user(pool: &PgPool, user_id: Uuid) -> sqlx::Result<
 pub async fn list_linked_tasks_for_blocks(
     pool: &PgPool,
     block_owner: Uuid,
+    viewer_id: Uuid,
 ) -> sqlx::Result<Vec<LinkedTask>> {
     sqlx::query_as(
         "SELECT DISTINCT t.id, t.title, t.status, p.color AS project_color
          FROM tasks t
          JOIN projects p ON p.id = t.project_id
          JOIN time_blocks b ON b.task_id = t.id
-         WHERE b.user_id = $1",
+         WHERE b.user_id = $1 AND (b.user_id = $2 OR NOT EXISTS (
+           SELECT 1 FROM project_members pm
+           WHERE pm.project_id = t.project_id AND pm.user_id = $2
+             AND pm.removed_at IS NULL AND pm.role = 'dev'
+         ))",
     )
     .bind(block_owner)
+    .bind(viewer_id)
     .fetch_all(pool)
     .await
 }
@@ -1925,4 +1972,45 @@ pub async fn delete_attachments_for_task(
         .execute(&mut **tx)
         .await?;
     Ok(res.rows_affected() > 0)
+}
+
+/// Presence only: no private block IDs, owners, dates, or durations leave the API.
+pub async fn private_time_tasks(
+    pool: &PgPool,
+    user_id: Uuid,
+    projects: &[Uuid],
+) -> sqlx::Result<Vec<(Uuid, Uuid)>> {
+    sqlx::query_as(
+        "SELECT DISTINCT t.id, t.project_id FROM tasks t
+         JOIN time_blocks b ON b.task_id = t.id
+         JOIN project_members pm ON pm.project_id = t.project_id AND pm.user_id = $1
+         WHERE t.project_id = ANY($2) AND pm.role = 'dev'
+           AND pm.removed_at IS NULL AND b.user_id <> $1",
+    )
+    .bind(user_id)
+    .bind(projects)
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn mark_private_time(
+    pool: &PgPool,
+    tasks: &mut [Task],
+    user_id: Uuid,
+) -> sqlx::Result<()> {
+    let projects: Vec<_> = tasks
+        .iter()
+        .map(|t| t.project_id)
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect();
+    let private: std::collections::HashSet<_> = private_time_tasks(pool, user_id, &projects)
+        .await?
+        .into_iter()
+        .map(|(id, _)| id)
+        .collect();
+    for task in tasks {
+        task.has_private_time = private.contains(&task.id);
+    }
+    Ok(())
 }

@@ -87,7 +87,7 @@ applied in order on boot via `sqlx::migrate!`).
 | `workspaces`       | id, title, `is_personal`, `created_by`. Every user has one personal workspace, auto-created on Google OAuth callback and in the seeder. |
 | `workspace_members`| M:N user↔workspace, `role text check (role in ('owner','member'))`, `removed_at` for soft-delete. |
 | `projects`         | id, title, icon, color, source (`local`/`jira`/`notion`), `owner_id`, `external_url_template`, `workspace_id NOT NULL`. |
-| `project_members`  | M:N user↔project, `workspace_id` mirrored from parent project by trigger, `role text check (role in ('owner','lead','member','inactive'))`, `removed_at` for soft-delete. Composite FK `(workspace_id, user_id) → workspace_members(workspace_id, user_id)` makes it structurally impossible to add a user to a project who isn't in the workspace. |
+| `project_members`  | M:N user↔project, `workspace_id` mirrored from parent project by trigger, `role text check (role in ('owner','lead','member','dev','inactive'))`, `removed_at` for soft-delete. Composite FK `(workspace_id, user_id) → workspace_members(workspace_id, user_id)` makes it structurally impossible to add a user to a project who isn't in the workspace. |
 | `tracks`           | a plan-board row — a workstream. `(id, project_id, title, color, sort_key, created_at)`. Renamed from `epics` in migration 0034; the word "epic" is spoken for by Jira's. |
 | `sprints`          | a plan-board card: a titled span of weeks on one track. `track_id` (nullable — "No track"), `starts_on`/`ends_on` as week-aligned Monday `DATE`s with `ends_on` **exclusive**, `sort_key`. Three CHECKs enforce the geometry. `dates TEXT` is legacy and unwritten; `active` is unread by the board (the "now" marker makes it redundant). |
 | `tasks`            | section (`now`/`later`/`recurring`/`someday`/`done`), status, estimate, assignee, sort_key, optional `external_id`, optional per-task `external_url`. |
@@ -107,12 +107,26 @@ applied in order on boot via `sqlx::migrate!`).
   can create / edit / delete any project in the workspace. Members
   see only projects they're explicitly added to.
 - **Project role** (`project_members.role`):
-  `owner` | `lead` | `member` | `inactive`. Workspace owners get
+  `owner` | `lead` | `member` | `dev` | `inactive`. Workspace owners get
   `owner` on every project (auto-backfilled by migration 0012). `owner`
   and `inactive` are *passive* — hidden from list assignee groups
   unless they have a Now task assigned to them. `lead` can edit the
   project but not delete it; only the workspace owner can promote to
   `lead` or change project roles. `member` is the default.
+  `dev` has the same task and plan permissions as `member`, but only sees
+  and manages their own time blocks in that project. This also applies to
+  bootstrap, live changes, embedded blocks on task moves, and linked-calendar
+  overlays. Other projects retain their own role's visibility. Only a
+  workspace owner can assign or change this role; changing it clears cached
+  teammate blocks immediately and refreshes visible data. Task estimates and
+  task-level `spent_min` fields remain visible; this restriction covers
+  time-block records, not task metadata. Tasks expose only `has_private_time`
+  when teammate blocks are hidden. Such tasks show "Private time excluded"
+  instead of an exact Time Left or budget bar; list totals are labeled visible.
+  Live updates carry task presence flags rather than private block records.
+  Sprint information labels block metrics as visible time and indicates private
+  time without amounts. Dev projects group Unplanned finished work by task
+  completion dates, so hidden block dates cannot distort the timeline.
 
 **Personal workspace invariant.** Every user has exactly one workspace
 where `is_personal = true` and they are the sole owner. Created on
@@ -544,7 +558,7 @@ the topbar hamburger.
   `ConfirmDelete` warning of how many tasks will lose the tag. Each
   mutation fires immediately — no batching with the project's Save
   Changes button.
-- Per-row role `<Select>` (`owner` / `lead` / `member` / `inactive`)
+- Per-row role `<Select>` (`owner` / `lead` / `member` / `dev` / `inactive`)
   — readable by everyone with edit access, but only **interactive
   for the workspace owner**; project leads see a static role tag
   with a hint line.

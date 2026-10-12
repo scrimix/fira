@@ -1157,6 +1157,26 @@ fn fixture_blocks(f: &mut Fixture) {
         );
     }
 
+    // Teammate schedules let the user picker and per-project dev privacy
+    // be exercised against the same fixture as Maya's own calendar.
+    let teammates = [
+        ("anna_mon", "u_anna", "t_atlas_review", 0, 10 * 60 + 30, 60, "completed"),
+        ("anna_thu", "u_anna", "t_atlas_billing", 3, 11 * 60 + 30, 60, "planned"),
+        ("bob_mon", "u_bob", "t_atlas_billing", 0, 13 * 60, 90, "completed"),
+        ("bob_thu", "u_bob", "t_atlas_oauth", 3, 13 * 60, 90, "planned"),
+        ("jin_mon", "u_jin", "t_relay_jira", 0, 9 * 60, 120, "completed"),
+        ("jin_thu", "u_jin", "t_relay_diff", 3, 15 * 60, 120, "planned"),
+    ];
+    for (slug, user, task, day, start_min, duration, state) in teammates {
+        let start_at = ts(day, start_min);
+        f.at(start_at, id(user), Op::BlockCreate {
+            block: BlockInput {
+                id: id(&format!("b_teammate_{slug}")), task_id: id(task), user_id: id(user),
+                start_at, end_at: ts(day, start_min + duration), state: state.into(),
+            },
+        });
+    }
+
     fixture_block_history(f, blocks.len());
 }
 

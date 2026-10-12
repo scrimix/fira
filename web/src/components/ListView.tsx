@@ -193,6 +193,7 @@ export function ListView() {
     if (t.estimate_min != null) totalEst += t.estimate_min;
   }
   const totalAll = totalDone + totalPlanned;
+  const privateTimeExcluded = projectTasks.some((task) => task.has_private_time);
 
   const nowTasks = projectTasks.filter((t) => t.section === 'now').sort(byKey);
   const laterTasks = projectTasks.filter((t) => t.section === 'later').sort(byKey);
@@ -744,9 +745,10 @@ export function ListView() {
 
         {showListTimes && (
           <div className="totals list-totals" aria-label="Filtered totals">
-            <span className="totals-done"><strong>{fmtMin(totalDone)}</strong> done</span>
-            <span className="totals-planned"><strong>{fmtMin(totalPlanned)}</strong> planned</span>
-            <span className="totals-total"><strong>{fmtMin(totalAll)}</strong> total</span>
+            <span className="totals-done"><strong>{fmtMin(totalDone)}</strong> {privateTimeExcluded ? 'visible done' : 'done'}</span>
+            <span className="totals-planned"><strong>{fmtMin(totalPlanned)}</strong> {privateTimeExcluded ? 'visible planned' : 'planned'}</span>
+            <span className="totals-total"><strong>{fmtMin(totalAll)}</strong> {privateTimeExcluded ? 'visible total' : 'total'}</span>
+            {privateTimeExcluded && <span>Private time excluded</span>}
             <span className="totals-est"><strong>{fmtMin(totalEst)}</strong> est</span>
           </div>
         )}
@@ -971,7 +973,7 @@ export function ListView() {
             <h2>Done</h2>
             <SectionCount value={doneTasks.length} />
             <span className="rule" />
-            {showListTimes && <span className="est" title="completed time">{fmtMin(doneDone)}</span>}
+            {showListTimes && <span className="est" title={privateTimeExcluded ? "visible completed time" : "completed time"}>{fmtMin(doneDone)}{privateTimeExcluded ? ' visible' : ''}</span>}
             <span className="count section-caption">archive</span>
           </div>
           {!collapsed.done && (
@@ -1680,7 +1682,7 @@ function TaskRow({
               </span>
             )}
             {!isMobile && showListTimes && (
-              task.estimate_min != null && left != null ? (
+              task.has_private_time ? <span className="left-est" title="Time left cannot be calculated from visible blocks">Private time excluded</span> : task.estimate_min != null && left != null ? (
                 left < 0 ? (
                   <span className="left-est" data-over="true">{fmtMin(-left)} over</span>
                 ) : (

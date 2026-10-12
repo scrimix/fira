@@ -100,6 +100,7 @@ type BoardSnapshot = Omit<PlanSnapshot, 'tracks' | 'retro'> & {
 };
 
 function PlanBoard({ projectId }: { projectId: UUID | null }) {
+  const meId = useFira((s) => s.meId);
   const projects = useFira((s) => s.projects);
   const versionAt = useFira((s) => s.planVersionAt);
   const versionSeq = useFira((s) => s.planVersionSeq);
@@ -231,6 +232,7 @@ function PlanBoard({ projectId }: { projectId: UUID | null }) {
         tasks: readOnly ? data?.tasks ?? [] : tasks,
         blocks: readOnly ? [] : blocks,
         timeDataAvailable: !readOnly, weekStartMs, weekCount,
+        ownTimeOnly: project.members.some((member) => member.user_id === meId && member.role === 'dev'),
       });
       return { ...board, tracks: board.tracks.map((row) => ({ ...row, projectId: project.id })) };
     });
@@ -245,7 +247,7 @@ function PlanBoard({ projectId }: { projectId: UUID | null }) {
       inbox: boards.flatMap((board) => board.inbox),
       retro: retro.map((bucket, i) => ({ ...bucket, lane: lanes[i].lane })),
     };
-  }, [projectId, projects, tracks, sprints, tasks, blocks, weekStartMs, weekCount, readOnly, history, historyError]);
+  }, [projectId, projects, tracks, sprints, tasks, blocks, weekStartMs, weekCount, readOnly, history, historyError, meId]);
 
   useEffect(() => {
     if (readOnly) { setDrag(null); setPlacing(false); setRange(null); setConfirmTrack(null); setConfirmSprint(null); setEditingSprint(null); }
@@ -779,7 +781,7 @@ function PlanBoard({ projectId }: { projectId: UUID | null }) {
                      title={readOnly ? 'Finished work outside sprints at this revision, grouped by its recorded finish date (or creation date).'
                        : 'Finished work that was never planned into a sprint, '
                        + 'grouped by fortnight and rebuilt from completed time '
-                       + 'blocks (or the finish date when there are none).\n\n'
+                       + 'blocks (or the finish date when there are none). Dev projects use task completion dates.\n\n'
                        + 'Derived live — there is nothing to regenerate. To plan '
                        + 'any of it, drag a row onto a sprint card or press '
                        + 'Promote to turn the whole fortnight into one.'}>

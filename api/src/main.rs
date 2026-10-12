@@ -432,9 +432,14 @@ async fn set_project_members(
 ) -> ApiResult<Json<Project>> {
     authorize_project_edit(&s.pool, &ctx, id).await?;
     for m in &body.members {
-        if m.role != "owner" && m.role != "lead" && m.role != "member" && m.role != "inactive" {
+        if m.role != "owner"
+            && m.role != "lead"
+            && m.role != "member"
+            && m.role != "dev"
+            && m.role != "inactive"
+        {
             return Err(error::ApiError::BadRequest(
-                "role must be owner|lead|member|inactive".into(),
+                "role must be owner|lead|member|dev|inactive".into(),
             ));
         }
     }

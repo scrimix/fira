@@ -156,7 +156,7 @@ pub async fn move_task(
         .execute(&mut *tx)
         .await?;
 
-    let moved = db::get_task_tx(&mut tx, task_id)
+    let mut moved = db::get_task_tx(&mut tx, task_id)
         .await?
         .ok_or(ApiError::NotFound)?;
 
@@ -204,6 +204,7 @@ pub async fn move_task(
     }
 
     tx.commit().await?;
+    db::mark_private_time(&s.pool, std::slice::from_mut(&mut moved), ctx.user.id).await?;
     Ok(Json(MoveTaskResponse { task: moved }))
 }
 

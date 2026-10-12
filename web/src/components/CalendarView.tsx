@@ -1947,7 +1947,7 @@ function CalRail({ onDragTask, onTouchSchedule, allocByProject }: {
               const plentyLeft =
                 t.status === 'done' &&
                 left != null && est != null && left >= 120 && left >= est * 0.3;
-              const leftLabel = left == null ? 'no est'
+              const leftLabel = t.has_private_time ? 'Private time excluded' : left == null ? 'no est'
                 : left < 0 ? `${fmtMin(-left)} over`
                 : left === 0 && overSpent ? `+${fmtMin(completed - (est ?? 0))} spent`
                 : `${fmtMin(left)} left`;
@@ -2000,7 +2000,7 @@ function CalRail({ onDragTask, onTouchSchedule, allocByProject }: {
                         {leftLabel}
                       </span>
                     </div>
-                    {est != null && (
+                    {est != null && !t.has_private_time && (
                       <div className="rail-fill" style={{ marginTop: 4 }}>
                         <div className="rail-fill-spent"
                              style={{ width: `${compPct}%`, background: g.project.color }} />
@@ -2030,6 +2030,7 @@ function CalRail({ onDragTask, onTouchSchedule, allocByProject }: {
 }
 
 function isBlocker(task: Task, blocks: TimeBlock[]): boolean {
+  if (task.has_private_time) return false;
   if (task.section !== 'now' || task.status !== 'in_progress') return false;
   const ws = new Date(weekStartMs());
   const todayMs = new Date(

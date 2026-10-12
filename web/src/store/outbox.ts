@@ -63,6 +63,7 @@ export type OpKind =
 /// Server-only op kinds — synthesized in REST handlers and delivered via
 /// /changes. Clients never enqueue these; they only apply them.
 export type RemoteOnlyOpKind =
+  | { kind: 'project.time_visibility'; project_id: string; private_task_ids: string[] }
   | { kind: 'project.create'; project: import('../types').Project }
   | { kind: 'project.update'; project: import('../types').Project }
   | { kind: 'project.set_members'; project_id: string; members: import('../types').ProjectMember[] }

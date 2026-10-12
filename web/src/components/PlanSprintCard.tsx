@@ -78,10 +78,11 @@ export function PlanSprintCard({
     `Load: ${fmtMin(Math.round(info.estimatedMinutes))} estimated / ${fmtMin(info.capacityMinutes)} capacity (${Math.round(info.estimatedMinutes / info.capacityMinutes * 100)}%)`,
     'Capacity: 40 hours per week, for the full sprint.',
     ...(info.missingEstimates ? [`${info.missingEstimates} task${info.missingEstimates === 1 ? '' : 's'} without estimates.`] : []),
+    ...(info.hasPrivateTime ? ['Private time excluded; full sprint time is unavailable.'] : []),
     ...(info.outsideBlocks ? [
-      `${info.outsideBlocks} block${info.outsideBlocks === 1 ? '' : 's'} outside the sprint across ${info.outsideTasks} task${info.outsideTasks === 1 ? '' : 's'}.`,
-      `Logged outside: ${fmtMin(Math.round(info.loggedOutsideMinutes))}. Scheduled outside: ${fmtMin(Math.round(info.plannedOutsideMinutes))}.`,
-    ] : ['No time blocks outside the sprint.']),
+      `${info.ownTimeOnly ? 'Visible time: ' : ''}${info.outsideBlocks} block${info.outsideBlocks === 1 ? '' : 's'} outside the sprint across ${info.outsideTasks} task${info.outsideTasks === 1 ? '' : 's'}.`,
+      `Logged ${info.ownTimeOnly ? 'visible time ' : ''}outside: ${fmtMin(Math.round(info.loggedOutsideMinutes))}. Scheduled ${info.ownTimeOnly ? 'visible time ' : ''}outside: ${fmtMin(Math.round(info.plannedOutsideMinutes))}.`,
+    ] : [info.ownTimeOnly ? 'No visible time blocks outside the sprint.' : 'No time blocks outside the sprint.']),
   ].join('\n');
   const addRef = useRef<HTMLInputElement>(null);
   const renameRef = useRef<HTMLInputElement>(null);
@@ -176,7 +177,7 @@ export function PlanSprintCard({
           onClick={() => setMenuRect(menuRect ? null : menuButton.current!.getBoundingClientRect())}>
           <MoreVertical size={13} strokeWidth={1.75} />
         </button>}
-        <ClickTooltip className="plan-sprint-info" warning={!!info?.outsideBlocks}
+        <ClickTooltip className="plan-sprint-info" warning={!!info?.outsideBlocks || !!info?.hasPrivateTime}
           label="Sprint information" trigger="?">
           <div>{information}</div>
           {!!info?.outsidePortions.length && <div className="plan-sprint-outside-list"

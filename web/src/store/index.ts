@@ -20,6 +20,7 @@ import {
 import { setFrozenNow } from '../time';
 import { syncLog } from '../synclog';
 import { PLAN_HISTORY_KINDS } from '../planHistory';
+import { visibleProjectBlocks, withPrivateTime } from '../blockPrivacy';
 
 // Sync state machine. The TopBar pill reads this directly.
 //   idle  — nothing queued, last attempt either succeeded or never ran
@@ -651,6 +652,7 @@ function normalizeTask(t: Task): Task {
     external_url: t.external_url ?? null,
     estimate_min: t.estimate_min ?? null,
     spent_min: t.spent_min ?? 0,
+    has_private_time: t.has_private_time ?? false,
     tag_ids: t.tag_ids ?? [],
     sort_key: t.sort_key ?? 'M',
     created_at: t.created_at ?? new Date().toISOString(),
@@ -755,8 +757,9 @@ function applyOpToState(s: FiraState, op: AnyOpKind): Partial<FiraState> {
         };
       }
       const moved = normalizeTask(op.task);
-      const byId = new Map(s.blocks.map((b) => [b.id, b]));
-      for (const b of op.blocks ?? []) byId.set(b.id, b);
+      const visible = visibleProjectBlocks(op.blocks ?? [], [moved], s.projects, s.meId);
+      const byId = new Map(s.blocks.filter((block) => block.task_id !== moved.id).map((b) => [b.id, b]));
+      for (const b of visible) byId.set(b.id, b);
       return {
         tasks: s.tasks.some((t) => t.id === moved.id)
           ? s.tasks.map((t) => (t.id === moved.id ? moved : t))
@@ -815,6 +818,7 @@ function applyOpToState(s: FiraState, op: AnyOpKind): Partial<FiraState> {
         }),
       };
     case 'block.create': {
+      if (visibleProjectBlocks([op.block], s.tasks, s.projects, s.meId).length === 0) return {};
       if (s.blocks.some((b) => b.id === op.block.id)) return {};
       return { blocks: [...s.blocks, op.block] };
     }
@@ -963,6 +967,11 @@ function applyOpToState(s: FiraState, op: AnyOpKind): Partial<FiraState> {
           : { ...s.projectFilter, [op.project.id]: true },
       };
     }
+    case 'project.time_visibility': {
+      const privateTasks = new Set(op.private_task_ids);
+      return { tasks: s.tasks.map((task) => task.project_id === op.project_id
+        ? { ...task, has_private_time: privateTasks.has(task.id) } : task) };
+    }
     case 'project.set_members': {
       // If we're no longer in the member set, the owner removed us. The
       // change feed will deliver this op once and then fall silent for the
@@ -995,10 +1004,12 @@ function applyOpToState(s: FiraState, op: AnyOpKind): Partial<FiraState> {
       // bootstrap predates the project), the .map below is a no-op.
       // The applyRemoteOp wrapper handles that case and schedules a
       // hydrate after this returns.
+      const projects = s.projects.map((p) => p.id === op.project_id ? { ...p, members: op.members } : p);
       return {
-        projects: s.projects.map((p) =>
-          p.id === op.project_id ? { ...p, members: op.members } : p,
-        ),
+        projects,
+        tasks: withPrivateTime(s.tasks, s.blocks, projects, s.meId),
+        blocks: visibleProjectBlocks(s.blocks, s.tasks, projects, s.meId),
+        linkedBlocks: visibleProjectBlocks(s.linkedBlocks, s.tasks, projects, s.meId),
       };
     }
     case 'project.delete': {
@@ -1097,9 +1108,9 @@ function applyBootstrap(
     projects: data.projects,
     tracks: data.tracks,
     sprints: data.sprints,
-    tasks: data.tasks.map(normalizeTask),
+    tasks: withPrivateTime(data.tasks.map(normalizeTask), data.blocks, data.projects, me.id),
     tags: data.tags ?? [],
-    blocks: data.blocks,
+    blocks: visibleProjectBlocks(data.blocks, data.tasks, data.projects, me.id),
     goals: data.goals ?? [],
     gcal: data.gcal,
     links: data.links ?? [],
@@ -1374,9 +1385,9 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
         projects: data.projects,
         tracks: data.tracks,
         sprints: data.sprints,
-        tasks: data.tasks.map(normalizeTask),
+        tasks: withPrivateTime(data.tasks.map(normalizeTask), data.blocks, data.projects, s.meId),
         tags: data.tags ?? [],
-        blocks: data.blocks,
+        blocks: visibleProjectBlocks(data.blocks, data.tasks, data.projects, s.meId),
         gcal: data.gcal,
         links: data.links ?? [],
         workspaceInvites: data.workspace_invites ?? [],
@@ -1844,10 +1855,10 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     let needHydrate = false;
     if (op.kind === 'project.set_members') {
       const meId = get().meId;
-      const haveProject = get().projects.some((p) => p.id === op.project_id);
-      if (!haveProject && meId != null && op.members.some((m) => m.user_id === meId)) {
-        needHydrate = true;
-      }
+      const project = get().projects.find((p) => p.id === op.project_id);
+      const previousRole = project?.members.find((m) => m.user_id === meId)?.role;
+      const nextRole = op.members.find((m) => m.user_id === meId)?.role;
+      if (nextRole && (!project || previousRole !== nextRole)) needHydrate = true;
     }
     set((s) => applyOpToState(s, op));
     set((s) => {
@@ -1856,7 +1867,9 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
       return { appliedOpIds: next };
     });
     if (needHydrate) {
-      window.setTimeout(() => { void get().hydrate(); }, 0);
+      window.setTimeout(() => {
+        void get().rehydrate().then(() => get().loadLinkedCalendar());
+      }, 0);
     }
   },
 
@@ -2132,7 +2145,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     try {
       const data = await api.linkedCalendar();
       set({
-        linkedBlocks: data.blocks,
+        linkedBlocks: visibleProjectBlocks(data.blocks, get().tasks, get().projects, get().meId),
         linkedTasks: data.tasks,
         linkedGcal: data.gcal,
       });
@@ -2366,9 +2379,12 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     const updated: Project = playground && existing
       ? { ...existing, members }
       : await api.setProjectMembers(id, members);
-    set((s) => ({
-      projects: s.projects.map((p) => p.id === id ? updated : p),
-    }));
+    set((s) => applyOpToState(s, { kind: 'project.set_members', project_id: id, members: updated.members }));
+    if (!playground && existing?.members.find((m) => m.user_id === get().meId)?.role
+      !== updated.members.find((m) => m.user_id === get().meId)?.role) {
+      await get().rehydrate();
+      await get().loadLinkedCalendar();
+    }
     return updated;
   },
 
@@ -3010,6 +3026,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
   }),
 
   upsertBlock: (block) => set((s) => {
+    if (visibleProjectBlocks([block], s.tasks, s.projects, s.meId).length === 0) return {};
     const exists = s.blocks.some((b) => b.id === block.id);
     return {
       blocks: exists ? s.blocks.map((b) => b.id === block.id ? block : b) : [...s.blocks, block],
@@ -3163,7 +3180,8 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     // applied remote `task.create` with a partial payload could leave a
     // task with no `sort_key`, which crashes every section sort. Cheap to
     // run once on load; a no-op for already-well-formed tasks.
-    state.tasks = (state.tasks ?? []).map(normalizeTask);
+    state.tasks = withPrivateTime((state.tasks ?? []).map(normalizeTask), state.blocks ?? [], state.projects ?? [], state.meId);
+    state.blocks = visibleProjectBlocks(state.blocks ?? [], state.tasks, state.projects ?? [], state.meId);
   },
 }));
 

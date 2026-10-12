@@ -402,7 +402,7 @@ export function taskTimeLeft(task: Task, blocks: TimeBlock[]): number | null {
   // Signed: negative means more time has been spent + planned than estimated,
   // i.e. the plan has gone over. Callers that only want a non-negative number
   // should clamp themselves.
-  if (task.estimate_min == null) return null;
+  if (task.estimate_min == null || task.has_private_time) return null;
   const todayStart = addDaysLocal(weekStartMs(), todayDayIndex()).getTime();
   const futurePlanned = blocks
     .filter((b) => b.task_id === task.id && b.state === 'planned' && Date.parse(b.start_at) >= todayStart)

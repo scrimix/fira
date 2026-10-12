@@ -166,6 +166,11 @@ pub async fn ensure_block_in_scope(
          JOIN tasks t ON t.id = b.task_id
          JOIN projects p ON p.id = t.project_id
          WHERE b.id = $1 AND p.workspace_id = $3
+           AND (b.user_id = $2 OR NOT EXISTS (
+             SELECT 1 FROM project_members pm
+             WHERE pm.project_id = t.project_id AND pm.user_id = $2
+               AND pm.removed_at IS NULL AND pm.role = 'dev'
+           ))
            AND (
              p.owner_id = $2
              OR p.id IN (SELECT project_id FROM project_members WHERE user_id = $2 AND removed_at IS NULL)
@@ -241,4 +246,28 @@ pub async fn ensure_sprint_in_scope(
     .await?;
     row.map(|(p,)| p)
         .ok_or_else(|| anyhow::anyhow!("sprint not in scope"))
+}
+
+/// A dev member may create time blocks only for themselves in this project.
+pub async fn ensure_block_owner_allowed(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+    project_id: Uuid,
+    block_user_id: Uuid,
+) -> anyhow::Result<()> {
+    if user_id == block_user_id {
+        return Ok(());
+    }
+    let restricted: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM project_members
+         WHERE project_id = $1 AND user_id = $2 AND removed_at IS NULL AND role = 'dev')",
+    )
+    .bind(project_id)
+    .bind(user_id)
+    .fetch_one(&mut **tx)
+    .await?;
+    if restricted {
+        anyhow::bail!("dev members can only manage their own time blocks");
+    }
+    Ok(())
 }

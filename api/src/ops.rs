@@ -496,6 +496,20 @@ async fn apply_one(
         // Apply the mutation, capturing project_id along the way so we can
         // scope log delivery later. apply_payload returns Err on auth failure.
         let mut project_id: Option<Uuid> = None;
+        // Persist block ownership before update/delete, including deletes after
+        // which no block row exists. Never trust client-supplied visibility metadata.
+        let block_owner = match &op {
+            Op::BlockCreate { block } => Some(block.user_id),
+            Op::BlockUpdate { block_id, .. } | Op::BlockDelete { block_id } => {
+                sqlx::query_scalar::<_, Uuid>(
+                    "SELECT user_id FROM time_blocks WHERE id = $1 FOR UPDATE",
+                )
+                .bind(block_id)
+                .fetch_optional(&mut *tx)
+                .await?
+            }
+            _ => None,
+        };
         apply_payload(&mut tx, user_id, workspace_id, op, &mut project_id, storage).await?;
 
         // A private kind that picked up a project_id would be delivered
@@ -509,8 +523,8 @@ async fn apply_one(
         // Log + idempotency: PK conflict on op_id means a concurrent retry
         // of the same op_id won. Roll back so we don't double-apply.
         let inserted: Option<(i64,)> = sqlx::query_as(
-            "INSERT INTO processed_ops (op_id, user_id, kind, payload, project_id, workspace_id)
-             VALUES ($1, $2, $3, $4, $5, $6)
+            "INSERT INTO processed_ops (op_id, user_id, kind, payload, project_id, workspace_id, block_user_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)
              ON CONFLICT (op_id) DO NOTHING
              RETURNING seq",
         )
@@ -520,6 +534,7 @@ async fn apply_one(
         .bind(&payload_value)
         .bind(project_id)
         .bind(workspace_id)
+        .bind(block_owner)
         .fetch_optional(&mut *tx)
         .await?;
 
@@ -623,7 +638,8 @@ fn validate_span(starts_on: NaiveDate, ends_on: NaiveDate) -> anyhow::Result<()>
     if ends_on <= starts_on {
         anyhow::bail!("a sprint's ends_on must be after its starts_on");
     }
-    if starts_on.weekday().number_from_monday() != 1 || ends_on.weekday().number_from_monday() != 1 {
+    if starts_on.weekday().number_from_monday() != 1 || ends_on.weekday().number_from_monday() != 1
+    {
         anyhow::bail!("a sprint's starts_on and ends_on must both be Mondays");
     }
     Ok(())
@@ -895,6 +911,13 @@ pub async fn apply_payload(
         Op::BlockCreate { block } => {
             *out_project_id =
                 Some(ensure_task_in_scope(tx, user_id, workspace_id, block.task_id).await?);
+            crate::ensure_scope::ensure_block_owner_allowed(
+                tx,
+                user_id,
+                out_project_id.unwrap(),
+                block.user_id,
+            )
+            .await?;
             sqlx::query(
                 "INSERT INTO time_blocks (id, task_id, user_id, start_at, end_at, state)
                  VALUES ($1,$2,$3,$4,$5,$6)
@@ -1160,7 +1183,11 @@ pub async fn apply_payload(
                 .execute(&mut **tx)
                 .await?;
         }
-        Op::SprintSetDefaults { sprint_id, default_assignee_id, mut default_tag_ids } => {
+        Op::SprintSetDefaults {
+            sprint_id,
+            default_assignee_id,
+            mut default_tag_ids,
+        } => {
             let project_id = ensure_sprint_in_scope(tx, user_id, workspace_id, sprint_id).await?;
             *out_project_id = Some(project_id);
             if let Some(assignee) = default_assignee_id {
@@ -1169,22 +1196,37 @@ pub async fn apply_payload(
                      (p.owner_id = $2 OR EXISTS(SELECT 1 FROM project_members m
                       WHERE m.project_id = p.id AND m.user_id = $2 AND m.role <> 'inactive' AND m.removed_at IS NULL)))"
                 ).bind(project_id).bind(assignee).fetch_one(&mut **tx).await?;
-                if !eligible { anyhow::bail!("default assignee must be an active project member"); }
+                if !eligible {
+                    anyhow::bail!("default assignee must be an active project member");
+                }
             }
             default_tag_ids.sort_unstable();
             default_tag_ids.dedup();
-            let count: i64 = sqlx::query_scalar("SELECT count(*) FROM tags WHERE project_id = $1 AND id = ANY($2)")
-                .bind(project_id).bind(&default_tag_ids).fetch_one(&mut **tx).await?;
+            let count: i64 = sqlx::query_scalar(
+                "SELECT count(*) FROM tags WHERE project_id = $1 AND id = ANY($2)",
+            )
+            .bind(project_id)
+            .bind(&default_tag_ids)
+            .fetch_one(&mut **tx)
+            .await?;
             if count as usize != default_tag_ids.len() {
                 anyhow::bail!("default tags include unknown or cross-project tags");
             }
             sqlx::query("UPDATE sprints SET default_assignee_id = $2 WHERE id = $1")
-                .bind(sprint_id).bind(default_assignee_id).execute(&mut **tx).await?;
+                .bind(sprint_id)
+                .bind(default_assignee_id)
+                .execute(&mut **tx)
+                .await?;
             sqlx::query("DELETE FROM sprint_default_tags WHERE sprint_id = $1")
-                .bind(sprint_id).execute(&mut **tx).await?;
+                .bind(sprint_id)
+                .execute(&mut **tx)
+                .await?;
             for tag_id in default_tag_ids {
                 sqlx::query("INSERT INTO sprint_default_tags (sprint_id, tag_id) VALUES ($1,$2)")
-                    .bind(sprint_id).bind(tag_id).execute(&mut **tx).await?;
+                    .bind(sprint_id)
+                    .bind(tag_id)
+                    .execute(&mut **tx)
+                    .await?;
             }
         }
         Op::SprintSetDates {
@@ -1233,10 +1275,7 @@ pub async fn apply_payload(
                 .execute(&mut **tx)
                 .await?;
         }
-        Op::TaskSetSprint {
-            task_id,
-            sprint_id,
-        } => {
+        Op::TaskSetSprint { task_id, sprint_id } => {
             let project_id = ensure_task_in_scope(tx, user_id, workspace_id, task_id).await?;
             *out_project_id = Some(project_id);
             if let Some(sprint_id) = sprint_id {
@@ -1285,7 +1324,19 @@ pub async fn get_changes(
     ctx: AuthCtx,
     Query(q): Query<ChangesQuery>,
 ) -> ApiResult<Json<ChangesResponse>> {
-    let since = q.since.unwrap_or(0);
+    Ok(Json(
+        changes_for_user(&s.pool, ctx.workspace_id, ctx.user.id, q.since.unwrap_or(0)).await?,
+    ))
+}
+
+/// Shared by the HTTP handler and authorization integration tests.
+pub async fn changes_for_user(
+    pool: &PgPool,
+    workspace_id: Uuid,
+    user_id: Uuid,
+    since: i64,
+) -> sqlx::Result<ChangesResponse> {
+    let restricted = crate::db::dev_projects(pool, user_id, workspace_id).await?;
 
     // Change-feed scope, in workspace context:
     //   - workspace.* ops (workspace_id set, project_id NULL): every active
@@ -1301,9 +1352,22 @@ pub async fn get_changes(
     // the authorship filter, creating a goal would broadcast its name to
     // the whole team. Giving goal ops a project_id instead would only
     // narrow the leak from the workspace to the project.
-    let rows: Vec<(i64, String, String, serde_json::Value, DateTime<Utc>, Option<Uuid>)> = sqlx::query_as(
-        "SELECT po.seq, po.op_id, po.kind, po.payload, po.applied_at, po.project_id
+    let rows: Vec<(
+        i64,
+        String,
+        String,
+        serde_json::Value,
+        DateTime<Utc>,
+        Option<Uuid>,
+        Option<Uuid>,
+    )> = sqlx::query_as(
+        "SELECT po.seq, po.op_id, po.kind, po.payload, po.applied_at, po.project_id,
+                CASE WHEN po.kind LIKE 'block.%' THEN
+                  COALESCE(po.block_user_id,
+                           CASE WHEN po.kind = 'block.create' THEN (po.payload->'block'->>'user_id')::uuid END, b.user_id)
+                END
          FROM processed_ops po
+         LEFT JOIN time_blocks b ON po.block_user_id IS NULL AND b.id = CASE WHEN po.kind IN ('block.update', 'block.delete') THEN (po.payload->>'block_id')::uuid END
          WHERE po.seq > $1
            AND po.workspace_id = $3
            AND (po.kind NOT LIKE 'goal.%' OR po.user_id = $2)
@@ -1328,25 +1392,80 @@ pub async fn get_changes(
          LIMIT 500",
     )
     .bind(since)
-    .bind(ctx.user.id)
-    .bind(ctx.workspace_id)
-    .fetch_all(&s.pool)
+    .bind(user_id)
+    .bind(workspace_id)
+    .fetch_all(pool)
     .await?;
 
+    // Advance past filtered rows too: a page of hidden blocks must not
+    // prevent the client from reaching later task/plan changes.
     let cursor = rows.last().map(|r| r.0).unwrap_or(since);
+    let caller_id = user_id.to_string();
+    let scope = if !restricted.is_empty() || rows.iter().any(|row| row.2 == "task.move_project") {
+        crate::db::project_scope(pool, user_id, workspace_id).await?
+    } else {
+        vec![]
+    };
+    let private_tasks = if restricted.is_empty() {
+        vec![]
+    } else {
+        crate::db::private_time_tasks(pool, user_id, &restricted).await?
+    };
+    let mut privacy_sent = std::collections::HashSet::new();
     let ops = rows
         .into_iter()
-        .map(|(seq, op_id, kind, payload, applied_at, project_id)| ChangeEntry {
-            project_id,
-            seq,
-            op_id,
-            kind,
-            payload,
-            applied_at,
-        })
+        .filter_map(
+            |(seq, op_id, mut kind, mut payload, applied_at, project_id, block_owner)| {
+                if kind.starts_with("block.")
+                    && project_id.is_some_and(|p| restricted.contains(&p))
+                    && block_owner != Some(user_id)
+                {
+                    let project = project_id?;
+                    if !scope.contains(&project) || !privacy_sent.insert(project) { return None; }
+                    // Replace the private record with presence flags only.
+                    kind = "project.time_visibility".into();
+                    payload = serde_json::json!({
+                        "kind": kind, "project_id": project,
+                        "private_task_ids": private_tasks.iter().filter(|(_, p)| *p == project).map(|(id, _)| id).collect::<Vec<_>>()
+                    });
+                }
+                if kind == "task.create" || kind == "task.move_project" {
+                    if let Some(task) = payload.get_mut("task") {
+                        let id = task.get("id").and_then(|v| v.as_str()).and_then(|v| v.parse::<Uuid>().ok());
+                        task["has_private_time"] = serde_json::json!(id.is_some_and(|id| private_tasks.iter().any(|(t, _)| *t == id)));
+                    }
+                }
+                // Moves carry embedded blocks, and are logged for both project
+                // audiences. Use the destination role for both copies.
+                if kind == "task.move_project" {
+                    let target = payload
+                        .get("to_project_id")
+                        .and_then(|v| v.as_str())
+                        .and_then(|v| v.parse::<Uuid>().ok());
+                    if let Some(blocks) = payload.get_mut("blocks").and_then(|v| v.as_array_mut()) {
+                        if !target.is_some_and(|p| scope.contains(&p)) {
+                            blocks.clear();
+                        } else if target.is_some_and(|p| restricted.contains(&p)) {
+                            blocks.retain(|block| {
+                                block.get("user_id").and_then(|v| v.as_str())
+                                    == Some(caller_id.as_str())
+                            });
+                        }
+                    }
+                }
+                Some(ChangeEntry {
+                    project_id,
+                    seq,
+                    op_id,
+                    kind,
+                    payload,
+                    applied_at,
+                })
+            },
+        )
         .collect();
 
-    Ok(Json(ChangesResponse { ops, cursor }))
+    Ok(ChangesResponse { ops, cursor })
 }
 
 /// Current cursor — used by /bootstrap so a fresh client knows where to
@@ -1375,10 +1494,26 @@ pub async fn record_synthesized_op(
     payload: serde_json::Value,
     project_id: Option<Uuid>,
 ) -> sqlx::Result<()> {
+    let block_owner = if kind.starts_with("block.") {
+        if let Some(block_id) = payload
+            .get("block_id")
+            .and_then(|v| v.as_str())
+            .and_then(|v| v.parse::<Uuid>().ok())
+        {
+            sqlx::query_scalar::<_, Uuid>("SELECT user_id FROM time_blocks WHERE id = $1")
+                .bind(block_id)
+                .fetch_optional(&mut **tx)
+                .await?
+        } else {
+            None
+        }
+    } else {
+        None
+    };
     let op_id = Uuid::new_v4().to_string();
     let seq: (i64,) = sqlx::query_as(
-        "INSERT INTO processed_ops (op_id, user_id, kind, payload, project_id, workspace_id)
-         VALUES ($1, $2, $3, $4, $5, $6)
+        "INSERT INTO processed_ops (op_id, user_id, kind, payload, project_id, workspace_id, block_user_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
          RETURNING seq",
     )
     .bind(op_id)
@@ -1387,6 +1522,7 @@ pub async fn record_synthesized_op(
     .bind(payload)
     .bind(project_id)
     .bind(workspace_id)
+    .bind(block_owner)
     .fetch_one(&mut **tx)
     .await?;
     sqlx::query("SELECT pg_notify('ops_changes', $1)")

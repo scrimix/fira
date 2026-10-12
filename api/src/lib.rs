@@ -108,9 +108,9 @@ pub async fn load_bootstrap(
     let projects = db::list_projects_in_scope(pool, &scope).await?;
     let tracks = db::list_tracks_in_scope(pool, &scope).await?;
     let sprints = db::list_sprints_in_scope(pool, &scope).await?;
-    let tasks = db::list_tasks_in_scope(pool, &scope).await?;
+    let mut tasks = db::list_tasks_in_scope(pool, &scope).await?;
     let tags = db::list_tags_in_scope(pool, &scope).await?;
-    let blocks = db::list_blocks_in_scope(pool, &scope).await?;
+    let blocks = db::list_blocks_in_scope(pool, &scope, user_id).await?;
     let goals = db::list_goals_for_user(pool, workspace_id, user_id).await?;
     let gcal = db::list_gcal_for_user(pool, user_id).await?;
     let links = db::list_user_links(pool, user_id).await?;
@@ -118,6 +118,9 @@ pub async fn load_bootstrap(
     let cursor = ops::current_cursor(pool).await?;
     let settings = db::get_user_settings(pool, user_id).await?;
     let jira = db::get_workspace_jira_status(pool, user_id, workspace_id).await?;
+    // Read presence after the cursor watermark: concurrent block changes
+    // are either reflected here or will arrive through the change feed.
+    db::mark_private_time(pool, &mut tasks, user_id).await?;
     Ok(Bootstrap {
         users,
         projects,
