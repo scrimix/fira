@@ -31,7 +31,7 @@ export function Sidebar() {
   const projectFilter = useFira((s) => s.projectFilter);
 
   const pickProject = (id: string) => {
-    if (view === 'plan') setPlanProject(id);
+    if (view === 'plan') setPlanProject(planProjectId === id ? null : id);
     else if (view === 'dashboard') setDashboardProject(id);
     // The calendar is a time surface across every project, so its
     // scoping gesture is its own visibility filter — the same solo a
@@ -84,7 +84,7 @@ export function Sidebar() {
         </button>
         {/* Plan sits between List and Dashboard: the three are a
             widening sequence over the same tasks — one project's
-            document, one project's quarter, then the aggregate. The
+            document, the workspace plan, then the aggregate. The
             dashboard is the roll-up and belongs last.
 
             Plan is available on desktop in production too. */}

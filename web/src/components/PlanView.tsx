@@ -10,7 +10,7 @@ import type { PlanHistory, PlanRevisionList } from '../planHistory';
 import { PlanTimeline } from './PlanTimeline';
 import { useIsMobile } from '../hooks';
 import {
-  buildPlanSnapshot, type PlanSnapshot, type PlanTask, type PlanTrackRow,
+  buildPlanSnapshot, packLanes, type PlanSnapshot, type PlanTask, type PlanTrackRow,
   type RetroBucket,
 } from '../plan';
 import {
@@ -40,6 +40,7 @@ const RESIZE_EDGE_PX = 6;
 /// on commit.
 interface PlaceRange {
   trackId: UUID | null;
+  projectId: UUID;
   from: number;
   to: number;
 }
@@ -63,15 +64,8 @@ export function PlanView() {
   const isMobile = useIsMobile();
   const projects = useFira((s) => s.projects);
   const planProjectId = useFira((s) => s.planProjectId);
-  const listProjectId = useFira((s) => s.listFilter.project_id);
   const setView = useFira((s) => s.setView);
-
-  // Fall back to whatever the list is scoped to, so switching surfaces
-  // keeps the subject rather than asking again.
-  const projectId = planProjectId
-    ?? (listProjectId && projects.some((p) => p.id === listProjectId) ? listProjectId : null)
-    ?? projects[0]?.id
-    ?? null;
+  const projectId = projects.some((p) => p.id === planProjectId) ? planProjectId : null;
 
   if (isMobile) {
     // A week-column board is inherently wide, and a three-week window on
@@ -84,7 +78,7 @@ export function PlanView() {
     );
   }
 
-  if (!projectId) {
+  if (projects.length === 0) {
     return (
       <div className="plan-mobile">
         <p className="plan-mobile-msg">No projects in this workspace yet.</p>
@@ -94,22 +88,28 @@ export function PlanView() {
 
   return (
     <PlanBoard
-      key={projectId}
+      key={projectId ?? 'all'}
       projectId={projectId}
     />
   );
 }
 
-function PlanBoard({ projectId }: { projectId: UUID }) {
+type BoardSnapshot = Omit<PlanSnapshot, 'tracks' | 'retro'> & {
+  tracks: (PlanTrackRow & { projectId: UUID })[];
+  retro: (RetroBucket & { projectId: UUID; lane: number })[];
+};
+
+function PlanBoard({ projectId }: { projectId: UUID | null }) {
+  const projects = useFira((s) => s.projects);
   const versionAt = useFira((s) => s.planVersionAt);
   const versionSeq = useFira((s) => s.planVersionSeq);
   const setVersionAt = useFira((s) => s.setPlanVersionAt);
   const playground = useFira((s) => s.playgroundMode);
   const workspaceId = useFira((s) => s.activeWorkspaceId);
-  const historyVersion = useFira((s) => s.planHistoryVersions[projectId] ?? 0);
+  const historyVersion = useFira((s) => (projectId ? s.planHistoryVersions[projectId] : 0) ?? 0);
   const showHistory = useFira((s) => s.planShowHistory);
   const toggleHistory = useFira((s) => s.togglePlanHistory);
-  const readOnly = versionAt !== null;
+  const readOnly = projectId !== null && versionAt !== null;
   const [history, setHistory] = useState<{ data: PlanHistory; requestedAt: string | null; requestedSeq: number | null } | null>(null);
   const [snapshotLoading, setSnapshotLoading] = useState(false);
   const [metadataLoading, setMetadataLoading] = useState(false);
@@ -123,7 +123,7 @@ function PlanBoard({ projectId }: { projectId: UUID }) {
   const historyError = snapshotError || metadataError;
   useEffect(() => { setHistory(null); setMetadata(null); }, [projectId, workspaceId]);
   useEffect(() => {
-    if (playground || !showHistory) { setMetadataLoading(false); return; }
+    if (!projectId || playground || !showHistory) { setMetadataLoading(false); return; }
     const scope = `${workspaceId}/${projectId}`;
     const cached = metadataCache.current?.scope === scope ? metadataCache.current : null;
     if (cached && cached.version === historyVersion) {
@@ -147,7 +147,7 @@ function PlanBoard({ projectId }: { projectId: UUID }) {
     return () => { cancelled = true; };
   }, [projectId, workspaceId, historyVersion, playground, showHistory, retryHistory]);
   useEffect(() => {
-    if (playground || !showHistory || versionAt === null) { setSnapshotLoading(false); setSnapshotError(null); return; }
+    if (!projectId || playground || !showHistory || versionAt === null) { setSnapshotLoading(false); setSnapshotError(null); return; }
     let cancelled = false;
     setSnapshotLoading(true);
     setSnapshotError(null);
@@ -219,33 +219,33 @@ function PlanBoard({ projectId }: { projectId: UUID }) {
   const [editingSprint, setEditingSprint] = useState<UUID | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
 
-  // The board resolves its own project when nothing has been picked
-  // (list scope, else the first project). Write that back so the store
-  // says what the screen says — the sidebar reads `planProjectId` to
-  // decide which project to highlight, and would otherwise highlight
-  // nothing while a board was plainly scoped to something.
-  const setPlanProject = useFira((s) => s.setPlanProject);
-  const planProjectId = useFira((s) => s.planProjectId);
-  useEffect(() => {
-    if (planProjectId !== projectId) setPlanProject(projectId);
-  }, [projectId, planProjectId, setPlanProject]);
-
   const weekStartMs = weekStartFor(weekOffset);
-
-  const liveSnapshot: PlanSnapshot = useMemo(
-    () => buildPlanSnapshot({
-      projectId, tracks, sprints, tasks, blocks, weekStartMs, weekCount,
-    }),
-    [projectId, tracks, sprints, tasks, blocks, weekStartMs, weekCount],
-  );
-
-  const snapshot: PlanSnapshot = useMemo(() => {
-    if (!readOnly) return liveSnapshot;
-    const data = history && !historyError ? history.data : null;
-    const past = buildPlanSnapshot({ projectId, tracks: data?.tracks ?? [],
-      sprints: data?.sprints ?? [], tasks: data?.tasks ?? [], blocks: [], timeDataAvailable: false, weekStartMs, weekCount });
-    return past;
-  }, [readOnly, liveSnapshot, history, versionAt, versionSeq, historyError, projectId, weekStartMs, weekCount]);
+  const snapshot: BoardSnapshot = useMemo(() => {
+    const selected = projectId ? projects.filter((p) => p.id === projectId) : projects;
+    const data = readOnly && history && !historyError ? history.data : null;
+    const boards = selected.map((project) => {
+      const board = buildPlanSnapshot({
+        projectId: project.id,
+        tracks: readOnly ? data?.tracks ?? [] : tracks,
+        sprints: readOnly ? data?.sprints ?? [] : sprints,
+        tasks: readOnly ? data?.tasks ?? [] : tasks,
+        blocks: readOnly ? [] : blocks,
+        timeDataAvailable: !readOnly, weekStartMs, weekCount,
+      });
+      return { ...board, tracks: board.tracks.map((row) => ({ ...row, projectId: project.id })) };
+    });
+    const retro = boards.flatMap((board, i) => board.retro.map((bucket) => ({
+      ...bucket, projectId: selected[i].id,
+      label: projectId ? bucket.label : `${selected[i].title} · ${bucket.label}`,
+    })));
+    const lanes = packLanes(retro.map((bucket) => ({ start: bucket.startWeek, end: bucket.endWeek })));
+    return {
+      weeks: boards[0]?.weeks ?? [], nowWeek: boards[0]?.nowWeek ?? -1,
+      tracks: boards.flatMap((board) => board.tracks),
+      inbox: boards.flatMap((board) => board.inbox),
+      retro: retro.map((bucket, i) => ({ ...bucket, lane: lanes[i].lane })),
+    };
+  }, [projectId, projects, tracks, sprints, tasks, blocks, weekStartMs, weekCount, readOnly, history, historyError]);
 
   useEffect(() => {
     if (readOnly) { setDrag(null); setPlacing(false); setRange(null); setConfirmTrack(null); setConfirmSprint(null); setEditingSprint(null); }
@@ -255,7 +255,7 @@ function PlanBoard({ projectId }: { projectId: UUID }) {
 
   // Center the current week in the visible time columns, excluding the
   // sticky track header. Once per project; subsequent scrolling is theirs.
-  const scrolledFor = useRef<UUID | null>(null);
+  const scrolledFor = useRef<UUID | null | undefined>(undefined);
   const scrollToNow = useCallback(() => {
     const el = gridRef.current;
     if (!el || snapshot.nowWeek < 0) return;
@@ -323,6 +323,8 @@ function PlanBoard({ projectId }: { projectId: UUID }) {
     const rowUnder = (x: number, y: number): { id: UUID | null } | null => {
       const el = document.elementFromPoint(x, y)?.closest('.plan-row') as HTMLElement | null;
       if (!el || el.dataset.track === undefined) return null;
+      const source = sprints.find((sp) => sp.id === drag.sprintId);
+      if (el.dataset.project !== source?.project_id) return null;
       return { id: el.dataset.track === '' ? null : el.dataset.track };
     };
 
@@ -379,7 +381,7 @@ function PlanBoard({ projectId }: { projectId: UUID }) {
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
     };
-  }, [drag, weekWidth, setSprintDates, setSprintTrack]);
+  }, [drag, weekWidth, setSprintDates, setSprintTrack, sprints]);
 
   // The dragged card renders from the live drag, not the snapshot, so
   // the preview follows the cursor without a round trip — and it moves
@@ -391,10 +393,10 @@ function PlanBoard({ projectId }: { projectId: UUID }) {
     ? snapshot.tracks.flatMap((r) => r.sprints).find((sp) => sp.id === drag.sprintId) ?? null
     : null;
 
-  const previewOf = (row: PlanTrackRow) => {
+  const previewOf = (row: BoardSnapshot['tracks'][number]) => {
     if (!drag || !drag.moved || !draggedSprint) return row.sprints;
     const others = row.sprints.filter((sp) => sp.id !== drag.sprintId);
-    if (row.id !== drag.curTrackId) return others;
+    if (row.id !== drag.curTrackId || row.projectId !== sprints.find((sp) => sp.id === drag.sprintId)?.project_id) return others;
     const rawStart = relWeek(drag.curStart);
     const rawEnd = relWeek(drag.curEnd);
     return [...others, {
@@ -433,6 +435,7 @@ function PlanBoard({ projectId }: { projectId: UUID }) {
       if (!row || row.dataset.track === undefined) return null;
       return {
         trackId: row.dataset.track === '' ? null : row.dataset.track,
+        projectId: row.dataset.project,
         idx: Number(el.dataset.week),
       };
     };
@@ -441,7 +444,7 @@ function PlanBoard({ projectId }: { projectId: UUID }) {
       if (!r) return;
       const hit = cellUnder(e.clientX, e.clientY);
       // Stay on the row the sweep began in — a sprint lives on one track.
-      if (!hit || hit.trackId !== r.trackId || hit.idx === r.to) return;
+      if (!hit || hit.trackId !== r.trackId || hit.projectId !== r.projectId || hit.idx === r.to) return;
       setRange({ ...r, to: hit.idx });
     };
     const onUp = () => {
@@ -458,7 +461,7 @@ function PlanBoard({ projectId }: { projectId: UUID }) {
       // adding one.
       const d = new Date(endMs);
       const end = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 7).getTime();
-      addSprint(projectId, r.trackId, 'New sprint', fmtDateKey(startMs), fmtDateKey(end));
+      addSprint(r.projectId, r.trackId, 'New sprint', fmtDateKey(startMs), fmtDateKey(end));
     };
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
@@ -477,12 +480,14 @@ function PlanBoard({ projectId }: { projectId: UUID }) {
     // 'later', not 'now': addTask derives status from section, and a task
     // planned into a future sprint isn't in progress.
     const sprint = sprints.find(sp => sp.id === sprintId);
-    const project = useFira.getState().projects.find(p => p.id === projectId);
+    if (!sprint) return;
+    const taskProjectId = sprint.project_id;
+    const project = projects.find(p => p.id === taskProjectId);
     const assignee = sprint?.default_assignee_id;
     const activeAssignee = assignee && project?.members.some(m => m.user_id === assignee && m.role !== 'inactive')
       ? assignee : undefined;
-    const tags = sprint?.default_tag_ids?.filter(id => allTags.some(t => t.id === id && t.project_id === projectId));
-    const id = addTask(projectId, 'later', title, activeAssignee, tags);
+    const tags = sprint?.default_tag_ids?.filter(id => allTags.some(t => t.id === id && t.project_id === taskProjectId));
+    const id = addTask(taskProjectId, 'later', title, activeAssignee, tags);
     if (id) setTaskSprint(id, sprintId);
   };
 
@@ -496,7 +501,7 @@ function PlanBoard({ projectId }: { projectId: UUID }) {
     const dragged = tasks.find((t) => t.id === draggedId);
     const target = tasks.find((t) => t.id === targetId);
     if (!dragged || !target) return;
-    if (dragged.project_id !== projectId || target.project_id !== projectId) return;
+    if (dragged.project_id !== target.project_id) return;
     // Ordering is `sort_key`, which is section-scoped, so honouring
     // "put this above that" across a boundary means moving the task's
     // *section* — which is exactly what the same drag does in the list.
@@ -516,14 +521,14 @@ function PlanBoard({ projectId }: { projectId: UUID }) {
     // joining that section first — exactly what a list drag does.
     if (dragged.section !== target.section) setTaskSection(draggedId, target.section);
     const ordered = tasks
-      .filter((t) => t.project_id === projectId
+      .filter((t) => t.project_id === target.project_id
         && t.section === target.section && t.id !== draggedId)
       .sort((a, b) => a.sort_key.localeCompare(b.sort_key))
       .map((t) => t.id);
     const at = ordered.indexOf(targetId);
     if (at < 0) return;
     ordered.splice(before ? at : at + 1, 0, draggedId);
-    reorderTasks(projectId, target.section, ordered);
+    reorderTasks(target.project_id, target.section, ordered);
   };
 
   /// Turn one reconstructed fortnight into a real sprint. This is the
@@ -534,21 +539,20 @@ function PlanBoard({ projectId }: { projectId: UUID }) {
   ///
   /// Lands on "No track" rather than guessing one — the orphan row is
   /// visible and the card drags onto a track from there.
-  const promoteBucket = (b: RetroBucket) => {
+  const promoteBucket = (b: RetroBucket & { projectId: UUID }) => {
     if (readOnly) return;
-    const id = addSprint(projectId, null, b.label, b.startsOn, b.endsOn);
+    const id = addSprint(b.projectId, null, b.label, b.startsOn, b.endsOn);
     if (!id) return;
     for (const t of b.tasks) setTaskSprint(t.id, id);
   };
 
   const railTags = useMemo(
-    () => allTags.filter((t) => t.project_id === projectId)
+    () => allTags.filter((t) => !projectId || t.project_id === projectId)
       .sort((a, b) => a.title.localeCompare(b.title)),
     [allTags, projectId],
   );
 
-  const orphanRow = snapshot.tracks.find((r) => r.id === null) ?? null;
-  const realRows = snapshot.tracks.filter((r) => r.id !== null);
+  const rows = snapshot.tracks;
   const confirmTrackRow = confirmTrack
     ? snapshot.tracks.find((r) => r.id === confirmTrack) ?? null
     : null;
@@ -637,7 +641,7 @@ function PlanBoard({ projectId }: { projectId: UUID }) {
                   onClick={togglePlanRetro}>
             <Archive size={12} strokeWidth={1.75} /> Unplanned
           </button>
-          {!playground && <button className="week-nav-btn" data-on={showHistory}
+          {projectId && !playground && <button className="week-nav-btn" data-on={showHistory}
                   aria-pressed={showHistory}
                   title={showHistory ? 'Hide history and return to the live plan' : 'Show the plan history scrubber'}
                   onClick={toggleHistory}>
@@ -647,15 +651,15 @@ function PlanBoard({ projectId }: { projectId: UUID }) {
 
         <span className="plan-toolbar-sep" />
 
-        {!playground && showHistory && <div className="week-nav">
+        {projectId && !playground && showHistory && <div className="week-nav">
           <button className="week-nav-btn" aria-label="Return to live plan"
             data-on={!readOnly} onClick={() => setVersionAt(null)}>Live</button>
         </div>}
         <div className="week-nav plan-adds" role="group" aria-label="Add">
           <button className="week-nav-btn"
-                  disabled={readOnly}
-                  title="Add a track — one row on the board"
-                  onClick={() => addTrack(projectId, 'New track')}>
+                  disabled={readOnly || !projectId}
+                  title={projectId ? "Add a track — one row on the board" : "Select a project to add a track"}
+                  onClick={() => projectId && addTrack(projectId, 'New track')}>
             <Plus size={12} strokeWidth={1.75} /> Track
           </button>
           <button className="week-nav-btn" data-on={placing}
@@ -711,40 +715,45 @@ function PlanBoard({ projectId }: { projectId: UUID }) {
           </div>
 
           <div className="plan-rows">
-            {realRows.map((row, i) => (
+            {rows.map((row, i) => (
               <TrackRow
-                key={row.id ?? 'orphan'}
+                key={`${row.projectId}/${row.id ?? 'orphan'}`}
                 readOnly={readOnly}
                 row={row}
+                projectTitle={!projectId ? projects.find((p) => p.id === row.projectId)?.title : undefined}
                 sprints={previewOf(row)}
                 showTasks={showTasks}
                 weeks={snapshot.weeks}
                 nowWeek={snapshot.nowWeek}
                 dragging={drag?.moved ? drag.sprintId : null}
-                dropping={drag?.moved ? drag.curTrackId === row.id : false}
-                onRename={(title) => row.id && setTrackTitle(row.id, title)}
-                onColor={(color) => row.id && setTrackColor(row.id, color)}
-                onDelete={() => setConfirmTrack(row.id)}
-                onMoveUp={i > 0 ? () => {
-                  const ids = realRows.map((r) => r.id!) ;
-                  [ids[i - 1], ids[i]] = [ids[i], ids[i - 1]];
-                  reorderTracks(projectId, ids);
+                dropping={drag?.moved ? drag.curTrackId === row.id && sprints.find((sp) => sp.id === drag.sprintId)?.project_id === row.projectId : false}
+                onRename={row.id ? (title) => setTrackTitle(row.id!, title) : undefined}
+                onColor={row.id ? (color) => setTrackColor(row.id!, color) : undefined}
+                onDelete={row.id ? () => setConfirmTrack(row.id) : undefined}
+                onMoveUp={row.id && i > 0 && rows[i - 1].projectId === row.projectId && rows[i - 1].id ? () => {
+                  const ids = rows.filter((r) => r.projectId === row.projectId && r.id).map((r) => r.id!) ;
+                  const at = ids.indexOf(row.id!);
+                  [ids[at - 1], ids[at]] = [ids[at], ids[at - 1]];
+                  reorderTracks(row.projectId, ids);
                 } : undefined}
-                onMoveDown={i < realRows.length - 1 ? () => {
-                  const ids = realRows.map((r) => r.id!);
-                  [ids[i], ids[i + 1]] = [ids[i + 1], ids[i]];
-                  reorderTracks(projectId, ids);
+                onMoveDown={row.id && i < rows.length - 1 && rows[i + 1].projectId === row.projectId && rows[i + 1].id ? () => {
+                  const ids = rows.filter((r) => r.projectId === row.projectId && r.id).map((r) => r.id!);
+                  const at = ids.indexOf(row.id!);
+                  [ids[at], ids[at + 1]] = [ids[at + 1], ids[at]];
+                  reorderTracks(row.projectId, ids);
                 } : undefined}
                 placing={placing}
-                range={range && range.trackId === row.id ? range : null}
-                onRangeStart={(idx) => setRange({ trackId: row.id, from: idx, to: idx })}
+                range={range && range.trackId === row.id && range.projectId === row.projectId ? range : null}
+                onRangeStart={(idx) => setRange({ trackId: row.id, projectId: row.projectId, from: idx, to: idx })}
                 onSprintPointerDown={(e, id) => beginDrag(e, id, 'move')}
                 onSprintResizeDown={(e, id, edge) =>
                   beginDrag(e, id, edge === 'start' ? 'resize-start' : 'resize-end')}
                 onSprintRename={setSprintTitle}
                 onSprintEdit={setEditingSprint}
                 onSprintDelete={setConfirmSprint}
-                onDropTask={setTaskSprint}
+                onDropTask={(taskId, sprintId) => {
+                  if (tasks.find((t) => t.id === taskId)?.project_id === sprints.find((sp) => sp.id === sprintId)?.project_id) setTaskSprint(taskId, sprintId);
+                }}
                 onTick={tickTask}
                 onRemoveTask={(taskId) => setTaskSprint(taskId, null)}
                 onAddTask={addTaskToSprint}
@@ -752,34 +761,6 @@ function PlanBoard({ projectId }: { projectId: UUID }) {
                 onReorderTask={moveTaskNextTo}
               />
             ))}
-
-            {orphanRow && (
-              <TrackRow
-                readOnly={readOnly}
-                row={orphanRow}
-                sprints={previewOf(orphanRow)}
-                showTasks={showTasks}
-                weeks={snapshot.weeks}
-                nowWeek={snapshot.nowWeek}
-                dragging={drag?.moved ? drag.sprintId : null}
-                dropping={drag?.moved ? drag.curTrackId === null : false}
-                placing={placing}
-                range={range && range.trackId === null ? range : null}
-                onRangeStart={(idx) => setRange({ trackId: null, from: idx, to: idx })}
-                onSprintPointerDown={(e, id) => beginDrag(e, id, 'move')}
-                onSprintResizeDown={(e, id, edge) =>
-                  beginDrag(e, id, edge === 'start' ? 'resize-start' : 'resize-end')}
-                onSprintRename={setSprintTitle}
-                onSprintEdit={setEditingSprint}
-                onSprintDelete={setConfirmSprint}
-                onDropTask={setTaskSprint}
-                onTick={tickTask}
-                onRemoveTask={(taskId) => setTaskSprint(taskId, null)}
-                onAddTask={addTaskToSprint}
-                onOpenTask={openTask}
-                onReorderTask={moveTaskNextTo}
-              />
-            )}
 
             {/* The reconstructed past. Not a plan, and the row says so:
                 it holds finished work that was never planned into a
@@ -809,11 +790,11 @@ function PlanBoard({ projectId }: { projectId: UUID }) {
                 </div>
                 <div className="plan-row-grid">
                   {snapshot.retro.map((b) => (
-                    <div key={b.startMs} className="plan-card plan-card-retro"
+                    <div key={`${b.projectId}/${b.startMs}`} className="plan-card plan-card-retro"
                          data-clip-start={b.clipStart || undefined}
                          data-clip-end={b.clipEnd || undefined}
                          style={{ gridColumn: `${b.startWeek + 1} / ${b.endWeek + 1}`,
-                                  gridRow: 1 }}>
+                                  gridRow: b.lane + 1 }}>
                       <div className="plan-card-head">
                         <span className="plan-badge">{b.label}</span>
                         {/* Only offered for a bucket wholly inside the
@@ -858,7 +839,7 @@ function PlanBoard({ projectId }: { projectId: UUID }) {
         </div>
       </div>
 
-      {!playground && showHistory && <section className="plan-history-panel" aria-label="Plan history">
+      {projectId && !playground && showHistory && <section className="plan-history-panel" aria-label="Plan history">
         <PlanTimeline history={metadata}
           selectedAt={versionAt} selectedSeq={versionSeq} onSelect={setVersionAt}
           status={historyError ? <><span className="plan-history-message" title={historyError}>{historyError}</span> <button onClick={() => setRetryHistory((v) => v + 1)}>Retry</button></>
@@ -920,7 +901,8 @@ function PlanBoard({ projectId }: { projectId: UUID }) {
 
 function TrackRow(props: {
   readOnly?: boolean;
-  row: PlanTrackRow;
+  row: PlanTrackRow & { projectId: UUID };
+  projectTitle?: string;
   sprints: PlanTrackRow['sprints'];
   showTasks: boolean;
   weeks: number[];
@@ -972,15 +954,17 @@ function TrackRow(props: {
          // Read by the drag's hit-test. Empty string is the "No track"
          // row; absent (the retro band) means "not a drop target".
          data-track={row.id ?? ''}
+         data-project={row.projectId}
          data-over={dropping || undefined}
          style={{ '--track-color': row.color } as React.CSSProperties}>
-      <div className="plan-row-head" onBlur={(e) => {
+      <div className="plan-row-head plan-row-head-stacked" onBlur={(e) => {
         if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setColorsOpen(false);
       }} onKeyDown={(e) => {
           if (colorsOpen && e.key === 'Escape') {
             e.stopPropagation(); setColorsOpen(false); colorButton.current?.focus();
           }
       }}>
+        {props.projectTitle && <span className="plan-row-sub">{props.projectTitle}</span>}
         {renaming ? (
           <input autoFocus className="plan-row-title-input" value={draft}
                  onChange={(e) => setDraft(e.target.value)}
@@ -1106,24 +1090,24 @@ const RAIL_SECTIONS: { key: Section; label: string }[] = [
 /// second thing to learn. Filter box, collapsible groups with counts,
 /// `.rail-task` rows, drag onto the board.
 ///
-/// One substitution: the calendar groups by *project* and filters by
-/// project, which is meaningless here because the board is already
-/// scoped to one. Groups are **sections** and the filter panel is
-/// **tags** — the two axes that actually divide a single project's
-/// unplanned work.
+/// Across projects, group by project like the calendar rail. A selected
+/// project's inbox uses list sections and its project-specific tag filter.
 function PlanRail({ tasks, tags, projectId, onOpen, onDropOut, readOnly = false }: {
   readOnly?: boolean;
   tasks: PlanTask[];
   tags: Tag[];
-  projectId: UUID;
+  projectId: UUID | null;
   onOpen: (id: UUID) => void;
   onDropOut: (taskId: UUID) => void;
 }) {
+  const projects = useFira((s) => s.projects);
+  const allTasks = useFira((s) => s.tasks);
+  const taskProjects = useMemo(() => new Map(allTasks.map((task) => [task.id, task.project_id])), [allTasks]);
   const [over, setOver] = useState(false);
   const [query, setQuery] = useState('');
   const [picked, setPicked] = useState<UUID[]>([]);
   const [tagMode, setTagMode] = useState<'and' | 'or'>('or');
-  const [collapsed, setCollapsed] = useState<Set<Section>>(() => new Set());
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
 
   const q = query.trim().toLowerCase();
   const shown = tasks.filter((t) => {
@@ -1143,10 +1127,12 @@ function PlanRail({ tasks, tags, projectId, onOpen, onDropOut, readOnly = false 
   // it empties makes the rail's shape jump as you plan work, and "is
   // there anything in Now?" is a question the rail should answer rather
   // than leave to be inferred from an absence.
-  const groups = RAIL_SECTIONS
-    .map((sec) => ({ ...sec, tasks: shown.filter((t) => t.section === sec.key) }));
+  const groups = projectId
+    ? RAIL_SECTIONS.map((sec) => ({ ...sec, tasks: shown.filter((t) => t.section === sec.key) }))
+    : projects.map((project) => ({ key: project.id, label: project.title,
+        tasks: shown.filter((t) => taskProjects.get(t.id) === project.id) }));
 
-  const toggleSection = (key: Section) =>
+  const toggleSection = (key: string) =>
     setCollapsed((cur) => {
       const next = new Set(cur);
       if (!next.delete(key)) next.add(key);
@@ -1180,7 +1166,7 @@ function PlanRail({ tasks, tags, projectId, onOpen, onDropOut, readOnly = false 
         />
       </div>
       <div className="rail-body">
-        {tags.length > 0 && (
+        {projectId && tags.length > 0 && (
           <div className="plan-rail-tags">
             <ListTagFilter
               projectId={projectId}
@@ -1196,10 +1182,7 @@ function PlanRail({ tasks, tags, projectId, onOpen, onDropOut, readOnly = false 
           </div>
         )}
 
-        {/* The list's own section heading — caret, name, count, trailing
-            rule — not the calendar rail's project-group bar. Same
-            sections, same words, so the two surfaces read as one
-            document. */}
+        {/* Reuse list headings for both project and section groups. */}
         {groups.map((g) => {
           const shut = collapsed.has(g.key);
           return (

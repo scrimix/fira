@@ -17,8 +17,7 @@ export function TopBar() {
   const planWeekOffset = useFira((s) => s.planWeekOffset);
   const planWeekCount = useFira((s) => s.planWeekCount);
   const planProject = useFira((s) =>
-    s.projects.find((p) => p.id === (s.planProjectId ?? s.listFilter.project_id))
-    ?? s.projects[0] ?? null
+    s.projects.find((p) => p.id === s.planProjectId) ?? null
   );
   const dashboardProject = useFira((s) =>
     s.projects.find((p) => p.id === s.dashboardProjectId) ?? null
@@ -78,6 +77,12 @@ export function TopBar() {
       )}
       <WorkspaceSwitcher />
       <span className="crumb-sep">/</span>
+      {view === 'plan' && !planProject && !isMobile && (
+        <>
+          <span className="title">All projects</span>
+          <span className="crumb-sep">/</span>
+        </>
+      )}
       {view === 'plan' && planProject && !isMobile && (
         <>
           <ProjectIcon
