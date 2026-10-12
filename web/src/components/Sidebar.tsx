@@ -32,7 +32,7 @@ export function Sidebar() {
 
   const pickProject = (id: string) => {
     if (view === 'plan') setPlanProject(planProjectId === id ? null : id);
-    else if (view === 'dashboard') setDashboardProject(id);
+    else if (view === 'dashboard') setDashboardProject(dashboardProjectId === id ? null : id);
     // The calendar is a time surface across every project, so its
     // scoping gesture is its own visibility filter — the same solo a
     // double-click on the rail's project row performs.

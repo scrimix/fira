@@ -222,7 +222,9 @@ function PlanBoard({ projectId }: { projectId: UUID | null }) {
 
   const weekStartMs = weekStartFor(weekOffset);
   const snapshot: BoardSnapshot = useMemo(() => {
-    const selected = projectId ? projects.filter((p) => p.id === projectId) : projects;
+    const selected = projects.filter((project) => projectId
+      ? project.id === projectId
+      : !project.members.some((member) => member.user_id === meId && member.role === 'inactive'));
     const data = readOnly && history && !historyError ? history.data : null;
     const boards = selected.map((project) => {
       const board = buildPlanSnapshot({
@@ -1103,6 +1105,7 @@ function PlanRail({ tasks, tags, projectId, onOpen, onDropOut, readOnly = false 
   onDropOut: (taskId: UUID) => void;
 }) {
   const projects = useFira((s) => s.projects);
+  const meId = useFira((s) => s.meId);
   const allTasks = useFira((s) => s.tasks);
   const taskProjects = useMemo(() => new Map(allTasks.map((task) => [task.id, task.project_id])), [allTasks]);
   const [over, setOver] = useState(false);
@@ -1131,7 +1134,8 @@ function PlanRail({ tasks, tags, projectId, onOpen, onDropOut, readOnly = false 
   // than leave to be inferred from an absence.
   const groups = projectId
     ? RAIL_SECTIONS.map((sec) => ({ ...sec, tasks: shown.filter((t) => t.section === sec.key) }))
-    : projects.map((project) => ({ key: project.id, label: project.title,
+    : projects.filter((project) => !project.members.some((member) => member.user_id === meId && member.role === 'inactive'))
+      .map((project) => ({ key: project.id, label: project.title,
         tasks: shown.filter((t) => taskProjects.get(t.id) === project.id) }));
 
   const toggleSection = (key: string) =>

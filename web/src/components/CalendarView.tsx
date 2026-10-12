@@ -1,8 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, ChevronDown, ChevronRight, Copy, ExternalLink, MoreVertical, Repeat, Trash2, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, Copy, ExternalLink, MoreVertical, PanelBottomClose, PanelBottomOpen, Repeat, Trash2, X } from 'lucide-react';
 import { useFira } from '../store';
-import { ProjectIcon } from './ProjectIcon';
 import {
   HOURS, DAY_LABELS, todayDayIndex, nowTimeMin, weekStartMs,
   blockToGrid, gridToBlock, fmtClockShort, fmtMin, taskCompletedMin, taskPlannedMin, taskTimeLeft,
@@ -150,7 +149,6 @@ export function CalendarView() {
   const projectFilter = useFira((s) => s.projectFilter);
   const selectedPersonIds = useFira((s) => s.selectedPersonIds);
   const activePersonId = useFira((s) => s.activePersonId);
-  const toggleProjectFilter = useFira((s) => s.toggleProjectFilter);
   const openTask = useFira((s) => s.openTask);
   const updateBlock = useFira((s) => s.updateBlock);
   const deleteBlock = useFira((s) => s.deleteBlock);
@@ -167,6 +165,7 @@ export function CalendarView() {
   const dayOffset = useFira((s) => s.dayOffset);
   const setDayOffset = useFira((s) => s.setDayOffset);
   const isMobile = useIsMobile();
+  const [taskRailCollapsed, setTaskRailCollapsed] = useState(true);
   // Mobile shows a 3-day window centered on today+dayOffset; desktop shows
   // the standard 7-day week. Both modes feed a common `gridAnchor` (column
   // 0's local-midnight ms) into blockToGrid/gridToBlock — those functions
@@ -661,20 +660,6 @@ export function CalendarView() {
   const completedMin = totalsBlocks.filter((b) => b.state === 'completed').reduce((s, b) => s + dur(b), 0);
   const plannedMin = totalsBlocks.filter((b) => b.state === 'planned').reduce((s, b) => s + dur(b), 0);
 
-  // Per-project rail counts also use the visible day range so they
-  // sum to the totals above, but ignore the project-visibility filter
-  // so a hidden project still shows how many hours it has scheduled.
-  const myBlocksInRange = useMemo(
-    () => myBlocks.filter(inVisibleRange),
-    [myBlocks, gridAnchor, dayCount],
-  );
-  const allocByProject = projects.map((p) => {
-    const mins = myBlocksInRange
-      .filter((b) => tasks.find((t) => t.id === b.task_id)?.project_id === p.id)
-      .reduce((s, b) => s + dur(b), 0);
-    return { project: p, mins, pct: totalMin ? (mins / totalMin) * 100 : 0 };
-  });
-
   const myGcal = gcal.filter((g) => g.user_id === activePersonId);
 
   // One toggle for every "not this workspace" source. Three separate
@@ -836,7 +821,7 @@ export function CalendarView() {
   };
 
   return (
-    <div className="calendar">
+    <div className="calendar" data-rail-collapsed={isMobile && taskRailCollapsed || undefined}>
       <div className="cal-main">
         <div className="cal-toolbar">
           <div className="week-nav">
@@ -1374,7 +1359,8 @@ export function CalendarView() {
       <CalRail
         onDragTask={setDraggedTaskId}
         onTouchSchedule={onTouchSchedule}
-        allocByProject={allocByProject}
+        collapsed={isMobile && taskRailCollapsed}
+        onToggleCollapsed={isMobile ? () => setTaskRailCollapsed((value) => !value) : undefined}
       />
       {gcalPopover && (() => {
         const evt = gcal.find((g) => g.id === gcalPopover.eventId);
@@ -1640,17 +1626,16 @@ function UserPicker({ users, meId, selectedPersonIds, activePersonId, onAdd, onR
   );
 }
 
-function CalRail({ onDragTask, onTouchSchedule, allocByProject }: {
+function CalRail({ onDragTask, onTouchSchedule, collapsed, onToggleCollapsed }: {
+  collapsed: boolean;
+  onToggleCollapsed?: () => void;
   onDragTask: (id: UUID | null) => void;
   onTouchSchedule: (taskId: UUID, clientX: number, clientY: number, phase: 'move' | 'end' | 'cancel') => void;
-  allocByProject: Array<{ project: Project; mins: number; pct: number }>;
 }) {
   const tasks = useFira((s) => s.tasks);
   const blocks = useFira((s) => s.blocks);
   const projects = useFira((s) => s.projects);
   const projectFilter = useFira((s) => s.projectFilter);
-  const toggleProjectFilter = useFira((s) => s.toggleProjectFilter);
-  const soloProjectFilter = useFira((s) => s.soloProjectFilter);
   const activePersonId = useFira((s) => s.activePersonId);
   const openTask = useFira((s) => s.openTask);
   const openCreate = useFira((s) => s.openCreate);
@@ -1661,14 +1646,6 @@ function CalRail({ onDragTask, onTouchSchedule, allocByProject }: {
   const [showAll, setShowAll] = useState(false);
   const [titleQuery, setTitleQuery] = useState('');
   const q = titleQuery.trim().toLowerCase();
-  const railIsMobile = useIsMobile();
-  // Projects panel sits at the top of the rail. On phones the rail is
-  // already height-constrained (~38vh stacked under the calendar); the
-  // projects list eats most of that before any tasks become visible.
-  // Default to collapsed on phones, expanded on desktop. The user can
-  // still flip it.
-  const [projectsOpen, setProjectsOpen] = useState(!railIsMobile);
-  useEffect(() => { setProjectsOpen(!railIsMobile); }, [railIsMobile]);
   // Per-project rail-group collapse. Local-only because the calendar's
   // own per-project visibility (`projectFilter`) hides BOTH the rail
   // tasks AND the calendar blocks — too coarse when you just want the
@@ -1876,44 +1853,18 @@ function CalRail({ onDragTask, onTouchSchedule, allocByProject }: {
                   : 'Show every task in the project — other people’s tasks plus your own Later and Recurring'}>
           {showAll ? 'My' : 'All'}
         </button>
-      </div>
-      <div className="rail-body" ref={setRailBodyEl}>
-        <div className="rail-projects" data-open={projectsOpen}>
-          <button
-            type="button"
-            className="rail-projects-head"
-            onClick={() => setProjectsOpen((v) => !v)}
-            aria-expanded={projectsOpen}
-            title={projectsOpen ? 'Collapse projects filter' : 'Expand projects filter'}
-          >
-            {projectsOpen
-              ? <ChevronDown size={11} strokeWidth={1.75} />
-              : <ChevronRight size={11} strokeWidth={1.75} />}
-            <span>Projects</span>
+        {onToggleCollapsed && (
+          <button type="button" className="rail-scope-btn rail-collapse-btn"
+                  onClick={onToggleCollapsed}
+                  aria-label={collapsed ? 'Show task rail' : 'Hide task rail'}
+                  title={collapsed ? 'Show task rail' : 'Hide task rail'}
+                  aria-expanded={!collapsed}
+                  aria-controls="calendar-task-rail-body">
+            {collapsed ? <PanelBottomOpen size={16} strokeWidth={1.75} /> : <PanelBottomClose size={16} strokeWidth={1.75} />}
           </button>
-          {projectsOpen && railProjects.map((p) => {
-            const dimmed = projectFilter[p.id] === false;
-            const alloc = allocByProject.find((a) => a.project.id === p.id);
-            return (
-              <div key={p.id} className="rail-proj-row" data-dimmed={dimmed}
-                   onClick={() => toggleProjectFilter(p.id)}
-                   onDoubleClick={() => soloProjectFilter(p.id)}
-                   title={dimmed
-                     ? `Show ${p.title} on calendar — double-click to solo`
-                     : `Hide ${p.title} from calendar — double-click to solo`}>
-                <ProjectIcon
-                  name={p.icon}
-                  color={dimmed ? 'var(--ink-4)' : p.color}
-                  size={12}
-                  strokeWidth={1.75}
-                  className="rail-proj-icon"
-                />
-                <span className="rail-proj-name">{p.title}</span>
-                <span className="rail-proj-count">{fmtMin(alloc?.mins ?? 0)}</span>
-              </div>
-            );
-          })}
-        </div>
+        )}
+      </div>
+      <div id="calendar-task-rail-body" className="rail-body" ref={setRailBodyEl} hidden={collapsed}>
         {groups.map((g) => {
           const collapsed = collapsedRailGroups.has(g.project.id);
           return (

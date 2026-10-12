@@ -1004,7 +1004,8 @@
 }
 
 .cal-rail {
-  border-left: 1px solid var(--rule-chrome);
+  /* Keep independently scrolling calendar and task surfaces separated in modern style. */
+  border-left: 1px solid var(--rule);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -1057,6 +1058,13 @@
   background: var(--paper-2);
   border-color: var(--ink-3);
 }
+.rail-collapse-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+}
+.rail-body[hidden] { display: none; }
 .rail-search {
   flex: 1;
   min-width: 0;
@@ -1084,82 +1092,6 @@
   font-family: var(--font-mono);
   font-size: calc(10px * var(--fs-scale));
 }
-/* Project filter — sits as a foldable section at the top of the rail
- * body. Now a sibling of the task groups (inside .rail-body) so the
- * whole rail shares one scroll container — important on phones where
- * the rail is height-constrained and needs the projects panel to
- * either collapse out of the way or scroll along with the tasks. */
-.rail-projects {
-  /* Plain paper in both styles. The panel tint used to mark this block
-   * as subordinate, but the rail already separates it with the head's
-   * rule, and against classic's white the grey slab read as a foreign
-   * card dropped into the rail rather than part of it. */
-  background: var(--paper);
-  padding: 6px calc(var(--gutter-x) - var(--scrollbar-w)) 10px calc(8px * var(--density));
-}
-.rail-projects[data-open="false"] { padding: 6px calc(var(--gutter-x) - var(--scrollbar-w)) 6px calc(8px * var(--density)); }
-.rail-projects-head {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  padding: 4px 0;
-  font-family: var(--font-label);
-  /* Same label formula as .rail-group-head below — this head and the
-   * project group heads sit a few rows apart in the same rail, so a
-   * fixed size here made it tower over them in classic (10px tracked
-   * uppercase) while looking fine in modern (12.5px capitalized). */
-  font-size: calc(10px * var(--fs-scale) * var(--label-size));
-  font-weight: 500;
-  letter-spacing: calc(0.1em * var(--label-track));
-  text-transform: var(--label-case);
-  color: var(--ink-3);
-  background: transparent;
-  border: 0;
-  border-bottom: 1px solid var(--rule);
-  cursor: pointer;
-  text-align: left;
-}
-.rail-projects[data-open="true"] .rail-projects-head { margin-bottom: 6px; }
-.rail-projects-head:hover { color: var(--ink-2); }
-.rail-proj-row {
-  display: grid;
-  grid-template-columns: 12px 1fr auto;
-  align-items: center;
-  gap: 8px;
-  padding: 3px 0;
-  font-family: var(--font-label);
-  font-size: var(--fs-sm);
-  font-weight: 400;
-  cursor: pointer;
-  user-select: none;
-}
-/* Modern keeps the medium weight: its lowercase sans label needs the
- * extra stroke to hold rank against the task rows below. Classic's
- * serif-ish label at 500 just read as bold next to the group heads. */
-:root[data-style="modern"] .rail-proj-row { font-weight: 500; }
-.rail-proj-row:hover { color: var(--ink-2); }
-.rail-proj-icon {
-  flex-shrink: 0;
-}
-.rail-proj-row[data-dimmed="true"] .rail-proj-icon {
-  opacity: 0.6;
-}
-/* Same ink as the project name in a section head (.rail-group-head
- * .pname) — it's the same string in the same rail, and at full --ink
- * these rows outshone the heads they filter. */
-.rail-proj-name { color: var(--ink-2); }
-.rail-proj-row[data-dimmed="true"] .rail-proj-name {
-  color: var(--ink-4);
-  text-decoration: line-through;
-}
-.rail-proj-count {
-  font-family: var(--font-mono);
-  font-size: calc(10px * var(--fs-scale));
-  color: var(--ink-4);
-  font-variant-numeric: tabular-nums;
-}
-
 .rail-body {
   /* Reserved unconditionally so the rows below keep the same content
    * edge as .rail-head above them whether or not the list overflows.
@@ -1348,6 +1280,10 @@
     grid-template-columns: 1fr;
     grid-template-rows: minmax(0, 1fr) minmax(160px, 38vh);
   }
+  .calendar[data-rail-collapsed] {
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+  .calendar[data-rail-collapsed] .rail-head { border-bottom: 0; }
   .cal-rail {
     display: flex;
     min-width: 0;
