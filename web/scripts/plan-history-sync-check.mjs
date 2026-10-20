@@ -49,9 +49,10 @@ try {
   const initialRequests = revisionRequests.length;
   assert(initialRequests > 0, 'Revision list did not load');
   assert(snapshotRequests === 0, 'Opening live history fetched an unused snapshot');
-  const picker = page.getByLabel('Revision', { exact: true });
+  const picker = page.getByRole('button', { name: 'Revision', exact: true });
   for (const change of source.changes.slice(0, 3)) {
-    await picker.selectOption(String(change.seq));
+    await picker.click();
+    await page.getByRole('option').filter({ hasText: new RegExp(`#${change.seq}$`) }).click();
     await page.waitForSelector(`.plan-wrap[data-revision="${change.seq}"][aria-busy="false"]`);
   }
   assert(revisionRequests.length === initialRequests, 'Scrubbing refetched revisions');
@@ -83,7 +84,9 @@ try {
   const next = { seq: seq + 1, kind: 'task.set_title', count: 1, at: new Date().toISOString() };
   additions.push(next);
   await nudge(project.id, { kind: next.kind, task_id: task.id, title: 'This echoed title must be skipped' }, true);
-  await picker.locator(`option[value="${next.seq}"]`).waitFor({ state: 'attached' });
+  await picker.click();
+  await page.getByRole('option').filter({ hasText: new RegExp(`#${next.seq}$`) }).waitFor();
+  await page.keyboard.press('Escape');
   assert(revisionRequests.length === initialRequests + 1, 'Own acknowledged edit did not refresh exactly once');
   assert(revisionRequests.at(-1) === source.changes.at(-1).seq, 'Refresh did not request only new revisions');
   assert(snapshotRequests === historicalRequests, 'Feed update refetched an immutable historical snapshot');

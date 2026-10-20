@@ -146,7 +146,7 @@ export function CalendarView() {
     return s.workspaces.some((w) => w.is_personal !== active.is_personal);
   });
   const jiraConnected = useFira((s) => s.jiraConnected);
-  const projectFilter = useFira((s) => s.projectFilter);
+  const projectScopeId = useFira((s) => s.projectScopeId);
   const selectedPersonIds = useFira((s) => s.selectedPersonIds);
   const activePersonId = useFira((s) => s.activePersonId);
   const openTask = useFira((s) => s.openTask);
@@ -634,11 +634,11 @@ export function CalendarView() {
     return myBlocks.filter((b) => {
       const t = tasks.find((x) => x.id === b.task_id);
       if (!t) return false;
-      if (projectFilter[t.project_id] === false) return false;
+      if (projectScopeId && t.project_id !== projectScopeId) return false;
       if (loggedOnly && !b.jira_worklog_id) return false;
       return true;
     });
-  }, [myBlocks, tasks, projectFilter, loggedOnly]);
+  }, [myBlocks, tasks, projectScopeId, loggedOnly]);
   const placed = useMemo(
     () => placeBlocks(visibleBlocks, tasks, projects, gridAnchor),
     [visibleBlocks, tasks, projects, gridAnchor],
@@ -1635,7 +1635,7 @@ function CalRail({ onDragTask, onTouchSchedule, collapsed, onToggleCollapsed }: 
   const tasks = useFira((s) => s.tasks);
   const blocks = useFira((s) => s.blocks);
   const projects = useFira((s) => s.projects);
-  const projectFilter = useFira((s) => s.projectFilter);
+  const projectScopeId = useFira((s) => s.projectScopeId);
   const activePersonId = useFira((s) => s.activePersonId);
   const openTask = useFira((s) => s.openTask);
   const openCreate = useFira((s) => s.openCreate);
@@ -1647,7 +1647,7 @@ function CalRail({ onDragTask, onTouchSchedule, collapsed, onToggleCollapsed }: 
   const [titleQuery, setTitleQuery] = useState('');
   const q = titleQuery.trim().toLowerCase();
   // Per-project rail-group collapse. Local-only because the calendar's
-  // own per-project visibility (`projectFilter`) hides BOTH the rail
+  // shared project scope (`projectScopeId`) hides BOTH the rail
   // tasks AND the calendar blocks — too coarse when you just want the
   // task list shorter without dimming the time blocks. Keys are
   // project ids; absence = expanded (default).
@@ -1802,7 +1802,7 @@ function CalRail({ onDragTask, onTouchSchedule, collapsed, onToggleCollapsed }: 
   );
 
   const groups: Array<{ project: Project; tasks: Task[] }> = railProjects
-    .filter((p) => projectFilter[p.id] !== false)
+    .filter((p) => !projectScopeId || p.id === projectScopeId)
     .map((p) => ({
       project: p,
       // Match the list order so the rail reads the same way: section

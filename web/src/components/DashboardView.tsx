@@ -50,7 +50,6 @@ import type { Bucket, StatsInput } from '../stats';
 import type { Goal, UUID } from '../types';
 import { MonthGrid, ScaleLegend, WeekStrip } from './MonthGrid';
 import type { GridCell, HoverPayload } from './MonthGrid';
-import { ProjectIcon } from './ProjectIcon';
 
 /// Hours-per-day buckets for the heatmap ramp. Quantized rather than
 /// continuous so the grid reads as a small number of distinguishable
@@ -86,8 +85,8 @@ export function DashboardView() {
   const goals = useFira((s) => s.goals);
   const monthOffset = useFira((s) => s.monthOffset);
   const setMonthOffset = useFira((s) => s.setMonthOffset);
-  const dashboardProjectId = useFira((s) => s.dashboardProjectId);
-  const setDashboardProject = useFira((s) => s.setDashboardProject);
+  const projectScopeId = useFira((s) => s.projectScopeId);
+  const setProjectScope = useFira((s) => s.setProjectScope);
   const setView = useFira((s) => s.setView);
   const setWeekOffset = useFira((s) => s.setWeekOffset);
   const setDayOffset = useFira((s) => s.setDayOffset);
@@ -104,11 +103,11 @@ export function DashboardView() {
   const isMobile = useIsMobile();
   const [tip, setTip] = useState<HoverPayload | null>(null);
 
-  const scopedProject = projects.find((p) => p.id === dashboardProjectId) ?? null;
+  const scopedProject = projects.find((p) => p.id === projectScopeId) ?? null;
 
   const input: StatsInput = useMemo(() => ({
-    meId, blocks, tasks, projects, tags, monthOffset, projectId: dashboardProjectId,
-  }), [meId, blocks, tasks, projects, tags, monthOffset, dashboardProjectId]);
+    meId, blocks, tasks, projects, tags, monthOffset, projectId: projectScopeId,
+  }), [meId, blocks, tasks, projects, tags, monthOffset, projectScopeId]);
 
   const stats = useMemo(() => monthStats(input), [input]);
   const cells = useMemo(() => weekdayGridFor(monthOffset), [monthOffset]);
@@ -174,26 +173,7 @@ export function DashboardView() {
           </button>
           <button className="week-nav-btn" onClick={() => setMonthOffset(monthOffset + 1)} title="Next month">›</button>
         </span>
-        {scopedProject && (
-          <>
-            {/* Sits to the *right* of the month stepper, and carries a
-              * word. An icon-only chevron immediately left of the
-              * stepper's own `‹` was two adjacent chevrons meaning
-              * different things. */}
-            <button
-              className="dash-back"
-              onClick={() => setDashboardProject(null)}
-              title="Back to all projects"
-            >
-              <ChevronLeft size={13} strokeWidth={2} />
-              All projects
-            </button>
-            <span className="dash-scope">
-              <ProjectIcon name={scopedProject.icon} color={scopedProject.color} size={13} />
-              {scopedProject.title}
-            </span>
-          </>
-        )}
+
       </div>
 
       <div className="dash-scroll">
@@ -257,7 +237,7 @@ export function DashboardView() {
                 {scopedProject && (
                   <button
                     className="dash-back dash-back-inline"
-                    onClick={() => setDashboardProject(null)}
+                    onClick={() => setProjectScope(null)}
                     title="Back to all projects"
                   >
                     <ChevronLeft size={13} strokeWidth={2} />
@@ -275,7 +255,7 @@ export function DashboardView() {
               <Bars
                 buckets={scopedProject ? stats.by_tag : stats.by_project}
                 total={stats.done_min + stats.planned_min}
-                onPick={scopedProject ? undefined : (key) => setDashboardProject(key as UUID)}
+                onPick={scopedProject ? undefined : (key) => setProjectScope(key as UUID)}
                 showPct={!scopedProject}
               />
 

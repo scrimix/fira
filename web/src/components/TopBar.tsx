@@ -2,27 +2,16 @@ import { Menu } from 'lucide-react';
 import { useFira } from '../store';
 import { weekStartFor, fmtWeekRange, fmtWeekSpan, fmtMonth } from '../time';
 import { useIsMobile } from '../hooks';
-import { ProjectIcon } from './ProjectIcon';
+import { ProjectScope } from './ProjectScope';
 import { SyncPill, RefreshButton } from './SyncPill';
 import { WorkspaceSwitcher } from './WorkspaceSwitcher';
 
 export function TopBar() {
   const view = useFira((s) => s.view);
-  const project = useFira((s) =>
-    s.projects.find((p) => p.id === s.listFilter.project_id) ?? null
-  );
   const weekOffset = useFira((s) => s.weekOffset);
   const monthOffset = useFira((s) => s.monthOffset);
-  const dashboardProjectId = useFira((s) => s.dashboardProjectId);
   const planWeekOffset = useFira((s) => s.planWeekOffset);
   const planWeekCount = useFira((s) => s.planWeekCount);
-  const planProject = useFira((s) =>
-    s.projects.find((p) => p.id === s.planProjectId) ?? null
-  );
-  const dashboardProject = useFira((s) =>
-    s.projects.find((p) => p.id === s.dashboardProjectId) ?? null
-  );
-  const setDashboardProject = useFira((s) => s.setDashboardProject);
   const me = useFira((s) => s.users.find((u) => u.id === s.meId) ?? null);
   const playgroundMode = useFira((s) => s.playgroundMode);
   const accountBadge = useFira((s) => s.accountBadge);
@@ -32,31 +21,11 @@ export function TopBar() {
 
   const isMobile = useIsMobile();
 
-  // The calendar's own toolbar (prev / today / next + day-of-month numbers)
-  // already tells the user what range they're looking at, and the list's
-  // own page header repeats the project title above the task list. On
-  // phones we suppress the topbar title in both views to claw back
-  // horizontal room — without it the Log out button was getting pushed
-  // off-screen on narrow widths.
-  const title = isMobile
-    ? ''
-    : view === 'calendar'
-      ? `Week of ${fmtWeekRange(weekStartFor(weekOffset))}`
-      : view === 'dashboard'
-        ? fmtMonth(monthOffset)
-        : view === 'plan'
-          // The board's own axis names the weeks; the crumb names the
-          // whole span, which is what the toolbar's window controls
-          // change. One range over both ends — chaining two week labels
-          // read as "Aug 31 - Sep 6 - Feb 22 - 28".
-          ? fmtWeekSpan(planWeekOffset, planWeekCount, { compact: true })
-          : project?.title ?? 'List';
-
-  // In a dashboard project scope the month becomes a clickable crumb that
-  // returns to the workspace overview — "August 2026 / Atlas". Desktop
-  // only, because the title is suppressed entirely on phones; the
-  // dashboard's own toolbar carries a back button for that case.
-  const dashboardCrumb = view === 'dashboard' && dashboardProjectId != null && !isMobile;
+  const title = isMobile ? ''
+    : view === 'calendar' ? `Week of ${fmtWeekRange(weekStartFor(weekOffset))}`
+    : view === 'dashboard' ? fmtMonth(monthOffset)
+    : view === 'plan' ? fmtWeekSpan(planWeekOffset, planWeekCount, { compact: true })
+    : 'List';
 
   return (
     <div className="topbar" data-view={view}>
@@ -77,55 +46,8 @@ export function TopBar() {
       )}
       <WorkspaceSwitcher />
       <span className="crumb-sep">/</span>
-      {view === 'plan' && !planProject && !isMobile && (
-        <>
-          <span className="title">All projects</span>
-          <span className="crumb-sep">/</span>
-        </>
-      )}
-      {view === 'plan' && planProject && !isMobile && (
-        <>
-          <ProjectIcon
-            name={planProject.icon}
-            color={planProject.color}
-            size={13}
-            className="title-icon"
-          />
-          <span className="title">{planProject.title}</span>
-          <span className="crumb-sep">/</span>
-        </>
-      )}
-      {view === 'list' && project && !isMobile && (
-        <ProjectIcon
-          name={project.icon}
-          color={project.color}
-          size={13}
-          className="title-icon"
-        />
-      )}
-      {dashboardCrumb ? (
-        <>
-          <button
-            className="crumb crumb-btn"
-            onClick={() => setDashboardProject(null)}
-            title="Back to the workspace overview"
-          >
-            {title}
-          </button>
-          <span className="crumb-sep">/</span>
-          {dashboardProject && (
-            <ProjectIcon
-              name={dashboardProject.icon}
-              color={dashboardProject.color}
-              size={13}
-              className="title-icon"
-            />
-          )}
-          <span className="title">{dashboardProject?.title ?? ''}</span>
-        </>
-      ) : (
-        title && <span className="title">{title}</span>
-      )}
+      <ProjectScope />
+      {title && <span className="title topbar-period">{title}</span>}
       <div className="grow" />
       {playgroundMode && !isMobile && (
         <span

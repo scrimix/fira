@@ -63,9 +63,9 @@ interface SpanDrag {
 export function PlanView() {
   const isMobile = useIsMobile();
   const projects = useFira((s) => s.projects);
-  const planProjectId = useFira((s) => s.planProjectId);
+  const projectScopeId = useFira((s) => s.projectScopeId);
   const setView = useFira((s) => s.setView);
-  const projectId = projects.some((p) => p.id === planProjectId) ? planProjectId : null;
+  const projectId = projects.some((p) => p.id === projectScopeId) ? projectScopeId : null;
 
   if (isMobile) {
     // A week-column board is inherently wide, and a three-week window on
@@ -846,6 +846,9 @@ function PlanBoard({ projectId }: { projectId: UUID | null }) {
       {projectId && !playground && showHistory && <section className="plan-history-panel" aria-label="Plan history">
         <PlanTimeline history={metadata}
           selectedAt={versionAt} selectedSeq={versionSeq} onSelect={setVersionAt}
+          playbackReady={!historyLoading && (versionAt === null
+            || (history?.requestedAt === versionAt && history.requestedSeq === versionSeq))}
+          playbackError={!!historyError}
           status={historyError ? <><span className="plan-history-message" title={historyError}>{historyError}</span> <button onClick={() => setRetryHistory((v) => v + 1)}>Retry</button></>
             : historyLoading || !metadata ? 'Loading…'
             : !metadata.genesis ? 'No recorded plan history yet' : null} />

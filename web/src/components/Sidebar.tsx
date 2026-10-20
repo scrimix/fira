@@ -1,4 +1,4 @@
-import { CalendarDays, GanttChartSquare, LayoutDashboard, List, Settings } from 'lucide-react';
+import { CalendarDays, Layers, GanttChartSquare, LayoutDashboard, List, Settings } from 'lucide-react';
 import { useFira } from '../store';
 import { useIsMobile } from '../hooks';
 import { ProjectIcon } from './ProjectIcon';
@@ -19,42 +19,14 @@ export function Sidebar() {
   // On mobile, every nav action should also close the slide-over so the
   // user lands on the destination view without an extra tap-outside step.
   const close = () => { if (isMobile) setSidebarOpen(false); };
-  // Every surface here is project-scopable, so picking a project scopes
-  // the view you are in rather than throwing it away for the list.
-  // Each view already owns its own cursor; this just routes to it.
-  const setPlanProject = useFira((s) => s.setPlanProject);
-  const setDashboardProject = useFira((s) => s.setDashboardProject);
-  const soloProjectFilter = useFira((s) => s.soloProjectFilter);
+  const setProjectScope = useFira((s) => s.setProjectScope);
   const listProjectId = useFira((s) => s.listFilter.project_id);
-  const planProjectId = useFira((s) => s.planProjectId);
-  const dashboardProjectId = useFira((s) => s.dashboardProjectId);
-  const projectFilter = useFira((s) => s.projectFilter);
-
+  const projectScopeId = useFira((s) => s.projectScopeId);
+  const activeProjectId = view === 'list' ? listProjectId : projectScopeId;
   const pickProject = (id: string) => {
-    if (view === 'plan') setPlanProject(planProjectId === id ? null : id);
-    else if (view === 'dashboard') setDashboardProject(dashboardProjectId === id ? null : id);
-    // The calendar is a time surface across every project, so its
-    // scoping gesture is its own visibility filter — the same solo a
-    // double-click on the rail's project row performs.
-    else if (view === 'calendar') soloProjectFilter(id);
-    else setView('list', id);
+    setProjectScope(id);
     close();
   };
-
-  // The highlight follows whatever the current view is actually scoped
-  // to. On the calendar that's only truthful when exactly one project
-  // is visible — otherwise a single-project highlight would lie about
-  // what's on screen, which is why this used to be list-only.
-  const soloedOnCalendar = () => {
-    const visible = projects.filter((p) => projectFilter[p.id] !== false);
-    return visible.length === 1 ? visible[0].id : null;
-  };
-  const activeProjectId =
-    view === 'plan' ? planProjectId
-      : view === 'dashboard' ? dashboardProjectId
-        : view === 'calendar' ? soloedOnCalendar()
-          : listProjectId;
-  const showProjectActive = activeProjectId != null;
   // Project create is owner-only. Leads administer existing projects
   // (rename, set members) but resource allocation — adding new projects
   // to a workspace — stays with the workspace owner.
@@ -99,14 +71,25 @@ export function Sidebar() {
           <LayoutDashboard size={16} strokeWidth={1.75} />
         </button>
         <div style={{ height: 16 }} />
+        <button
+          className="nav-btn nav-proj"
+          data-proj-active={view !== 'list' && projectScopeId === null}
+          aria-pressed={view !== 'list' && projectScopeId === null}
+          disabled={view === 'list'}
+          title="All projects"
+          onClick={() => { setProjectScope(null); close(); }}
+        >
+          <Layers size={16} strokeWidth={1.75} />
+        </button>
         {orderedProjects.map((p) => {
-          const active = showProjectActive && p.id === activeProjectId;
+          const active = p.id === activeProjectId;
           const inactive = isInactiveForMe(p);
           return (
             <button
               key={p.id}
               className="nav-btn nav-proj"
               data-proj-active={active}
+              aria-pressed={active}
               data-proj-inactive={inactive}
               style={active ? { ['--proj-color' as string]: p.color } : undefined}
               title={inactive ? `${p.title} (inactive)` : p.title}

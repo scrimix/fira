@@ -88,10 +88,11 @@ try {
       }, png);
       if (coverage < .5) throw new Error(`Dense revision markers are invisible (${(coverage * 100).toFixed(1)}% painted)`);
     }
-    const picker = page.getByLabel('Revision', { exact: true });
+    const picker = page.getByRole('button', { name: 'Revision', exact: true });
     const selectStart = performance.now();
     const middle = changes[Math.floor(count / 2)];
-    await picker.selectOption(String(middle.seq));
+    await picker.click();
+    await page.getByRole('option').filter({ hasText: new RegExp(`#${middle.seq}$`) }).click();
     await page.waitForSelector(`.plan-wrap[data-revision="${middle.seq}"][aria-busy="false"]`);
     const selectMs = performance.now() - selectStart;
     const zoomStart = performance.now();
@@ -102,11 +103,14 @@ try {
     const zoomMs = performance.now() - zoomStart;
     if (metadataRequests !== 1) throw new Error(`Revision list fetched ${metadataRequests} times while scrubbing`);
     if (errors.length) throw new Error(errors.join('\n'));
+    await picker.click();
+    const optionCount = await page.getByRole('option').count();
+    await page.keyboard.press('Escape');
     const result = {
       revisions: count, metadata_bytes: metadataBytes, open_ms: openMs,
       select_ms: selectMs, zoom_ms: zoomMs, requests, metadata_requests: metadataRequests,
       full_history_heap_delta_mb: (fullHeap - baselineHeap) / 1024 / 1024,
-      options: await picker.locator('option').count(),
+      options: optionCount,
       visible_markers_after_zoom: await page.locator('.plan-revision-marker').count(),
     };
     results.push(result);

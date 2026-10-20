@@ -325,8 +325,10 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: calc(14px * var(--density)) 0 calc(8px * var(--density));
-  gap: calc(10px * var(--density));
+  /* Whole-pixel positions keep the selection underline equally sharp
+   * on every row, including the modern theme's fractional density. */
+  padding: round(nearest, 14px * var(--density), 1px) 0 round(nearest, 8px * var(--density), 1px);
+  gap: round(nearest, 10px * var(--density), 1px);
 }
 .sidebar .brand {
   width: 22px; height: 22px;
@@ -354,19 +356,24 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
    as "selected" without competing with the accent stripe used by
    Calendar/List. Tone matches that project's blocks on the calendar. */
 .sidebar .nav-proj { position: relative; }
+.sidebar .nav-proj:disabled {
+  color: var(--ink-4);
+  cursor: default;
+}
+.sidebar .nav-proj:disabled:hover { background: transparent; }
 .sidebar .nav-proj[data-proj-inactive="true"] { opacity: 0.45; }
 .sidebar .nav-proj[data-proj-active="true"]::after {
   content: '';
   position: absolute;
   left: 8px; right: 8px;
   bottom: 4px;
-  height: 1.5px;
-  background: var(--proj-color);
+  height: 2px;
+  background: var(--proj-color, var(--accent));
   border-radius: 1px;
   opacity: 0.85;
 }
 :root[data-theme="dark"] .sidebar .nav-proj[data-proj-active="true"]::after {
-  background: color-mix(in oklab, var(--proj-color) 78%, var(--paper));
+  background: color-mix(in oklab, var(--proj-color, var(--accent)) 78%, var(--paper));
 }
 .topbar .title-icon {
   margin-right: -2px;
@@ -396,9 +403,6 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   padding: 0 var(--gutter-x);
   gap: var(--bar-gap);
   background: var(--paper);
-}
-.topbar:is([data-view="plan"], [data-view="calendar"]) {
-  padding-left: var(--task-rail-inset);
 }
 .topbar .crumb {
   font-family: var(--font-label);
@@ -2089,4 +2093,49 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   :root { --gutter-x: calc(8px * var(--density)); --bar-gap: 4px; }
   .topbar .crumb-sep { display: none; }
 
+}
+
+/* Project scope uses the same quiet breadcrumb styling as the workspace
+ * picker. Keep its slot in the header when List makes it read-only. */
+.project-scope {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 240px;
+}
+.project-scope-select { min-width: 0; }
+.project-scope-select .select-trigger {
+  height: auto;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  color: var(--ink-2);
+  padding: 2px 4px;
+  border: none;
+  border-radius: var(--r-xs);
+  background: transparent;
+  box-shadow: none;
+}
+.project-scope-select .select-trigger:hover,
+.project-scope-select.select-open .select-trigger {
+  color: var(--ink);
+  background: var(--paper-3);
+}
+.project-scope-select .select-value { min-width: 0; }
+.project-scope[data-readonly] .select-trigger:disabled {
+  color: var(--ink-2);
+  background: transparent;
+  cursor: default;
+}
+.project-scope[data-readonly] .select-trigger > svg { visibility: hidden; }
+.topbar-period { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 1000px) {
+  .topbar-period { display: none; }
+}
+@media (max-width: 700px) {
+  .project-scope { flex: 0 1 auto; }
+  .topbar .ws-switcher { min-width: 0; max-width: 85px; }
+  .topbar .ws-title { max-width: 60px; }
 }

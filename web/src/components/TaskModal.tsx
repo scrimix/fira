@@ -5,7 +5,7 @@ import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
 import { AlertTriangle, ArrowLeft, Check, ClockPlus, Copy, Download, FilePlus2, Link, Loader2, PanelRightClose, PanelRightOpen, Paperclip, Pencil, Plus, RefreshCw, Ticket, Trash2, X } from 'lucide-react';
 import { useFira } from '../store';
-import { useIsMobile } from '../hooks';
+import { useAutosizeTextarea, useIsMobile } from '../hooks';
 import { ConfirmDelete } from './ConfirmDelete';
 import { MoveTaskModal } from './MoveTaskModal';
 import {
@@ -1445,7 +1445,7 @@ function SubtaskRow({
   const [editing, setEditing] = useState(autoEdit);
   const [draft, setDraft] = useState(title);
   const [dragOnHandle, setDragOnHandle] = useState(false);
-  const ref = useRef<HTMLTextAreaElement>(null);
+  const ref = useAutosizeTextarea(draft, editing);
 
   useEffect(() => { setDraft(title); }, [title]);
   useEffect(() => {
@@ -1660,7 +1660,7 @@ function SubtaskRow({
 
 function AddSubtaskRow({ onAdd, bare }: { onAdd: (title: string) => void; bare: boolean }) {
   const [value, setValue] = useState('');
-  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const inputRef = useAutosizeTextarea(value);
 
   const commit = () => {
     const v = value.trim();

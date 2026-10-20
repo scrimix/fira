@@ -33,11 +33,13 @@ interface Props<T extends string> {
   /// the hint lines, so callers can widen it.
   menuMinWidth?: number;
   title?: string;
+  ariaLabel?: string;
+  onKeyDown?: React.KeyboardEventHandler<HTMLButtonElement>;
   variant?: 'default' | 'inline';
 }
 
 export function Select<T extends string>({
-  value, options, onChange, size = 'md', className, disabled, menuMinWidth, title, variant = 'default',
+  value, options, onChange, size = 'md', className, disabled, menuMinWidth, title, ariaLabel, onKeyDown, variant = 'default',
 }: Props<T>) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -117,6 +119,8 @@ export function Select<T extends string>({
         className="select-trigger"
         onClick={() => !disabled && setOpen((v) => !v)}
         disabled={disabled}
+        aria-label={ariaLabel}
+        onKeyDown={onKeyDown}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={id}

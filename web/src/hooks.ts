@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { fmtElapsed, syncLog } from './synclog';
 
 // matchMedia subscription as a hook. Re-renders when the query flips.
@@ -84,4 +84,29 @@ export function useAppActive(graceMs = 2 * 60_000): boolean {
     };
   }, [graceMs]);
   return active;
+}
+
+// Measure the actual wrapped text on edits and width changes so inline
+// editors show every line without scrolling inside the field.
+export function useAutosizeTextarea(value: string, active = true) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!active || !el) return;
+    const fit = () => {
+      el.style.height = 'auto';
+      el.style.height = `${el.scrollHeight}px`;
+    };
+    fit();
+    let width = el.getBoundingClientRect().width;
+    const observer = new ResizeObserver(() => {
+      const nextWidth = el.getBoundingClientRect().width;
+      if (nextWidth === width) return;
+      width = nextWidth;
+      fit();
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [value, active]);
+  return ref;
 }

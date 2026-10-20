@@ -3,7 +3,7 @@ import { Check, ChevronDown, ChevronRight, Clock, ClockFading, Pencil } from 'lu
 import { useFira } from '../store';
 import { ListTagFilter } from './TagFilter';
 import { useLongPress } from '../useLongPress';
-import { useIsMobile } from '../hooks';
+import { useAutosizeTextarea, useIsMobile } from '../hooks';
 import { fmtMin, fmtWeekOf, taskCompletedMin, taskPlannedMin, taskTimeLeft } from '../time';
 import { ProjectIcon } from './ProjectIcon';
 import { ConfirmDelete } from './ConfirmDelete';
@@ -1141,7 +1141,7 @@ function ListSubtaskRow({
 }) {
   const [editing, setEditing] = useState(autoEdit);
   const [draft, setDraft] = useState(title);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const inputRef = useAutosizeTextarea(draft, editing);
 
   useEffect(() => { setDraft(title); }, [title]);
   useEffect(() => {
@@ -1151,12 +1151,6 @@ function ListSubtaskRow({
     el.focus();
     el.setSelectionRange(el.value.length, el.value.length);
   }, [editing]);
-  // Same one-line clipping as the task title above, minus the mirror —
-  // this textarea never had one, so a subtask that wraps loses every line
-  // but the first as soon as you click into it.
-  useLayoutEffect(() => {
-    if (editing && inputRef.current) fitToText(inputRef.current);
-  }, [editing, draft]);
   // One-shot: a freshly-minted subtask (Enter on previous, or Tab demote
   // from a task) gets stamped with autoEdit — drop into edit mode and
   // tell the parent to clear the flag so re-renders don't loop.

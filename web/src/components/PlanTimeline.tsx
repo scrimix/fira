@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode, type KeyboardEvent } from 'react';
-import { ChevronLeft, ChevronRight, Minus, Plus } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Minus, Pause, Play, Plus } from 'lucide-react';
 import type { PlanRevisionList } from '../planHistory';
+import { Select } from './Select';
 
 const labels: Record<string, string> = {
   'task.create': 'Task added', 'task.delete': 'Task deleted', 'task.set_sprint': 'Task placement changed',
@@ -51,11 +52,16 @@ export function historyTicks(start: number, end: number): { at: number; label: s
   }
   return ticks;
 }
-export function PlanTimeline({ history, selectedAt, selectedSeq, onSelect, status }: {
+export function PlanTimeline({ history, selectedAt, selectedSeq, onSelect, status, playbackReady, playbackError }: {
   history: PlanRevisionList | null; status: ReactNode; selectedAt: string | null; selectedSeq: number | null;
   onSelect: (at: string | null, seq?: number | null) => void;
+  playbackReady: boolean;
+  playbackError: boolean;
 }) {
   const rail = useRef<HTMLDivElement>(null);
+  const [playing, setPlaying] = useState(false);
+  const [speed, setSpeed] = useState<number | 'day'>(1);
+  const playbackStepStarted = useRef(0);
   const drag = useRef<{ mode: 'scrub' | 'pan'; x: number; start: number; end: number; moved: boolean; revisionIndex: number } | null>(null);
   const [windowRange, setWindowRange] = useState<{ start: number; end: number } | null>(null);
   // Freeze the browsing horizon. Wheel/pan renders must not advance Live
@@ -76,18 +82,63 @@ export function PlanTimeline({ history, selectedAt, selectedSeq, onSelect, statu
   const chooseRevision = (index: number) => {
     const change = changes[index];
     if (!change) return;
+    playbackStepStarted.current = performance.now();
     onSelect(change.at, change.seq);
     const at = Date.parse(change.at);
     if (at < range.start || at > range.end) setWindowRange(clampHistoryWindow(at - span / 2, span, first, now));
   };
+  const togglePlayback = () => {
+    if (playing) { setPlaying(false); return; }
+    if (!changes.length || playbackError) return;
+    // Starting from Live or the end replays history from its first change.
+    if (selectedAt === null || selectedIndex >= changes.length - 1) {
+      let startIndex = 0;
+      if (speed === 'day') {
+        const firstDay = new Date(changes[0].at).toDateString();
+        while (startIndex < changes.length - 1
+          && new Date(changes[startIndex + 1].at).toDateString() === firstDay) startIndex++;
+      }
+      chooseRevision(startIndex);
+    }
+    playbackStepStarted.current = performance.now();
+    setPlaying(true);
+  };
+  useEffect(() => {
+    if (playbackError) { setPlaying(false); return; }
+    if (!playing || !playbackReady || !changes.length) return;
+    // Account for snapshot loading time. At high speeds, skip intermediate
+    // revisions rather than letting network latency cap the playback rate.
+    const interval = speed === 'day' ? 1000 : 1000 / speed;
+    const elapsed = performance.now() - playbackStepStarted.current;
+    const timer = window.setTimeout(() => {
+      if (selectedIndex >= changes.length - 1) { setPlaying(false); return; }
+      let nextIndex: number;
+      if (speed === 'day') {
+        const day = (index: number) => new Date(changes[index].at).toDateString();
+        nextIndex = Math.max(0, selectedIndex + 1);
+        // One frame per day's final revision; days without changes are skipped.
+        const currentDay = selectedIndex >= 0 ? day(selectedIndex) : null;
+        while (nextIndex < changes.length - 1 && day(nextIndex) === currentDay) nextIndex++;
+        while (nextIndex < changes.length - 1 && day(nextIndex + 1) === day(nextIndex)) nextIndex++;
+      } else {
+        const elapsedSteps = Math.max(1, Math.floor((performance.now() - playbackStepStarted.current) * speed / 1000));
+        nextIndex = Math.min(changes.length - 1, selectedIndex + elapsedSteps);
+      }
+      chooseRevision(nextIndex);
+    }, Math.max(0, interval - elapsed));
+    return () => window.clearTimeout(timer);
+  }, [playing, playbackReady, playbackError, speed, selectedAt, selectedSeq, selectedIndex, history, range.start, range.end]);
+  const selectManually = (index: number) => { setPlaying(false); chooseRevision(index); };
   const onRevisionKeyDown = (event: KeyboardEvent<HTMLElement>) => {
-    if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+    if (event.key === ' ' && event.currentTarget === rail.current) {
+      event.preventDefault(); event.stopPropagation(); togglePlayback();
+    } else if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
       event.preventDefault(); event.stopPropagation();
-      chooseRevision(event.key === 'ArrowLeft' ? previousIndex : selectedIndex + 1);
+      selectManually(event.key === 'ArrowLeft' ? previousIndex : selectedIndex + 1);
     } else if (event.key === 'Home') {
-      event.preventDefault(); event.stopPropagation(); chooseRevision(0);
+      event.preventDefault(); event.stopPropagation(); selectManually(0);
     } else if (event.key === 'End') {
-      event.preventDefault(); event.stopPropagation(); onSelect(null);
+      event.preventDefault(); event.stopPropagation(); setPlaying(false); onSelect(null);
     }
   };
   const zoom = (factor: number, fraction = Math.max(0, Math.min(1, (selected - range.start) / span))) => {
@@ -129,24 +180,47 @@ export function PlanTimeline({ history, selectedAt, selectedSeq, onSelect, statu
   return <section className="plan-timeline" aria-label="Plan revision timeline">
     <div className="plan-revision-toolbar">
       <strong>Plan history</strong>
-      <div className="week-nav">
+      <div className="week-nav plan-revision-transport" role="group" aria-label="History playback">
         <button className="week-nav-btn" aria-label="Previous revision" disabled={previousIndex < 0}
-          onClick={() => chooseRevision(previousIndex)}><ChevronLeft size={14} strokeWidth={1.75} /></button>
+          onClick={() => selectManually(previousIndex)}><ChevronLeft size={14} strokeWidth={1.75} /></button>
+        <button className="week-nav-btn plan-revision-play" aria-label={playing ? 'Pause history' : 'Play history'}
+          aria-pressed={playing} disabled={!changes.length || playbackError} onClick={togglePlayback}>
+          {playing ? <Pause size={13} /> : <Play size={13} />}
+          <span>{playing ? 'Pause' : 'Play'}</span>
+        </button>
         <button className="week-nav-btn" aria-label="Next revision" disabled={selectedIndex >= changes.length - 1}
-          onClick={() => chooseRevision(selectedIndex + 1)}><ChevronRight size={14} strokeWidth={1.75} /></button>
+          onClick={() => selectManually(selectedIndex + 1)}><ChevronRight size={14} strokeWidth={1.75} /></button>
+        <Select className="plan-revision-speed" size="sm" ariaLabel="Playback speed"
+          title="Playback speed · Daily shows each day's final plan" value={String(speed)} menuMinWidth={100}
+          options={[
+            ...[0.5, 1, 2, 4, 8, 16].map(value => ({ value: String(value), label: `${value}×` })),
+            { value: 'day', label: 'Daily' },
+          ]}
+          onChange={(value) => {
+            playbackStepStarted.current = performance.now();
+            setSpeed(value === 'day' ? 'day' : Number(value));
+          }} />
       </div>
-      <select className="plan-revision-picker" aria-label="Revision" onKeyDown={onRevisionKeyDown}
+      <Select className="plan-revision-picker" size="sm" ariaLabel="Revision" onKeyDown={onRevisionKeyDown}
         value={selectedAt === null ? 'live' : selectedSeq !== null ? String(selectedSeq) : 'time'}
-        onChange={(e) => {
-          if (e.target.value === 'live') onSelect(null);
-          else chooseRevision(changes.findIndex((change) => String(change.seq) === e.target.value));
-        }}>
-        <option value="live">Live plan</option>
-        {selectedSeq === null && selectedAt !== null && <option value="time">Custom time · {revisionTime(selected)}</option>}
-        {[...changes].reverse().map((change) => <option key={change.seq} value={change.seq}>
-          {revisionTime(Date.parse(change.at))} · {labels[change.kind] ?? 'Plan changed'} · #{change.seq}
-        </option>)}
-      </select>
+        menuMinWidth={420}
+        options={[
+          { value: 'live', label: 'Live plan' },
+          ...(selectedSeq === null && selectedAt !== null
+            ? [{ value: 'time', label: `Custom time · ${revisionTime(selected)}` }] : []),
+          ...[...changes].reverse().map(change => ({
+            value: String(change.seq),
+            label: `${new Date(change.at).toLocaleString(undefined, {
+              month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false,
+            })} · ${labels[change.kind] ?? 'Plan changed'}`,
+            hint: `${revisionTime(Date.parse(change.at))} · #${change.seq}`,
+          })),
+        ]}
+        onChange={(value) => {
+          setPlaying(false);
+          if (value === 'live') onSelect(null);
+          else if (value !== 'time') chooseRevision(changes.findIndex(change => String(change.seq) === value));
+        }} />
       <div className="week-nav plan-revision-zoom">
         <button className="week-nav-btn" aria-label="Zoom out history" disabled={span >= fullSpan}
           onClick={() => zoom(2)}><Minus size={13} /></button>
@@ -163,6 +237,7 @@ export function PlanTimeline({ history, selectedAt, selectedSeq, onSelect, statu
       onKeyDown={onRevisionKeyDown}
       onPointerDown={(e) => {
         if (e.button !== 0 || !changes.length) return;
+        setPlaying(false);
         e.preventDefault(); e.currentTarget.focus(); e.currentTarget.setPointerCapture(e.pointerId);
         const target = e.target as HTMLElement;
         const mode = target.closest('.plan-revision-playhead') ? 'scrub' : 'pan';
@@ -200,7 +275,7 @@ export function PlanTimeline({ history, selectedAt, selectedSeq, onSelect, statu
         style={{ left: `${position(Date.parse(change.at))}%` }}
         aria-label={`Revision ${change.seq}: ${labels[change.kind] ?? 'Plan changed'}`}
         title={`${revisionTime(Date.parse(change.at))} · ${labels[change.kind] ?? 'Plan changed'} · #${change.seq}`}
-        onClick={(e) => { if (e.detail === 0) onSelect(change.at, change.seq); }} />)}
+        onClick={(e) => { if (e.detail === 0) { setPlaying(false); onSelect(change.at, change.seq); } }} />)}
       {selected >= range.start && selected <= range.end && <div className="plan-revision-playhead"
         style={{ left: `${position(selected)}%` }}><span /></div>}
     </div>

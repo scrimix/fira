@@ -47,7 +47,8 @@ const SYNC_BATCH_SIZE = 50;
 type LastView = {
   workspaceId: UUID | null;
   view: ViewName;
-  projectId: UUID | null; // listFilter.project_id
+  projectId: UUID | null; // Last individual project used by List.
+  projectScopeId: UUID | null; // Shared Calendar / Plan / Dashboard scope.
 };
 
 const lastViewKey = (userId: UUID) => `fira:lastView:${userId}`;
@@ -77,6 +78,9 @@ function loadLastView(userId: UUID): LastView | null {
       workspaceId: parsed.workspaceId ?? null,
       view: view as ViewName,
       projectId: parsed.projectId ?? null,
+      projectScopeId: parsed.projectScopeId === undefined
+        ? (view === 'list' ? parsed.projectId ?? null : null)
+        : parsed.projectScopeId,
     };
   } catch { return null; }
 }
@@ -173,19 +177,11 @@ interface FiraState {
   // each other: each surface owns its own time cursor. Persisted, so
   // toggling away to the calendar and back lands on the same month.
   monthOffset: number;
-  // The dashboard's own project scope — deliberately NOT
-  // listFilter.project_id. The sidebar's project buttons are list-only
-  // and listFilter has no "no project" state (it defaults to the first
-  // project and only goes null in an empty workspace), whereas the
-  // dashboard needs a real unscoped state for its workspace overview.
-  // null = overview. Not persisted: a session always opens unscoped.
-  dashboardProjectId: UUID | null;
+  // Calendar, Plan and Dashboard share one scope. List follows individual
+  // project picks but remembers its last project when this is null (All).
+  projectScopeId: UUID | null;
 
   // --- plan board ---
-  // Same rationale as dashboardProjectId: the board is project-scoped
-  // and needs a real "none" state, which listFilter can't express.
-  // null = no project chosen; the board prompts. Not persisted.
-  planProjectId: UUID | null;
   // Left edge of the visible window, in weeks from this week's Monday.
   planWeekOffset: number;
   // How many week columns are drawn. Grown by the toolbar's
@@ -211,7 +207,6 @@ interface FiraState {
   // Mobile sidebar slide-over open/closed. Desktop sidebar is always visible
   // and ignores this flag.
   sidebarOpen: boolean;
-  projectFilter: Record<UUID, boolean>;
   listFilter: ListFilter;
   openTaskId: UUID | null;
   creatingDraft: {
@@ -371,13 +366,9 @@ interface FiraState {
   setWeekOffset: (offset: number) => void;
   setDayOffset: (offset: number) => void;
   setMonthOffset: (offset: number) => void;
-  /// Set (or clear, with null) the dashboard's project scope. Entered by
-  /// clicking a bar inside the dashboard; left via the breadcrumb month
-  /// crumb on desktop or the toolbar back button on mobile.
-  setDashboardProject: (id: UUID | null) => void;
+  setProjectScope: (id: UUID | null) => void;
 
   // --- plan board ---
-  setPlanProject: (id: UUID | null) => void;
   setPlanVersionAt: (at: string | null, seq?: number | null) => void;
   /// Shift the visible window. `+ Earlier week` moves the left edge back
   /// *and* widens, so the existing columns don't slide out from under
@@ -415,11 +406,6 @@ interface FiraState {
   openGoalModal: (id: UUID | null) => void;
   closeGoalModal: () => void;
   setSidebarOpen: (open: boolean) => void;
-  toggleProjectFilter: (id: UUID) => void;
-  // "Solo" a project on the calendar — hide every other project's
-  // blocks. Double-clicking again on the already-solo'd project
-  // restores all-visible. No-op for projects that don't exist.
-  soloProjectFilter: (id: UUID) => void;
   setListFilter: (patch: Partial<ListFilter>) => void;
   openTask: (id: UUID | null) => void;
   /// Open a task from a shareable deep link. Switches to the task's
@@ -947,7 +933,6 @@ function applyOpToState(s: FiraState, op: AnyOpKind): Partial<FiraState> {
       if (s.projects.some((p) => p.id === op.project.id)) return {};
       return {
         projects: [...s.projects, op.project].sort((a, b) => a.title.localeCompare(b.title)),
-        projectFilter: { ...s.projectFilter, [op.project.id]: true },
       };
     }
     case 'project.update': {
@@ -962,9 +947,6 @@ function applyOpToState(s: FiraState, op: AnyOpKind): Partial<FiraState> {
         : [...s.projects, op.project];
       return {
         projects: next.sort((a, b) => a.title.localeCompare(b.title)),
-        projectFilter: exists
-          ? s.projectFilter
-          : { ...s.projectFilter, [op.project.id]: true },
       };
     }
     case 'project.time_visibility': {
@@ -981,7 +963,6 @@ function applyOpToState(s: FiraState, op: AnyOpKind): Partial<FiraState> {
         const droppedTaskIds = new Set(
           s.tasks.filter((t) => t.project_id === op.project_id).map((t) => t.id),
         );
-        const { [op.project_id]: _drop, ...remainingFilter } = s.projectFilter;
         const nextProjects = s.projects.filter((p) => p.id !== op.project_id);
         const listFilter = s.listFilter.project_id === op.project_id
           ? { ...s.listFilter, project_id: nextProjects[0]?.id ?? null, tag_ids: [] }
@@ -992,7 +973,8 @@ function applyOpToState(s: FiraState, op: AnyOpKind): Partial<FiraState> {
           tracks: s.tracks.filter((e) => e.project_id !== op.project_id),
           sprints: s.sprints.filter((sp) => sp.project_id !== op.project_id),
           blocks: s.blocks.filter((b) => !droppedTaskIds.has(b.task_id)),
-          projectFilter: remainingFilter,
+          projectScopeId: s.projectScopeId === op.project_id ? null : s.projectScopeId,
+          ...(s.projectScopeId === op.project_id ? { planVersionAt: null, planVersionSeq: null } : {}),
           listFilter,
           openTaskId: s.openTaskId && droppedTaskIds.has(s.openTaskId)
             ? null
@@ -1016,7 +998,6 @@ function applyOpToState(s: FiraState, op: AnyOpKind): Partial<FiraState> {
       const droppedTaskIds = new Set(
         s.tasks.filter((t) => t.project_id === op.project_id).map((t) => t.id),
       );
-      const { [op.project_id]: _drop, ...remainingFilter } = s.projectFilter;
       const nextProjects = s.projects.filter((p) => p.id !== op.project_id);
       const listFilter = s.listFilter.project_id === op.project_id
         ? { ...s.listFilter, project_id: nextProjects[0]?.id ?? null, tag_ids: [] }
@@ -1027,7 +1008,8 @@ function applyOpToState(s: FiraState, op: AnyOpKind): Partial<FiraState> {
         tracks: s.tracks.filter((e) => e.project_id !== op.project_id),
         sprints: s.sprints.filter((sp) => sp.project_id !== op.project_id),
         blocks: s.blocks.filter((b) => !droppedTaskIds.has(b.task_id)),
-        projectFilter: remainingFilter,
+        projectScopeId: s.projectScopeId === op.project_id ? null : s.projectScopeId,
+        ...(s.projectScopeId === op.project_id ? { planVersionAt: null, planVersionSeq: null } : {}),
         listFilter,
         openTaskId: s.openTaskId && droppedTaskIds.has(s.openTaskId)
           ? null
@@ -1084,7 +1066,7 @@ const reviver = (_k: string, v: unknown) => {
 
 /// Apply a fresh bootstrap response (real or playground) into the store.
 /// Called from both hydrate paths so the bootstrap → state derivation
-/// (projectFilter init, listFilter defaults, view selection by project
+/// (project scope, listFilter defaults, view selection by project
 /// count, role lookup) lives in one place.
 function applyBootstrap(
   set: (partial: Partial<FiraState>) => void,
@@ -1095,8 +1077,10 @@ function applyBootstrap(
   workspaces: Workspace[],
   playground: boolean,
 ): void {
-  const projectFilter: Record<UUID, boolean> = {};
-  data.projects.forEach((p) => { projectFilter[p.id] = true; });
+  const sameWorkspace = get().activeWorkspaceId === active.id;
+  const savedScope = sameWorkspace ? get().projectScopeId : null;
+  const projectScopeId = data.projects.some((p) => p.id === savedScope) ? savedScope : null;
+  const savedListProject = sameWorkspace ? get().listFilter.project_id : null;
   const firstProject = data.projects[0]?.id ?? null;
   const myMember = active.members.find((m) => m.user_id === me.id);
   set({
@@ -1135,10 +1119,10 @@ function applyBootstrap(
     myWorkspaceRole: (myMember?.role ?? 'member') as WorkspaceRole,
     selectedPersonIds: [me.id],
     activePersonId: me.id,
-    projectFilter,
+    projectScopeId,
     listFilter: {
       ...get().listFilter,
-      project_id: firstProject,
+      project_id: projectScopeId ?? (data.projects.some((p) => p.id === savedListProject) ? savedListProject : firstProject),
       assignee_id: me.id,
       tag_ids: [],
     },
@@ -1211,8 +1195,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
   weekOffset: 0,
   dayOffset: 0,
   monthOffset: 0,
-  dashboardProjectId: null,
-  planProjectId: null,
+  projectScopeId: null,
   planWeekOffset: -6,
   planWeekCount: 16,
   planWeekWidth: 'm',
@@ -1228,7 +1211,6 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
   creatingDraft: null,
   projectModal: null,
   toasts: [],
-  projectFilter: {},
   listFilter: {
     project_id: null,
     track_id: null,
@@ -1284,20 +1266,17 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
       setActiveWorkspaceId(active.id);
       const data: Bootstrap = await api.bootstrap();
       applyBootstrap(set, get, data, me, active, workspaces, false);
-      // Restore view + project AFTER applyBootstrap so we override its
-      // defaults (which would otherwise force list view on empty
-      // workspaces and reset project_id to the first project). Skip
-      // if the saved project no longer exists in the bootstrapped
-      // data, to avoid filtering on a phantom.
+      // Restore this account's shared scope and List's last individual
+      // project. A deleted or inaccessible project falls back to All.
       if (lastView) {
-        const projectExists = lastView.projectId
-          ? data.projects.some((p) => p.id === lastView.projectId)
-          : false;
+        const scopeId = data.projects.some((p) => p.id === lastView.projectScopeId)
+          ? lastView.projectScopeId : null;
+        const listId = scopeId ?? (data.projects.some((p) => p.id === lastView.projectId)
+          ? lastView.projectId : data.projects[0]?.id ?? null);
         set((s) => ({
           view: data.projects.length === 0 ? 'list' : lastView.view,
-          listFilter: projectExists
-            ? { ...s.listFilter, project_id: lastView.projectId, tag_ids: [] }
-            : s.listFilter,
+          projectScopeId: scopeId,
+          listFilter: { ...s.listFilter, project_id: listId, tag_ids: [] },
         }));
       }
     } catch (e) {
@@ -1383,6 +1362,12 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
       set((s) => ({
         users: data.users,
         projects: data.projects,
+        projectScopeId: data.projects.some((p) => p.id === s.projectScopeId) ? s.projectScopeId : null,
+        listFilter: data.projects.some((p) => p.id === s.listFilter.project_id)
+          ? s.listFilter
+          : { ...s.listFilter, project_id: data.projects[0]?.id ?? null, tag_ids: [] },
+        ...(s.projectScopeId && !data.projects.some((p) => p.id === s.projectScopeId)
+          ? { planVersionAt: null, planVersionSeq: null } : {}),
         tracks: data.tracks,
         sprints: data.sprints,
         tasks: withPrivateTime(data.tasks.map(normalizeTask), data.blocks, data.projects, s.meId),
@@ -1477,13 +1462,10 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
       workBlocks: [],
       workTasks: [],
       showWork: false,
-      // Goals are workspace-scoped, so the outgoing workspace's set must
-      // not linger while the new bootstrap is in flight. The dashboard's
-      // project scope points at a project that no longer exists in the
-      // new workspace, so it resets to the overview.
+      // Clear the outgoing workspace's goals and scope before loading
+      // the new workspace. Its views start at All projects.
       goals: [],
-      dashboardProjectId: null,
-      planProjectId: null,
+      projectScopeId: null,
       planVersionAt: null,
       planVersionSeq: null,
     });
@@ -1873,13 +1855,10 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     }
   },
 
-  setView: (v, projectId) => set((s) => ({
-    view: v,
-    listFilter: projectId
-      ? { ...s.listFilter, project_id: projectId,
-          ...(projectId !== s.listFilter.project_id ? { tag_ids: [] } : {}) }
-      : s.listFilter,
-  })),
+  setView: (v, projectId) => {
+    if (projectId) get().setProjectScope(projectId);
+    set({ view: v });
+  },
   addPerson: (id) => set((s) => ({
     selectedPersonIds: s.selectedPersonIds.includes(id)
       ? s.selectedPersonIds
@@ -1906,7 +1885,17 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
   setWeekOffset: (offset) => set({ weekOffset: offset }),
   setDayOffset: (offset) => set({ dayOffset: offset }),
   setMonthOffset: (offset) => set({ monthOffset: offset }),
-  setDashboardProject: (id) => set({ dashboardProjectId: id }),
+  setProjectScope: (id) => set((s) => {
+    if (id !== null && !s.projects.some((p) => p.id === id)) return {};
+    return {
+      projectScopeId: id,
+      listFilter: id === null ? s.listFilter : {
+        ...s.listFilter, project_id: id,
+        ...(id !== s.listFilter.project_id ? { tag_ids: [] } : {}),
+      },
+      ...(id !== s.projectScopeId ? { planVersionAt: null, planVersionSeq: null } : {}),
+    };
+  }),
 
   createGoal: (input) => {
     const name = input.name.trim();
@@ -1942,25 +1931,14 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
   openGoalModal: (id) => set({ goalModal: { id } }),
   closeGoalModal: () => set({ goalModal: null }),
   setSidebarOpen: (open) => set({ sidebarOpen: open }),
-  toggleProjectFilter: (id) => set((s) => ({
-    projectFilter: { ...s.projectFilter, [id]: !(s.projectFilter[id] !== false) },
-  })),
-  soloProjectFilter: (id) => set((s) => {
-    // Already solo'd? Restore all-visible. Detection: target is
-    // visible AND every other project is explicitly hidden.
-    const isSolo =
-      s.projectFilter[id] !== false &&
-      s.projects.every((p) => p.id === id || s.projectFilter[p.id] === false);
-    const next: Record<UUID, boolean> = {};
-    for (const p of s.projects) {
-      next[p.id] = isSolo ? true : p.id === id;
-    }
-    return { projectFilter: next };
-  }),
   setListFilter: (patch) => set((s) => {
     const switchingProject = patch.project_id != null
       && patch.project_id !== s.listFilter.project_id;
     return {
+      ...(patch.project_id != null ? {
+        projectScopeId: patch.project_id,
+        ...(patch.project_id !== s.projectScopeId ? { planVersionAt: null, planVersionSeq: null } : {}),
+      } : {}),
       listFilter: {
         ...s.listFilter,
         ...patch,
@@ -2337,7 +2315,9 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
         projects: exists
           ? s.projects
           : [...s.projects, project].sort((a, b) => a.title.localeCompare(b.title)),
-        projectFilter: { ...s.projectFilter, [project.id]: true },
+        projectScopeId: project.id,
+        planVersionAt: null,
+        planVersionSeq: null,
         // Switch into the new project's list so the user lands
         // somewhere useful instead of an empty calendar.
         view: 'list',
@@ -2784,7 +2764,6 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
 
   // --- plan board ---
 
-  setPlanProject: (id) => set({ planProjectId: id, planVersionAt: null, planVersionSeq: null }),
   setPlanVersionAt: (at, seq = null) => set({ planVersionAt: at, planVersionSeq: at ? seq : null, ...(at ? { planShowHistory: true } : {}) }),
   setPlanWindow: (weekOffset, weekCount) => set({
     planWeekOffset: weekOffset,
@@ -3147,15 +3126,9 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     // persisting them across reloads would flash the previous workspace's
     // connection state before the next hydrate's Bootstrap.jira overwrites it.
     view: s.view,
-    // monthOffset persists but dashboardProjectId doesn't: the month you
-    // were looking at is worth restoring (it's what makes the day-cell
-    // jump to the calendar and back land where you left), whereas a drill
-    // -down is a transient investigation and every session should open on
-    // the workspace overview.
+    // Scope survives refresh, as do each view's independent date controls.
+    projectScopeId: s.projectScopeId,
     monthOffset: s.monthOffset,
-    // Same split for the plan board: the window and the toolbar
-    // preferences persist, the project drill-down and the scrubber
-    // position don't.
     planWeekOffset: s.planWeekOffset,
     planWeekCount: s.planWeekCount,
     planWeekWidth: s.planWeekWidth,
@@ -3194,11 +3167,12 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
 // Skipped in playground mode (no real account to key on) and while the
 // store is still empty (meId not set yet means hydrate hasn't landed).
 {
-  let prev: { meId: UUID | null; ws: UUID | null; view: string; project: UUID | null } = {
+  let prev: { meId: UUID | null; ws: UUID | null; view: string; project: UUID | null; scope: UUID | null } = {
     meId: null,
     ws: null,
     view: 'calendar',
     project: null,
+    scope: null,
   };
   useFira.subscribe((s) => {
     if (s.playgroundMode || !s.meId) return;
@@ -3207,18 +3181,21 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
       ws: s.activeWorkspaceId,
       view: s.view,
       project: s.listFilter.project_id,
+      scope: s.projectScopeId,
     };
     if (
       next.meId === prev.meId
       && next.ws === prev.ws
       && next.view === prev.view
       && next.project === prev.project
+      && next.scope === prev.scope
     ) return;
     prev = next;
     saveLastView(s.meId, {
       workspaceId: s.activeWorkspaceId,
       view: s.view,
       projectId: s.listFilter.project_id,
+      projectScopeId: s.projectScopeId,
     });
   });
 }

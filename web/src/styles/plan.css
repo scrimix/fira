@@ -847,10 +847,34 @@
 }
 .plan-revision-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: var(--fs-xs); }
 .plan-revision-toolbar strong { font-weight: 500; margin-right: 4px; }
-.plan-revision-picker { flex: 1; min-width: 180px; max-width: 420px; }
-.plan-revision-toolbar select {
-  height: 27px; border: 1px solid var(--rule); padding: 2px 6px; color: var(--ink); background: var(--paper);
-  font: inherit;
+.plan-revision-toolbar > strong,
+.plan-revision-transport,
+.plan-revision-zoom { flex-shrink: 0; }
+.plan-revision-toolbar .week-nav-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+.plan-revision-toolbar .plan-revision-play { min-width: 76px; }
+.plan-revision-play[aria-pressed="true"] { color: var(--ink); background: var(--paper-3); }
+.plan-revision-picker { flex: 1; min-width: 220px; max-width: 420px; }
+.plan-revision-toolbar .select-trigger {
+  height: 24px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  letter-spacing: normal;
+  border-color: var(--rule-2);
+  padding: 0 8px;
+}
+.plan-revision-picker .select-trigger { width: 100%; }
+.plan-revision-speed .select-trigger {
+  height: 22px;
+  width: 76px;
+  min-width: 76px;
+  border: 0;
+  border-radius: 0;
 }
 .plan-revision-zoom { margin-left: auto; }
 .plan-revision-axis {
