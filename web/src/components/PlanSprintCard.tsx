@@ -57,17 +57,21 @@ export function PlanSprintCard({
   const menuRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!menuRect) return;
-    menuRef.current?.querySelector('button')?.focus();
-    const outside = (event: PointerEvent) => {
+    menuRef.current?.querySelector('button')?.focus({ preventScroll: true });
+    const outside = (event: Event) => {
       const target = event.target as Node;
       if (!menuRef.current?.contains(target) && !menuButton.current?.contains(target)) setMenuRect(null);
     };
     const close = () => setMenuRect(null);
     document.addEventListener('pointerdown', outside);
+    // Safari can blur a tapped button before click without focusing a
+    // replacement. Close on a real focus destination outside the menu.
+    document.addEventListener('focusin', outside);
     window.addEventListener('scroll', close, true);
     window.addEventListener('resize', close);
     return () => {
       document.removeEventListener('pointerdown', outside);
+      document.removeEventListener('focusin', outside);
       window.removeEventListener('scroll', close, true);
       window.removeEventListener('resize', close);
     };
@@ -202,9 +206,6 @@ export function PlanSprintCard({
         style={{ left: Math.max(8, Math.min(menuRect.right - 140, window.innerWidth - 148)),
           top: menuRect.bottom + 76 < window.innerHeight ? menuRect.bottom + 4 : Math.max(8, menuRect.top - 76) }}
         onPointerDown={(e) => e.stopPropagation()}
-        onBlur={(e) => {
-          if (!e.currentTarget.contains(e.relatedTarget as Node | null) && e.relatedTarget !== menuButton.current) setMenuRect(null);
-        }}
         onKeyDown={(e) => {
           if (e.key === 'Escape') { e.stopPropagation(); setMenuRect(null); menuButton.current?.focus(); }
           if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
