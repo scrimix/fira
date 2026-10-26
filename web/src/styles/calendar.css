@@ -1,7 +1,8 @@
 .calendar {
   display: grid;
   grid-template-columns: 1fr 320px;
-  height: calc(var(--app-content-h) - var(--topbar-h));
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
 }
 /* Tablet portrait: collapse the rail's fixed column to give the calendar

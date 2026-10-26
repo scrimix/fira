@@ -8,8 +8,8 @@
 .dash {
   display: flex;
   flex-direction: column;
+  flex: 1;
   min-height: 0;
-  height: calc(var(--app-content-h) - var(--topbar-h));
 }
 .dash-scroll {
   overflow: auto;

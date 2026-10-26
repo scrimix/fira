@@ -454,7 +454,7 @@ export default function App() {
   return (
     <div className="app">
       <Sidebar />
-      <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+      <div className="app-main">
         <TopBar />
         {/* Four arms is where a ternary chain stops reading; a
             VIEW_COMPONENTS map is the next step if a fifth lands. */}

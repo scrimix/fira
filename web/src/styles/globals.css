@@ -287,12 +287,17 @@
 :root {
   --status-bar-gap: 0px;
   --app-viewport-h: 100vh;
-  --app-content-h: calc(var(--app-viewport-h) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - var(--status-bar-gap));
 }
 @supports (height: 100dvh) {
   :root { --app-viewport-h: 100dvh; }
 }
-:root[data-ios-standalone] { --status-bar-gap: 20px; }
+/* Standalone WebKit can underreport dvh by the status-bar height, leaving
+ * a bottom gap. Browser tabs still need dvh for their changing toolbars. */
+:root[data-ios-standalone] {
+  --status-bar-gap: 12px;
+  --app-viewport-h: 100vh;
+}
+:root[data-ios-standalone] :is(body, #root) { height: var(--app-viewport-h); }
 
 * { box-sizing: border-box; }
 html, body, #root { margin: 0; padding: 0; height: 100%; }
@@ -318,13 +323,20 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
    * under those toolbars. Fall back to `100vh` for older browsers. */
   height: var(--app-viewport-h);
   width: 100vw;
-  /* Include both the reported safe area and the system blur's extra fade.
-   * Views use --app-content-h so this clearance also reduces their height. */
+  /* Reserve the safe area and a small extra band for the system blur.
+   * The main column's flex layout gives views the remaining height. */
   padding-top: calc(env(safe-area-inset-top, 0px) + var(--status-bar-gap));
   padding-right: env(safe-area-inset-right);
   padding-bottom: env(safe-area-inset-bottom);
   padding-left: env(safe-area-inset-left);
   background: var(--paper);
+}
+
+.app-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
 }
 
 .sidebar {
@@ -405,6 +417,7 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
 }
 
 .topbar {
+  flex-shrink: 0;
   height: var(--topbar-h);
   border-bottom: 1px solid var(--rule-chrome);
   display: flex; align-items: center;
