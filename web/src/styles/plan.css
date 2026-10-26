@@ -12,8 +12,7 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
-  height: calc(100vh - var(--topbar-h));
-  height: calc(100dvh - var(--topbar-h));
+  height: calc(var(--app-content-h) - var(--topbar-h));
   /* One axis row (months, weeks). Declared rather than left to fall out
      of font metrics because the rail's header has to end on exactly the
      same line as the board's axis — they sit side by side and both
@@ -824,7 +823,7 @@
   align-items: center;
   justify-content: center;
   gap: calc(10px * var(--density));
-  height: calc(100dvh - var(--topbar-h));
+  height: calc(var(--app-content-h) - var(--topbar-h));
   padding: var(--gutter-x);
   text-align: center;
 }

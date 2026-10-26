@@ -10,6 +10,11 @@
       // to either are kept in sync afterward by the useFira.subscribe()
       // call in store/index.ts.
       (function () {
+        // Installed iOS apps can report display-mode: standalone as false.
+        // Use Safari's standalone flag before paint for status-bar clearance.
+        if (navigator.standalone === true) {
+          document.documentElement.setAttribute('data-ios-standalone', '');
+        }
         try {
           var raw = localStorage.getItem('fira:store-v1');
           var parsed = raw && JSON.parse(raw);
@@ -26,7 +31,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#18181B" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <!-- Reserve the system clock/date/battery area above the page.
+         black-translucent lets the page extend behind the status bar. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="Fira" />
     <!-- Safari iOS / desktop don't render SVG favicons consistently in
          the tab bar — some builds frame them with a white background.

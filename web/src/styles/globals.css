@@ -280,6 +280,20 @@
   --recurring: #A99BD6;
 }
 
+/* iPadOS/iOS can extend the system status-bar blur below the safe area.
+ * Reserve a blank band in installed apps; this is an empirical workaround,
+ * not a system-reported inset. Keep it separate from safe-area padding.
+ * https://github.com/Yeraze/meshmonitor/pull/5309 */
+:root {
+  --status-bar-gap: 0px;
+  --app-viewport-h: 100vh;
+  --app-content-h: calc(var(--app-viewport-h) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - var(--status-bar-gap));
+}
+@supports (height: 100dvh) {
+  :root { --app-viewport-h: 100dvh; }
+}
+:root[data-ios-standalone] { --status-bar-gap: 20px; }
+
 * { box-sizing: border-box; }
 html, body, #root { margin: 0; padding: 0; height: 100%; }
 body {
@@ -297,22 +311,16 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
 .app {
   display: grid;
   grid-template-columns: 56px 1fr;
+  grid-template-rows: minmax(0, 1fr);
   /* `100dvh` tracks the *visible* viewport — on iOS Safari that means
    * the layout size shrinks when the URL bar / bottom toolbar is
    * showing, so the list/calendar bottom isn't permanently hidden
    * under those toolbars. Fall back to `100vh` for older browsers. */
-  height: 100vh;
-  height: 100dvh;
+  height: var(--app-viewport-h);
   width: 100vw;
-  /* Honor the iOS notch / status-bar / home-indicator insets when
-   * launched as a home-screen PWA (apple-mobile-web-app-status-bar-style
-   * = black-translucent makes the status bar overlay content). The
-   * viewport-fit=cover meta exposes these env() values; with
-   * box-sizing: border-box, padding shrinks the content area so the
-   * topbar lands below the notch and the calendar / list don't run
-   * under the home indicator. Browser-tab mode reports zero insets,
-   * so this is a no-op there. */
-  padding-top: env(safe-area-inset-top);
+  /* Include both the reported safe area and the system blur's extra fade.
+   * Views use --app-content-h so this clearance also reduces their height. */
+  padding-top: calc(env(safe-area-inset-top, 0px) + var(--status-bar-gap));
   padding-right: env(safe-area-inset-right);
   padding-bottom: env(safe-area-inset-bottom);
   padding-left: env(safe-area-inset-left);
@@ -2081,7 +2089,7 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
      * the safe-area padding the .app grid container takes — it would
      * slide in under the iOS notch / home indicator otherwise. Push
      * its content past the insets explicitly. */
-    padding-top: calc(14px + env(safe-area-inset-top));
+    padding-top: calc(14px + env(safe-area-inset-top) + var(--status-bar-gap));
     padding-bottom: calc(8px + env(safe-area-inset-bottom));
     padding-left: env(safe-area-inset-left);
   }
