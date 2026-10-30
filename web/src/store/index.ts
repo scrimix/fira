@@ -533,7 +533,7 @@ interface FiraState {
   duplicateBlock: (blockId: UUID) => UUID | null;
   deleteBlock: (blockId: UUID) => void;
   addAttachment: (taskId: UUID, file: File) => Promise<UUID | null>;
-  getAttachment: (attachment_id: UUID) => Promise<string>;
+  getAttachment: (attachment_id: UUID, signal?: AbortSignal) => Promise<string>;
   deleteAttachment: (attachment_id: UUID) => Promise<void>;
   moveAttachment: (attachment_id: UUID, taskId: UUID) => Promise<void>;
 }
@@ -3059,8 +3059,8 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     return attachment_id;
   },
 
-  getAttachment: async (attachment_id) => {
-    const url = await api.getAttachmentBlobUrl(attachment_id);
+  getAttachment: async (attachment_id, signal) => {
+    const url = await api.getAttachmentBlobUrl(attachment_id, signal);
     return url;
   },
 

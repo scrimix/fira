@@ -93,11 +93,12 @@ async function uploadAttachment(file: File, task_id: UUID): Promise<{ attachment
   return parseJsonResponse<{ attachment_id: UUID, storage_path: string }>(res);
 }
 
-async function getAttachmentBlobUrl(attachment_id: UUID): Promise<string> {
+async function getAttachmentBlobUrl(attachment_id: UUID, signal?: AbortSignal): Promise<string> {
   const headers: Record<string, string> = {};
   if (activeWorkspaceId) headers['x-workspace-id'] = activeWorkspaceId;
 
   const res = await fetch(`${BASE}/attachments/${attachment_id}`, {
+    signal,
     method: 'GET',
     credentials: 'same-origin',
     headers,

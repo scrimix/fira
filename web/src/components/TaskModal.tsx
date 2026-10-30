@@ -122,26 +122,56 @@ export function TaskModal({ taskId }: Props) {
       : !window.matchMedia('(max-width: 700px)').matches,
   );
 
-  const [attachmentPreview, setAttachmentPreview] = useState<{a: Attachment, content: string} | null>(null);
+  const [attachmentPreview, setAttachmentPreview] = useState<{
+    a: Attachment;
+    content: string | null;
+    text: string | null;
+    error: string | null;
+  } | null>(null);
   const getAttachment = useFira((s) => s.getAttachment);
   const [attachmentForDelete, setDeleteAttachment] = useState<Attachment | null>(null);
   const deleteAttachment = useFira((s) => s.deleteAttachment);
   const pollChanges = useFira((s) => s.pollChanges);
-  const [previewText, setPreviewText] = useState<string | null>(null);
+  const previewAttachment = attachmentPreview?.a;
+  useEffect(() => { setAttachmentPreview(null); }, [taskId]);
   useEffect(() => {
-    setPreviewText(null);
-    if (!attachmentPreview) return;
-    const kind = previewKind(attachmentPreview.a);
-    if (kind !== 'text' && kind !== 'markdown') return;
-
+    if (!previewAttachment) return;
+    const controller = new AbortController();
     let cancelled = false;
-    fetch(attachmentPreview.content)
-      .then((r) => r.text())
-      .then((t) => { if (!cancelled) setPreviewText(t); })
-      .catch(() => { if (!cancelled) setPreviewText('Could not load preview.'); });
-
-    return () => { cancelled = true; };
-  }, [attachmentPreview]);
+    let content: string | null = null;
+    const load = async () => {
+      try {
+        content = await getAttachment(previewAttachment.id, controller.signal);
+        if (cancelled) {
+          URL.revokeObjectURL(content);
+          return;
+        }
+        const kind = previewKind(previewAttachment);
+        const text = kind === 'text' || kind === 'markdown'
+          ? await fetch(content, { signal: controller.signal }).then((response) => {
+            if (!response.ok) throw new Error('Could not load preview.');
+            return response.text();
+          })
+          : null;
+        if (!cancelled) {
+          setAttachmentPreview({ a: previewAttachment, content, text, error: null });
+        }
+      } catch {
+        if (!cancelled) {
+          setAttachmentPreview({
+            a: previewAttachment, content: null, text: null,
+            error: 'Could not load preview. Please close it and try again.',
+          });
+        }
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+      controller.abort();
+      if (content) URL.revokeObjectURL(content);
+    };
+  }, [previewAttachment, getAttachment]);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   // Direct attachments: a typed note or a paste (image / file / text) becomes
   // a draft that the composer names and uploads — no file picker involved.
@@ -394,9 +424,8 @@ export function TaskModal({ taskId }: Props) {
                 }
               }}
               onDelete={(attachment) => setDeleteAttachment(attachment)}
-              onPreview={async (attachment) => {
-                const dataUrl = await getAttachment(attachment.id);
-                setAttachmentPreview({a: attachment, content: dataUrl})
+              onPreview={(attachment) => {
+                setAttachmentPreview({ a: attachment, content: null, text: null, error: null });
               }}
             />
 
@@ -642,19 +671,25 @@ export function TaskModal({ taskId }: Props) {
           <span className="proj-dot" style={{ background: project.color }} />
           <span className="ext">{project.title} / {task.title} / {attachmentPreview?.a?.filename}</span>
           <span className="grow" />
-          <button className="icon-btn" title="Close (Esc)" aria-label="Close" onClick={() => {
-            const content = attachmentPreview?.content;
-            if (content) {
-              URL.revokeObjectURL(content);
-            }
-            setAttachmentPreview(null);
-          }}>
+          <button className="icon-btn" title="Close (Esc)" aria-label="Close" onClick={() => setAttachmentPreview(null)}>
             <ArrowLeft size={15} strokeWidth={1.75} />
           </button>
         </div>
         <div className="attachment-preview-body">
           {(() => {
-            const kind = attachmentPreview ? previewKind(attachmentPreview.a) : 'other';
+            if (!attachmentPreview) return null;
+            if (attachmentPreview.error) {
+              return <div role="alert">{attachmentPreview.error}</div>;
+            }
+            if (!attachmentPreview.content) {
+              return (
+                <div className="attachment-preview-loading" role="status">
+                  <Loader2 size={24} strokeWidth={1.75} className="attachment-spin" aria-hidden="true" />
+                  <span>Loading preview…</span>
+                </div>
+              );
+            }
+            const kind = previewKind(attachmentPreview.a);
             if (kind === 'image') {
               return (
                 <img
@@ -667,9 +702,9 @@ export function TaskModal({ taskId }: Props) {
             if (kind === 'markdown') {
               return (
                 <div className="desc-md attachment-preview-markdown">
-                  {previewText != null ? (
+                  {attachmentPreview.text != null ? (
                     <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>
-                      {previewText}
+                      {attachmentPreview.text}
                     </ReactMarkdown>
                   ) : 'Loading…'}
                 </div>
@@ -678,7 +713,7 @@ export function TaskModal({ taskId }: Props) {
             if (kind === 'text') {
               return (
                 <pre className="attachment-preview-text">
-                  <code>{previewText ?? 'Loading…'}</code>
+                  <code>{attachmentPreview.text}</code>
                 </pre>
               );
             }
