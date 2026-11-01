@@ -527,7 +527,7 @@ function PlanBoard({ projectId }: { projectId: UUID | null }) {
     const ordered = tasks
       .filter((t) => t.project_id === target.project_id
         && t.section === target.section && t.id !== draggedId)
-      .sort((a, b) => a.sort_key.localeCompare(b.sort_key))
+      .sort((a, b) => a.sort_key < b.sort_key ? -1 : a.sort_key > b.sort_key ? 1 : 0)
       .map((t) => t.id);
     const at = ordered.indexOf(targetId);
     if (at < 0) return;

@@ -52,6 +52,21 @@ export function PlanSprintCard({
   const [renaming, setRenaming] = useState(false);
   const [titleDraft, setTitleDraft] = useState(sprint.title);
   const [over, setOver] = useState(false);
+  const [taskDrop, setTaskDrop] = useState<{ id: UUID; before: boolean } | null>(null);
+  const taskDropRef = useRef<typeof taskDrop>(null);
+  const markTaskDrop = (target: typeof taskDrop) => {
+    taskDropRef.current = target;
+    setTaskDrop(current => current?.id === target?.id && current?.before === target?.before ? current : target);
+  };
+  useEffect(() => {
+    const clear = () => { markTaskDrop(null); setOver(false); };
+    document.addEventListener('dragend', clear);
+    document.addEventListener('drop', clear);
+    return () => {
+      document.removeEventListener('dragend', clear);
+      document.removeEventListener('drop', clear);
+    };
+  }, []);
   const [menuRect, setMenuRect] = useState<DOMRect | null>(null);
   const menuButton = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -226,7 +241,55 @@ export function PlanSprintCard({
       </div>, document.body)}
 
       {showTasks && (
-        <ul className="plan-card-tasks">
+        <ul className="plan-card-tasks"
+          onDragOver={(e) => {
+            if (!onReorderTask || !e.dataTransfer.types.includes(PLAN_TASK_MIME)) return;
+            e.preventDefault();
+            e.stopPropagation();
+            setOver(false);
+            e.dataTransfer.dropEffect = 'move';
+            // Resolve one boundary for the whole checklist. The bottom
+            // half of a row and the top half of its neighbour share it.
+            const source = document.querySelector<HTMLElement>('[data-plan-task-source]');
+            const sourceId = source?.dataset.taskId;
+            const rows = [...e.currentTarget.querySelectorAll<HTMLElement>('.plan-task')]
+              .filter(row => row.dataset.taskId !== sourceId);
+            const next = rows.find(row => {
+              const rect = row.getBoundingClientRect();
+              return e.clientY < rect.top + rect.height / 2;
+            });
+            const insertion = next ? rows.indexOf(next) : rows.length;
+            const sourceIndex = sprint.tasks.findIndex(task => task.id === sourceId);
+            const canAnchor = (row: HTMLElement | undefined) => row && (!source
+              || source.dataset.section === row.dataset.section
+              || (source.dataset.section !== 'done' && row.dataset.section !== 'done'));
+            // At the archive boundary use the adjacent active row. Both
+            // halves of this gap must choose the same legal anchor.
+            const before = !!next && !!canAnchor(next);
+            const target = before ? next : rows[insertion - 1];
+            // Dropping back in the original slot is a no-op, not another
+            // apparent position on either side of the dragged row.
+            markTaskDrop(!canAnchor(target) || (sourceIndex >= 0 && insertion === sourceIndex)
+              ? null : { id: target!.dataset.taskId!, before });
+          }}
+          onDragLeave={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node | null)) markTaskDrop(null);
+          }}
+          onDrop={(e) => {
+            if (!onReorderTask || !e.dataTransfer.types.includes(PLAN_TASK_MIME)) return;
+            e.preventDefault();
+            e.stopPropagation();
+            // Commit exactly the boundary that was painted, without
+            // reinterpreting the drop event's coordinates or row target.
+            const target = taskDropRef.current;
+            markTaskDrop(null);
+            const draggedId = e.dataTransfer.getData(PLAN_TASK_MIME);
+            if (!draggedId) return;
+            if (!sprint.tasks.length) { onDropTask?.(draggedId); return; }
+            if (!target) return;
+            if (!sprint.tasks.some(task => task.id === draggedId)) onDropTask?.(draggedId);
+            onReorderTask(draggedId, target.id, target.before);
+          }}>
           {sprint.tasks.map((t) => (
             <PlanCardTask
               key={t.id}
@@ -234,14 +297,7 @@ export function PlanSprintCard({
               onTick={onTick}
               onRemove={onRemoveTask}
               onOpen={onOpenTask}
-              onDropAt={onReorderTask && ((draggedId, before) => {
-                // Crossing cards is two facts — "it belongs here now" and
-                // "it sits here in the order" — so both ops fire, in that
-                // order. Adjacent in the outbox, same as the list's
-                // set_section + set_assignee pair.
-                if (!sprint.tasks.some((x) => x.id === draggedId)) onDropTask?.(draggedId);
-                onReorderTask(draggedId, t.id, before);
-              })}
+              drop={taskDrop?.id === t.id ? (taskDrop.before ? 'before' : 'after') : undefined}
             />
           ))}
           {onAddTask && (
@@ -272,52 +328,29 @@ export function PlanSprintCard({
   );
 }
 
-function PlanCardTask({ task, onTick, onRemove, onOpen, onDropAt }: {
+function PlanCardTask({ task, onTick, onRemove, onOpen, drop }: {
   task: PlanTask;
   onTick?: (taskId: UUID, done: boolean) => void;
   onRemove?: (taskId: UUID) => void;
   onOpen?: (taskId: UUID) => void;
-  onDropAt?: (draggedId: UUID, before: boolean) => void;
+  drop?: 'before' | 'after';
 }) {
-  const [at, setAt] = useState<'before' | 'after' | null>(null);
-  // Two zones, not the list's three: there is no merge gesture on the
-  // board, so the row splits at its midline.
-  const sideOf = (e: React.DragEvent) => {
-    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    return e.clientY - r.top < r.height / 2 ? 'before' : 'after';
-  };
   return (
     <li
       className="plan-task"
       data-done={task.done || undefined}
-      data-drop={at ?? undefined}
+      data-task-id={task.id}
+      data-section={task.section}
+      data-drop={drop}
       draggable={onRemove != null}
       onDragStart={(e) => {
+        e.currentTarget.dataset.planTaskSource = 'true';
         e.dataTransfer.effectAllowed = 'move';
         e.dataTransfer.setData(PLAN_TASK_MIME, task.id);
         // Drag image only, as the calendar rail does.
         e.dataTransfer.setData('text/plain', task.title);
       }}
-      onDragOver={(e) => {
-        if (!onDropAt || !e.dataTransfer.types.includes(PLAN_TASK_MIME)) return;
-        e.preventDefault();
-        // The card behind this row is also a drop target; without this
-        // the drop would land as a plain "join this sprint" and the
-        // position the user aimed at would be discarded.
-        e.stopPropagation();
-        e.dataTransfer.dropEffect = 'move';
-        const side = sideOf(e);
-        setAt((cur) => cur === side ? cur : side);
-      }}
-      onDragLeave={() => setAt(null)}
-      onDrop={(e) => {
-        setAt(null);
-        if (!onDropAt || !e.dataTransfer.types.includes(PLAN_TASK_MIME)) return;
-        e.preventDefault();
-        e.stopPropagation();
-        const draggedId = e.dataTransfer.getData(PLAN_TASK_MIME);
-        if (draggedId) onDropAt(draggedId, sideOf(e) === 'before');
-      }}
+      onDragEnd={(e) => { delete e.currentTarget.dataset.planTaskSource; }}
       onClick={() => onOpen?.(task.id)}
       title={onOpen ? task.title : undefined}
     >
