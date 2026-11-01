@@ -317,17 +317,11 @@ function bySectionThenSort(a: PlanTaskInput, b: PlanTaskInput): number {
     || (a.sort_key < b.sort_key ? -1 : a.sort_key > b.sort_key ? 1 : 0);
 }
 
-// A card's checklist is ordered by `bySectionThenSort` — the list's
-// order, unchanged.
-//
-// It briefly sank finished rows to the foot of the card, on the
-// reasoning that `task.tick` sets `status` and leaves `section` alone,
-// so a ticked task still in Now leads its own card while rendering
-// struck through. True, but the list does exactly the same thing and
-// does it on purpose: recently-finished work stays where it is until
-// somebody archives it. Sinking meant **ticking a box reordered the
-// card under your cursor**, which no other surface in the app does, and
-// the inconsistency cost more than the tidiness bought.
+// Sprint checklists use the saved manual order across list sections.
+// Completing or archiving a task must not move it within its sprint.
+function bySortKey(a: PlanTaskInput, b: PlanTaskInput): number {
+  return a.sort_key < b.sort_key ? -1 : a.sort_key > b.sort_key ? 1 : 0;
+}
 
 export function buildPlanSnapshot(input: PlanInput): PlanSnapshot {
   const { projectId, weekCount } = input;
@@ -416,7 +410,7 @@ export function buildPlanSnapshot(input: PlanInput): PlanSnapshot {
     const laneCount = lanesOf.reduce((m, l) => Math.max(m, l.lanes), 0);
 
     const out: PlanSprint[] = placed.map(({ s, rawStart, rawEnd }, i) => {
-      const members = (tasksBySprint.get(s.id) ?? []).slice().sort(bySectionThenSort);
+      const members = (tasksBySprint.get(s.id) ?? []).slice().sort(bySortKey);
       return {
         id: s.id,
         code: planCode(trackIdx, ordinalBySprint.get(s.id) ?? 0),

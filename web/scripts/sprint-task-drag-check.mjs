@@ -55,24 +55,54 @@ try {
  await row(0).dispatchEvent('dragend', { dataTransfer: transfer });
  assert.deepEqual(await marks(), [], 'Cancel clears the marker');
 
- // A gap at the archive boundary has one legal anchor on its active side.
+ // Completed tasks may span active sections and the archive. Ordering
+ // must honor the drop without changing completion or section membership.
  await page.evaluate(async () => {
   const { useFira } = await import(performance.getEntriesByType('resource').find(e => e.name.includes('/src/store/index.ts')).name);
   useFira.setState(s => ({ tasks: s.tasks.map((t, i) => ({ ...t,
-   section: i < 2 ? 'now' : i === 2 ? 'later' : 'done',
-   status: i === 3 ? 'done' : 'todo', sort_key: ['A', 'a', 'b', 'c'][i] })) }));
+   section: ['now', 'later', 'done', 'done'][i], status: 'done',
+   finished_at: '2026-10-30T12:00:00Z', sort_key: ['A', 'a', 'b', 'c'][i] })) }));
  });
- await row(0).dispatchEvent('dragstart', { dataTransfer: transfer });
- await hover(2, 0.9);
- const archiveMark = await marks();
- assert.equal(archiveMark.length, 1);
- await hover(3, 0.1);
- assert.deepEqual(await marks(), archiveMark, 'Archive boundary uses the same legal slot from both sides');
- const archiveBox = await row(3).boundingBox();
- await row(3).dispatchEvent('drop', { dataTransfer: transfer, clientY: archiveBox.y + 2 });
- await row(0).dispatchEvent('dragend', { dataTransfer: transfer });
- assert.deepEqual(await order(), ['Sprint drag 1', 'Sprint drag 2', 'Sprint drag 0', 'Sprint drag 3']);
- assert.equal(await row(0).getAttribute('data-section'), 'later', 'Boundary drop must take the active section');
+ const sections = await rows.evaluateAll(nodes => Object.fromEntries(nodes.map(n => [n.dataset.taskId, n.dataset.section])));
+ await row(3).dispatchEvent('dragstart', { dataTransfer: transfer });
+ await hover(0, 0.1);
+ assert.equal((await marks()).length, 1, 'Completed task can be placed above tasks from another section');
+ await row(0).dispatchEvent('drop', { dataTransfer: transfer });
+ await row(3).dispatchEvent('dragend', { dataTransfer: transfer });
+ assert.deepEqual(await order(), ['Sprint drag 3', 'Sprint drag 0', 'Sprint drag 1', 'Sprint drag 2']);
+ assert.deepEqual(await rows.evaluateAll(nodes => Object.fromEntries(nodes.map(n => [n.dataset.taskId, n.dataset.section]))), sections,
+  'Reordering must preserve active and archived sections');
+ assert.equal(await rows.locator('[aria-label="Mark not done"]').count(), 4, 'All tasks remain completed');
+ // Replay a server reorder response from the saved IDs. It must
+ // reconstruct the same position without changing task state.
+ await page.evaluate(async () => {
+  const { useFira } = await import(performance.getEntriesByType('resource').find(e => e.name.includes('/src/store/index.ts')).name);
+  const s = useFira.getState();
+  const ordered = [...s.tasks].sort((a, b) => a.sort_key < b.sort_key ? -1 : a.sort_key > b.sort_key ? 1 : 0).map(t => t.id);
+  useFira.setState({ tasks: s.tasks.map(t => ({ ...t, sort_key: 'M' })) });
+  s.applyRemoteOp({ op_id: crypto.randomUUID(), payload: { kind: 'task.reorder', project_id: s.sprints[0].project_id, ordered } });
+ });
+ assert.deepEqual(await order(), ['Sprint drag 3', 'Sprint drag 0', 'Sprint drag 1', 'Sprint drag 2'], 'Remote reorder replay preserves completed order');
+ const completedState = await page.evaluate(async () => {
+  const { useFira } = await import(performance.getEntriesByType('resource').find(e => e.name.includes('/src/store/index.ts')).name);
+  return useFira.getState().tasks.map(t => [t.status, t.finished_at]);
+ });
+ assert.deepEqual(completedState, Array.from({ length: 4 }, () => ['done', '2026-10-30T12:00:00Z']));
+ // Rebuild the board, then tick and untick a task: neither should reset its position.
+ await page.evaluate(async () => {
+  const { useFira } = await import(performance.getEntriesByType('resource').find(e => e.name.includes('/src/store/index.ts')).name);
+  const s = useFira.getState();
+  s.setView('list', s.sprints[0].project_id);
+ });
+ await page.evaluate(async () => {
+  const { useFira } = await import(performance.getEntriesByType('resource').find(e => e.name.includes('/src/store/index.ts')).name);
+  const s = useFira.getState(); s.setView('plan', s.sprints[0].project_id);
+ });
+ assert.deepEqual(await order(), ['Sprint drag 3', 'Sprint drag 0', 'Sprint drag 1', 'Sprint drag 2'], 'Returning to Plan preserves completed task order');
+ await row(3).locator('.plan-task-tick').click();
+ assert.deepEqual(await order(), ['Sprint drag 3', 'Sprint drag 0', 'Sprint drag 1', 'Sprint drag 2']);
+ await row(3).locator('.plan-task-tick').click();
+ assert.deepEqual(await order(), ['Sprint drag 3', 'Sprint drag 0', 'Sprint drag 1', 'Sprint drag 2']);
  // Mixed-case keys must use the same ordering in the move handler and snapshot.
  await page.evaluate(async () => {
   const { useFira } = await import(performance.getEntriesByType('resource').find(e => e.name.includes('/src/store/index.ts')).name);
@@ -115,5 +145,5 @@ try {
  await destination.locator('.plan-task').first().dispatchEvent('dragend', { dataTransfer: transfer });
  assert.deepEqual(await destination.locator('.plan-task-title').allTextContents(), ['Sprint drag 0']);
  assert.deepEqual(errors, []);
- console.log('Passed: canonical gap marker, matching drop order, native dragging, self drops, cancellation, archive boundaries, mixed-case sort keys, cross-card and empty-card drops.');
+ console.log('Passed: canonical gap marker, matching drop order, native dragging, self drops, cancellation, completed tasks across sections, stable completion toggles, mixed-case sort keys, cross-card and empty-card drops.');
 } finally { await browser.close(); }

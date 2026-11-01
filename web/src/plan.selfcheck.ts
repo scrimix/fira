@@ -217,6 +217,18 @@ function checkSnapshot(): void {
   eq('counter is done/total', [counted.doneCount, counted.totalCount], [2, 3]);
   eq('done tasks stay in the card', counted.tasks.length, 3);
 
+  const manuallyOrdered = buildPlanSnapshot(input({
+    tracks,
+    sprints: [sprint({ id: 'ordered', track_id: 'tr1', starts_on: MON, ends_on: '2026-10-19' })],
+    tasks: [
+      task({ id: 'active', sprint_id: 'ordered', section: 'now', sort_key: '00003000' }),
+      task({ id: 'archived', sprint_id: 'ordered', section: 'done', status: 'done', sort_key: '00001000' }),
+      task({ id: 'completed', sprint_id: 'ordered', section: 'later', status: 'done', sort_key: '00002000' }),
+    ],
+  })).tracks.find((r) => r.id === 'tr1')!.sprints[0];
+  eq('manual sprint order spans active, completed and archived tasks',
+    manuallyOrdered.tasks.map(t => t.id), ['archived', 'completed', 'active']);
+
   // Badge codes: per track, ordered by span, so dragging a card left
   // renumbers it. Numbered before clipping, so scrolling doesn't.
   const coded = buildPlanSnapshot(input({

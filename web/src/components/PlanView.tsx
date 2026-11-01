@@ -199,7 +199,6 @@ function PlanBoard({ projectId }: { projectId: UUID | null }) {
   const addTask = useFira((s) => s.addTask);
   const tickTask = useFira((s) => s.tickTask);
   const openTask = useFira((s) => s.openTask);
-  const setTaskSection = useFira((s) => s.setTaskSection);
   const reorderTasks = useFira((s) => s.reorderTasks);
 
   const [drag, setDrag] = useState<SpanDrag | null>(null);
@@ -495,38 +494,17 @@ function PlanBoard({ projectId }: { projectId: UUID | null }) {
     if (id) setTaskSprint(id, sprintId);
   };
 
-  /// Put one task next to another in the order. There is no plan-specific
-  /// ordering: a checklist row's position is its `sort_key`, the same one
-  /// the list curates, so the board drives the same section-scoped
-  /// `reorderTasks`. That's deliberate — a card that ordered its rows
-  /// privately would reshuffle the moment you looked at the list.
+  // A sprint checklist has one manual order across all list sections.
+  // Moving a row changes its position, not its section or completion.
   const moveTaskNextTo = (draggedId: UUID, targetId: UUID, before: boolean) => {
     if (draggedId === targetId) return;
     const dragged = tasks.find((t) => t.id === draggedId);
     const target = tasks.find((t) => t.id === targetId);
-    if (!dragged || !target) return;
-    if (dragged.project_id !== target.project_id) return;
-    // Ordering is `sort_key`, which is section-scoped, so honouring
-    // "put this above that" across a boundary means moving the task's
-    // *section* — which is exactly what the same drag does in the list.
-    // The one crossing that isn't a reorder is the archive: dropping a
-    // row into Done would file it away, and dragging one out would
-    // un-archive it, neither of which is what "put this above that"
-    // means. That crossing is refused; every other one is the list's
-    // own behaviour.
-    //
-    // Keyed on `section`, not `status`: a ticked task still sitting in
-    // Now is ordinary work that happens to be finished, and it
-    // reorders like any other row.
-    if (dragged.section !== target.section
-      && (dragged.section === 'done' || target.section === 'done')) return;
-    // A card can hold rows from several sections and `reorderTasks` is
-    // section-scoped, so landing beside a row in another section means
-    // joining that section first — exactly what a list drag does.
-    if (dragged.section !== target.section) setTaskSection(draggedId, target.section);
+    if (!dragged || !target || dragged.project_id !== target.project_id) return;
+    // Include the project's other rows so renumbering preserves their
+    // relative order too. The server persists task.reorder by project.
     const ordered = tasks
-      .filter((t) => t.project_id === target.project_id
-        && t.section === target.section && t.id !== draggedId)
+      .filter((t) => t.project_id === target.project_id && t.id !== draggedId)
       .sort((a, b) => a.sort_key < b.sort_key ? -1 : a.sort_key > b.sort_key ? 1 : 0)
       .map((t) => t.id);
     const at = ordered.indexOf(targetId);

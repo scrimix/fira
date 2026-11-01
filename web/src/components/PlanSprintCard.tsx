@@ -25,9 +25,8 @@ interface Props {
   /// Opens the task modal. A checklist row is a real task, so clicking
   /// it does what clicking a task does everywhere else in the app.
   onOpenTask?: (taskId: UUID) => void;
-  /// Drop one checklist row next to another. Ordering is `sort_key`,
-  /// which is section-scoped, so the board hands this straight to the
-  /// same `reorderTasks` the list drives.
+  /// Drop one checklist row next to another in saved sort-key order,
+  /// preserving list section and completion state.
   onReorderTask?: (draggedId: UUID, targetId: UUID, before: boolean) => void;
   onRename?: (title: string) => void;
   onEdit?: () => void;
@@ -260,17 +259,12 @@ export function PlanSprintCard({
             });
             const insertion = next ? rows.indexOf(next) : rows.length;
             const sourceIndex = sprint.tasks.findIndex(task => task.id === sourceId);
-            const canAnchor = (row: HTMLElement | undefined) => row && (!source
-              || source.dataset.section === row.dataset.section
-              || (source.dataset.section !== 'done' && row.dataset.section !== 'done'));
-            // At the archive boundary use the adjacent active row. Both
-            // halves of this gap must choose the same legal anchor.
-            const before = !!next && !!canAnchor(next);
-            const target = before ? next : rows[insertion - 1];
+            const before = !!next;
+            const target = next ?? rows[rows.length - 1];
             // Dropping back in the original slot is a no-op, not another
             // apparent position on either side of the dragged row.
-            markTaskDrop(!canAnchor(target) || (sourceIndex >= 0 && insertion === sourceIndex)
-              ? null : { id: target!.dataset.taskId!, before });
+            markTaskDrop(!target || (sourceIndex >= 0 && insertion === sourceIndex)
+              ? null : { id: target.dataset.taskId!, before });
           }}
           onDragLeave={(e) => {
             if (!e.currentTarget.contains(e.relatedTarget as Node | null)) markTaskDrop(null);
