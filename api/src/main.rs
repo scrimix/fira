@@ -20,7 +20,7 @@ use fira_api::{
     error::{self, ApiResult},
     gcal, invites, jira, links, load_bootstrap,
     models::*,
-    move_task, ops, plan_history,
+    move_task, ops, plan_history, project_members,
     pubsub::{self, Hub},
     storage, workspaces, ws, AppState, Bootstrap,
 };
@@ -368,21 +368,6 @@ fn validate_url_template(t: &str) -> Result<(), error::ApiError> {
     Ok(())
 }
 
-#[derive(Deserialize)]
-struct SetMembers {
-    members: Vec<MemberSpec>,
-}
-
-#[derive(Deserialize, Clone)]
-struct MemberSpec {
-    user_id: uuid::Uuid,
-    role: String,
-}
-
-// Replace project membership wholesale. Member changes are their own op
-// (`project.set_members`) — separate from visual edits — so clients can
-// apply the two concerns independently and ex-members can drop the project
-// from local state on receiving the removal op.
 /// Workspace-owner-only: hard-delete a project and everything under it.
 /// Project leads can edit but not delete — destruction stays with the
 /// workspace owner so a single rogue lead can't wipe data.
@@ -422,55 +407,6 @@ async fn delete_project(
     .await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
-}
-
-async fn set_project_members(
-    State(s): State<AppState>,
-    ctx: AuthCtx,
-    Path(id): Path<uuid::Uuid>,
-    Json(body): Json<SetMembers>,
-) -> ApiResult<Json<Project>> {
-    authorize_project_edit(&s.pool, &ctx, id).await?;
-    for m in &body.members {
-        if m.role != "owner"
-            && m.role != "lead"
-            && m.role != "member"
-            && m.role != "dev"
-            && m.role != "inactive"
-        {
-            return Err(error::ApiError::BadRequest(
-                "role must be owner|lead|member|dev|inactive".into(),
-            ));
-        }
-    }
-    // Only workspace owners may set/promote roles. Project leads can change
-    // the membership set but can't reshuffle roles.
-    let allow_role_change = ctx.is_owner();
-    let desired: Vec<(uuid::Uuid, String)> = body
-        .members
-        .iter()
-        .map(|m| (m.user_id, m.role.clone()))
-        .collect();
-    let mut tx = s.pool.begin().await?;
-    let project = db::set_project_members_tx(&mut tx, id, &desired, allow_role_change)
-        .await?
-        .ok_or(error::ApiError::NotFound)?;
-    let payload = serde_json::json!({
-        "kind": "project.set_members",
-        "project_id": project.id,
-        "members": &project.members,
-    });
-    ops::record_synthesized_op(
-        &mut tx,
-        ctx.user.id,
-        ctx.workspace_id,
-        "project.set_members",
-        payload,
-        Some(project.id),
-    )
-    .await?;
-    tx.commit().await?;
-    Ok(Json(project))
 }
 
 fn validate_title(t: &str) -> Result<(), error::ApiError> {
@@ -666,7 +602,10 @@ async fn main() -> anyhow::Result<()> {
             "/projects/:id",
             patch(update_project).delete(delete_project),
         )
-        .route("/projects/:id/members", put(set_project_members))
+        .route(
+            "/projects/:id/members/:user_id",
+            put(project_members::add).patch(project_members::set_role).delete(project_members::remove),
+        )
         .route(
             "/workspaces",
             get(workspaces::list_my).post(workspaces::create),

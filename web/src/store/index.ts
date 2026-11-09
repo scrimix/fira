@@ -467,13 +467,9 @@ interface FiraState {
   listJiraEpics: (projectKey: string) => Promise<{ key: string; summary: string }[]>;
   pushTaskToJira: (taskId: UUID, epicKey?: string | null) => Promise<void>;
   pushBlockToJira: (blockId: UUID) => Promise<void>;
-  // Member changes are their own op (`project.set_members`) — separate from
-  // visual edits — so the apply path can treat removal-from-project as a
-  // dedicated event and drop project state cleanly.
-  setProjectMembers: (
-    id: UUID,
-    members: { user_id: UUID; role: import('../types').ProjectRole }[],
-  ) => Promise<Project>;
+  addProjectMember: (id: UUID, userId: UUID) => Promise<void>;
+  removeProjectMember: (id: UUID, userId: UUID) => Promise<void>;
+  setProjectMemberRole: (id: UUID, userId: UUID, role: import('../types').ProjectRole) => Promise<void>;
   deleteProject: (id: UUID) => Promise<void>;
   // Pulls the active workspace's directory and merges into `users` so the
   // project editor's Members picker can offer teammates the caller hasn't
@@ -955,11 +951,12 @@ function applyOpToState(s: FiraState, op: AnyOpKind): Partial<FiraState> {
         ? { ...task, has_private_time: privateTasks.has(task.id) } : task) };
     }
     case 'project.set_members': {
-      // If we're no longer in the member set, the owner removed us. The
+      // Workspace owners retain access independently of project membership.
+      // Otherwise, absence from the member set means we were removed. The
       // change feed will deliver this op once and then fall silent for the
       // project — drop everything we have for it locally so the UI doesn't
       // linger on stale state.
-      if (s.meId != null && !op.members.some((m) => m.user_id === s.meId)) {
+      if (s.meId != null && s.myWorkspaceRole !== 'owner' && !op.members.some((m) => m.user_id === s.meId)) {
         const droppedTaskIds = new Set(
           s.tasks.filter((t) => t.project_id === op.project_id).map((t) => t.id),
         );
@@ -2353,19 +2350,31 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     return updated;
   },
 
-  setProjectMembers: async (id, members) => {
-    const playground = get().playgroundMode;
-    const existing = get().projects.find((p) => p.id === id);
-    const updated: Project = playground && existing
-      ? { ...existing, members }
-      : await api.setProjectMembers(id, members);
-    set((s) => applyOpToState(s, { kind: 'project.set_members', project_id: id, members: updated.members }));
-    if (!playground && existing?.members.find((m) => m.user_id === get().meId)?.role
-      !== updated.members.find((m) => m.user_id === get().meId)?.role) {
+  addProjectMember: async (id, userId) => {
+    const current = get().projects.find((p) => p.id === id)?.members ?? [];
+    const members = get().playgroundMode
+      ? current.some((m) => m.user_id === userId) ? current : [...current, { user_id: userId, role: 'member' as const }]
+      : await api.addProjectMember(id, userId);
+    set((s) => applyOpToState(s, { kind: 'project.set_members', project_id: id, members }));
+  },
+
+  removeProjectMember: async (id, userId) => {
+    if (userId === get().meId) throw new Error("You can't remove yourself");
+    const members = get().playgroundMode
+      ? (get().projects.find((p) => p.id === id)?.members ?? []).filter((m) => m.user_id !== userId)
+      : await api.removeProjectMember(id, userId);
+    set((s) => applyOpToState(s, { kind: 'project.set_members', project_id: id, members }));
+  },
+
+  setProjectMemberRole: async (id, userId, role) => {
+    const members = get().playgroundMode
+      ? (get().projects.find((p) => p.id === id)?.members ?? []).map((m) => m.user_id === userId ? { ...m, role } : m)
+      : await api.setProjectMemberRole(id, userId, role);
+    set((s) => applyOpToState(s, { kind: 'project.set_members', project_id: id, members }));
+    if (!get().playgroundMode && userId === get().meId) {
       await get().rehydrate();
       await get().loadLinkedCalendar();
     }
-    return updated;
   },
 
   deleteProject: async (id) => {

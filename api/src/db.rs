@@ -278,7 +278,7 @@ async fn list_workspace_members_tx(
     let rows: Vec<(Uuid, String)> = sqlx::query_as(
         "SELECT user_id, role FROM workspace_members
          WHERE workspace_id = $1 AND removed_at IS NULL
-         ORDER BY role",
+         ORDER BY role, user_id",
     )
     .bind(workspace_id)
     .fetch_all(&mut **tx)
@@ -410,7 +410,7 @@ pub async fn list_project_members_tx(
     let rows: Vec<(Uuid, String)> = sqlx::query_as(
         "SELECT user_id, role FROM project_members
          WHERE project_id = $1 AND removed_at IS NULL
-         ORDER BY role",
+         ORDER BY role, user_id",
     )
     .bind(project_id)
     .fetch_all(&mut **tx)
@@ -859,7 +859,7 @@ pub async fn create_project_tx(
 // Patch visual fields (title/icon/color). None = leave alone. Returns None if
 // no row was updated (project doesn't exist OR caller isn't the owner — the
 // API layer treats both as 404 to avoid leaking project existence).
-// Membership is handled separately by `set_project_members_tx`.
+// Membership is handled separately by per-user project_members commands.
 pub async fn update_project_tx(
     tx: &mut Transaction<'_, Postgres>,
     project_id: Uuid,
@@ -982,7 +982,7 @@ pub async fn delete_project_tx(
 }
 
 /// Look up a project's workspace and its owner — used by handlers to
-/// authorize edits before calling update_project_tx / set_project_members_tx.
+/// authorize edits before calling update_project_tx.
 /// Returns None if the project doesn't exist.
 pub async fn project_owner_and_workspace(
     pool: &PgPool,
@@ -994,161 +994,6 @@ pub async fn project_owner_and_workspace(
             .fetch_optional(pool)
             .await?;
     Ok(row)
-}
-
-// Reconcile project_members for `project_id` to exactly `desired` (plus the
-// owner, who is implicit and force-included so an owner can't lock themselves
-// out). New users get inserted (or have their `removed_at` cleared);
-// previously-active members not in the desired set get soft-removed by
-// stamping `removed_at = now()` — the row stays so historical assignee FKs
-// remain valid and we can surface "previously a member" later if needed.
-//
-// Returns the refreshed Project, or None if the project doesn't exist or the
-// caller isn't the owner. Mirrors update_project_tx's not-found behavior.
-/// Reconcile project_members for `project_id` to exactly `desired`.
-/// Each desired entry is `(user_id, role)`. The current workspace owner is
-/// force-included so they can never be locked out — if `desired` names them
-/// the role is honored, otherwise they default to `owner`. Workspace
-/// ownership is the anchor (rather than `projects.owner_id`, the historical
-/// creator) because that's the user who actually has cross-project authority
-/// today.
-///
-/// `allow_role_change`: if false (project lead is editing), existing
-/// rows keep their role and new rows are inserted with whatever role is
-/// in `desired` *except* `lead`/`owner` — non-owner editors can only add
-/// `member`s. Workspace owners pass true and can promote/demote freely,
-/// including their own row.
-pub async fn set_project_members_tx(
-    tx: &mut Transaction<'_, Postgres>,
-    project_id: Uuid,
-    desired: &[(Uuid, String)],
-    allow_role_change: bool,
-) -> sqlx::Result<Option<Project>> {
-    let row: Option<(
-        Uuid,
-        Uuid,
-        String,
-        String,
-        String,
-        String,
-        Option<String>,
-        Option<String>,
-        Option<String>,
-    )> = sqlx::query_as(
-        "SELECT id, workspace_id, title, icon, color, source, description, external_url_template, jira_project_key
-         FROM projects WHERE id = $1",
-    )
-    .bind(project_id)
-    .fetch_optional(&mut **tx)
-    .await?;
-
-    let Some((
-        id,
-        workspace_id,
-        title,
-        icon,
-        color,
-        source,
-        description,
-        external_url_template,
-        jira_project_key,
-    )) = row
-    else {
-        return Ok(None);
-    };
-
-    // Look up the workspace owner once so we can force-include them below.
-    // There's exactly one owner per workspace under current invariants; if
-    // that ever changes, the first row wins and the rest still survive
-    // because their existing project_members rows are preserved.
-    let ws_owner: Option<(Uuid,)> = sqlx::query_as(
-        "SELECT user_id FROM workspace_members
-         WHERE workspace_id = $1 AND role = 'owner' AND removed_at IS NULL
-         LIMIT 1",
-    )
-    .bind(workspace_id)
-    .fetch_optional(&mut **tx)
-    .await?;
-
-    let mut want: Vec<(Uuid, String)> = desired.to_vec();
-    if let Some((o,)) = ws_owner {
-        if !want.iter().any(|(u, _)| *u == o) {
-            want.push((o, "owner".into()));
-        }
-    }
-
-    // Pre-existing rows we have to read so non-owner edits don't accidentally
-    // demote a lead. We only consult this when role changes are not allowed.
-    let existing: Vec<(Uuid, String)> = sqlx::query_as(
-        "SELECT user_id, role FROM project_members
-         WHERE project_id = $1 AND removed_at IS NULL",
-    )
-    .bind(id)
-    .fetch_all(&mut **tx)
-    .await?;
-    let existing_role: std::collections::HashMap<Uuid, String> = existing.into_iter().collect();
-
-    for (uid, role_in) in &want {
-        let role = if allow_role_change {
-            role_in.clone()
-        } else {
-            // Non-owner editing: keep existing role if any, otherwise force 'member'.
-            existing_role
-                .get(uid)
-                .cloned()
-                .unwrap_or_else(|| "member".to_string())
-        };
-        sqlx::query(
-            "INSERT INTO project_members (project_id, user_id, removed_at, role)
-             VALUES ($1, $2, NULL, $3)
-             ON CONFLICT (project_id, user_id) DO UPDATE
-                 SET removed_at = NULL, role = EXCLUDED.role",
-        )
-        .bind(id)
-        .bind(uid)
-        .bind(&role)
-        .execute(&mut **tx)
-        .await?;
-    }
-
-    let want_ids: Vec<Uuid> = want.iter().map(|(u, _)| *u).collect();
-    sqlx::query(
-        "UPDATE project_members SET removed_at = now()
-         WHERE project_id = $1
-           AND removed_at IS NULL
-           AND user_id <> ALL($2)",
-    )
-    .bind(id)
-    .bind(&want_ids)
-    .execute(&mut **tx)
-    .await?;
-
-    let members_rows: Vec<(Uuid, String)> = sqlx::query_as(
-        "SELECT user_id, role FROM project_members
-         WHERE project_id = $1 AND removed_at IS NULL",
-    )
-    .bind(id)
-    .fetch_all(&mut **tx)
-    .await?;
-
-    Ok(Some(Project {
-        id,
-        workspace_id,
-        title,
-        icon,
-        color,
-        source,
-        description,
-        external_url_template,
-        jira_project_key,
-        members: members_rows
-            .into_iter()
-            .map(|(u, r)| ProjectMember {
-                user_id: u,
-                role: r,
-            })
-            .collect(),
-    }))
 }
 
 // Blocks scoped to visible projects. Dev members only see their own blocks.

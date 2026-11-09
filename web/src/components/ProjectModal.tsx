@@ -22,7 +22,9 @@ export function ProjectModal({ project }: Props) {
   const addProject = useFira((s) => s.addProject);
   const updateProject = useFira((s) => s.updateProject);
   const resolveJiraProject = useFira((s) => s.resolveJiraProject);
-  const setProjectMembers = useFira((s) => s.setProjectMembers);
+  const addProjectMember = useFira((s) => s.addProjectMember);
+  const removeProjectMember = useFira((s) => s.removeProjectMember);
+  const setProjectMemberRole = useFira((s) => s.setProjectMemberRole);
   const deleteProject = useFira((s) => s.deleteProject);
   const showToast = useFira((s) => s.showToast);
   const loadAllUsers = useFira((s) => s.loadAllUsers);
@@ -34,17 +36,6 @@ export function ProjectModal({ project }: Props) {
   // server-side ignored — gating in the UI keeps the affordance honest.
   const canEditRoles = myWorkspaceRole === 'owner';
 
-  // Workspace owners edit their own role from this list (so they can
-  // up-rank to 'lead' or de-rank to 'member' from the per-project default
-  // 'owner'). Non-WS-owners see themselves as a read-only header row, so
-  // their meId is filtered out of the editable list.
-  const initialMembers: ProjectMember[] = useMemo(
-    () => canEditRoles
-      ? (project?.members ?? [])
-      : (project?.members ?? []).filter((m) => m.user_id !== meId),
-    [project, meId, canEditRoles],
-  );
-
   const [title, setTitle] = useState(project?.title ?? '');
   const [icon, setIcon] = useState(project?.icon || DEFAULT_ICON);
   const [iconPage, setIconPage] = useState(0);
@@ -55,9 +46,8 @@ export function ProjectModal({ project }: Props) {
   const [jiraResolvedName, setJiraResolvedName] = useState<string | null>(null);
   const [jiraResolving, setJiraResolving] = useState(false);
   const [jiraResolveError, setJiraResolveError] = useState<string | null>(null);
-  // Members are owner-locked: meId (the project owner / "you" row) is
-  // implicit and not in this set. Each row carries (user_id, role).
-  const [members, setMembers] = useState<ProjectMember[]>(initialMembers);
+  const members = project?.members ?? [];
+  const [membersBusy, setMembersBusy] = useState(false);
   const [armedRemove, setArmedRemove] = useState<UUID | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -76,20 +66,19 @@ export function ProjectModal({ project }: Props) {
       showToast(msg);
     }
   };
-  const persistMembers = async (next: ProjectMember[]) => {
-    if (!project) return;
+  const changeMember = async (command: () => Promise<void>) => {
+    if (membersBusy) return;
+    setMembersBusy(true);
+    setError(null);
     try {
-      setError(null);
-      await setProjectMembers(project.id, next);
+      await command();
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "Failed to update members";
+      const msg = e instanceof Error ? e.message : 'Failed to update member';
       setError(msg);
       showToast(msg);
+    } finally {
+      setMembersBusy(false);
     }
-  };
-  const updateMembers = (next: ProjectMember[]) => {
-    setMembers(next);
-    if (isEdit) void persistMembers(next);
   };
 
   useEffect(() => {
@@ -110,7 +99,6 @@ export function ProjectModal({ project }: Props) {
   const trimmedUrl = urlTemplate.trim();
   const trimmedJiraKey = jiraProjectKey.trim().toUpperCase();
   const valid = trimmed.length > 0 && trimmed.length <= 80;
-  const membersDirty = isEdit && !memberListEqual(members, initialMembers);
   const initialUrl = project?.external_url_template ?? '';
   const urlDirty = isEdit && trimmedUrl !== initialUrl;
   const initialJiraKey = project?.jira_project_key ?? '';
@@ -121,7 +109,6 @@ export function ProjectModal({ project }: Props) {
     || color !== project!.color
     || urlDirty
     || jiraKeyDirty
-    || membersDirty
   );
 
   const submit = async () => {
@@ -143,9 +130,6 @@ export function ProjectModal({ project }: Props) {
             ...(urlDirty ? { external_url_template: trimmedUrl || null } : {}),
             ...(jiraKeyDirty ? { jira_project_key: trimmedJiraKey || null } : {}),
           });
-        }
-        if (membersDirty) {
-          await setProjectMembers(project!.id, members);
         }
         close();
       } else {
@@ -323,26 +307,22 @@ export function ProjectModal({ project }: Props) {
               </div>
 
               <label className="np-label">Members</label>
-              <MembersEditor
-                allUsers={allUsers}
-                meId={meId}
-                members={members}
-                canEditRoles={canEditRoles}
-                armedRemove={armedRemove}
-                setArmedRemove={setArmedRemove}
-                onAdd={(uid) => {
-                  const next = members.some((x) => x.user_id === uid)
-                    ? members : [...members, { user_id: uid, role: 'member' as const }];
-                  updateMembers(next);
-                }}
-                onRemove={(uid) => {
-                  updateMembers(members.filter((x) => x.user_id !== uid));
-                  setArmedRemove(null);
-                }}
-                onRoleChange={(uid, role) => updateMembers(
-                  members.map((x) => x.user_id === uid ? { ...x, role } : x),
-                )}
-              />
+              <fieldset disabled={membersBusy} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
+                <MembersEditor
+                  allUsers={allUsers}
+                  meId={meId}
+                  members={members}
+                  canEditRoles={canEditRoles}
+                  armedRemove={armedRemove}
+                  setArmedRemove={setArmedRemove}
+                  onAdd={(uid) => void changeMember(() => addProjectMember(project!.id, uid))}
+                  onRemove={(uid) => {
+                    setArmedRemove(null);
+                    void changeMember(() => removeProjectMember(project!.id, uid));
+                  }}
+                  onRoleChange={(uid, role) => void changeMember(() => setProjectMemberRole(project!.id, uid, role))}
+                />
+              </fieldset>
               {!canEditRoles && (
                 <div className="np-hint">
                   Only the workspace owner can change project roles.
@@ -764,10 +744,4 @@ function TagsEditor({ projectId }: { projectId: UUID }) {
       )}
     </div>
   );
-}
-
-function memberListEqual(a: ProjectMember[], b: ProjectMember[]): boolean {
-  if (a.length !== b.length) return false;
-  const byA = new Map(a.map((m) => [m.user_id, m.role]));
-  return b.every((m) => byA.get(m.user_id) === m.role);
 }

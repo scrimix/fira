@@ -22,6 +22,7 @@ pub mod ops;
 pub mod plan;
 pub mod plan_history;
 pub mod plan_stress_seed;
+pub mod project_members;
 pub mod pubsub;
 pub mod seed;
 pub mod storage;

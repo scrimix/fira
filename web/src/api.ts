@@ -188,10 +188,12 @@ export const api = {
       jira_project_key: string | null;
     }>,
   ) => req<import('./types').Project>('PATCH', `/projects/${id}`, patch),
-  setProjectMembers: (
-    id: string,
-    members: { user_id: string; role: import('./types').ProjectRole }[],
-  ) => req<import('./types').Project>('PUT', `/projects/${id}/members`, { members }),
+  addProjectMember: (id: string, userId: string) =>
+    req<import('./types').ProjectMember[]>('PUT', `/projects/${id}/members/${userId}`),
+  removeProjectMember: (id: string, userId: string) =>
+    req<import('./types').ProjectMember[]>('DELETE', `/projects/${id}/members/${userId}`),
+  setProjectMemberRole: (id: string, userId: string, role: import('./types').ProjectRole) =>
+    req<import('./types').ProjectMember[]>('PATCH', `/projects/${id}/members/${userId}`, { role }),
   deleteProject: (id: string) => req<void>('DELETE', `/projects/${id}`),
   // REST rather than an outbox op: the move needs a confirm gate before
   // the write, and it spans two project scopes, which an op envelope's

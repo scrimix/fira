@@ -235,24 +235,234 @@ async fn dev_can_edit_plans_tasks_and_own_blocks_but_not_teammate_blocks(pool: P
         .status,
         "ok"
     );
-    let mut tx = pool.begin().await.unwrap();
-    let project = db::set_project_members_tx(&mut tx, PRIVATE, &[(DEV, "lead".into())], false)
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(
-        project
-            .members
-            .iter()
-            .find(|m| m.user_id == DEV)
-            .unwrap()
-            .role,
-        "dev"
-    );
-    tx.rollback().await.unwrap();
+    let result = fira_api::project_members::set_role(
+        State(app(&pool)),
+        member_ctx(DEV),
+        axum::extract::Path((PRIVATE, DEV)),
+        Json(fira_api::project_members::SetRole {
+            role: "lead".into(),
+        }),
+    )
+    .await;
+    assert!(matches!(result, Err(fira_api::error::ApiError::Forbidden)));
     assert!(!db::has_project_lead_authority(&pool, WS, PRIVATE, DEV)
         .await
         .unwrap());
+}
+
+fn member_ctx(user: Uuid) -> AuthCtx {
+    AuthCtx {
+        workspace_id: WS,
+        role: if user == OWNER { "owner" } else { "member" }.into(),
+        user: AuthUser {
+            id: user,
+            email: "test@test.dev".into(),
+            name: "Test".into(),
+            initials: "TE".into(),
+            avatar_url: None,
+        },
+    }
+}
+
+async fn seed_project_lead(pool: &PgPool) {
+    seed(pool).await;
+    sqlx::query("INSERT INTO project_members (project_id,user_id,role) VALUES ($1,$2,'owner')")
+        .bind(PRIVATE)
+        .bind(OWNER)
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE project_members SET role='lead' WHERE project_id=$1 AND user_id=$2")
+        .bind(PRIVATE)
+        .bind(DEV)
+        .execute(pool)
+        .await
+        .unwrap();
+}
+
+async fn seed_teammate(pool: &PgPool, id: Uuid) {
+    sqlx::query("INSERT INTO users (id,email,name,initials) VALUES ($1,$2,'Target','TA')")
+        .bind(id)
+        .bind(format!("{id}@test.dev"))
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO workspace_members (workspace_id,user_id,role) VALUES ($1,$2,'member')",
+    )
+    .bind(WS)
+    .bind(id)
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+#[sqlx::test]
+async fn targeted_removal_preserves_lead_and_syncs_target(pool: PgPool) {
+    use axum::extract::Path;
+    use fira_api::{error::ApiError, project_members as members};
+    seed_project_lead(&pool).await;
+    let target = Uuid::from_u128(11);
+    seed_teammate(&pool, target).await;
+    let _ = members::add(State(app(&pool)), member_ctx(DEV), Path((PRIVATE, target)))
+        .await
+        .unwrap();
+    let before = ops::current_cursor(&pool).await.unwrap();
+    let Json(after) = members::remove(State(app(&pool)), member_ctx(DEV), Path((PRIVATE, target)))
+        .await
+        .unwrap();
+    assert!(after.iter().any(|m| m.user_id == DEV && m.role == "lead"));
+    assert!(after
+        .iter()
+        .any(|m| m.user_id == OWNER && m.role == "owner"));
+    assert!(!after.iter().any(|m| m.user_id == target));
+    assert!(db::has_project_lead_authority(&pool, WS, PRIVATE, DEV)
+        .await
+        .unwrap());
+    assert!(!db::project_scope(&pool, target, WS)
+        .await
+        .unwrap()
+        .contains(&PRIVATE));
+    let active: bool = sqlx::query_scalar(
+        "SELECT removed_at IS NULL FROM workspace_members WHERE workspace_id=$1 AND user_id=$2",
+    )
+    .bind(WS)
+    .bind(target)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(active);
+    for user in [DEV, target] {
+        let feed = ops::changes_for_user(&pool, WS, user, before)
+            .await
+            .unwrap();
+        let event = feed
+            .ops
+            .iter()
+            .find(|op| op.kind == "project.set_members")
+            .unwrap();
+        assert!(event.seq > before);
+        assert_eq!(event.payload["project_id"], json!(PRIVATE));
+        assert_eq!(event.payload["members"], json!(after));
+    }
+    assert!(matches!(
+        members::remove(State(app(&pool)), member_ctx(DEV), Path((PRIVATE, DEV))).await,
+        Err(ApiError::BadRequest(_))
+    ));
+    assert!(matches!(
+        members::remove(State(app(&pool)), member_ctx(DEV), Path((PRIVATE, OWNER))).await,
+        Err(ApiError::BadRequest(_))
+    ));
+    // Repeated removal has no effect on any other user.
+    let Json(repeated) =
+        members::remove(State(app(&pool)), member_ctx(DEV), Path((PRIVATE, target)))
+            .await
+            .unwrap();
+    assert_eq!(json!(repeated), json!(after));
+    // Owners retain authority to remove another lead.
+    let Json(after) = members::remove(State(app(&pool)), member_ctx(OWNER), Path((PRIVATE, DEV)))
+        .await
+        .unwrap();
+    assert!(after.iter().all(|m| m.user_id != DEV));
+    assert!(after.iter().any(|m| m.user_id == OWNER));
+}
+
+#[sqlx::test]
+async fn targeted_commands_enforce_scope_and_roles(pool: PgPool) {
+    use axum::extract::Path;
+    use fira_api::{error::ApiError, project_members as members};
+    seed_project_lead(&pool).await;
+    let target = Uuid::from_u128(11);
+    seed_teammate(&pool, target).await;
+    let _ = members::add(State(app(&pool)), member_ctx(DEV), Path((PRIVATE, target)))
+        .await
+        .unwrap();
+    assert!(matches!(
+        members::remove(State(app(&pool)), member_ctx(target), Path((PRIVATE, DEV))).await,
+        Err(ApiError::Forbidden)
+    ));
+    assert!(matches!(
+        members::set_role(
+            State(app(&pool)),
+            member_ctx(DEV),
+            Path((PRIVATE, target)),
+            Json(members::SetRole {
+                role: "lead".into()
+            })
+        )
+        .await,
+        Err(ApiError::Forbidden)
+    ));
+    let _ = members::set_role(
+        State(app(&pool)),
+        member_ctx(OWNER),
+        Path((PRIVATE, target)),
+        Json(members::SetRole { role: "dev".into() }),
+    )
+    .await
+    .unwrap();
+    let Json(after) = members::add(State(app(&pool)), member_ctx(DEV), Path((PRIVATE, target)))
+        .await
+        .unwrap();
+    assert!(after.iter().any(|m| m.user_id == target && m.role == "dev"));
+    let _ = members::remove(State(app(&pool)), member_ctx(DEV), Path((PRIVATE, target)))
+        .await
+        .unwrap();
+    let Json(after) = members::add(State(app(&pool)), member_ctx(DEV), Path((PRIVATE, target)))
+        .await
+        .unwrap();
+    assert!(after
+        .iter()
+        .any(|m| m.user_id == target && m.role == "member"));
+    assert!(matches!(
+        members::add(
+            State(app(&pool)),
+            member_ctx(DEV),
+            Path((PRIVATE, Uuid::new_v4()))
+        )
+        .await,
+        Err(ApiError::BadRequest(_))
+    ));
+    let mut foreign = member_ctx(OWNER);
+    foreign.workspace_id = Uuid::new_v4();
+    assert!(matches!(
+        members::remove(State(app(&pool)), foreign, Path((PRIVATE, target))).await,
+        Err(ApiError::NotFound)
+    ));
+}
+
+#[sqlx::test]
+async fn concurrent_member_commands_do_not_overwrite_other_targets(pool: PgPool) {
+    use axum::extract::Path;
+    use fira_api::project_members as members;
+    seed_project_lead(&pool).await;
+    let removed = Uuid::from_u128(11);
+    let added = Uuid::from_u128(12);
+    seed_teammate(&pool, removed).await;
+    seed_teammate(&pool, added).await;
+    let _ = members::add(State(app(&pool)), member_ctx(DEV), Path((PRIVATE, removed)))
+        .await
+        .unwrap();
+    let before = ops::current_cursor(&pool).await.unwrap();
+    let (add, remove) = tokio::join!(
+        members::add(State(app(&pool)), member_ctx(OWNER), Path((PRIVATE, added))),
+        members::remove(State(app(&pool)), member_ctx(DEV), Path((PRIVATE, removed))),
+    );
+    let _ = add.unwrap();
+    let _ = remove.unwrap();
+    let mut tx = pool.begin().await.unwrap();
+    let after = db::list_project_members_tx(&mut tx, PRIVATE).await.unwrap();
+    tx.rollback().await.unwrap();
+    for user in [OWNER, DEV, added] {
+        assert!(after.iter().any(|m| m.user_id == user));
+    }
+    assert!(!after.iter().any(|m| m.user_id == removed));
+    let feed = ops::changes_for_user(&pool, WS, OWNER, before)
+        .await
+        .unwrap();
+    assert_eq!(feed.ops.len(), 2);
+    assert!(feed.ops[0].seq < feed.ops[1].seq);
+    assert_eq!(feed.ops[1].payload["members"], json!(after));
 }
 
 #[sqlx::test]
