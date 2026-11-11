@@ -23,11 +23,12 @@
         "esbenp.prettier-vscode",
         "bradlc.vscode-tailwindcss",
         "mtxr.sqltools",
-        "mtxr.sqltools-driver-pg"
+        "mtxr.sqltools-driver-pg",
+        "bierner.markdown-checkbox"
       ],
       "settings": {
         "editor.formatOnSave": false,
-        "rust-analyzer.linkedProjects": ["api/Cargo.toml"],
+        "rust-analyzer.linkedProjects": ["api/Cargo.toml", "cli/Cargo.toml"],
         "rust-analyzer.cargo.targetDir": true,
         "[rust]": {
           "editor.defaultFormatter": "rust-lang.rust-analyzer"
@@ -42,6 +43,7 @@
     }
   },
 
+  "initializeCommand": "mkdir -p \"$HOME/.config/task-cli\" && chmod 700 \"$HOME/.config/task-cli\"",
   "postCreateCommand": "bash .devcontainer/post-create.sh",
   "postStartCommand": "bash .devcontainer/post-start.sh",
 

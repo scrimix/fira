@@ -1,6 +1,6 @@
 # Sprint 34 — task-cli MVP: repository documents ↔ Fira
 
-**Status:** planned
+**Status:** built; dogfooding pending
 **Date:** 2026-11-11
 
 ## Goal
@@ -61,7 +61,8 @@ Fira stays fully editable.
 ### Completion
 
 - Subtasks: `[ ]` / `[x]` → not done / done.
-- Tasks: `[ ]` / `[~]` / `[x]` → `todo` / `in_progress` / `done`.
+- Tasks: ⬜ / 🚧 / ✅ → `todo` / `in_progress` / `done` (typed `[ ]` /
+  `[~]` / `[x]` are accepted and normalised to the emoji).
   `backlog` is deprecated: it imports as `[ ]` and the CLI never writes it.
   The CLI does not move tasks between list sections.
 
@@ -109,14 +110,14 @@ starts_on: 2026-11-09
 ends_on: 2026-11-23
 track: Platform
 tags: [frontend]
-assignee: rihard
+assignee: rihard.g
 ---
 
 # Initial scaffolding
 
 Sprint description: any prose, including plain headings.
 
-## [ ] Application shell
+## ⬜ Application shell
 <!-- task: id=<automatically inserted UUID> tags=frontend,layout estimate=4h -->
 
 Build the application shell.
@@ -128,12 +129,12 @@ Build the application shell.
 - [x] Navigation
 - [ ] Sidebar
 
-## [~] Routing
+## 🚧 Routing
 <!-- task: id=<automatically inserted UUID> -->
 ```
 
 - The top `#` heading is the sprint title. A heading that starts with a
-  checkbox (`[ ]`, `[~]`, `[x]`) is a task. Everything between the title and
+  status marker (⬜ 🚧 ✅, or a typed `[ ]`/`[~]`/`[x]`) is a task. Everything between the title and
   the first task is the sprint description.
 - A task's body runs to the next task heading. A `Subtasks` heading directly
   under the task holds its checklist.
@@ -147,8 +148,8 @@ Build the application shell.
 The same task format, one task per file, with the title as the top heading:
 
 ```md
-# [ ] Login redirects to the wrong page
-<!-- task: id=<automatically inserted UUID> tags=bug,authentication assignee=rihard -->
+# ⬜ Login redirects to the wrong page
+<!-- task: id=<automatically inserted UUID> tags=bug,authentication assignee=rihard.g -->
 
 After signing in, the user lands on an empty screen.
 
@@ -180,7 +181,7 @@ type checkbox variants like `[ x ]` by hand. So:
   `[ ~ ]`, `[ ]`. `publish`, `import` and `diff` work on such files without
   running `fmt` first.
 - **`task-cli fmt` normalises structure only:** moves each `task:` comment
-  directly under its heading, rewrites checkboxes to `[ ]` / `[~]` / `[x]`,
+  directly under its heading, rewrites status markers to ⬜ / 🚧 / ✅,
   inserts missing IDs, and orders comment keys (`id` first). It never
   changes prose, blank lines inside descriptions, or wrapping, and follows
   the local file safety rules.
@@ -201,28 +202,28 @@ keys equal to the sprint's values are omitted to keep the file clean.
 
 ## Identity and structured fields
 
-- [ ] Generate sprint/task UUIDs locally and insert them on first publish or
+- [x] Generate sprint/task UUIDs locally and insert them on first publish or
       on an explicit `task-cli fmt`. Reject duplicate IDs across `tasks/`
       (e.g. a copy-pasted task block).
-- [ ] Fira API: create sprints and tasks with client-supplied UUIDs from the
+- [x] Fira API: create sprints and tasks with client-supplied UUIDs from the
       CLI, as the web client already does.
-- [ ] Fira API: report whether a task/sprint ID exists, was deleted, or never
+- [x] Fira API: report whether a task/sprint ID exists, was deleted, or never
       existed. Deletes are hard, but `task.delete` ops remain in
       `processed_ops`, which is never pruned.
-- [ ] Parse Markdown with a real parser; headings, checklists and `task:`
+- [x] Parse Markdown with a real parser; headings, checklists and `task:`
       comments inside fenced code blocks are content.
-- [ ] Implement tolerant parsing and `fmt` as described above; test against
+- [x] Implement tolerant parsing and `fmt` as described above; test against
       files saved by a WYSIWYG editor (blank lines around comments) and
       hand-typed checkbox variants (`[ x ]`).
-- [ ] Treat subtasks as an ordered value list of title and completion.
+- [x] Treat subtasks as an ordered value list of title and completion.
       Publish additions, edits, order, and removals to match it. Subtasks have
       no user-visible IDs.
-- [ ] Support task title, description, completion, sprint membership, tags,
+- [x] Support task title, description, completion, sprint membership, tags,
       assignee, and estimate; sprint title, dates, track, and default
       tags/assignee.
-- [ ] Resolve users explicitly and tags/tracks within project scope. Never
+- [x] Resolve users explicitly and tags/tracks within project scope. Never
       silently pick an ambiguous display name or create memberships.
-- [ ] Unsupported Fira fields, including list section, remain unmanaged;
+- [x] Unsupported Fira fields, including list section, remain unmanaged;
       spent time and audit history are never overwritten.
 
 ## CLI
@@ -242,15 +243,15 @@ task-cli diff    [file...]                 # read-only: working copy vs Fira
 A task import need not select a sprint; without `--into` it lands in
 `tasks/single/`.
 
-- [ ] Fetch current remote state, validate scope, and show the field-level
+- [x] Fetch current remote state, validate scope, and show the field-level
       diff before every import and publication; ask before writing.
       `--dry-run` never mutates. Without a TTY the CLI fails unless
       `--prefer local|remote` is given, which answers every differing field
       in that direction for unattended runs.
-- [ ] Show subtask list changes in the diff.
-- [ ] Refuse writes when remote state changed between preview and write, using
+- [x] Show subtask list changes in the diff.
+- [x] Refuse writes when remote state changed between preview and write, using
       server-side revision preconditions.
-- [ ] Make retries safe. Because IDs are assigned locally, creates are
+- [x] Make retries safe. Because IDs are assigned locally, creates are
       idempotent; an interrupted run is resumed by publishing again.
 
 ### Diff mode
@@ -389,17 +390,17 @@ task-cli help agents            # everything an LLM agent needs, in one page
 
 ## Authentication and installation
 
-- [ ] Add scoped, revocable Fira automation tokens, storing token hashes on the
+- [x] Add scoped, revocable Fira automation tokens, storing token hashes on the
       server and enforcing existing workspace/project authorization. Do not
       reuse browser cookies.
-- [ ] Keep credentials outside the repo, each developer using their own.
+- [x] Keep credentials outside the repo, each developer using their own.
       Support a permission-restricted config directory mounted as a
       persistent dev-container volume. `tasks/config.toml` contains only
       non-secret connection and project data.
-- [ ] Build `task-cli` as a separate Rust crate `cli/`, not a bin in `api/`,
+- [x] Build `task-cli` as a separate Rust crate `cli/`, not a bin in `api/`,
       so the server's dependencies stay out of it. It talks to Fira over HTTP
       with an automation token like any other client.
-- [ ] Install with `cargo install --git … --tag cli-v…`. Prebuilt releases
+- [x] Install with `cargo install --git … --tag cli-v…`. Prebuilt releases
       follow in sprint 35.
 
 ## Test scenario: basic workflow
@@ -466,34 +467,34 @@ Run end to end against a dev Fira instance, never production.
 
 ## Acceptance criteria
 
-- [ ] Handwrite a sprint file and a single task without IDs, preview, confirm
+- [x] Handwrite a sprint file and a single task without IDs, preview, confirm
       publication, and see the same UUIDs in the files and in Fira.
-- [ ] Repeated publication has an empty diff. Renaming a file, retitling a
+- [x] Repeated publication has an empty diff. Renaming a file, retitling a
       task, or moving a task between files keeps its identity.
-- [ ] Changing sprint `tags` shows the change on every inheriting task; a task
+- [x] Changing sprint `tags` shows the change on every inheriting task; a task
       with its own `tags=` is unaffected.
-- [ ] Subtask edits/reorder/removal round-trip as an ordered checklist.
-- [ ] `[ ]` / `[~]` / `[x]` round-trip as `todo` / `in_progress` / `done`; a
+- [x] Subtask edits/reorder/removal round-trip as an ordered checklist.
+- [x] ⬜ / 🚧 / ✅ (or typed `[ ]` / `[~]` / `[x]`) round-trip as `todo` / `in_progress` / `done`; a
       `backlog` task imports as `[ ]`; list sections are never changed.
-- [ ] Import existing Fira work, edit it locally and publish; no duplicates,
+- [x] Import existing Fira work, edit it locally and publish; no duplicates,
       and a field also edited in Fira shows up in the diff for a decision.
-- [ ] Removing a task block locally and publishing leaves it untouched in Fira
+- [x] Removing a task block locally and publishing leaves it untouched in Fira
       and lists it as "only in Fira". Deleting a task in Fira makes the next
       publish ask what to do. The CLI never deletes remotely.
-- [ ] Import a Fira sprint into a new file, then again after remote edits;
+- [x] Import a Fira sprint into a new file, then again after remote edits;
       the second import updates the same file and moves nothing silently.
-- [ ] With unstaged edits in a sprint file, `fmt`, `import` and `publish`
+- [x] With unstaged edits in a sprint file, `fmt`, `import` and `publish`
       change only the lines named in the accepted diff. Saving the file in an
       editor while the prompt is open makes the CLI skip that file.
-- [ ] `task-cli diff` writes nothing and exits 0 only when in sync.
+- [x] `task-cli diff` writes nothing and exits 0 only when in sync.
 - [ ] An LLM agent given only "run `task-cli help agents`" can create a valid
       sprint file, run `fmt` and `diff --json`, and stops before publishing
       without explicit permission.
-- [ ] The scenario passes with `tasks/` as a plain directory and as a
+- [x] The scenario passes with `tasks/` as a plain directory and as a
       submodule.
-- [ ] Cancellation, stale state, missing permissions, interrupted requests, and
+- [x] Cancellation, stale state, missing permissions, interrupted requests, and
       partial API failures preserve data and give actionable recovery steps.
-- [ ] Parser, authorization, idempotency, and end-to-end tests, including
+- [x] Parser, authorization, idempotency, and end-to-end tests, including
       fenced Markdown, duplicate IDs, and inheritance.
 
 ## Out of scope
@@ -503,3 +504,100 @@ remote-HEAD diff, `delete`, release pipeline). Also: calendar, time logging,
 automatic merging beyond an explicit `--prefer`, stored sync state,
 background sync, LLM-driven interpretation, and automatic task
 splitting/merging.
+
+## Built
+
+**Server** ([`api/src/cli_api.rs`](../../api/src/cli_api.rs), migration
+[`0037_task_cli.sql`](../../api/migrations/0037_task_cli.sql)):
+
+- `automation_tokens`: per (user, workspace), sha256 hash only, read-only or
+  write, revocable. Membership is re-checked on every request. Tokens are
+  accepted *only* by `/api/cli/*` (the `CliCtx` extractor); every other
+  route still requires a browser session, so a token cannot bootstrap,
+  change settings or mint tokens. Managed in Account settings →
+  Automation tokens (`GET/POST /api/automation-tokens`,
+  `DELETE /api/automation-tokens/:id`, session only).
+- `revision` on `tasks` and `sprints`, from one sequence, bumped by
+  triggers when a field the CLI manages changes. Child rows (subtasks,
+  task tags, sprint default tags) bump their parent. `sort_key` and
+  `updated_at` churn does not, so dragging in the UI causes no false
+  conflicts.
+- `GET /api/cli/whoami`; `POST /api/cli/fetch` returns the project's
+  members (with `active`), tags, tracks, the requested sprints and tasks
+  with revisions, and `missing` for each requested id: `deleted` (a delete
+  op is in the project's `processed_ops`), `other_project`, or `never`.
+  Only projects in the caller's scope are consulted.
+- `POST /api/cli/apply`: preconditions plus ops in **one transaction**.
+  Revisions are locked `FOR UPDATE` and checked (409 lists the conflicts);
+  every op goes through the same `ops::apply_payload` as the web outbox and
+  is logged to `processed_ops` with `pg_notify`, so open browsers update
+  live. An allow-list rejects deletes of tasks/sprints, blocks and goals.
+  A retried `op_id` is skipped. The `processed_ops` insert was factored
+  out of `apply_one` into `ops::log_op` so both paths share it.
+
+**CLI** ([`cli/`](../../cli/), a standalone crate with no dependency on
+`fira-api`): `doc.rs` (pulldown-cmark structure, tolerant parsing with
+byte ranges), `write.rs` (fmt, surgical task/frontmatter edits,
+inheritance-aware comments, block moves, rendering), `sync.rs` (canonical
+model on both sides, comparison, allowed choices per field, plan of ops and
+local edits), `ui.rs` (text/JSON diff, pager, per-field prompts),
+`safety.rs` (hash check, `.git/task-cli/backups`, atomic writes, read-only
+git). Help pages are compiled in (`help format|workflow|agents`).
+
+Decisions made while building:
+
+- Login pastes a token created in the web UI (or pipes it in for CI;
+  `TASK_CLI_FIRA_TOKEN` also works). Credentials live in
+  `~/.config/task-cli/credentials.toml` (0600). The dev container bind-mounts the
+  host's directory, so one login serves every project's container. Login also fills `workspace_id`/`project_id` in
+  `config.toml`.
+- Tags and tracks are project structure, managed only by project leads
+  and workspace owners. The server now enforces that for every `tag.*` and
+  `track.*` op (`ensure_scope::require_project_lead`), which closes a hole
+  where any member could create them. The web pickers no longer offer
+  "create" (tags live in project settings), and plan-view track controls
+  show only for editors. The CLI never creates them: a tag or track named
+  in a file that isn't in Fira stops the run before the diff, listing the
+  existing ones. A name differing only in case is the same error with the
+  right spelling. The `dev` role no longer creates tracks either.
+- Assignees are written as handles, never emails: first name, dot, and
+  the shortest surname prefix that is unique among the project's
+  *members* (`maya.c`; `maya.ch`/`maya.co` when two collide; `-2` for
+  identical names). Reading is exact: no prefix matching, so a handle
+  that stops fitting (rename, someone leaving, a newcomer lengthening it)
+  matches nobody and the error suggests the likely member. Former members
+  referenced by old tasks never shift members' handles. A full email is
+  also accepted. Only active members can be newly assigned.
+- Task headings carry an emoji status (⬜ 🚧 ✅) instead of `[ ]`/`[~]`/`[x]`:
+  a checkbox only renders inside a list item, so in a heading it showed
+  as literal brackets in every viewer. Typed brackets are still accepted;
+  `fmt` (and any status change by publish/import) writes the emoji.
+  Subtasks stay a standard `- [ ]` task list (VS Code's built-in preview
+  needs the `bierner.markdown-checkbox` extension to draw those).
+- Choices that can't be applied are refused with a reason. Two cases:
+  clearing sprint dates (no op exists for it), and moving a task to a
+  sprint that has no local file (import the sprint first).
+- When a sprint's tags or assignee change, tasks that inherited the old
+  value get it written explicitly, so they don't change silently.
+- A Subtasks section must be last in its task, and subtasks are one line
+  each. Text after the list is an error rather than being dropped.
+- A remote write happens before local writes. If a file changed on disk
+  while the prompt was open, nothing is written at all. If it changes in
+  the tiny window after the remote write, that file is skipped with a
+  message, and a rerun brings it in line.
+
+Verified: 66 existing API tests plus 8 new ones (revisions, all-or-nothing
+apply, stale preconditions, idempotent retry, rejected kinds, existence,
+token hashing/revocation/membership); 32 CLI unit tests (parser, fmt
+idempotence, surgical edits, inheritance, subtask op planning). The
+14-step test scenario was run end to end against a local API on a scratch
+database. Also checked: a Fira edit while the prompt is open gives a 409
+and nothing is written; an editor save while the prompt is open aborts
+the run; no-TTY publish fails with the hint; sprint import into a new
+file; task import by link; a remote sprint move relocating a block and
+removing its single file; a sprint-defaults change pinning tasks; `tasks/`
+as a submodule (backups land in `.git/modules/tasks/`).
+
+Still open: dogfooding on this repository for a week, the LLM-agent
+acceptance check, and enabling write tokens against production.
+

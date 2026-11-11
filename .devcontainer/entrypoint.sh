@@ -9,6 +9,7 @@ set -eu
 for path in \
   /workspace/web/node_modules \
   /workspace/api/target \
+  /workspace/cli/target \
   /home/vscode/.cargo/registry \
   /home/vscode/.cargo \
   /home/vscode/.claude \
@@ -18,5 +19,10 @@ do
     chown -R vscode:vscode "$path" || echo "warn: chown $path failed (continuing)"
   fi
 done
+
+# Docker creates the parent of a nested mountpoint root-owned too.
+if [ -d /home/vscode/.config ]; then
+  chown vscode:vscode /home/vscode/.config || true
+fi
 
 exec sleep infinity

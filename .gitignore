@@ -33,3 +33,5 @@ storage/
 web/scripts/visual-check-out/
 # Database dumps (ops/backup) — production data, never commit
 *.dump
+
+tasks/

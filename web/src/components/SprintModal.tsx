@@ -14,7 +14,6 @@ export function SprintModal({ sprint, onClose }: { sprint: Sprint; onClose: () =
   const tags = useFira(s => s.tags);
   const setTitleOnSprint = useFira(s => s.setSprintTitle);
   const setDefaults = useFira(s => s.setSprintDefaults);
-  const addTag = useFira(s => s.addTag);
   const downOnBackdrop = useRef(false);
   useEffect(() => {
     const escape = (event: KeyboardEvent) => {
@@ -54,7 +53,7 @@ export function SprintModal({ sprint, onClose }: { sprint: Sprint; onClose: () =
             onChange={id => setAssignee(id || null)} />
         <div className="np-label">Default tags</div>
           <TagEditor projectId={sprint.project_id} selected={tagIds} allTags={tags}
-            onChange={setTagIds} onCreate={name => addTag(sprint.project_id, name, '#334155')} />
+            onChange={setTagIds} />
         <div className="np-hint">Defaults apply to new tasks added in this sprint.</div>
         <div className="np-actions">
           <button className="btn" onClick={onClose}>Cancel</button>

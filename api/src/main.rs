@@ -15,6 +15,7 @@ use tower_http::trace::TraceLayer;
 
 use fira_api::{
     attachments,
+    cli_api,
     auth::{self, AuthConfig, AuthCtx},
     db,
     error::{self, ApiResult},
@@ -633,6 +634,16 @@ async fn main() -> anyhow::Result<()> {
         .route("/invites/:id/decline", post(invites::decline))
         .route("/tasks/:id/move", post(move_task::move_task))
         .route("/ops", post(ops::post_ops))
+        // task-cli (sprint 34). Token management needs a browser session;
+        // the /cli routes accept only automation tokens (see cli_api.rs).
+        .route(
+            "/automation-tokens",
+            get(cli_api::list_tokens).post(cli_api::create_token),
+        )
+        .route("/automation-tokens/:id", delete(cli_api::revoke_token))
+        .route("/cli/whoami", get(cli_api::whoami))
+        .route("/cli/fetch", post(cli_api::fetch))
+        .route("/cli/apply", post(cli_api::apply))
         .route("/changes", get(ops::get_changes));
 
     let attachments_router = Router::new()

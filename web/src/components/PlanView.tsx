@@ -4,6 +4,7 @@ import {
   ChevronUp, PanelLeft, Plus, Trash2,
 } from 'lucide-react';
 import { useFira } from '../store';
+import { useCanEditProject } from '../permissions';
 import { api } from '../api';
 import { EDITORIAL_COLORS } from '../colors';
 import type { PlanHistory, PlanRevisionList } from '../planHistory';
@@ -186,6 +187,8 @@ function PlanBoard({ projectId }: { projectId: UUID | null }) {
   const togglePlanRetro = useFira((s) => s.togglePlanRetro);
 
   const addTrack = useFira((s) => s.addTrack);
+  // Tracks are project structure: leads and the workspace owner only.
+  const canEditProject = useCanEditProject();
   const setTrackTitle = useFira((s) => s.setTrackTitle);
   const setTrackColor = useFira((s) => s.setTrackColor);
   const deleteTrack = useFira((s) => s.deleteTrack);
@@ -639,8 +642,12 @@ function PlanBoard({ projectId }: { projectId: UUID | null }) {
         </div>}
         <div className="week-nav plan-adds" role="group" aria-label="Add">
           <button className="week-nav-btn"
-                  disabled={readOnly || !projectId}
-                  title={projectId ? "Add a track — one row on the board" : "Select a project to add a track"}
+                  disabled={readOnly || !projectId || !canEditProject(projectId)}
+                  title={!projectId
+                    ? "Select a project to add a track"
+                    : canEditProject(projectId)
+                      ? "Add a track — one row on the board"
+                      : "Tracks are managed by project leads"}
                   onClick={() => projectId && addTrack(projectId, 'New track')}>
             <Plus size={12} strokeWidth={1.75} /> Track
           </button>
@@ -709,16 +716,16 @@ function PlanBoard({ projectId }: { projectId: UUID | null }) {
                 nowWeek={snapshot.nowWeek}
                 dragging={drag?.moved ? drag.sprintId : null}
                 dropping={drag?.moved ? drag.curTrackId === row.id && sprints.find((sp) => sp.id === drag.sprintId)?.project_id === row.projectId : false}
-                onRename={row.id ? (title) => setTrackTitle(row.id!, title) : undefined}
-                onColor={row.id ? (color) => setTrackColor(row.id!, color) : undefined}
-                onDelete={row.id ? () => setConfirmTrack(row.id) : undefined}
-                onMoveUp={row.id && i > 0 && rows[i - 1].projectId === row.projectId && rows[i - 1].id ? () => {
+                onRename={row.id && canEditProject(row.projectId) ? (title) => setTrackTitle(row.id!, title) : undefined}
+                onColor={row.id && canEditProject(row.projectId) ? (color) => setTrackColor(row.id!, color) : undefined}
+                onDelete={row.id && canEditProject(row.projectId) ? () => setConfirmTrack(row.id) : undefined}
+                onMoveUp={row.id && canEditProject(row.projectId) && i > 0 && rows[i - 1].projectId === row.projectId && rows[i - 1].id ? () => {
                   const ids = rows.filter((r) => r.projectId === row.projectId && r.id).map((r) => r.id!) ;
                   const at = ids.indexOf(row.id!);
                   [ids[at - 1], ids[at]] = [ids[at], ids[at - 1]];
                   reorderTracks(row.projectId, ids);
                 } : undefined}
-                onMoveDown={row.id && i < rows.length - 1 && rows[i + 1].projectId === row.projectId && rows[i + 1].id ? () => {
+                onMoveDown={row.id && canEditProject(row.projectId) && i < rows.length - 1 && rows[i + 1].projectId === row.projectId && rows[i + 1].id ? () => {
                   const ids = rows.filter((r) => r.projectId === row.projectId && r.id).map((r) => r.id!);
                   const at = ids.indexOf(row.id!);
                   [ids[at], ids[at + 1]] = [ids[at + 1], ids[at]];

@@ -9,6 +9,7 @@
 
 pub mod attachments;
 pub mod auth;
+pub mod cli_api;
 pub mod db;
 pub mod ensure_scope;
 pub mod error;

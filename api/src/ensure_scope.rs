@@ -37,6 +37,39 @@ pub async fn require_project_access(
     Ok(())
 }
 
+/// Tags and tracks are project structure: only project leads/owners and
+/// workspace owners create, rename, recolour, reorder or delete them.
+/// Members use them (tag a task, put a sprint on a track) but can't change
+/// them. Same rule as `db::has_project_lead_authority`, inside the op's
+/// transaction. Call after the scope check, which proves the project is
+/// in the caller's workspace.
+pub async fn require_project_lead(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+    workspace_id: Uuid,
+    project_id: Uuid,
+    what: &str,
+) -> anyhow::Result<()> {
+    let ok: bool = sqlx::query_scalar(
+        "SELECT EXISTS (
+             SELECT 1 FROM workspace_members
+             WHERE workspace_id = $3 AND user_id = $2 AND removed_at IS NULL AND role = 'owner'
+         ) OR EXISTS (
+             SELECT 1 FROM project_members
+             WHERE project_id = $1 AND user_id = $2 AND removed_at IS NULL AND role IN ('lead', 'owner')
+         )",
+    )
+    .bind(project_id)
+    .bind(user_id)
+    .bind(workspace_id)
+    .fetch_one(&mut **tx)
+    .await?;
+    if !ok {
+        anyhow::bail!("{what} are managed by project leads and workspace owners");
+    }
+    Ok(())
+}
+
 pub async fn ensure_task_in_scope(
     tx: &mut Transaction<'_, Postgres>,
     user_id: Uuid,

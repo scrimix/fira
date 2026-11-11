@@ -522,35 +522,21 @@ async fn apply_one(
 
         // Log + idempotency: PK conflict on op_id means a concurrent retry
         // of the same op_id won. Roll back so we don't double-apply.
-        let inserted: Option<(i64,)> = sqlx::query_as(
-            "INSERT INTO processed_ops (op_id, user_id, kind, payload, project_id, workspace_id, block_user_id)
-             VALUES ($1, $2, $3, $4, $5, $6, $7)
-             ON CONFLICT (op_id) DO NOTHING
-             RETURNING seq",
+        let logged = log_op(
+            &mut tx,
+            &op_id,
+            user_id,
+            &kind,
+            &payload_value,
+            project_id,
+            workspace_id,
+            block_owner,
         )
-        .bind(&op_id)
-        .bind(user_id)
-        .bind(&kind)
-        .bind(&payload_value)
-        .bind(project_id)
-        .bind(workspace_id)
-        .bind(block_owner)
-        .fetch_optional(&mut *tx)
         .await?;
-
-        let seq = match inserted {
-            Some((s,)) => s,
-            None => {
-                tx.rollback().await?;
-                return Ok(ApplyOutcome::AlreadyApplied);
-            }
-        };
-        // Nudge: fires only on commit (NOTIFY is transactional). Listeners
-        // on every API instance receive it and dispatch to local WS clients.
-        sqlx::query("SELECT pg_notify('ops_changes', $1)")
-            .bind(crate::pubsub::format_payload(workspace_id, seq))
-            .execute(&mut *tx)
-            .await?;
+        if !logged {
+            tx.rollback().await?;
+            return Ok(ApplyOutcome::AlreadyApplied);
+        }
         tx.commit().await?;
         Ok(ApplyOutcome::Applied)
     })
@@ -584,6 +570,49 @@ async fn apply_one(
         Ok(o) => Ok((op_id, o)),
         Err(e) => Err((op_id, e)),
     }
+}
+
+/// Append an applied op to the change log and nudge listeners. Returns
+/// `false` when `op_id` is already in the log, i.e. this is a retry of an
+/// op that was applied before; the caller must then roll back its own
+/// writes so nothing is applied twice.
+///
+/// The NOTIFY fires only on commit (it is transactional). Listeners on
+/// every API instance receive it and dispatch to local WS clients.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn log_op(
+    tx: &mut Transaction<'_, Postgres>,
+    op_id: &str,
+    user_id: Uuid,
+    kind: &str,
+    payload: &serde_json::Value,
+    project_id: Option<Uuid>,
+    workspace_id: Uuid,
+    block_owner: Option<Uuid>,
+) -> sqlx::Result<bool> {
+    let inserted: Option<(i64,)> = sqlx::query_as(
+        "INSERT INTO processed_ops (op_id, user_id, kind, payload, project_id, workspace_id, block_user_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         ON CONFLICT (op_id) DO NOTHING
+         RETURNING seq",
+    )
+    .bind(op_id)
+    .bind(user_id)
+    .bind(kind)
+    .bind(payload)
+    .bind(project_id)
+    .bind(workspace_id)
+    .bind(block_owner)
+    .fetch_optional(&mut **tx)
+    .await?;
+    let Some((seq,)) = inserted else {
+        return Ok(false);
+    };
+    sqlx::query("SELECT pg_notify('ops_changes', $1)")
+        .bind(crate::pubsub::format_payload(workspace_id, seq))
+        .execute(&mut **tx)
+        .await?;
+    Ok(true)
 }
 
 /// Check a goal's scope refs resolve inside the caller's view of this
@@ -959,6 +988,7 @@ pub async fn apply_payload(
         }
         Op::TagCreate { tag } => {
             require_project_access(tx, user_id, workspace_id, tag.project_id).await?;
+            require_project_lead(tx, user_id, workspace_id, tag.project_id, "tags").await?;
             *out_project_id = Some(tag.project_id);
             sqlx::query(
                 "INSERT INTO tags (id, project_id, title, color)
@@ -973,7 +1003,9 @@ pub async fn apply_payload(
             .await?;
         }
         Op::TagSetTitle { tag_id, title } => {
-            *out_project_id = Some(ensure_tag_in_scope(tx, user_id, workspace_id, tag_id).await?);
+            let project_id = ensure_tag_in_scope(tx, user_id, workspace_id, tag_id).await?;
+            require_project_lead(tx, user_id, workspace_id, project_id, "tags").await?;
+            *out_project_id = Some(project_id);
             sqlx::query("UPDATE tags SET title = $2 WHERE id = $1")
                 .bind(tag_id)
                 .bind(&title)
@@ -981,7 +1013,9 @@ pub async fn apply_payload(
                 .await?;
         }
         Op::TagSetColor { tag_id, color } => {
-            *out_project_id = Some(ensure_tag_in_scope(tx, user_id, workspace_id, tag_id).await?);
+            let project_id = ensure_tag_in_scope(tx, user_id, workspace_id, tag_id).await?;
+            require_project_lead(tx, user_id, workspace_id, project_id, "tags").await?;
+            *out_project_id = Some(project_id);
             sqlx::query("UPDATE tags SET color = $2 WHERE id = $1")
                 .bind(tag_id)
                 .bind(&color)
@@ -989,7 +1023,9 @@ pub async fn apply_payload(
                 .await?;
         }
         Op::TagDelete { tag_id } => {
-            *out_project_id = Some(ensure_tag_in_scope(tx, user_id, workspace_id, tag_id).await?);
+            let project_id = ensure_tag_in_scope(tx, user_id, workspace_id, tag_id).await?;
+            require_project_lead(tx, user_id, workspace_id, project_id, "tags").await?;
+            *out_project_id = Some(project_id);
             // task_tags rows cascade via FK ON DELETE CASCADE.
             sqlx::query("DELETE FROM tags WHERE id = $1")
                 .bind(tag_id)
@@ -1082,6 +1118,7 @@ pub async fn apply_payload(
         }
         Op::TrackCreate { track } => {
             require_project_access(tx, user_id, workspace_id, track.project_id).await?;
+            require_project_lead(tx, user_id, workspace_id, track.project_id, "tracks").await?;
             *out_project_id = Some(track.project_id);
             sqlx::query(
                 "INSERT INTO tracks (id, project_id, title, color, sort_key)
@@ -1097,8 +1134,9 @@ pub async fn apply_payload(
             .await?;
         }
         Op::TrackSetTitle { track_id, title } => {
-            *out_project_id =
-                Some(ensure_track_in_scope(tx, user_id, workspace_id, track_id).await?);
+            let project_id = ensure_track_in_scope(tx, user_id, workspace_id, track_id).await?;
+            require_project_lead(tx, user_id, workspace_id, project_id, "tracks").await?;
+            *out_project_id = Some(project_id);
             sqlx::query("UPDATE tracks SET title = $2 WHERE id = $1")
                 .bind(track_id)
                 .bind(&title)
@@ -1106,8 +1144,9 @@ pub async fn apply_payload(
                 .await?;
         }
         Op::TrackSetColor { track_id, color } => {
-            *out_project_id =
-                Some(ensure_track_in_scope(tx, user_id, workspace_id, track_id).await?);
+            let project_id = ensure_track_in_scope(tx, user_id, workspace_id, track_id).await?;
+            require_project_lead(tx, user_id, workspace_id, project_id, "tracks").await?;
+            *out_project_id = Some(project_id);
             sqlx::query("UPDATE tracks SET color = $2 WHERE id = $1")
                 .bind(track_id)
                 .bind(&color)
@@ -1119,6 +1158,7 @@ pub async fn apply_payload(
             ordered,
         } => {
             require_project_access(tx, user_id, workspace_id, project_id).await?;
+            require_project_lead(tx, user_id, workspace_id, project_id, "tracks").await?;
             *out_project_id = Some(project_id);
             // The project_id predicate *is* the authorization: ids inside
             // `ordered` are never trusted, so a forged list can't touch
@@ -1134,8 +1174,9 @@ pub async fn apply_payload(
             }
         }
         Op::TrackDelete { track_id } => {
-            *out_project_id =
-                Some(ensure_track_in_scope(tx, user_id, workspace_id, track_id).await?);
+            let project_id = ensure_track_in_scope(tx, user_id, workspace_id, track_id).await?;
+            require_project_lead(tx, user_id, workspace_id, project_id, "tracks").await?;
+            *out_project_id = Some(project_id);
             // Child sprints' track_id and member tasks' track_id both go
             // NULL via ON DELETE SET NULL (0001/0034). Nothing is
             // destroyed; the board shows the orphans in a "No track" row.

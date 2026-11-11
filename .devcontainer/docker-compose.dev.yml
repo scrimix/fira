@@ -20,6 +20,11 @@ services:
       - ./:/workspace:cached
       - dev-cargo-cache:/home/vscode/.cargo/registry
       - dev-cargo-target:/workspace/api/target
+      - dev-cli-target:/workspace/cli/target
+      # task-cli credentials (automation tokens): the host's own
+      # ~/.config/task-cli, shared by every project's container like ~/.ssh.
+      # initializeCommand in devcontainer.json creates it on the host first.
+      - ${HOME}/.config/task-cli:/home/vscode/.config/task-cli
       - dev-node-modules:/workspace/web/node_modules
       - dev-claude:/home/vscode/.claude
       - dev-vscode-server:/home/vscode/.vscode-server
@@ -52,6 +57,7 @@ services:
 volumes:
   dev-cargo-cache:
   dev-cargo-target:
+  dev-cli-target:
   dev-node-modules:
   dev-claude:
   dev-vscode-server:
