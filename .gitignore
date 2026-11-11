@@ -31,3 +31,5 @@ storage/
 
 # scripts/visual-check.mjs screenshot output
 web/scripts/visual-check-out/
+# Database dumps (ops/backup) — production data, never commit
+*.dump

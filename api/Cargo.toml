@@ -22,6 +22,10 @@ name = "aws_s3_example"
 path = "src/bin/aws_s3_example.rs"
 
 [[bin]]
+name = "fira-backup"
+path = "src/bin/backup.rs"
+
+[[bin]]
 name = "storage_test"
 path = "src/bin/storage_test.rs"
 
