@@ -30,8 +30,8 @@ try {
     const cached = after.blocks.map((b) => b.id);
     const linked = after.linkedBlocks.map((b) => b.id);
     after.setTaskTitle(privateTask.id, 'Developer edited task');
-    const track = after.addTrack(privateProject.id, 'Developer track');
-    const sprint = after.addSprint(privateProject.id, track, 'Developer sprint', '2026-10-12', '2026-10-19');
+    // Tracks are owner/lead structure; a dev plans sprints without creating one.
+    const sprint = after.addSprint(privateProject.id, null, 'Developer sprint', '2026-10-12', '2026-10-19');
     after.upsertBlock({ ...hidden, id: 'forbidden' });
     after.upsertBlock({ ...own, id: 'new-own' });
     const now = useFira.getState();
@@ -46,13 +46,13 @@ try {
     const final = useFira.getState();
     return { cached, linked, blocks: final.blocks.map((b) => b.id),
       taskTitle: final.tasks.find((task) => task.id === privateTask.id).title,
-      track: !!final.tracks.find((t) => t.id === track), sprint: !!final.sprints.find((s) => s.id === sprint) };
+      sprint: !!final.sprints.find((s) => s.id === sprint) };
   });
   assert.deepEqual(result.cached, ['own', 'visible']);
   assert.deepEqual(result.linked, ['visible']);
   assert.deepEqual(result.blocks, ['own', 'new-own', 'moved-own']);
   assert.equal(result.taskTitle, 'Developer edited task');
-  assert.ok(result.track && result.sprint);
+  assert.ok(result.sprint);
   await page.evaluate(async () => {
     const { useFira } = await import(performance.getEntriesByType('resource').find((entry) => entry.name.includes('/src/store/index.ts')).name);
     useFira.getState().openEditProject(useFira.getState().projects[0].id);

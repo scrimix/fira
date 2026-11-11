@@ -6,6 +6,15 @@ import type { AccountSummary, Attachment, Bootstrap, LinkedCalendar, PersonalCal
 // the api is on localhost or behind a docker service name.
 const BASE = '/api';
 
+export interface AutomationToken {
+  id: string;
+  name: string;
+  token_prefix: string;
+  can_write: boolean;
+  created_at: string;
+  last_used_at: string | null;
+}
+
 export class HttpError extends Error {
   constructor(public status: number, public path: string, body?: string) {
     super(body && body.length > 0 ? body : `${path} -> ${status}`);
@@ -237,6 +246,12 @@ export const api = {
     req<{ results: OpResult[] }>('POST', '/ops', { ops }),
   getChanges: (since: number) =>
     req<ChangesResponse>('GET', `/changes?since=${since}`),
+  // Automation tokens for task-cli (sprint 34). Scoped to the active
+  // workspace; the plaintext `token` comes back only from create.
+  listAutomationTokens: () => req<AutomationToken[]>('GET', '/automation-tokens'),
+  createAutomationToken: (name: string, can_write: boolean) =>
+    req<AutomationToken & { token: string }>('POST', '/automation-tokens', { name, can_write }),
+  revokeAutomationToken: (id: string) => req<void>('DELETE', `/automation-tokens/${id}`),
   listLinks: () => req<UserLink[]>('GET', '/links'),
   createLink: (email: string) =>
     req<UserLink>('POST', '/links', { email }),

@@ -13,7 +13,14 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential pkg-config libssl-dev ca-certificates curl git \
-        postgresql-client jq \
+        jq postgresql-common \
+    && rm -rf /var/lib/apt/lists/*
+
+# Postgres client matching production's major version (Debian's
+# default is 15; pg_dump refuses newer servers and pg_restore refuses newer
+# dumps). Newer than the compose server (16), which is fine. Used by ops/backup.
+RUN /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y \
+    && apt-get install -y --no-install-recommends postgresql-client-17 \
     && rm -rf /var/lib/apt/lists/*
 
 # Node + pnpm via corepack

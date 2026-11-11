@@ -1213,20 +1213,6 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.tag-editor-create {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  background: transparent;
-  border: 0;
-  border-top: 1px solid var(--rule);
-  color: var(--ink-3);
-  font-size: var(--fs-sm);
-  cursor: pointer;
-  text-align: left;
-}
-.tag-editor-create:hover { color: var(--ink); background: var(--paper-3); }
 
 /* Project tag editor — same bordered list as members, with a colored
  * dot, inline rename / recolor row, and a usage count. */
@@ -2159,4 +2145,84 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
   .project-scope { flex: 0 1 auto; }
   .topbar .ws-switcher { min-width: 0; max-width: 85px; }
   .topbar .ws-title { max-width: 60px; }
+}
+
+/* ---- Account → Automation tokens (task-cli) ---- */
+.tokens { display: flex; flex-direction: column; gap: 10px; }
+.tokens code { font-family: var(--font-mono); font-size: 0.95em; }
+
+/* Existing tokens: one bordered list, rows split by hairlines. */
+.tokens-list {
+  list-style: none; margin: 0; padding: 0;
+  border: 1px solid var(--rule-2);
+  border-radius: var(--r-sm);
+  background: var(--paper);
+}
+.tokens-item {
+  display: grid;
+  grid-template-columns: minmax(0, auto) 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  font-size: var(--fs-sm);
+}
+.tokens-item + .tokens-item { border-top: 1px solid var(--rule); }
+.tokens-name { color: var(--ink); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tokens-meta {
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.tokens-revoke {
+  background: none; border: 0; padding: 0;
+  font: inherit; font-size: var(--fs-xs);
+  color: var(--ink-3);
+  cursor: pointer;
+}
+.tokens-revoke:hover { color: var(--danger, #b42318); text-decoration: underline; }
+
+/* Create row: input, access switch and button share one height. */
+.tokens-form { display: flex; align-items: center; gap: 8px; }
+.tokens-input {
+  flex: 1; min-width: 0;
+  height: var(--control-h);
+  padding: 0 10px;
+  font: inherit; font-size: var(--fs-sm);
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--rule-2);
+  border-radius: var(--r-sm);
+  outline: 0;
+}
+.tokens-input:focus { border-color: var(--focus-line); }
+.tokens-form .list-tag-filter-mode,
+.tokens-form .list-tag-filter-mode-seg { height: var(--control-h); }
+
+/* The one-time plaintext: framed so it can't be missed. */
+.tokens-new {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--warn, #b07300);
+  border-radius: var(--r-sm);
+  background: var(--paper-2, var(--paper));
+}
+.tokens-new-label { font-size: var(--fs-xs); font-weight: 500; color: var(--warn, #b07300); }
+.tokens-new-row { display: flex; align-items: center; gap: 8px; }
+.tokens-new-value {
+  flex: 1; min-width: 0;
+  overflow-x: auto; white-space: nowrap;
+  padding: 6px 8px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-xs);
+  background: var(--paper);
+  color: var(--ink);
+  user-select: all;
+}
+
+@media (max-width: 560px) {
+  .tokens-form { flex-wrap: wrap; }
+  .tokens-input { flex-basis: 100%; }
+  .tokens-item { grid-template-columns: 1fr auto; }
+  .tokens-meta { grid-column: 1 / -1; grid-row: 2; }
 }

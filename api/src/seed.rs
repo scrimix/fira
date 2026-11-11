@@ -940,10 +940,12 @@ fn fixture_tags(f: &mut Fixture) {
             }
             let color = TAG_PALETTE[cursor % TAG_PALETTE.len()];
             cursor += 1;
-            // Before every task, so `task.create`'s tag_ids resolve.
+            // Before every task, so `task.create`'s tag_ids resolve. Made
+            // by a lead: tags are project structure, which members can't
+            // create.
             f.at(
                 w(-13),
-                id(t.assignee),
+                primary_user_id(),
                 Op::TagCreate {
                     tag: TagInput {
                         id: id(&tag_slug(t.project, title)),

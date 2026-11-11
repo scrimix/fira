@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Check, MoreVertical, Pencil, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, Check, MoreVertical, Pencil, Plus, Terminal, Trash2 } from 'lucide-react';
 import type { PlanSprint, PlanTask } from '../plan';
 import type { UUID } from '../types';
 import { createPortal } from 'react-dom';
@@ -188,7 +188,7 @@ export function PlanSprintCard({
             {sprint.title}
           </span>
         )}
-        {(onRename || onDelete) && <button ref={menuButton} type="button"
+        {<button ref={menuButton} type="button"
           className="plan-card-btn plan-sprint-menu-button" aria-label="Sprint actions" title="Sprint actions"
           aria-haspopup="menu" aria-expanded={!!menuRect}
           onPointerDown={(e) => e.stopPropagation()}
@@ -215,10 +215,10 @@ export function PlanSprintCard({
         </ClickTooltip>
       </div>
 
-      {menuRect && (onRename || onDelete) && createPortal(<div ref={menuRef}
+      {menuRect && createPortal(<div ref={menuRef}
         className="plan-sprint-menu" role="menu" aria-label="Sprint actions"
-        style={{ left: Math.max(8, Math.min(menuRect.right - 140, window.innerWidth - 148)),
-          top: menuRect.bottom + 76 < window.innerHeight ? menuRect.bottom + 4 : Math.max(8, menuRect.top - 76) }}
+        style={{ left: Math.max(8, Math.min(menuRect.right - 168, window.innerWidth - 176)),
+          top: menuRect.bottom + 104 < window.innerHeight ? menuRect.bottom + 4 : Math.max(8, menuRect.top - 104) }}
         onPointerDown={(e) => e.stopPropagation()}
         onKeyDown={(e) => {
           if (e.key === 'Escape') { e.stopPropagation(); setMenuRect(null); menuButton.current?.focus(); }
@@ -235,6 +235,14 @@ export function PlanSprintCard({
         {!onEdit && onRename && <button role="menuitem" onClick={() => { setMenuRect(null); setRenaming(true); }}>
           <Pencil size={12} /> Rename sprint
         </button>}
+        {/* The sprint id has no other place in the UI; task-cli needs
+            it to bring the sprint into a repository. */}
+        <button role="menuitem" onClick={() => {
+          setMenuRect(null);
+          void navigator.clipboard?.writeText(`task-cli import fira ${sprint.id}`);
+        }}>
+          <Terminal size={12} /> Copy import command
+        </button>
         {onDelete && <button role="menuitem" className="plan-sprint-menu-delete"
           onClick={() => { setMenuRect(null); onDelete(); }}><Trash2 size={12} /> Delete sprint</button>}
       </div>, document.body)}

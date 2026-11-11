@@ -89,7 +89,6 @@ export function TaskModal({ taskId }: Props) {
   const setTaskExternalUrl = useFira((s) => s.setTaskExternalUrl);
   const setTaskAssignee = useFira((s) => s.setTaskAssignee);
   const setTaskTags = useFira((s) => s.setTaskTags);
-  const addTag = useFira((s) => s.addTag);
   const deleteTask = useFira((s) => s.deleteTask);
   const updateBlock = useFira((s) => s.updateBlock);
   const deleteBlock = useFira((s) => s.deleteBlock);
@@ -344,7 +343,6 @@ export function TaskModal({ taskId }: Props) {
                   selected={task.tag_ids}
                   allTags={allTags}
                   onChange={(ids) => setTaskTags(task.id, ids)}
-                  onCreate={(title) => addTag(project.id, title, '#334155')}
                 />
               </>
             )}
@@ -541,7 +539,6 @@ export function TaskModal({ taskId }: Props) {
                   selected={task.tag_ids}
                   allTags={allTags}
                   onChange={(ids) => setTaskTags(task.id, ids)}
-                  onCreate={(title) => addTag(project.id, title, '#334155')}
                 />
               </div>
             )}
@@ -2310,17 +2307,17 @@ function AssigneeEditor({ value, users, meId, onChange }: {
 
 // Multi-select tag picker. Selected tags render as chips with × to remove;
 // `+` opens a popover that lists every project tag with a checkmark for the
-// already-selected ones, plus an inline "Create new" footer for tags that
-// don't exist yet. Each toggle / create fires a single `task.set_tags` op
-// (not per-add / per-remove), keeping the outbox tidy.
+// already-selected ones. Each toggle fires a single `task.set_tags` op
+// (not per-add / per-remove), keeping the outbox tidy. No "create" here:
+// tags are project structure, managed (created, renamed, recoloured,
+// deleted) by project leads in project settings; the server enforces it.
 export function TagEditor({
-  projectId, selected, allTags, onChange, onCreate,
+  projectId, selected, allTags, onChange,
 }: {
   projectId: UUID;
   selected: UUID[];
   allTags: Tag[];
   onChange: (ids: UUID[]) => void;
-  onCreate: (title: string) => UUID | null;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -2352,10 +2349,6 @@ export function TagEditor({
       : projectTags,
     [projectTags, trimmed, lower],
   );
-  const exactMatch = trimmed
-    ? projectTags.find((t) => t.title.toLowerCase() === lower) ?? null
-    : null;
-  const canCreate = trimmed.length > 0 && !exactMatch;
 
   useLayoutEffect(() => {
     if (!open || !wrapRef.current) {
@@ -2429,12 +2422,6 @@ export function TagEditor({
     }
   };
   const remove = (id: UUID) => onChange(selected.filter((x) => x !== id));
-  const create = () => {
-    if (!canCreate) return;
-    const id = onCreate(trimmed);
-    if (id) onChange([...selected, id]);
-    setQuery('');
-  };
 
   return (
     <div className="tag-editor" ref={wrapRef}>
@@ -2482,16 +2469,19 @@ export function TagEditor({
             className="tag-editor-search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search or create…"
+            placeholder="Search tags…"
             maxLength={40}
             onKeyDown={(e) => {
               if (e.key === 'Escape') { e.preventDefault(); setOpen(false); }
-              if (e.key === 'Enter' && canCreate) { e.preventDefault(); create(); }
+              if (e.key === 'Enter' && filtered.length === 1) { e.preventDefault(); toggle(filtered[0].id); setQuery(''); }
             }}
           />
           <div className="tag-editor-list">
-            {filtered.length === 0 && !canCreate && (
-              <div className="tag-editor-empty">No tags yet.</div>
+            {filtered.length === 0 && (
+              <div className="tag-editor-empty">
+                {projectTags.length === 0 ? 'No tags yet.' : 'No matching tag.'} Project leads add
+                tags in project settings.
+              </div>
             )}
             {filtered.map((t) => {
               const isOn = selectedSet.has(t.id);
@@ -2510,12 +2500,6 @@ export function TagEditor({
               );
             })}
           </div>
-          {canCreate && (
-            <button type="button" className="tag-editor-create" onClick={create}>
-              <Plus size={12} strokeWidth={1.75} />
-              <span>Create "{trimmed}"</span>
-            </button>
-          )}
         </div>,
         document.body,
       )}

@@ -3,6 +3,7 @@ import { Calendar, Link, Ticket, X } from 'lucide-react';
 import { useFira } from '../store';
 import { api, gcalConnectUrl, loginUrl } from '../api';
 import type { AccountSummary, Theme, UiStyle } from '../types';
+import { AutomationTokens } from './AutomationTokens';
 
 // Account settings: container for personal-account stuff that isn't
 // workspace-scoped. Replaces the topbar's two-avatar + link-button
@@ -329,6 +330,12 @@ export function AccountSettingsModal() {
               onSetAutoSync={setJiraAutoSync}
             />
           </Section>
+
+          {!playgroundMode && (
+            <Section title={`Automation tokens${activeWorkspace ? ` — ${activeWorkspace.title}` : ''}`}>
+              <AutomationTokens />
+            </Section>
+          )}
 
           <Section title="Mode badge">
             <div className="account-row">

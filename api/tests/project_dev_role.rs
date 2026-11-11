@@ -165,8 +165,12 @@ async fn dev_can_edit_plans_tasks_and_own_blocks_but_not_teammate_blocks(pool: P
         .status,
         "ok"
     );
+    // Tracks are project structure: a dev can't create one (owner/lead
+    // only), but plans sprints on the ones that exist.
     let track = Uuid::new_v4();
-    assert_eq!(send(&pool, DEV, json!({"kind":"track.create","track":{"id":track,"project_id":PRIVATE,"title":"Track","color":"#123456","sort_key":"M"}})).await.status, "ok");
+    let create_track = json!({"kind":"track.create","track":{"id":track,"project_id":PRIVATE,"title":"Track","color":"#123456","sort_key":"M"}});
+    assert_eq!(send(&pool, DEV, create_track.clone()).await.status, "error");
+    assert_eq!(send(&pool, OWNER, create_track).await.status, "ok");
     let sprint = Uuid::new_v4();
     assert_eq!(send(&pool, DEV, json!({"kind":"sprint.create","sprint":{"id":sprint,"project_id":PRIVATE,"track_id":track,"title":"Sprint","starts_on":"2026-10-12","ends_on":"2026-10-19","sort_key":"M"}})).await.status, "ok");
     assert_eq!(

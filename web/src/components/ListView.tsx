@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Check, ChevronDown, ChevronRight, Clock, ClockFading, Pencil } from 'lucide-react';
 import { useFira } from '../store';
+import { useCanEditProject } from '../permissions';
 import { ListTagFilter } from './TagFilter';
 import { useLongPress } from '../useLongPress';
 import { useAutosizeTextarea, useIsMobile } from '../hooks';
@@ -58,14 +59,10 @@ export function ListView() {
   const canCreateProject = myWorkspaceRole === 'owner';
 
   const project = projects.find((p) => p.id === listFilter.project_id);
-  // Workspace owner can edit any project; project leads/owners (the
-  // per-project role 'owner' carries the same edit power as 'lead', it
-  // just controls list visibility) can edit theirs. Members and outsiders
-  // see no pencil.
-  const myProjectMembership = project?.members.find((m) => m.user_id === meId) ?? null;
-  const canEditThisProject = myWorkspaceRole === 'owner'
-    || myProjectMembership?.role === 'lead'
-    || myProjectMembership?.role === 'owner';
+  // Workspace owner can edit any project; project leads/owners can edit
+  // theirs. Members and outsiders see no pencil.
+  const canEditProject = useCanEditProject();
+  const canEditThisProject = !!project && canEditProject(project.id);
 
   // Hooks must run unconditionally on every render — the empty-state branch
   // below is an early return, so all useState/useRef calls live above it.

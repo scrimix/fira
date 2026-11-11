@@ -1,0 +1,9 @@
+# Backup job app. Deploy with ops/backup/deploy.sh (the image builds api/, so
+# the build context must be the repo root).
+# then put the machine on a schedule (see README.md).
+app = 'fira-backup'
+primary_region = 'iad'
+
+# The job exits when done; never restart it in a loop.
+[[restart]]
+  policy = 'never'
