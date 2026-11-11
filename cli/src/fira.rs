@@ -78,6 +78,10 @@ pub struct RemoteTask {
     pub tag_ids: Vec<Uuid>,
     pub subtasks: Vec<RemoteSubtask>,
     pub revision: i64,
+    /// Absent from servers older than the CLI; new tasks then fall back
+    /// to keys that ignore existing order.
+    #[serde(default)]
+    pub sort_key: String,
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]

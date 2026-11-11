@@ -859,6 +859,24 @@ struct Ops<'a> {
     snap: &'a Snapshot,
     ops: Vec<OpEnvelope>,
     lines: Vec<String>,
+    /// Last sort_key handed out per sprint in this run.
+    last_key: HashMap<Uuid, String>,
+}
+
+/// A key strictly after `last` in byte order (how the web UI sorts),
+/// using the web's append scheme (`max + "~"`) with a 3-digit counter so
+/// repeated publishes don't grow keys by a character per task.
+fn next_sort_key(last: Option<&str>) -> String {
+    let Some(last) = last else { return "M~000".into() };
+    if let Some((head, tail)) = last.rsplit_once('~') {
+        if tail.len() == 3 && tail.bytes().all(|b| b.is_ascii_digit()) {
+            let n: u16 = tail.parse().unwrap_or(999);
+            if n < 999 {
+                return format!("{head}~{:03}", n + 1);
+            }
+        }
+    }
+    format!("{last}~000")
 }
 
 impl Ops<'_> {
@@ -873,6 +891,22 @@ impl Ops<'_> {
             .iter()
             .filter_map(|t| self.snap.tags.iter().find(|x| x.title == *t).map(|x| x.id))
             .collect()
+    }
+
+    fn sort_key_after_last(&mut self, sprint: Uuid) -> String {
+        let last = match self.last_key.get(&sprint) {
+            Some(k) => Some(k.clone()),
+            None => self
+                .snap
+                .tasks
+                .iter()
+                .filter(|t| t.sprint_id == Some(sprint) && !t.sort_key.is_empty())
+                .map(|t| t.sort_key.clone())
+                .max(),
+        };
+        let key = next_sort_key(last.as_deref());
+        self.last_key.insert(sprint, key.clone());
+        key
     }
 
     fn track_id(&self, title: Option<&String>) -> Option<Uuid> {
@@ -924,14 +958,21 @@ impl Ops<'_> {
         match remote {
             None => {
                 let tag_ids = self.tag_ids(&target.tags);
-                self.push(json!({"kind": "task.create", "task": {
+                let mut task = json!({
                     "id": target.id, "project_id": self.project_id, "sprint_id": target.sprint,
                     "assignee_id": target.assignee, "title": target.title,
                     "description_md": target.description,
                     "section": if target.status == Status::Done { "done" } else { "later" },
                     "status": target.status.fira(), "source": "local",
                     "estimate_min": target.estimate_min, "tag_ids": tag_ids,
-                }}));
+                });
+                // New sprint tasks go after the sprint's current last task,
+                // in file order. Order is not managed after creation.
+                if let Some(sid) = target.sprint {
+                    let key = self.sort_key_after_last(sid);
+                    task["sort_key"] = json!(key);
+                }
+                self.push(json!({"kind": "task.create", "task": task}));
                 for (i, s) in target.subtasks.iter().enumerate() {
                     self.push(json!({"kind": "subtask.create", "subtask": {
                         "id": Uuid::new_v4(), "task_id": target.id, "title": s.title,
@@ -1037,6 +1078,7 @@ pub fn plan(repo: &Repo, cmp: &Comparison, dec: &Decisions, project_id: Uuid) ->
         snap: &cmp.snap,
         ops: vec![],
         lines: vec![],
+        last_key: HashMap::new(),
     };
     let mut pre = vec![];
     let mut remote_lines = vec![];
@@ -1361,6 +1403,50 @@ mod tests {
             tasks: vec![],
             missing: vec![],
         }
+    }
+
+    #[test]
+    fn sort_keys_append_after_last() {
+        let cases = [
+            (None, "M~000"),
+            (Some("M"), "M~000"),
+            (Some("00003000"), "00003000~000"),
+            (Some("M~000"), "M~001"),
+            (Some("M~041"), "M~042"),
+            (Some("M~999"), "M~999~000"),
+            (Some("M~ab1"), "M~ab1~000"),
+            (Some("M~0001"), "M~0001~000"),
+        ];
+        for (last, want) in cases {
+            let got = next_sort_key(last);
+            assert_eq!(got, want, "after {last:?}");
+            if let Some(l) = last {
+                assert!(got.as_str() > l, "{got} must sort after {l}");
+            }
+        }
+    }
+
+    #[test]
+    fn new_sprint_tasks_follow_existing_order() {
+        let sid = Uuid::from_u128(7);
+        let mut sn = snap(&[]);
+        sn.tasks = serde_json::from_value(json!([
+            {"id": Uuid::from_u128(1), "sprint_id": sid, "title": "a", "description_md": "",
+             "status": "todo", "section": "later", "assignee_id": null, "estimate_min": null,
+             "tag_ids": [], "subtasks": [], "revision": 1, "sort_key": "00002000"},
+            {"id": Uuid::from_u128(2), "sprint_id": sid, "title": "b", "description_md": "",
+             "status": "todo", "section": "later", "assignee_id": null, "estimate_min": null,
+             "tag_ids": [], "subtasks": [], "revision": 1, "sort_key": "M"},
+            {"id": Uuid::from_u128(3), "sprint_id": null, "title": "c", "description_md": "",
+             "status": "todo", "section": "later", "assignee_id": null, "estimate_min": null,
+             "tag_ids": [], "subtasks": [], "revision": 1, "sort_key": "zzz"},
+        ]))
+        .unwrap();
+        let mut ops = Ops { project_id: Uuid::nil(), snap: &sn, ops: vec![], lines: vec![], last_key: HashMap::new() };
+        assert_eq!(ops.sort_key_after_last(sid), "M~000");
+        assert_eq!(ops.sort_key_after_last(sid), "M~001");
+        // A sprint with no tasks in Fira starts fresh.
+        assert_eq!(ops.sort_key_after_last(Uuid::from_u128(8)), "M~000");
     }
 
     #[test]

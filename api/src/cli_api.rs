@@ -363,6 +363,7 @@ pub struct CliTask {
     #[sqlx(skip)]
     pub subtasks: Vec<CliSubtask>,
     pub revision: i64,
+    pub sort_key: String,
 }
 
 #[derive(Serialize, sqlx::FromRow)]
@@ -435,7 +436,7 @@ pub async fn fetch_state(
     .await?;
     let mut tasks: Vec<CliTask> = sqlx::query_as(
         "SELECT id, sprint_id, title, description_md, status, section, assignee_id,
-                estimate_min, revision,
+                estimate_min, revision, sort_key,
                 ARRAY(SELECT tag_id FROM task_tags WHERE task_id = tasks.id ORDER BY tag_id) AS tag_ids
          FROM tasks
          WHERE project_id = $1 AND (id = ANY($2) OR sprint_id = ANY($3))
