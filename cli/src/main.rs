@@ -670,6 +670,24 @@ fn sync_run(repo: Repo, mode: Mode, scope: Scope, into: Option<usize>, opts: &Sy
                 )));
             }
         };
+        if !dl.sha256.is_empty() {
+            let got = attachments::sha256_hex(&data);
+            if got != dl.sha256 {
+                for f in &att_failed {
+                    eprintln!("attachment not written: {f}");
+                }
+                bail!(
+                    "downloaded {} does not match Fira's hash (expected {}, got {}, {} bytes); \
+                     it was not written, and no task files were written (Fira's side is done). \
+                     Run the command again; if it keeps failing, Fira's stored copy is damaged: \
+                     re-upload the file from a good copy",
+                    display_path(&dl.dest),
+                    dl.sha256,
+                    got,
+                    data.len()
+                );
+            }
+        }
         match writer.put_file(&dl.dest, dl.replaces.as_deref(), &data)? {
             safety::Outcome::Written => println!("wrote {}", display_path(&dl.dest)),
             safety::Outcome::Skipped(why) => {

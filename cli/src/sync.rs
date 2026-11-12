@@ -927,6 +927,9 @@ pub struct RemoteDelete {
 pub struct Download {
     pub id: Uuid,
     pub dest: PathBuf,
+    /// Fira's hash of the file; the download is refused if the bytes don't
+    /// match. Empty when Fira couldn't hash its copy (then unchecked).
+    pub sha256: String,
     /// Hash of the local file being replaced, if any; skipped if the file
     /// changed since the preview.
     pub replaces: Option<String>,
@@ -996,7 +999,7 @@ fn attachment_downloads(root: &std::path::Path, task_id: Uuid, have: &[Attachmen
             Some(_) => format!("OVERWRITE {shown} with Fira's version ({})", attachments::human_size(a.size)),
             None => format!("download {shown} ({})", attachments::human_size(a.size)),
         });
-        out.push(Download { id: r.id, dest, replaces });
+        out.push(Download { id: r.id, dest, sha256: a.sha256.clone(), replaces });
     }
 }
 
