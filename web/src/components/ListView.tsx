@@ -69,6 +69,7 @@ export function ListView() {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({ done: true, someday: true });
   const [collapsedAssignee, setCollapsedAssignee] = useState<Record<UUID, boolean>>({});
   const [collapsedArchiveGroups, setCollapsedArchiveGroups] = useState<Record<string, boolean>>({});
+  const [confirmArchive, setConfirmArchive] = useState(false);
   const [dropTarget, setDropTarget] = useState<Section | null>(null);
   const [assigneeDropTarget, setAssigneeDropTarget] = useState<UUID | null>(null);
   const [rowDropAt, setRowDropAt] = useState<{ id: UUID; pos: 'before' | 'after' | 'merge' } | null>(null);
@@ -715,7 +716,7 @@ export function ListView() {
               </button>
             )}
             <button className="btn archive-btn"
-                    onClick={archiveDone}
+                    onClick={() => setConfirmArchive(true)}
                     disabled={archivable.length === 0}
                     title="Move every ticked task into the Done section">
               Archive ticked
@@ -996,6 +997,21 @@ export function ListView() {
           )}
         </div>
       </div>
+      {confirmArchive && (
+        <ConfirmDelete
+          title="Archive ticked tasks?"
+          confirmLabel={`Archive ${archivable.length}`}
+          tone="neutral"
+          body={
+            <p>
+              {archivable.length === 1 ? '1 ticked task moves' : `${archivable.length} ticked tasks move`} into
+              the Done section. Nothing is deleted.
+            </p>
+          }
+          onCancel={() => setConfirmArchive(false)}
+          onConfirm={() => { archiveDone(); setConfirmArchive(false); }}
+        />
+      )}
       {pendingMerge && (() => {
         const source = tasks.find((t) => t.id === pendingMerge.sourceId);
         const target = tasks.find((t) => t.id === pendingMerge.targetId);

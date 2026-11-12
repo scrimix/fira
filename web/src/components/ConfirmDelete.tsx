@@ -8,12 +8,15 @@ interface Props {
   confirmName?: string;
   // Defaults to "Delete".
   confirmLabel?: string;
+  // `neutral` for reversible actions (archive): a plain primary button
+  // instead of the red one.
+  tone?: 'danger' | 'neutral';
   onCancel: () => void;
   onConfirm: () => void;
 }
 
 export function ConfirmDelete({
-  title, body, confirmName, confirmLabel = 'Delete', onCancel, onConfirm,
+  title, body, confirmName, confirmLabel = 'Delete', tone = 'danger', onCancel, onConfirm,
 }: Props) {
   const [typed, setTyped] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
@@ -79,7 +82,7 @@ export function ConfirmDelete({
           <button className="btn" onClick={onCancel}>Cancel</button>
           <button
             ref={confirmRef}
-            className="btn confirm-danger"
+            className={tone === 'danger' ? 'btn confirm-danger' : 'btn np-create'}
             disabled={!matches}
             onClick={tryConfirm}
             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); tryConfirm(); } }}
