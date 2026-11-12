@@ -1065,6 +1065,9 @@ struct Ops<'a> {
     lines: Vec<String>,
     /// Last sort_key handed out per sprint in this run.
     last_key: HashMap<Uuid, String>,
+    /// Each sprint's dates after this run, for new tasks' section.
+    sprint_dates: HashMap<Uuid, (chrono::NaiveDate, chrono::NaiveDate)>,
+    today: chrono::NaiveDate,
 }
 
 /// A key strictly after `last` in byte order (how the web UI sorts),
@@ -1163,6 +1166,19 @@ impl Ops<'_> {
         self.ops.len() > before
     }
 
+    /// Done tasks go to Done; an assigned task in a sprint running today
+    /// goes to Now (the web allows Now only with an assignee); anything
+    /// else to Later.
+    fn new_section(&self, target: &Task) -> &'static str {
+        if target.status == Status::Done {
+            return "done";
+        }
+        match target.sprint.and_then(|s| self.sprint_dates.get(&s)) {
+            Some((a, b)) if target.assignee.is_some() && *a <= self.today && self.today < *b => "now",
+            _ => "later",
+        }
+    }
+
     fn task_ops(&mut self, remote: Option<(&Task, &[RemoteSubtask])>, target: &Task) -> bool {
         let before = self.ops.len();
         match remote {
@@ -1172,7 +1188,7 @@ impl Ops<'_> {
                     "id": target.id, "project_id": self.project_id, "sprint_id": target.sprint,
                     "assignee_id": target.assignee, "title": target.title,
                     "description_md": target.description,
-                    "section": if target.status == Status::Done { "done" } else { "later" },
+                    "section": self.new_section(target),
                     "status": target.status.fira(), "source": "local",
                     "estimate_min": target.estimate_min, "tag_ids": tag_ids,
                 });
@@ -1281,7 +1297,11 @@ pub fn subtask_ops(task_id: Uuid, have: &[RemoteSubtask], want: &[Subtask]) -> V
 }
 
 /// Turn the comparison and the user's decisions into writes.
-pub fn plan(repo: &Repo, cmp: &Comparison, dec: &Decisions, project_id: Uuid) -> Result<Plan> {
+/// `me` is the user running the command: a new task that names no
+/// assignee, in a sprint with no default ("Task creator" in Fira), is
+/// assigned to them, as the web assigns a task to whoever creates it.
+/// `today` places new sprint tasks in Now or Later.
+pub fn plan(repo: &Repo, cmp: &Comparison, dec: &Decisions, project_id: Uuid, me: Option<Uuid>, today: chrono::NaiveDate) -> Result<Plan> {
     let r = Resolver::new(&cmp.snap);
     let mut ops = Ops {
         project_id,
@@ -1289,6 +1309,8 @@ pub fn plan(repo: &Repo, cmp: &Comparison, dec: &Decisions, project_id: Uuid) ->
         ops: vec![],
         lines: vec![],
         last_key: HashMap::new(),
+        sprint_dates: cmp.snap.sprints.iter().filter_map(|s| Some((s.id, (s.starts_on?, s.ends_on?)))).collect(),
+        today,
     };
     let mut pre = vec![];
     let mut remote_lines = vec![];
@@ -1333,6 +1355,21 @@ pub fn plan(repo: &Repo, cmp: &Comparison, dec: &Decisions, project_id: Uuid) ->
         }
     }
 
+    for (id, s) in &sprint_local_target {
+        match s.dates {
+            Some(d) => ops.sprint_dates.insert(*id, d),
+            None => ops.sprint_dates.remove(id),
+        };
+    }
+
+    // Defaults each doc's tasks inherit after this run.
+    let doc_defaults_new = |doc: usize| -> Defaults {
+        match repo.sprint_ids[doc] {
+            Some(s) => defaults_of(sprint_local_target.get(&s.id).or(local_sprint(repo, doc, &r).ok().as_ref())),
+            None => Defaults::default(),
+        }
+    };
+
     let mut deletes_local: Vec<TaskRef> = vec![];
     // Each task's Fira sprint after this run, and the tasks it creates.
     let mut sprint_after: HashMap<Uuid, Option<Uuid>> = HashMap::new();
@@ -1361,6 +1398,21 @@ pub fn plan(repo: &Repo, cmp: &Comparison, dec: &Decisions, project_id: Uuid) ->
             }
             (Some(l), None) => match (e.state, dec.deleted.get(&e.id)) {
                 (State::New, _) if cmp.mode == Mode::Publish => {
+                    // What the task doesn't set comes from its sprint as it
+                    // stands after this run, which may have taken Fira's
+                    // defaults over a file that lacks them.
+                    let mut l = l.clone();
+                    if let Some(t) = e.task {
+                        let c = repo.docs[t.doc].tasks[t.task].comment.as_ref();
+                        let defaults = doc_defaults_new(t.doc);
+                        if c.and_then(|c| c.assignee.as_ref()).is_none() {
+                            l.assignee = defaults.assignee.or(me.filter(|u| r.is_active(*u)));
+                        }
+                        if c.and_then(|c| c.tags.as_ref()).is_none() {
+                            l.tags = defaults.tags;
+                        }
+                    }
+                    let l = &l;
                     sprint_after.insert(e.id, l.sprint);
                     created.push(e.id);
                     ops.task_ops(None, l);
@@ -1438,13 +1490,6 @@ pub fn plan(repo: &Repo, cmp: &Comparison, dec: &Decisions, project_id: Uuid) ->
     let mut new_sprint_file: HashMap<Uuid, (PathBuf, Sprint, Vec<String>)> = HashMap::new();
     let mut taken: HashSet<PathBuf> = HashSet::new();
 
-    // Defaults each doc's tasks inherit after this run.
-    let doc_defaults_new = |doc: usize| -> Defaults {
-        match repo.sprint_ids[doc] {
-            Some(s) => defaults_of(sprint_local_target.get(&s.id).or(local_sprint(repo, doc, &r).ok().as_ref())),
-            None => Defaults::default(),
-        }
-    };
     let doc_defaults_cur = |doc: usize| -> Defaults {
         if repo.docs[doc].kind == DocKind::Sprint {
             defaults_of(local_sprint(repo, doc, &r).ok().as_ref())
@@ -1777,7 +1822,7 @@ mod tests {
         let scope = Scope::Docs(vec![0]);
         let cmp = build(&repo, sn, mode, &scope, None).unwrap();
         let dec = prefer(&cmp, side, &mut vec![]);
-        let plan = plan(&repo, &cmp, &dec, PROJ).unwrap();
+        let plan = plan(&repo, &cmp, &dec, PROJ, None, chrono::NaiveDate::from_ymd_opt(2026, 1, 1).unwrap()).unwrap();
         (cmp, plan, repo, dir)
     }
 
@@ -1837,7 +1882,7 @@ mod tests {
         let scope = Scope::Docs((0..repo.docs.len()).collect());
         let cmp = build(&repo, sn, Mode::Sync, &scope, None).unwrap();
         let dec = prefer(&cmp, Side::Local, &mut vec![]);
-        let plan = plan(&repo, &cmp, &dec, PROJ).unwrap();
+        let plan = plan(&repo, &cmp, &dec, PROJ, None, chrono::NaiveDate::from_ymd_opt(2026, 1, 1).unwrap()).unwrap();
         let reorders: Vec<_> = plan.ops.iter().filter(|o| o.payload["kind"] == "task.reorder").collect();
         assert_eq!(reorders.len(), 1, "one reorder, so the second sprint's can't undo the first's");
         let other = Uuid::from_u128(0x999);
@@ -1863,6 +1908,88 @@ mod tests {
         assert_eq!(last["kind"], "task.reorder");
         assert_eq!(last["ordered"], json!([tid(4), Uuid::from_u128(0x999), tid(1), tid(2)]));
         assert_eq!(plan.ops[0].payload["kind"], "task.create");
+    }
+
+    /// Fira's sprint has a default assignee the file's frontmatter lacks.
+    fn remote_with_default(starts: &str, ends: &str) -> Snapshot {
+        let mut sn = remote(Some(""), &[1], false);
+        sn.users = snap(&[(0x77, "maya@example.com", "Maya Chen")]).users;
+        sn.sprints[0].default_assignee_id = Some(Uuid::from_u128(0x77));
+        sn.sprints[0].starts_on = Some(starts.parse().unwrap());
+        sn.sprints[0].ends_on = Some(ends.parse().unwrap());
+        sn
+    }
+
+    fn created(plan: &Plan) -> &serde_json::Value {
+        &plan.ops.iter().find(|o| o.payload["kind"] == "task.create").unwrap().payload["task"]
+    }
+
+    fn new_text(plan: &Plan) -> &str {
+        plan.files.iter().find_map(|f| match f { FileWrite::Edit { new_text, .. } => Some(new_text.as_str()), _ => None }).unwrap()
+    }
+
+    #[test]
+    fn new_task_takes_fira_sprint_default_assignee_and_goes_to_now() {
+        let md = file("", &[1]) + "\n## ⬜ New\n\nBody\n";
+        let (_, plan, ..) = run(&md, remote_with_default("2026-01-01", "2026-01-14"), Mode::Publish, Side::Remote);
+        let t = created(&plan);
+        assert_eq!(t["assignee_id"], json!(Uuid::from_u128(0x77)));
+        assert_eq!(t["section"], "now");
+        // The default lands in the frontmatter, not on the task.
+        let text = new_text(&plan);
+        let (front, body) = text.split_once("\n---\n").unwrap();
+        assert!(front.contains("assignee: maya.c"), "{text}");
+        let (_, new_task) = body.split_once("## ⬜ New").unwrap();
+        assert!(!new_task.contains("assignee="), "{text}");
+    }
+
+    #[test]
+    fn explicit_nobody_stays_unassigned_and_later() {
+        let md = file("", &[1]) + "\n## ⬜ New\n<!-- task: assignee=\"\" -->\n\nBody\n";
+        let (_, plan, ..) = run(&md, remote_with_default("2026-01-01", "2026-01-14"), Mode::Publish, Side::Remote);
+        let t = created(&plan);
+        assert_eq!(t["assignee_id"], serde_json::Value::Null);
+        assert_eq!(t["section"], "later");
+    }
+
+    #[test]
+    fn new_task_in_future_sprint_goes_to_later() {
+        let md = file("", &[1]) + "\n## ⬜ New\n\nBody\n";
+        let (_, plan, ..) = run(&md, remote_with_default("2026-02-01", "2026-02-14"), Mode::Publish, Side::Remote);
+        let t = created(&plan);
+        assert_eq!(t["assignee_id"], json!(Uuid::from_u128(0x77)));
+        assert_eq!(t["section"], "later");
+    }
+
+    #[test]
+    fn new_task_in_task_creator_sprint_goes_to_publisher() {
+        // No sprint default is "Task creator" in Fira: the task is the
+        // publisher's, and its comment says so (the file has no default).
+        let mut sn = remote_with_default("2026-01-05", "2026-01-19");
+        sn.sprints[0].default_assignee_id = None;
+        let md = format!(
+            "---\nsprint_id: {SID}\nstarts_on: 2026-01-05\nends_on: 2026-01-19\n---\n\n# S\n\n## ⬜ T1\n<!-- task: id={} -->\n\nBody 1\n\n## ⬜ New\n\nBody\n",
+            tid(1)
+        );
+        let (dir, repo) = temp_repo(&md);
+        let cmp = build(&repo, sn, Mode::Publish, &Scope::Docs(vec![0]), None).unwrap();
+        let dec = prefer(&cmp, Side::Local, &mut vec![]);
+        let me = Uuid::from_u128(0x77);
+        let plan = plan(&repo, &cmp, &dec, PROJ, Some(me), chrono::NaiveDate::from_ymd_opt(2026, 1, 7).unwrap()).unwrap();
+        drop(dir);
+        let t = created(&plan);
+        assert_eq!(t["assignee_id"], json!(me));
+        assert_eq!(t["section"], "now");
+        let text = new_text(&plan);
+        let (_, new_task) = text.split_once("## ⬜ New").unwrap();
+        assert!(new_task.contains("assignee=maya.c"), "{text}");
+    }
+
+    #[test]
+    fn new_done_task_goes_to_done() {
+        let md = file("", &[1]) + "\n## ✅ New\n\nBody\n";
+        let (_, plan, ..) = run(&md, remote_with_default("2026-01-01", "2026-01-14"), Mode::Publish, Side::Remote);
+        assert_eq!(created(&plan)["section"], "done");
     }
 
     #[test]
@@ -1967,7 +2094,7 @@ mod tests {
              "tag_ids": [], "subtasks": [], "revision": 1, "sort_key": "zzz"},
         ]))
         .unwrap();
-        let mut ops = Ops { project_id: Uuid::nil(), snap: &sn, ops: vec![], lines: vec![], last_key: HashMap::new() };
+        let mut ops = Ops { project_id: Uuid::nil(), snap: &sn, ops: vec![], lines: vec![], last_key: HashMap::new(), sprint_dates: HashMap::new(), today: chrono::NaiveDate::from_ymd_opt(2026, 1, 1).unwrap() };
         assert_eq!(ops.sort_key_after_last(sid), "M~000");
         assert_eq!(ops.sort_key_after_last(sid), "M~001");
         // A sprint with no tasks in Fira starts fresh.

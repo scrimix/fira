@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Check, MoreVertical, Pencil, Plus, Terminal, Trash2 } from 'lucide-react';
+import { ArrowLeft, Check, MoreVertical, Pencil, Play, Plus, Terminal, Trash2 } from 'lucide-react';
 import type { PlanSprint, PlanTask } from '../plan';
 import type { UUID } from '../types';
 import { createPortal } from 'react-dom';
@@ -32,6 +32,10 @@ interface Props {
   onRename?: (title: string) => void;
   onEdit?: () => void;
   onDelete?: () => void;
+  /// Tasks of this sprint parked in Later/Someday, and the action that
+  /// moves them to Now. The menu item shows only when there are some.
+  parkedCount?: number;
+  onMoveToNow?: () => void;
   onDropTask?: (taskId: UUID) => void;
   /// Pointer-drag handle for the card's whole position — week span and
   /// track row in one gesture. Deliberately NOT HTML5 DnD: the card is
@@ -44,7 +48,7 @@ interface Props {
 
 export function PlanSprintCard({
   sprint, showTasks, onTick, onRemoveTask, onAddTask, onOpenTask, onReorderTask,
-  onRename, onEdit, onDelete, onDropTask, onMovePointerDown, onResizePointerDown,
+  onRename, onEdit, onDelete, parkedCount = 0, onMoveToNow, onDropTask, onMovePointerDown, onResizePointerDown,
   dragging,
 }: Props) {
   // Not part of the plan snapshot (history doesn't replay it), so read
@@ -223,7 +227,7 @@ export function PlanSprintCard({
       {menuRect && createPortal(<div ref={menuRef}
         className="plan-sprint-menu" role="menu" aria-label="Sprint actions"
         style={{ left: Math.max(8, Math.min(menuRect.right - 168, window.innerWidth - 176)),
-          top: menuRect.bottom + 104 < window.innerHeight ? menuRect.bottom + 4 : Math.max(8, menuRect.top - 104) }}
+          top: menuRect.bottom + 132 < window.innerHeight ? menuRect.bottom + 4 : Math.max(8, menuRect.top - 132) }}
         onPointerDown={(e) => e.stopPropagation()}
         onKeyDown={(e) => {
           if (e.key === 'Escape') { e.stopPropagation(); setMenuRect(null); menuButton.current?.focus(); }
@@ -239,6 +243,9 @@ export function PlanSprintCard({
         </button>}
         {!onEdit && onRename && <button role="menuitem" onClick={() => { setMenuRect(null); setRenaming(true); }}>
           <Pencil size={12} /> Rename sprint
+        </button>}
+        {onMoveToNow && parkedCount > 0 && <button role="menuitem" onClick={() => { setMenuRect(null); onMoveToNow(); }}>
+          <Play size={12} /> Move {parkedCount} {parkedCount === 1 ? 'task' : 'tasks'} to Now
         </button>}
         {/* The sprint id has no other place in the UI; task-cli needs
             it to bring the sprint into a repository. */}

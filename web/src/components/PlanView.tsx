@@ -15,7 +15,7 @@ import {
   type RetroBucket,
 } from '../plan';
 import {
-  fmtDateKey, isoWeekLabel, monthSpansFor, parseDateKey,
+  fmtDateKey, isSprintRunning, isoWeekLabel, monthSpansFor, parseDateKey,
   weekStartFor, weekStartOf,
 } from '../time';
 import type { Section, Tag, UUID } from '../types';
@@ -200,6 +200,9 @@ function PlanBoard({ projectId }: { projectId: UUID | null }) {
   const deleteSprint = useFira((s) => s.deleteSprint);
   const setTaskSprint = useFira((s) => s.setTaskSprint);
   const addTask = useFira((s) => s.addTask);
+  const setTaskSection = useFira((s) => s.setTaskSection);
+  const setTaskAssignee = useFira((s) => s.setTaskAssignee);
+  const showToast = useFira((s) => s.showToast);
   const tickTask = useFira((s) => s.tickTask);
   const openTask = useFira((s) => s.openTask);
   const reorderTasks = useFira((s) => s.reorderTasks);
@@ -483,8 +486,9 @@ function PlanBoard({ projectId }: { projectId: UUID | null }) {
 
 
   const addTaskToSprint = (sprintId: UUID, title: string) => {
-    // 'later', not 'now': addTask derives status from section, and a task
-    // planned into a future sprint isn't in progress.
+    // Now while the sprint is running, so the task shows up with the work
+    // in hand; Later for a future or past sprint (addTask derives status
+    // from section, and a task planned ahead isn't in progress).
     const sprint = sprints.find(sp => sp.id === sprintId);
     if (!sprint) return;
     const taskProjectId = sprint.project_id;
@@ -493,8 +497,33 @@ function PlanBoard({ projectId }: { projectId: UUID | null }) {
     const activeAssignee = assignee && project?.members.some(m => m.user_id === assignee && m.role !== 'inactive')
       ? assignee : undefined;
     const tags = sprint?.default_tag_ids?.filter(id => allTags.some(t => t.id === id && t.project_id === taskProjectId));
-    const id = addTask(taskProjectId, 'later', title, activeAssignee, tags);
+    const id = addTask(taskProjectId, isSprintRunning(sprint) ? 'now' : 'later', title, activeAssignee, tags);
     if (id) setTaskSprint(id, sprintId);
+  };
+
+  /// The sprint's tasks that "Move to Now" would move: not done and
+  /// parked in Later or Someday.
+  const parkedInSprint = (sprintId: UUID) => tasks.filter((t) =>
+    t.sprint_id === sprintId && t.status !== 'done' && (t.section === 'later' || t.section === 'someday'));
+
+  /// Start a sprint's work: its parked tasks go to Now. Now needs an
+  /// owner, so an unassigned task takes the sprint's default assignee;
+  /// with no default ("Task creator") it goes to whoever created it, and
+  /// to you when that person can't be assigned.
+  const moveSprintTasksToNow = (sprintId: UUID) => {
+    const sprint = sprints.find((sp) => sp.id === sprintId);
+    if (!sprint) return;
+    const project = projects.find((p) => p.id === sprint.project_id);
+    const assignable = (u: UUID | null | undefined): u is UUID =>
+      !!u && !!project?.members.some((m) => m.user_id === u && m.role !== 'inactive');
+    const dflt = sprint.default_assignee_id;
+    const moving = parkedInSprint(sprintId);
+    for (const t of moving) {
+      const owner = assignable(dflt) ? dflt : assignable(t.created_by) ? t.created_by : meId;
+      if (!t.assignee_id && owner) setTaskAssignee(t.id, owner);
+      setTaskSection(t.id, 'now');
+    }
+    showToast(`Moved ${moving.length} ${moving.length === 1 ? 'task' : 'tasks'} to Now.`, 'info');
   };
 
   // A sprint checklist has one manual order across all list sections.
@@ -746,6 +775,8 @@ function PlanBoard({ projectId }: { projectId: UUID | null }) {
                 onTick={tickTask}
                 onRemoveTask={(taskId) => setTaskSprint(taskId, null)}
                 onAddTask={addTaskToSprint}
+                parkedCount={(sprintId) => parkedInSprint(sprintId).length}
+                onMoveToNow={moveSprintTasksToNow}
                 onOpenTask={openTask}
                 onReorderTask={moveTaskNextTo}
               />
@@ -921,6 +952,8 @@ function TrackRow(props: {
   onTick: (taskId: UUID, done: boolean) => void;
   onRemoveTask: (taskId: UUID) => void;
   onAddTask: (sprintId: UUID, title: string) => void;
+  parkedCount: (sprintId: UUID) => number;
+  onMoveToNow: (sprintId: UUID) => void;
   onOpenTask: (taskId: UUID) => void;
   onReorderTask: (draggedId: UUID, targetId: UUID, before: boolean) => void;
 }) {
@@ -1055,6 +1088,8 @@ function TrackRow(props: {
             onTick={props.readOnly ? undefined : props.onTick}
             onRemoveTask={props.readOnly ? undefined : props.onRemoveTask}
             onAddTask={props.readOnly ? undefined : (title) => props.onAddTask(sp.id, title)}
+            parkedCount={props.parkedCount(sp.id)}
+            onMoveToNow={props.readOnly ? undefined : () => props.onMoveToNow(sp.id)}
             onOpenTask={props.readOnly ? undefined : props.onOpenTask}
             onReorderTask={props.readOnly ? undefined : props.onReorderTask}
           />

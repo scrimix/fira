@@ -157,6 +157,14 @@ export function fmtDateKey(ms: number): string {
   return `${d.getFullYear()}-${mm}-${dd}`;
 }
 
+/// A sprint is running on `nowMs` (local day) when starts_on <= today <
+/// ends_on; ends_on is exclusive. Undated sprints never run.
+export function isSprintRunning(sp: { starts_on: string | null; ends_on: string | null }, nowMs: number = Date.now()): boolean {
+  if (!sp.starts_on || !sp.ends_on) return false;
+  const today = fmtDateKey(nowMs);
+  return sp.starts_on <= today && today < sp.ends_on;
+}
+
 /// `YYYY-MM-DD` -> local-midnight ms. Inverse of `fmtDateKey`.
 /// `new Date('2026-10-05')` parses as UTC midnight, hence the explicit
 /// component constructor.

@@ -549,7 +549,9 @@ fn sync_run(repo: Repo, mode: Mode, scope: Scope, into: Option<usize>, opts: &Sy
         }
     };
 
-    let plan = sync::plan(&repo, &cmp, &decisions, project_id)?;
+    // Only publish creates tasks, and they go to their creator by default.
+    let me = if mode == Mode::Publish { Some(client.whoami()?.user.id) } else { None };
+    let plan = sync::plan(&repo, &cmp, &decisions, project_id, me, chrono::Local::now().date_naive())?;
     if plan.is_empty() {
         println!("Nothing to write.");
         return Ok(0);
