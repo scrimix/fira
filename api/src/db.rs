@@ -657,7 +657,7 @@ pub async fn list_tasks_in_scope(pool: &PgPool, scope: &[Uuid]) -> sqlx::Result<
                     .fetch_all(pool)
                     .await?;
             let attachments: Vec<Attachment> =
-            sqlx::query_as("SELECT id, task_id, filename, storage_path, content_type, size, created_at FROM attachments WHERE task_id = ANY($1)")
+            sqlx::query_as("SELECT id, task_id, filename, storage_path, content_type, size, sha256, created_at FROM attachments WHERE task_id = ANY($1)")
             .bind(&task_ids)
             .fetch_all(pool)
             .await?;
@@ -723,7 +723,7 @@ pub async fn get_task(pool: &PgPool, task_id: Uuid) -> sqlx::Result<Option<Task>
         task.tag_ids = tag_ids;
 
         let attachments: Vec<Attachment> = sqlx::query_as(
-            "SELECT id, task_id, filename, storage_path, content_type, size, created_at FROM attachments WHERE task_id = $1"
+            "SELECT id, task_id, filename, storage_path, content_type, size, sha256, created_at FROM attachments WHERE task_id = $1"
         )
             .bind(task.id)
             .fetch_all(pool)
@@ -775,7 +775,7 @@ pub async fn get_task_tx(
         .collect();
 
     task.attachments = sqlx::query_as(
-        "SELECT id, task_id, filename, storage_path, content_type, size, created_at
+        "SELECT id, task_id, filename, storage_path, content_type, size, sha256, created_at
          FROM attachments WHERE task_id = $1",
     )
     .bind(task.id)
@@ -1745,8 +1745,8 @@ pub async fn insert_attachment(
     attachment: Attachment,
 ) -> sqlx::Result<()> {
     sqlx::query(
-        "INSERT INTO attachments (id, task_id, filename, storage_path, content_type, size)
-            VALUES ($1,$2,$3,$4,$5,$6)
+        "INSERT INTO attachments (id, task_id, filename, storage_path, content_type, size, sha256)
+            VALUES ($1,$2,$3,$4,$5,$6,$7)
             ON CONFLICT (id) DO NOTHING",
     )
     .bind(attachment.id)
@@ -1755,6 +1755,7 @@ pub async fn insert_attachment(
     .bind(attachment.storage_path)
     .bind(&attachment.content_type)
     .bind(&attachment.size)
+    .bind(&attachment.sha256)
     .execute(&mut **tx)
     .await?;
 
@@ -1763,7 +1764,7 @@ pub async fn insert_attachment(
 
 pub async fn get_attachment(pool: &PgPool, file_id: Uuid) -> sqlx::Result<Attachment> {
     sqlx::query_as(
-        "SELECT id, task_id, filename, storage_path, content_type, size, created_at
+        "SELECT id, task_id, filename, storage_path, content_type, size, sha256, created_at
          FROM attachments WHERE id = $1",
     )
     .bind(file_id)
@@ -1800,7 +1801,7 @@ pub async fn list_attachments_for_task(
     task_id: Uuid,
 ) -> sqlx::Result<Vec<Attachment>> {
     sqlx::query_as(
-        "SELECT id, task_id, filename, storage_path, content_type, size, created_at
+        "SELECT id, task_id, filename, storage_path, content_type, size, sha256, created_at
          FROM attachments WHERE task_id = $1 ORDER BY created_at",
     )
     .bind(task_id)

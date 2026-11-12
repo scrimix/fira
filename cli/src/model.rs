@@ -64,6 +64,16 @@ pub struct Subtask {
     pub done: bool,
 }
 
+/// One attachment as compared: the set is keyed by filename, and a file
+/// differs when its content hash does.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct Attachment {
+    pub name: String,
+    /// Hex sha256; empty when Fira couldn't hash its copy (never equal).
+    pub sha256: String,
+    pub size: u64,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct Task {
     pub id: Uuid,
@@ -76,6 +86,8 @@ pub struct Task {
     pub assignee: Option<Uuid>,
     pub estimate_min: Option<i32>,
     pub subtasks: Vec<Subtask>,
+    /// Sorted by name. List order in the file is local, like task order.
+    pub attachments: Vec<Attachment>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]

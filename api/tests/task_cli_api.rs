@@ -215,7 +215,7 @@ async fn existence_tells_deleted_from_never_and_other_project(pool: PgPool) {
     }
     apply_batch(&pool, &ctx(true), ApplyRequest { project_id: P2, preconditions: vec![], ops: vec![env(task_create(elsewhere, P2))] }, &storage()).await.unwrap();
 
-    let res = fetch_state(&pool, &ctx(false), &FetchRequest {
+    let res = fetch_state(&pool, &storage(), &ctx(false), &FetchRequest {
         project_id: P1, sprint_ids: vec![], task_ids: vec![deleted, elsewhere, never], all_sprints: false,
     }).await.unwrap();
     let state = |id| res.missing.iter().find(|m| m.id == id).unwrap().state;

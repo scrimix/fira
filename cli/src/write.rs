@@ -5,7 +5,8 @@
 use uuid::Uuid;
 
 use crate::doc::{self, Doc, DocKind, TaskBlock};
-use crate::model::{self, Sprint, Subtask, Task};
+use crate::attachments;
+use crate::model::{self, Attachment, Sprint, Subtask, Task};
 use crate::safety::{apply_edits, Edit};
 
 /// What a task inherits from its file: the sprint frontmatter's `tags` and
@@ -151,9 +152,19 @@ pub fn comment_for(
 
 // ---- task edits ----
 
+fn names(a: &[Attachment]) -> Vec<&str> {
+    a.iter().map(|a| a.name.as_str()).collect()
+}
+
+fn attachment_lines(bullet: &str, items: &[Attachment], prefix: &str) -> String {
+    items.iter().map(|a| attachments::item_line(bullet, &a.name, prefix)).collect()
+}
+
 /// Edits that make block `b` express `target`, given what it expresses now
 /// (`cur`). `comment` is the new comment text when it must change.
-pub fn task_edits(text: &str, b: &TaskBlock, cur: &Task, target: &Task, comment: Option<String>) -> Vec<Edit> {
+/// Descriptions are in local form; `att_prefix` is how this file links to
+/// the task's attachment folder (`../assets/<id>/`).
+pub fn task_edits(text: &str, b: &TaskBlock, cur: &Task, target: &Task, comment: Option<String>, att_prefix: &str) -> Vec<Edit> {
     let mut edits = vec![];
     if cur.status != target.status {
         edits.push(Edit::replace(b.checkbox.clone(), target.status.marker()));
@@ -165,6 +176,12 @@ pub fn task_edits(text: &str, b: &TaskBlock, cur: &Task, target: &Task, comment:
     let subs_changed = cur.subtasks != target.subtasks;
     let sub_level = b.subtasks.as_ref().map_or(b.level + 1, |s| s.level);
     let mut subs_done = false;
+    let atts_changed = names(&cur.attachments) != names(&target.attachments);
+    let att_level = b.attachments.as_ref().map_or(sub_level, |s| s.level);
+    let mut atts_done = false;
+    // Removing a section at the end of the file also takes the blank
+    // lines before it, but never into a rewritten description.
+    let floor = if desc_changed { b.desc_end } else { b.heading_end };
 
     if desc_changed {
         let in_region = b
@@ -190,6 +207,11 @@ pub fn task_edits(text: &str, b: &TaskBlock, cur: &Task, target: &Task, comment:
             s.push_str(&target.description);
             s.push('\n');
         }
+        if b.attachments.is_none() && !target.attachments.is_empty() {
+            s.push('\n');
+            s.push_str(&attachments::section(att_level, &attachment_lines("- ", &target.attachments, att_prefix)));
+            atts_done = true;
+        }
         if b.subtasks.is_none() && !target.subtasks.is_empty() {
             s.push('\n');
             s.push_str(&subtasks_section(sub_level, "- ", &target.subtasks));
@@ -214,32 +236,47 @@ pub fn task_edits(text: &str, b: &TaskBlock, cur: &Task, target: &Task, comment:
         }
     }
 
+    if atts_changed && !atts_done {
+        match &b.attachments {
+            Some(sec) if target.attachments.is_empty() => edits.push(remove_section(text, sec.heading.start, sec.end, floor)),
+            Some(sec) => {
+                // Keep the lines (and labels) of files that stay, in their
+                // order; append new ones.
+                let mut lines: String = sec
+                    .items
+                    .iter()
+                    .filter(|it| target.attachments.iter().any(|a| a.name == attachments::item_name(&it.link)))
+                    .map(|it| {
+                        let ls = text[..it.link.full.start].rfind('\n').map_or(0, |i| i + 1);
+                        format!("{}\n", text[ls..line_end_incl(text, it.link.full.start)].trim_end())
+                    })
+                    .collect();
+                let new: Vec<Attachment> = target
+                    .attachments
+                    .iter()
+                    .filter(|a| !sec.items.iter().any(|it| attachments::item_name(&it.link) == a.name))
+                    .cloned()
+                    .collect();
+                lines.push_str(&attachment_lines(&sec.bullet, &new, att_prefix));
+                match &sec.list {
+                    Some(list) => edits.push(replace_list(text, list, lines)),
+                    None => edits.push(Edit::insert(sec.heading.end, format!("\n{lines}"))),
+                }
+            }
+            None => {
+                let sec = attachments::section(att_level, &attachment_lines("- ", &target.attachments, att_prefix));
+                edits.push(attachments::insert_section(text, b, &sec));
+            }
+        }
+    }
+
     if subs_changed && !subs_done {
         match &b.subtasks {
-            Some(sec) if target.subtasks.is_empty() => {
-                let mut start = sec.heading.start;
-                if sec.end == text.len() {
-                    while start > 1 && &text[start - 2..start] == "\n\n" {
-                        start -= 1;
-                    }
-                }
-                edits.push(Edit::replace(start..sec.end, ""));
-            }
+            Some(sec) if target.subtasks.is_empty() => edits.push(remove_section(text, sec.heading.start, sec.end, floor)),
             Some(sec) => {
                 let items = subtask_lines(&sec.bullet, &target.subtasks);
                 match &sec.list {
-                    Some(list) => {
-                        // The parser's list range can run on over the blank
-                        // line after it; stop at the end of the last item.
-                        let content = text[list.clone()].trim_end().len().max(1);
-                        let end = line_end_incl(text, list.start + content - 1);
-                        let tail = if end == text.len() && !text.ends_with('\n') { "" } else { "\n" };
-                        let mut new = items;
-                        if tail.is_empty() {
-                            new.pop();
-                        }
-                        edits.push(Edit::replace(list.start..end, new));
-                    }
+                    Some(list) => edits.push(replace_list(text, list, items)),
                     None => edits.push(Edit::insert(sec.heading.end, format!("\n{items}"))),
                 }
             }
@@ -260,6 +297,27 @@ pub fn task_edits(text: &str, b: &TaskBlock, cur: &Task, target: &Task, comment:
         }
     }
     edits
+}
+
+/// Replace a list's items. The parser's list range can run on over the
+/// blank line after it; stop at the end of the last item.
+fn replace_list(text: &str, list: &std::ops::Range<usize>, mut items: String) -> Edit {
+    let content = text[list.clone()].trim_end().len().max(1);
+    let end = line_end_incl(text, list.start + content - 1);
+    if end == text.len() && !text.ends_with('\n') {
+        items.pop();
+    }
+    Edit::replace(list.start..end, items)
+}
+
+fn remove_section(text: &str, heading_start: usize, end: usize, floor: usize) -> Edit {
+    let mut start = heading_start;
+    if end == text.len() {
+        while start > floor.max(1) && &text[start - 2..start] == "\n\n" {
+            start -= 1;
+        }
+    }
+    Edit::replace(start..end, "")
 }
 
 fn line_end_incl(text: &str, offset: usize) -> usize {
@@ -283,11 +341,15 @@ fn subtasks_section(level: usize, bullet: &str, items: &[Subtask]) -> String {
 
 // ---- rendering new blocks and files ----
 
-pub fn render_task(level: usize, id: Uuid, t: &Task, defaults: &Defaults, names: &dyn Names) -> String {
+pub fn render_task(level: usize, id: Uuid, t: &Task, defaults: &Defaults, names: &dyn Names, att_prefix: &str) -> String {
     let comment = comment_for(None, id, true, t, defaults, names).unwrap_or_default();
     let mut s = format!("{} {} {}\n{comment}\n", "#".repeat(level), t.status.marker(), one_line(&t.title));
     if !t.description.is_empty() {
         s.push_str(&format!("\n{}\n", t.description));
+    }
+    if !t.attachments.is_empty() {
+        s.push('\n');
+        s.push_str(&attachments::section(level + 1, &attachment_lines("- ", &t.attachments, att_prefix)));
     }
     if !t.subtasks.is_empty() {
         s.push('\n');
@@ -351,6 +413,10 @@ pub fn extract_block(text: &str, b: &TaskBlock, edits: &[Edit], to_level: usize)
     let t = &parsed.tasks[0];
     let mut relevel = vec![Edit::replace(0..t.level, "#".repeat(to_level))];
     if let Some(sec) = &t.subtasks {
+        let hashes = sec.level;
+        relevel.push(Edit::replace(sec.heading.start..sec.heading.start + hashes, "#".repeat((to_level + 1).min(6))));
+    }
+    if let Some(sec) = &t.attachments {
         let hashes = sec.level;
         relevel.push(Edit::replace(sec.heading.start..sec.heading.start + hashes, "#".repeat((to_level + 1).min(6))));
     }
@@ -510,7 +576,16 @@ mod tests {
             },
             estimate_min: c.and_then(|c| c.estimate),
             subtasks: b.subtasks.as_ref().map(|s| s.items.clone()).unwrap_or_default(),
+            attachments: b
+                .attachments
+                .as_ref()
+                .map(|s| s.items.iter().map(|i| att(attachments::item_name(&i.link))).collect())
+                .unwrap_or_default(),
         }
+    }
+
+    fn att(name: &str) -> Attachment {
+        Attachment { name: name.into(), sha256: String::new(), size: 0 }
     }
 
     fn edit_task(src: &str, f: impl Fn(&mut Task), defaults: &Defaults) -> String {
@@ -519,7 +594,7 @@ mod tests {
         let mut target = cur.clone();
         f(&mut target);
         let comment = comment_for(Some(&d.tasks[0]), cur.id, false, &target, defaults, &N);
-        let edits = task_edits(&d.text, &d.tasks[0], &cur, &target, comment);
+        let edits = task_edits(&d.text, &d.tasks[0], &cur, &target, comment, &format!("../assets/{ID}/"));
         apply_edits(&d.text, &edits).unwrap()
     }
 
@@ -593,6 +668,27 @@ mod tests {
     }
 
     #[test]
+    fn attachment_section_add_change_remove() {
+        let p = format!("../assets/{ID}/");
+        let src = format!("# S\n\n## [ ] A\n<!-- task: id={ID} -->\n\nBody\n\n### Subtasks\n\n- [ ] one\n");
+        // Added before Subtasks.
+        let out = edit_task(&src, |t| t.attachments = vec![att("a.png")], &Defaults::default());
+        assert_eq!(out, format!("# S\n\n## [ ] A\n<!-- task: id={ID} -->\n\nBody\n\n### Attachments\n\n- [a.png]({p}a.png)\n\n### Subtasks\n\n- [ ] one\n"));
+        // Labels and order of kept items survive; new ones are appended.
+        let custom = out.replace("- [a.png]", "- [The layout]");
+        let out2 = edit_task(&custom, |t| t.attachments = vec![att("a.png"), att("b.pdf")], &Defaults::default());
+        assert!(out2.contains(&format!("- [The layout]({p}a.png)\n- [b.pdf]({p}b.pdf)\n\n### Subtasks")), "{out2}");
+        // Removed again: back to the original.
+        assert_eq!(edit_task(&out, |t| t.attachments.clear(), &Defaults::default()), src);
+        // With a description change in the same edit, and no other section.
+        let plain = format!("# S\n\n## [ ] A\n<!-- task: id={ID} -->\n\nBody\n");
+        let out3 = edit_task(&plain, |t| { t.description = "New".into(); t.attachments = vec![att("a.png")]; }, &Defaults::default());
+        assert_eq!(out3, format!("# S\n\n## [ ] A\n<!-- task: id={ID} -->\n\nNew\n\n### Attachments\n\n- [a.png]({p}a.png)\n"));
+        let out4 = edit_task(&plain, |t| t.attachments = vec![att("a.png")], &Defaults::default());
+        assert_eq!(out4, out3.replace("New", "Body"));
+    }
+
+    #[test]
     fn rendered_task_parses_back() {
         let t = Task {
             id: Uuid::from_u128(5),
@@ -604,8 +700,9 @@ mod tests {
             assignee: Some(Uuid::from_u128(1)),
             estimate_min: Some(90),
             subtasks: vec![Subtask { title: "s".into(), done: true }],
+            attachments: vec![att("a.png")],
         };
-        let r = render_task(2, t.id, &t, &Defaults::default(), &N);
+        let r = render_task(2, t.id, &t, &Defaults::default(), &N, "../assets/x/");
         let d = sprint(&format!("# S\n\n{r}"));
         assert_eq!(task_of(&d, 0, &Defaults::default()), t);
     }

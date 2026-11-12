@@ -14,7 +14,7 @@ use std::ops::Range;
 use std::path::PathBuf;
 
 use chrono::NaiveDate;
-use pulldown_cmark::{Event, HeadingLevel, Options, Parser, Tag, TagEnd};
+use pulldown_cmark::{Event, HeadingLevel, LinkType, Options, Parser, Tag, TagEnd};
 use uuid::Uuid;
 
 use crate::model::{self, Status, Subtask};
@@ -94,6 +94,34 @@ pub struct SubtaskSection {
     pub bullet: String,
 }
 
+/// An inline link or image (`[a](dest)`, `![a](dest)`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Link {
+    /// The whole link.
+    pub full: Range<usize>,
+    /// The destination as written (without `<…>`).
+    pub dest_range: Range<usize>,
+    pub dest: String,
+    pub image: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct AttachmentItem {
+    pub line: usize,
+    pub link: Link,
+}
+
+/// The `### Attachments` section: a list of links, one per attachment.
+#[derive(Debug, Clone)]
+pub struct AttachmentSection {
+    pub heading: Range<usize>,
+    pub level: usize,
+    pub list: Option<Range<usize>>,
+    pub end: usize,
+    pub items: Vec<AttachmentItem>,
+    pub bullet: String,
+}
+
 #[derive(Debug, Clone)]
 pub struct TaskBlock {
     /// From the start of the heading line to the next task heading or EOF.
@@ -110,11 +138,14 @@ pub struct TaskBlock {
     pub title: String,
     pub title_range: Range<usize>,
     pub comment: Option<Comment>,
-    /// End of the description region: the Subtasks heading, or the end of
-    /// the task.
+    /// End of the description region: the first of the Attachments and
+    /// Subtasks headings, or the end of the task.
     pub desc_end: usize,
     pub description: String,
+    /// Inline links and images in the description region.
+    pub desc_links: Vec<Link>,
     pub subtasks: Option<SubtaskSection>,
+    pub attachments: Option<AttachmentSection>,
 }
 
 impl TaskBlock {
@@ -330,25 +361,47 @@ fn parse_task(
         .iter()
         .take_while(|x| x.line_start < block_end)
         .collect();
-    let sub_idx = inner.iter().position(|x| {
+    // The Subtasks and Attachments sections, in either order, come last.
+    let special = |x: &Heading, name: &str| {
         x.level > h.level
-            && parse_heading(text, x).is_some_and(|p| p.checkbox.is_none() && p.title.eq_ignore_ascii_case("subtasks"))
-    });
+            && parse_heading(text, x).is_some_and(|p| p.checkbox.is_none() && p.title.eq_ignore_ascii_case(name))
+    };
+    let first_special = inner.iter().position(|x| special(x, "subtasks") || special(x, "attachments"));
 
     let mut subtasks = None;
-    let desc_end = match sub_idx {
+    let mut attachments = None;
+    let desc_end = match first_special {
         None => block_end,
-        Some(i) => {
-            let sh = inner[i];
-            let section_end = inner.get(i + 1).map_or(block_end, |n| n.line_start);
-            if let Some(next) = inner.get(i + 1) {
-                errs.at(
-                    next.line_start,
-                    "a heading after the Subtasks list; the Subtasks section must come last in a task, so move this above it",
-                );
+        Some(first) => {
+            let mut seen: Vec<&str> = vec![];
+            for (i, sh) in inner.iter().enumerate().skip(first) {
+                let section_end = inner.get(i + 1).map_or(block_end, |n| n.line_start);
+                let name = if special(sh, "subtasks") {
+                    "Subtasks"
+                } else if special(sh, "attachments") {
+                    "Attachments"
+                } else {
+                    errs.at(
+                        sh.line_start,
+                        format!(
+                            "a heading after the {} section; the Subtasks and Attachments sections must come last in a task, so move this above them",
+                            seen.last().copied().unwrap_or("Subtasks")
+                        ),
+                    );
+                    continue;
+                };
+                if seen.contains(&name) {
+                    errs.at(sh.line_start, format!("a second {name} section in task \"{}\"; keep one", ph.title));
+                    continue;
+                }
+                seen.push(name);
+                if name == "Subtasks" {
+                    subtasks = parse_subtasks(text, s, sh, section_end, comment.as_ref(), errs);
+                } else {
+                    attachments = parse_attachments(text, s, sh, section_end, comment.as_ref(), errs);
+                }
             }
-            subtasks = parse_subtasks(text, s, sh, section_end, comment.as_ref(), errs);
-            sh.line_start
+            inner[first].line_start
         }
     };
 
@@ -380,8 +433,116 @@ fn parse_task(
         comment,
         desc_end,
         description: model::normalize_text(&desc),
+        desc_links: s.links.iter().filter(|l| l.full.start >= heading_end && l.full.end <= desc_end).cloned().collect(),
         subtasks,
+        attachments,
     })
+}
+
+fn parse_attachments(
+    text: &str,
+    s: &Structure,
+    sh: &Heading,
+    end: usize,
+    comment: Option<&Comment>,
+    errs: &mut Errors,
+) -> Option<AttachmentSection> {
+    let list = s.lists.iter().find(|l| l.range.start >= sh.line_next && l.range.start < end);
+    let blank_except_comment = |from: usize, to: usize| -> bool {
+        let mut t = text[from..to].to_string();
+        if let Some(c) = comment {
+            if c.range.start >= from && c.range.end <= to {
+                t = format!("{}{}", &text[from..c.range.start], &text[c.range.end..to]);
+            }
+        }
+        t.trim().is_empty()
+    };
+    let shape = "every Attachments item is one link, like `- [layout.png](../assets/<task-id>/layout.png)`";
+    let Some(list) = list else {
+        if !blank_except_comment(sh.line_next, end) {
+            errs.at(sh.line_start, format!("an Attachments heading must be followed by a list of links; {shape}"));
+            return None;
+        }
+        return Some(AttachmentSection { heading: sh.line_start..sh.line_next, level: sh.level, list: None, end, items: vec![], bullet: "- ".into() });
+    };
+    if !blank_except_comment(sh.line_next, list.range.start) {
+        errs.at(sh.line_next, "text between the Attachments heading and its list; move it above the Attachments heading");
+    }
+    let list_end = list.range.end.min(end);
+    if !blank_except_comment(list_end, end) {
+        errs.at(list_end, "text after the Attachments list; the Subtasks and Attachments sections must come last in a task, so move this above them");
+    }
+    let mut items = vec![];
+    let mut bullet = String::from("- ");
+    for (n, it) in list.items.iter().enumerate() {
+        let (ls, le, _) = line_bounds(text, it.range.start);
+        let first = text[it.range.start.max(ls)..le].trim_start();
+        let marker_len = first.find(' ').unwrap_or(first.len());
+        if n == 0 {
+            bullet = format!("{} ", &first[..marker_len]);
+        }
+        let content = first[marker_len..].trim();
+        let item_text = text[it.range.clone()].trim_end();
+        let link = s.links.iter().find(|l| l.full.start >= it.range.start && l.full.end <= it.range.end);
+        match link {
+            Some(l) if !item_text.contains('\n') && it.checked.is_none() && content == &text[l.full.clone()] && !l.image => {
+                items.push(AttachmentItem { line: line_at(text, it.range.start), link: l.clone() });
+            }
+            _ => errs.at(it.range.start, shape),
+        }
+    }
+    let list_start = line_bounds(text, list.range.start).0;
+    Some(AttachmentSection { heading: sh.line_start..sh.line_next, level: sh.level, list: Some(list_start..list_end), end, items, bullet })
+}
+
+/// Inline links and images in `md`, with the byte range of each
+/// destination as written, so it can be rewritten in place. Reference
+/// links and autolinks are left out: they have no inline destination.
+pub fn inline_links(md: &str) -> Vec<Link> {
+    let mut out = vec![];
+    let parser = Parser::new_ext(md, Options::ENABLE_TASKLISTS | Options::ENABLE_TABLES | Options::ENABLE_STRIKETHROUGH).into_offset_iter();
+    for (ev, r) in parser {
+        let (link_type, dest, image) = match ev {
+            Event::Start(Tag::Link { link_type, dest_url, .. }) => (link_type, dest_url, false),
+            Event::Start(Tag::Image { link_type, dest_url, .. }) => (link_type, dest_url, true),
+            _ => continue,
+        };
+        if link_type != LinkType::Inline || dest.is_empty() {
+            continue;
+        }
+        let whole = &md[r.clone()];
+        // The destination follows the last `](` whose remainder starts
+        // with it (labels may contain brackets of their own).
+        let mut found = None;
+        for (i, _) in whole.match_indices("](").collect::<Vec<_>>().into_iter().rev() {
+            let after = &whole[i + 2..];
+            let ws = after.len() - after.trim_start().len();
+            let rest = &after[ws..];
+            let (skip, rest) = match rest.strip_prefix('<') {
+                Some(r) => (1, r),
+                None => (0, rest),
+            };
+            if rest.starts_with(dest.as_ref()) {
+                let start = r.start + i + 2 + ws + skip;
+                found = Some(start..start + dest.len());
+                break;
+            }
+        }
+        if let Some(dest_range) = found {
+            out.push(Link { full: r, dest_range, dest: dest.to_string(), image });
+        }
+    }
+    out
+}
+
+/// `md` with each inline link destination for which `f` returns a new
+/// value replaced by it.
+pub fn rewrite_link_dests(md: &str, f: impl Fn(&Link) -> Option<String>) -> String {
+    let edits: Vec<crate::safety::Edit> = inline_links(md)
+        .iter()
+        .filter_map(|l| f(l).map(|d| crate::safety::Edit::replace(l.dest_range.clone(), d)))
+        .collect();
+    crate::safety::apply_edits(md, &edits).unwrap_or_else(|_| md.to_string())
 }
 
 fn parse_subtasks(
@@ -826,6 +987,7 @@ struct Structure {
     headings: Vec<Heading>,
     html: Vec<Range<usize>>,
     lists: Vec<List>,
+    links: Vec<Link>,
 }
 
 impl Structure {
@@ -875,7 +1037,15 @@ impl Structure {
                 _ => merged.push(r),
             }
         }
-        Structure { headings, html: merged, lists }
+        let links = inline_links(body)
+            .into_iter()
+            .map(|l| Link {
+                full: l.full.start + offset..l.full.end + offset,
+                dest_range: l.dest_range.start + offset..l.dest_range.end + offset,
+                ..l
+            })
+            .collect();
+        Structure { headings, html: merged, lists, links }
     }
 
     /// `<!-- task: … -->` comments inside [from, to), excluding code.
@@ -1019,6 +1189,37 @@ mod tests {
         assert!(e[0].contains("both starts_on and ends_on"));
         let e = sprint("---\nstarts_on: 2026-11-10\nends_on: 2026-11-23\n---\n# S\n").unwrap_err();
         assert!(e[0].contains("Mondays"), "{e:?}");
+    }
+
+    #[test]
+    fn attachments_section_in_either_order() {
+        let a = format!("# S\n\n## [ ] T\n<!-- task: id={ID} -->\n\nBody ![x](../assets/{ID}/x.png)\n\n### Attachments\n\n- [x.png](../assets/{ID}/x.png)\n- [Spec](<../assets/{ID}/spec.pdf>)\n\n### Subtasks\n\n- [ ] one\n");
+        let d = sprint(&a).unwrap();
+        let t = &d.tasks[0];
+        assert_eq!(t.description, format!("Body ![x](../assets/{ID}/x.png)"));
+        assert_eq!(t.desc_links.len(), 1);
+        assert!(t.desc_links[0].image);
+        let items: Vec<&str> = t.attachments.as_ref().unwrap().items.iter().map(|i| i.link.dest.as_str()).collect();
+        assert_eq!(items, [format!("../assets/{ID}/x.png"), format!("../assets/{ID}/spec.pdf")]);
+        assert_eq!(&d.text[t.attachments.as_ref().unwrap().items[1].link.dest_range.clone()], format!("../assets/{ID}/spec.pdf"));
+        assert_eq!(t.subtasks.as_ref().unwrap().items.len(), 1);
+        // Subtasks first parses the same.
+        let b = format!("# S\n\n## [ ] T\n\nBody\n\n### Subtasks\n\n- [ ] one\n\n### Attachments\n\n- [x.png](x.png)\n");
+        let d = sprint(&b).unwrap();
+        assert_eq!(d.tasks[0].description, "Body");
+        assert_eq!(d.tasks[0].attachments.as_ref().unwrap().items.len(), 1);
+    }
+
+    #[test]
+    fn attachment_section_errors() {
+        let e = sprint("# S\n\n## [ ] T\n\n### Attachments\n\n- just text\n").unwrap_err();
+        assert!(e[0].contains("every Attachments item is one link"), "{e:?}");
+        let e = sprint("# S\n\n## [ ] T\n\n### Attachments\n\n- [a](a.png)\n\n### Notes\n").unwrap_err();
+        assert!(e[0].contains("a heading after the Attachments section"), "{e:?}");
+        let e = sprint("# S\n\n## [ ] T\n\n### Attachments\n\n- [a](a.png)\n\n### Attachments\n\n- [b](b.png)\n").unwrap_err();
+        assert!(e[0].contains("a second Attachments section"), "{e:?}");
+        let e = sprint("# S\n\n## [ ] T\n\n### Subtasks\n\n- [ ] a\n\nTrailing\n").unwrap_err();
+        assert!(e[0].contains("after the Subtasks checklist"), "{e:?}");
     }
 
     #[test]

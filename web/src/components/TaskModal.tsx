@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import ReactMarkdown from 'react-markdown';
+import ReactMarkdown, { defaultUrlTransform, type Components } from 'react-markdown';
 import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
 import { AlertTriangle, ArrowLeft, Check, ClockPlus, Copy, Download, FilePlus2, Link, Loader2, PanelRightClose, PanelRightOpen, Paperclip, Pencil, Plus, RefreshCw, Ticket, Trash2, X } from 'lucide-react';
@@ -368,6 +368,7 @@ export function TaskModal({ taskId }: Props) {
             />
             <DescriptionEditor
               taskId={task.id}
+              attachments={task.attachments}
               value={task.description_md}
               editing={descEditing}
               setEditing={setDescEditing}
@@ -1048,8 +1049,60 @@ function TitleEditor({ value, onSave }: { value: string; onSave: (v: string) => 
   );
 }
 
-function DescriptionEditor({ taskId, value, editing, setEditing, onSave }: {
+// `attachment:<filename>` links in descriptions (written by task-cli, or by
+// hand) resolve to the task's attachment with that filename. Raster images
+// render inline; anything else is a link the server serves as a download.
+const ATTACHMENT_SCHEME = 'attachment:';
+const INLINE_IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp']);
+
+function attachmentUrlTransform(url: string): string {
+  return url.startsWith(ATTACHMENT_SCHEME) ? url : defaultUrlTransform(url);
+}
+
+function findAttachment(attachments: Attachment[], url: string | undefined): Attachment | null | undefined {
+  if (!url?.startsWith(ATTACHMENT_SCHEME)) return undefined; // not ours
+  let name = url.slice(ATTACHMENT_SCHEME.length);
+  try { name = decodeURIComponent(name); } catch { /* keep as written */ }
+  return attachments.find((a) => a.filename === name) ?? null;
+}
+
+function isInlineImage(a: Attachment): boolean {
+  const ext = a.filename.split('.').pop()?.toLowerCase() ?? '';
+  return INLINE_IMAGE_EXTENSIONS.has(ext);
+}
+
+function MissingAttachment({ url, children }: { url: string; children?: React.ReactNode }) {
+  return (
+    <span className="desc-attachment-missing" title={`No attachment named ${url.slice(ATTACHMENT_SCHEME.length)} on this task`}>
+      <AlertTriangle size={12} strokeWidth={1.75} aria-hidden="true" />
+      {children || url.slice(ATTACHMENT_SCHEME.length)}
+    </span>
+  );
+}
+
+function attachmentComponents(attachments: Attachment[]): Components {
+  return {
+    img: ({ src, alt }) => {
+      const url = typeof src === 'string' ? src : undefined;
+      const a = findAttachment(attachments, url);
+      if (a === undefined) return <img src={url} alt={alt ?? ''} />;
+      if (a === null) return <MissingAttachment url={url!}>{alt}</MissingAttachment>;
+      const href = api.getAttachmentUrl(a.id);
+      if (isInlineImage(a)) return <img src={href} alt={alt ?? a.filename} className="desc-attachment-image" />;
+      return <a href={href} target="_blank" rel="noopener noreferrer">{alt || a.filename}</a>;
+    },
+    a: ({ href, children }) => {
+      const a = findAttachment(attachments, href);
+      if (a === undefined) return <a href={href}>{children}</a>;
+      if (a === null) return <MissingAttachment url={href!}>{children}</MissingAttachment>;
+      return <a href={api.getAttachmentUrl(a.id)} target="_blank" rel="noopener noreferrer">{children}</a>;
+    },
+  };
+}
+
+function DescriptionEditor({ taskId, attachments, value, editing, setEditing, onSave }: {
   taskId: string;
+  attachments: Attachment[];
   value: string;
   editing: boolean;
   setEditing: (v: boolean) => void;
@@ -1057,6 +1110,7 @@ function DescriptionEditor({ taskId, value, editing, setEditing, onSave }: {
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const [draft, setDraft] = useState(value);
+  const components = useMemo(() => attachmentComponents(attachments), [attachments]);
 
   // Keep the draft synced with the store while *not* editing, so an
   // external update (or task switch) refreshes it without clobbering an
@@ -1087,7 +1141,11 @@ function DescriptionEditor({ taskId, value, editing, setEditing, onSave }: {
     return (
       <div className="desc-md" data-empty={!value}>
         {value ? (
-          <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm, remarkBreaks]}
+            urlTransform={attachmentUrlTransform}
+            components={components}
+          >
             {value}
           </ReactMarkdown>
         ) : 'No description. Use the edit icon to add one.'}

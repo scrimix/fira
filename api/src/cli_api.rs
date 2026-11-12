@@ -67,7 +67,11 @@ const ALLOWED_KINDS: &[&str] = &[
 ];
 
 pub fn hash_token(token: &str) -> String {
-    let digest = Sha256::digest(token.as_bytes());
+    sha256_hex(token.as_bytes())
+}
+
+pub fn sha256_hex(data: &[u8]) -> String {
+    let digest = Sha256::digest(data);
     digest.iter().map(|b| format!("{b:02x}")).collect()
 }
 
@@ -362,6 +366,10 @@ pub struct CliTask {
     pub tag_ids: Vec<Uuid>,
     #[sqlx(skip)]
     pub subtasks: Vec<CliSubtask>,
+    /// Sprint 35. Compared by filename + sha256; written through
+    /// `/api/cli/tasks/:id/attachments/:filename`.
+    #[sqlx(skip)]
+    pub attachments: Vec<crate::cli_attachments::CliAttachment>,
     pub revision: i64,
     pub sort_key: String,
 }
@@ -390,11 +398,12 @@ pub async fn fetch(
     ctx: CliCtx,
     Json(req): Json<FetchRequest>,
 ) -> ApiResult<Json<FetchResponse>> {
-    Ok(Json(fetch_state(&s.pool, &ctx, &req).await?))
+    Ok(Json(fetch_state(&s.pool, &s.storage, &ctx, &req).await?))
 }
 
 pub async fn fetch_state(
     pool: &PgPool,
+    storage: &crate::storage::StorageBackend,
     ctx: &CliCtx,
     req: &FetchRequest,
 ) -> ApiResult<FetchResponse> {
@@ -458,6 +467,11 @@ pub async fn fetch_state(
     for sub in subtasks {
         if let Some(t) = tasks.iter_mut().find(|t| t.id == sub.task_id) {
             t.subtasks.push(sub);
+        }
+    }
+    for a in crate::cli_attachments::attachments_for_tasks(pool, storage, &task_ids).await? {
+        if let Some(t) = tasks.iter_mut().find(|t| t.id == a.task_id) {
+            t.attachments.push((&a).into());
         }
     }
 

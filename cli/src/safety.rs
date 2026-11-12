@@ -59,14 +59,14 @@ pub fn hash(text: &str) -> [u8; 32] {
 }
 
 pub fn atomic_write(path: &Path, text: &str) -> Result<()> {
-    write_tmp_and_rename(path, text, None)
+    write_tmp_and_rename(path, text.as_bytes(), None)
 }
 
 pub fn atomic_write_private(path: &Path, text: &str) -> Result<()> {
-    write_tmp_and_rename(path, text, Some(0o600))
+    write_tmp_and_rename(path, text.as_bytes(), Some(0o600))
 }
 
-fn write_tmp_and_rename(path: &Path, text: &str, mode: Option<u32>) -> Result<()> {
+fn write_tmp_and_rename(path: &Path, text: &[u8], mode: Option<u32>) -> Result<()> {
     use std::io::Write;
     let dir = path.parent().unwrap_or(Path::new("."));
     let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("file");
@@ -83,7 +83,7 @@ fn write_tmp_and_rename(path: &Path, text: &str, mode: Option<u32>) -> Result<()
         }
         let _ = mode;
         let mut f = opts.open(&tmp).with_context(|| format!("creating {}", tmp.display()))?;
-        f.write_all(text.as_bytes())?;
+        f.write_all(text)?;
         f.sync_all()?;
     }
     // Keep the original's permissions.
@@ -147,7 +147,7 @@ impl Writer {
             .is_some_and(|o| !o.stdout.is_empty())
     }
 
-    fn backup(&mut self, path: &Path, content: &str) -> Result<()> {
+    fn backup(&mut self, path: &Path, content: impl AsRef<[u8]>) -> Result<()> {
         let Some(git_dir) = &self.git_dir else { return Ok(()) };
         let dir = self
             .backup_dir
@@ -156,9 +156,26 @@ impl Writer {
         let rel = path.strip_prefix(&self.root).unwrap_or(path);
         let dest = dir.join(rel);
         std::fs::create_dir_all(dest.parent().unwrap())?;
-        std::fs::write(&dest, content)?;
+        std::fs::write(&dest, content.as_ref())?;
         self.backups.push(dest);
         Ok(())
+    }
+
+    /// Write a binary file (an attachment). `replaces` is the sha256 of the
+    /// file it overwrites as seen at preview time (`None`: it must not
+    /// exist). An overwritten file is always backed up first.
+    pub fn put_file(&mut self, path: &Path, replaces: Option<&str>, data: &[u8]) -> Result<Outcome> {
+        let current = std::fs::read(path).ok();
+        let now = current.as_ref().map(|c| crate::attachments::sha256_hex(c));
+        if now.as_deref() != replaces {
+            return Ok(Outcome::Skipped("it changed on disk after the preview".into()));
+        }
+        if let Some(c) = &current {
+            self.backup(path, c)?;
+        }
+        std::fs::create_dir_all(path.parent().unwrap())?;
+        write_tmp_and_rename(path, data, None)?;
+        Ok(Outcome::Written)
     }
 
     /// Replace `path`, whose content when parsed was `original`.

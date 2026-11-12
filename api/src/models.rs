@@ -264,6 +264,11 @@ pub struct Attachment {
     pub storage_path: String,
     pub content_type: String,
     pub size: i64,
+    /// Hex sha256 of the content; NULL for rows uploaded before task-cli
+    /// attachments (filled in lazily by the CLI fetch).
+    #[sqlx(default)]
+    #[serde(default)]
+    pub sha256: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 

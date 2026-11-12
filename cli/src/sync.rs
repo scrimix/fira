@@ -15,8 +15,9 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::doc::DocKind;
-use crate::fira::{OpEnvelope, Precondition, RemoteSubtask, RemoteTask, Snapshot};
-use crate::model::{self, Sprint, Status, Subtask, Task};
+use crate::attachments;
+use crate::fira::{AttachmentPre, OpEnvelope, Precondition, RemoteAttachment, RemoteSubtask, RemoteTask, Snapshot};
+use crate::model::{self, Attachment, Sprint, Status, Subtask, Task};
 use crate::repo::{Repo, TaskRef, SINGLE_DIR, SPRINTS_DIR};
 use crate::safety::{apply_edits, Edit};
 use crate::write::{self, Defaults, Names};
@@ -40,6 +41,7 @@ pub enum Field {
     Description,
     Estimate,
     Subtasks,
+    Attachments,
     Sprint,
 }
 
@@ -55,6 +57,7 @@ impl Field {
             Field::Description => "description",
             Field::Estimate => "estimate",
             Field::Subtasks => "subtasks",
+            Field::Attachments => "attachments",
             Field::Sprint => "sprint",
         }
     }
@@ -119,6 +122,7 @@ pub struct Entity {
     pub remote_task: Option<Task>,
     pub revision: Option<i64>,
     pub remote_subtasks: Vec<RemoteSubtask>,
+    pub remote_attachments: Vec<RemoteAttachment>,
     pub state: State,
     pub fields: Vec<FieldDiff>,
 }
@@ -327,19 +331,28 @@ pub fn local_task(repo: &Repo, t: TaskRef, defaults: &Defaults, r: &Resolver) ->
             }
         }
     }
+    let id = repo.task_id(t);
+    let attachments = match attachments::local_set(&repo.root.dir, d, b, id) {
+        Ok(a) => a,
+        Err(e) => {
+            errs.extend(e);
+            vec![]
+        }
+    };
     if !errs.is_empty() {
         return Err(errs);
     }
     Ok(Task {
-        id: repo.task_id(t),
+        id,
         title: b.title.clone(),
-        description: b.description.clone(),
+        description: attachments::to_canonical(&b.description, &repo.root.dir, &d.path, id),
         status: b.status,
         sprint: repo.sprint_of_doc(t.doc),
         tags,
         assignee,
         estimate_min: c.and_then(|c| c.estimate),
         subtasks: b.subtasks.as_ref().map(|s| s.items.clone()).unwrap_or_default(),
+        attachments,
     })
 }
 
@@ -365,7 +378,21 @@ pub fn remote_task(t: &RemoteTask, r: &Resolver) -> Task {
         assignee: t.assignee_id,
         estimate_min: t.estimate_min,
         subtasks: t.subtasks.iter().map(|s| Subtask { title: s.title.clone(), done: s.done }).collect(),
+        attachments: remote_attachments(t).map(|a| Attachment {
+            name: a.filename.clone(),
+            sha256: a.sha256.clone().unwrap_or_default(),
+            size: a.size.max(0) as u64,
+        }).collect(),
     }
+}
+
+/// The remote attachments the CLI can represent locally. Names it can't
+/// (uploaded in the UI with spaces, say) are left out of the comparison
+/// entirely, so they are never deleted or overwritten; `build` lists them.
+fn remote_attachments(t: &RemoteTask) -> impl Iterator<Item = &RemoteAttachment> {
+    let mut v: Vec<&RemoteAttachment> = t.attachments.iter().filter(|a| attachments::valid_name(&a.filename)).collect();
+    v.sort_by(|a, b| a.filename.cmp(&b.filename));
+    v.into_iter()
 }
 
 fn sprint_fields(a: &Sprint, b: &Sprint) -> Vec<Field> {
@@ -413,6 +440,9 @@ fn task_fields(a: &Task, b: &Task) -> Vec<Field> {
     }
     if a.subtasks != b.subtasks {
         f.push(Field::Subtasks);
+    }
+    if a.attachments != b.attachments {
+        f.push(Field::Attachments);
     }
     f
 }
@@ -592,6 +622,7 @@ pub fn build(repo: &Repo, snap: Snapshot, mode: Mode, scope: &Scope, into: Optio
             remote_task: None,
             revision: remote_sprints.get(id).map(|s| s.revision),
             remote_subtasks: vec![],
+            remote_attachments: vec![],
             state,
             fields,
         });
@@ -622,6 +653,14 @@ pub fn build(repo: &Repo, snap: Snapshot, mode: Mode, scope: &Scope, into: Optio
         };
         let rt = remote_tasks.get(id);
         let remote = rt.map(|t| remote_task(t, &r));
+        if let Some(t) = rt {
+            for a in t.attachments.iter().filter(|a| !attachments::valid_name(&a.filename)) {
+                notices.push(format!(
+                    "attachment {:?} of \"{}\" is left out: its name has characters the CLI can't use in a link; rename it in Fira to letters, digits, '.', '_' and '-'",
+                    a.filename, t.title
+                ));
+            }
+        }
         let id_new = tref.is_some_and(|t| repo.task_ids[t.doc][t.task].new);
         let state = match (&local, &remote) {
             (Some(l), Some(rm)) => {
@@ -685,6 +724,7 @@ pub fn build(repo: &Repo, snap: Snapshot, mode: Mode, scope: &Scope, into: Optio
             remote_task: remote,
             revision: rt.map(|t| t.revision),
             remote_subtasks: rt.map(|t| t.subtasks.clone()).unwrap_or_default(),
+            remote_attachments: rt.map(|t| t.attachments.clone()).unwrap_or_default(),
             state,
             fields,
         });
@@ -791,17 +831,102 @@ pub enum FileWrite {
     Remove { doc: usize },
 }
 
+/// Make Fira's attachment `name` of `task` the local file `path`.
+#[derive(Debug, Clone)]
+pub struct Upload {
+    pub task: Uuid,
+    pub task_title: String,
+    pub name: String,
+    pub path: PathBuf,
+    /// The content the user reviewed; the upload is skipped if the file
+    /// changed since.
+    pub sha256: String,
+    pub pre: AttachmentPre,
+}
+
+#[derive(Debug, Clone)]
+pub struct RemoteDelete {
+    pub task: Uuid,
+    pub task_title: String,
+    pub name: String,
+    pub id: Uuid,
+}
+
+/// Write Fira's attachment `id` to `dest`.
+#[derive(Debug, Clone)]
+pub struct Download {
+    pub id: Uuid,
+    pub dest: PathBuf,
+    /// Hash of the local file being replaced, if any; skipped if the file
+    /// changed since the preview.
+    pub replaces: Option<String>,
+}
+
 pub struct Plan {
     pub ops: Vec<OpEnvelope>,
     pub pre: Vec<Precondition>,
     pub remote_lines: Vec<String>,
     pub local_lines: Vec<String>,
     pub files: Vec<FileWrite>,
+    /// After the ops: Fira's attachments made to match the files.
+    pub uploads: Vec<Upload>,
+    pub remote_deletes: Vec<RemoteDelete>,
+    /// Before the file writes: Fira's attachments brought into the repo.
+    pub downloads: Vec<Download>,
 }
 
 impl Plan {
     pub fn is_empty(&self) -> bool {
-        self.ops.is_empty() && self.files.is_empty()
+        self.ops.is_empty() && self.files.is_empty() && self.uploads.is_empty() && self.remote_deletes.is_empty() && self.downloads.is_empty()
+    }
+}
+
+/// Uploads and deletes that make Fira's attachment set `want`.
+fn attachment_writes(root: &std::path::Path, task: &Task, have: &[RemoteAttachment], want: &[Attachment], plan_u: &mut Vec<Upload>, plan_d: &mut Vec<RemoteDelete>, lines: &mut Vec<String>) {
+    let dir = attachments::task_dir(root, task.id);
+    for a in want {
+        let same: Vec<&RemoteAttachment> = have.iter().filter(|h| h.filename == a.name).collect();
+        let pre = match same.as_slice() {
+            [] => AttachmentPre::Absent,
+            [h] if h.sha256.as_deref() == Some(a.sha256.as_str()) => continue,
+            [h, ..] => AttachmentPre::Is(h.id),
+        };
+        lines.push(format!(
+            "{} {} ({}) {} \"{}\"",
+            if pre == AttachmentPre::Absent { "upload" } else { "replace" },
+            a.name,
+            attachments::human_size(a.size),
+            if pre == AttachmentPre::Absent { "to" } else { "in" },
+            task.title
+        ));
+        plan_u.push(Upload { task: task.id, task_title: task.title.clone(), name: a.name.clone(), path: dir.join(&a.name), sha256: a.sha256.clone(), pre });
+    }
+    for h in have.iter().filter(|h| attachments::valid_name(&h.filename) && !want.iter().any(|a| a.name == h.filename)) {
+        lines.push(format!("DELETE attachment {} of \"{}\" in Fira", h.filename, task.title));
+        plan_d.push(RemoteDelete { task: task.id, task_title: task.title.clone(), name: h.filename.clone(), id: h.id });
+    }
+}
+
+/// Downloads that bring Fira's files of `want` into the task's folder.
+fn attachment_downloads(root: &std::path::Path, task_id: Uuid, have: &[Attachment], remote: &[RemoteAttachment], want: &[Attachment], out: &mut Vec<Download>, lines: &mut Vec<String>) {
+    let dir = attachments::task_dir(root, task_id);
+    for a in want {
+        if have.iter().any(|h| h.name == a.name && h.sha256 == a.sha256) {
+            continue;
+        }
+        let Some(r) = remote.iter().find(|r| r.filename == a.name) else { continue };
+        let dest = dir.join(&a.name);
+        // An unlisted file of that name may be there already.
+        let replaces = std::fs::read(&dest).ok().map(|d| attachments::sha256_hex(&d));
+        if replaces.as_deref() == Some(a.sha256.as_str()) {
+            continue;
+        }
+        let shown = crate::config::display_path(&dest);
+        lines.push(match replaces {
+            Some(_) => format!("OVERWRITE {shown} with Fira's version ({})", attachments::human_size(a.size)),
+            None => format!("download {shown} ({})", attachments::human_size(a.size)),
+        });
+        out.push(Download { id: r.id, dest, replaces });
     }
 }
 
@@ -850,6 +975,9 @@ fn merge_task(a: &Task, b: &Task, take_b: &dyn Fn(Field) -> bool) -> Task {
     }
     if take_b(Field::Subtasks) {
         t.subtasks = b.subtasks.clone();
+    }
+    if take_b(Field::Attachments) {
+        t.attachments = b.attachments.clone();
     }
     t
 }
@@ -1083,6 +1211,11 @@ pub fn plan(repo: &Repo, cmp: &Comparison, dec: &Decisions, project_id: Uuid) ->
     let mut pre = vec![];
     let mut remote_lines = vec![];
     let mut local_lines = vec![];
+    let mut uploads = vec![];
+    let mut remote_deletes = vec![];
+    let mut att_lines = vec![];
+    let mut downloads = vec![];
+    let root = repo.root.dir.as_path();
 
     let choice = |id: Uuid, f: Field| dec.fields.get(&(id, f)).copied();
 
@@ -1129,8 +1262,14 @@ pub fn plan(repo: &Repo, cmp: &Comparison, dec: &Decisions, project_id: Uuid) ->
                 }
                 if ops.task_ops(Some((rm, &e.remote_subtasks)), &target_remote) {
                     pre.push(Precondition { kind: "task", id: e.id, revision: e.revision });
-                    let changed: Vec<&str> = task_fields(rm, &target_remote).iter().map(|f| f.name()).collect();
+                    let changed: Vec<&str> = task_fields(rm, &target_remote).iter().filter(|f| **f != Field::Attachments).map(|f| f.name()).collect();
                     remote_lines.push(format!("update task \"{}\": {}", target_remote.title, changed.join(", ")));
+                }
+                if cmp.mode != Mode::Diff && rm.attachments != target_remote.attachments {
+                    attachment_writes(root, &target_remote, &e.remote_attachments, &target_remote.attachments, &mut uploads, &mut remote_deletes, &mut att_lines);
+                }
+                if l.attachments != target_local.attachments {
+                    attachment_downloads(root, e.id, &l.attachments, &e.remote_attachments, &target_local.attachments, &mut downloads, &mut local_lines);
                 }
                 task_local_target.insert(e.id, target_local);
             }
@@ -1139,12 +1278,14 @@ pub fn plan(repo: &Repo, cmp: &Comparison, dec: &Decisions, project_id: Uuid) ->
                     ops.task_ops(None, l);
                     pre.push(Precondition { kind: "task", id: e.id, revision: None });
                     remote_lines.push(format!("create task \"{}\"", l.title));
+                    attachment_writes(root, l, &[], &l.attachments, &mut uploads, &mut remote_deletes, &mut att_lines);
                     task_local_target.insert(e.id, l.clone());
                 }
                 (State::DeletedInFira, Some(DeletedChoice::Recreate)) => {
                     ops.task_ops(None, l);
                     pre.push(Precondition { kind: "task", id: e.id, revision: None });
                     remote_lines.push(format!("recreate task \"{}\" (same id)", l.title));
+                    attachment_writes(root, l, &[], &l.attachments, &mut uploads, &mut remote_deletes, &mut att_lines);
                     task_local_target.insert(e.id, l.clone());
                 }
                 (State::DeletedInFira, Some(DeletedChoice::DeleteLocal)) => {
@@ -1155,12 +1296,14 @@ pub fn plan(repo: &Repo, cmp: &Comparison, dec: &Decisions, project_id: Uuid) ->
                 }
             },
             (None, Some(rm)) if cmp.mode == Mode::Import => {
+                attachment_downloads(root, e.id, &[], &e.remote_attachments, &rm.attachments, &mut downloads, &mut local_lines);
                 task_local_target.insert(e.id, rm.clone());
             }
             _ => {}
         }
     }
     remote_lines.extend(std::mem::take(&mut ops.lines));
+    remote_lines.extend(att_lines);
     let all_ops = ops.ops;
 
     // ---- local ----
@@ -1224,6 +1367,9 @@ pub fn plan(repo: &Repo, cmp: &Comparison, dec: &Decisions, project_id: Uuid) ->
             (Some(tr), Some(cur)) => {
                 handled.insert(tr);
                 let b = &repo.docs[tr.doc].tasks[tr.task];
+                let src_path = &repo.docs[tr.doc].path;
+                let src_prefix = attachments::link_prefix(root, src_path, e.id);
+                let (cur, target) = (&localize(cur, root, src_path), &localize(target, root, src_path));
                 let src_sprint = repo.sprint_of_doc(tr.doc);
                 let moving = target.sprint != src_sprint;
                 let dest_defaults = match target.sprint {
@@ -1235,7 +1381,7 @@ pub fn plan(repo: &Repo, cmp: &Comparison, dec: &Decisions, project_id: Uuid) ->
                 };
                 let defaults = if moving { dest_defaults } else { doc_defaults_new(tr.doc) };
                 let comment = write::comment_for(Some(b), e.id, write_id, target, &defaults, &r);
-                let tes = write::task_edits(&repo.docs[tr.doc].text, b, cur, target, comment);
+                let tes = write::task_edits(&repo.docs[tr.doc].text, b, cur, target, comment, &src_prefix);
                 if !moving {
                     if !tes.is_empty() {
                         let changed: Vec<&str> = task_fields(cur, target).iter().map(|f| f.name()).collect();
@@ -1248,17 +1394,19 @@ pub fn plan(repo: &Repo, cmp: &Comparison, dec: &Decisions, project_id: Uuid) ->
                     }
                     continue;
                 }
-                // Move: cut the (edited) block and paste it where its sprint is.
+                // Move: cut the (edited) block and paste it where its sprint
+                // is. Links to the task's folder follow the new location.
                 let src_doc = &repo.docs[tr.doc];
                 let level = |kind: DocKind| if kind == DocKind::Sprint { 2 } else { 1 };
+                let relink = |block: String, dest: &std::path::Path| block.replace(&src_prefix, &attachments::link_prefix(root, dest, e.id));
                 match target.sprint {
                     Some(sid) => {
                         if let Some(d) = repo.sprint_doc(sid) {
-                            let block = write::extract_block(&src_doc.text, b, &tes, level(DocKind::Sprint))?;
+                            let block = relink(write::extract_block(&src_doc.text, b, &tes, level(DocKind::Sprint))?, &repo.docs[d].path);
                             appends.entry(d).or_default().push(block);
                             local_lines.push(format!("move \"{}\" from {} to {}", target.title, src_doc.display, repo.docs[d].display));
                         } else if let Some((path, _, blocks)) = new_sprint_file.get_mut(&sid) {
-                            let block = write::extract_block(&src_doc.text, b, &tes, level(DocKind::Sprint))?;
+                            let block = relink(write::extract_block(&src_doc.text, b, &tes, level(DocKind::Sprint))?, path);
                             blocks.push(block);
                             local_lines.push(format!("move \"{}\" from {} to {}", target.title, src_doc.display, crate::config::display_path(path)));
                         } else {
@@ -1266,8 +1414,8 @@ pub fn plan(repo: &Repo, cmp: &Comparison, dec: &Decisions, project_id: Uuid) ->
                         }
                     }
                     None => {
-                        let block = write::extract_block(&src_doc.text, b, &tes, level(DocKind::Single))?;
                         let path = unique_path(&repo.root.dir.join(SINGLE_DIR), &model::slug(&target.title), &mut taken);
+                        let block = relink(write::extract_block(&src_doc.text, b, &tes, level(DocKind::Single))?, &path);
                         local_lines.push(format!("move \"{}\" from {} to {}", target.title, src_doc.display, crate::config::display_path(&path)));
                         new_files.push((path, block));
                     }
@@ -1284,12 +1432,14 @@ pub fn plan(repo: &Repo, cmp: &Comparison, dec: &Decisions, project_id: Uuid) ->
                     if repo.docs[d].kind == DocKind::Single {
                         bail!("--into must name a sprint file; a single task file holds one task");
                     }
-                    let mut t = target.clone();
+                    let path = &repo.docs[d].path;
+                    let mut t = localize(target, root, path);
                     t.sprint = repo.sprint_of_doc(d);
-                    appends.entry(d).or_default().push(write::render_task(2, e.id, &t, &doc_defaults_new(d), &r));
+                    appends.entry(d).or_default().push(write::render_task(2, e.id, &t, &doc_defaults_new(d), &r, &attachments::link_prefix(root, path, e.id)));
                     local_lines.push(format!("{}: add task \"{}\"", repo.docs[d].display, t.title));
-                } else if let Some((_, s, blocks)) = target.sprint.and_then(|sid| new_sprint_file.get_mut(&sid)) {
-                    blocks.push(write::render_task(2, e.id, target, &defaults_of(Some(s)), &r));
+                } else if let Some((path, s, blocks)) = target.sprint.and_then(|sid| new_sprint_file.get_mut(&sid)) {
+                    let t = localize(target, root, path);
+                    blocks.push(write::render_task(2, e.id, &t, &defaults_of(Some(s)), &r, &attachments::link_prefix(root, path, e.id)));
                 } else {
                     if let Some(sid) = target.sprint {
                         local_lines.push(format!(
@@ -1297,11 +1447,12 @@ pub fn plan(repo: &Repo, cmp: &Comparison, dec: &Decisions, project_id: Uuid) ->
                             target.title
                         ));
                     }
-                    let mut t = target.clone();
+                    let path = unique_path(&repo.root.dir.join(SINGLE_DIR), &model::slug(&target.title), &mut taken);
+                    let mut t = localize(target, root, &path);
                     t.sprint = None;
-                    let path = unique_path(&repo.root.dir.join(SINGLE_DIR), &model::slug(&t.title), &mut taken);
                     local_lines.push(format!("{}: new task file \"{}\"", crate::config::display_path(&path), t.title));
-                    new_files.push((path, write::render_task(1, e.id, &t, &Defaults::default(), &r)));
+                    let prefix = attachments::link_prefix(root, &path, e.id);
+                    new_files.push((path, write::render_task(1, e.id, &t, &Defaults::default(), &r, &prefix)));
                 }
             }
             _ => {}
@@ -1328,7 +1479,8 @@ pub fn plan(repo: &Repo, cmp: &Comparison, dec: &Decisions, project_id: Uuid) ->
             if let Ok(cur) = local_task(repo, tr, &doc_defaults_cur(d), &r) {
                 let b = &repo.docs[d].tasks[tr.task];
                 if let Some(c) = write::comment_for(Some(b), cur.id, false, &cur, &doc_defaults_new(d), &r) {
-                    edits.entry(d).or_default().extend(write::task_edits(&repo.docs[d].text, b, &cur, &cur, Some(c)));
+                    let prefix = attachments::link_prefix(root, &repo.docs[d].path, cur.id);
+                    edits.entry(d).or_default().extend(write::task_edits(&repo.docs[d].text, b, &cur, &cur, Some(c), &prefix));
                 }
             }
         }
@@ -1368,9 +1520,19 @@ pub fn plan(repo: &Repo, cmp: &Comparison, dec: &Decisions, project_id: Uuid) ->
     }
 
     if cmp.mode == Mode::Diff {
-        return Ok(Plan { ops: vec![], pre: vec![], remote_lines: vec![], local_lines: vec![], files: vec![] });
+        return Ok(Plan {
+            ops: vec![], pre: vec![], remote_lines: vec![], local_lines: vec![], files: vec![],
+            uploads: vec![], remote_deletes: vec![], downloads: vec![],
+        });
     }
-    Ok(Plan { ops: all_ops, pre, remote_lines, local_lines, files })
+    Ok(Plan { ops: all_ops, pre, remote_lines, local_lines, files, uploads, remote_deletes, downloads })
+}
+
+/// A task with its description in the local link form for `doc_path`.
+fn localize(t: &Task, root: &std::path::Path, doc_path: &std::path::Path) -> Task {
+    let mut t = t.clone();
+    t.description = attachments::to_local(&t.description, root, doc_path, t.id);
+    t
 }
 
 fn unique_path(dir: &std::path::Path, slug: &str, taken: &mut HashSet<PathBuf>) -> PathBuf {

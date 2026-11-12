@@ -8,7 +8,7 @@ tasks/
   config.toml           # Fira URL and project; committed, no secrets
   sprints/*.md          # one file per sprint
   single/*.md           # one file per unscheduled task
-  assets/<task-id>/     # files belonging to a task (local only for now)
+  assets/<task-id>/     # a task's files; listed ones are its attachments
 ```
 
 File names are for people. Renaming a file or retitling a task changes
@@ -36,6 +36,15 @@ Sprint description: any prose, including plain headings. Local only.
 
 Build the application shell.
 
+Target layout:
+
+![Layout](../assets/9a1d2c3e-0000-4000-8000-000000000002/layout.png)
+
+### Attachments
+
+- [layout.png](../assets/9a1d2c3e-0000-4000-8000-000000000002/layout.png)
+- [spec.pdf](../assets/9a1d2c3e-0000-4000-8000-000000000002/spec.pdf)
+
 ### Subtasks
 
 - [x] Navigation
@@ -54,7 +63,10 @@ Build the application shell.
 - A task's body runs to the next task heading. Its description is the body
   without the `task:` comment and the Subtasks section.
 - A `Subtasks` heading under the task holds its checklist (`- [ ]` /
-  `- [x]`, one line each). It must come last in the task.
+  `- [x]`, one line each).
+- An `Attachments` heading holds the task's attachments, one link per
+  line (see below). Attachments and Subtasks come last in the task, in
+  either order (canonically Attachments first).
 - Frontmatter keys, all optional: `sprint_id`, `starts_on`, `ends_on`,
   `track`, `tags` (a `[a, b]` list), `assignee`.
 - Dates are Mondays and the range is end-exclusive (a two-week sprint
@@ -106,6 +118,29 @@ editors move it), and typed markers like `[ x ]`, `[X]`, `[ ~ ]` are
 accepted. `task-cli fmt`
 normalises these. Headings, checklists and comments inside fenced code
 blocks are content.
+
+## Attachments
+
+A task's attachments are the files linked from its `Attachments` section,
+and they live in `assets/<task-id>/`. That list is what Fira gets:
+
+- A listed file is an attachment whether or not the description mentions
+  it. Files in the folder that are not listed stay local (notes, context
+  for agents) and never reach Fira.
+- The description may embed or link listed files with the local path
+  (`![Layout](../assets/<task-id>/layout.png)`). Fira stores these as
+  `attachment:layout.png` and renders them; diffs show that form.
+- Filenames use only letters, digits, `.`, `_` and `-`. A listed or
+  embedded file that is missing, or over 10 MB, is an error.
+- `task-cli fmt` moves an embedded image or a listed file from elsewhere in
+  the repository into the task's folder, rewrites the links, and adds
+  embedded files missing from the list. It never overwrites a different
+  file with the same name.
+- Files are compared by name and content. In a publish, choosing local
+  uploads new and changed files and deletes from Fira the ones no longer
+  listed (the confirmation names every delete); choosing Fira downloads
+  its files and rewrites the list. Removing a line never deletes the file
+  on disk. List order is local.
 
 ## Moving and removing
 

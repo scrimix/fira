@@ -13,6 +13,9 @@ This page is everything you need to edit task documents in this repository.
    Even then, never pass `--prefer`: it skips the human review of the diff.
    Run `publish … --dry-run` and show the user what would change instead.
 4. Keep prose as the user wrote it. Change only what you were asked to.
+5. **Removing a line from a task's `Attachments` list deletes that file in
+   Fira** on the next publish (if the user chooses local). Don't remove
+   attachments unless asked.
 
 ## Safe commands (never write to Fira, never prompt)
 
@@ -29,7 +32,9 @@ task-cli publish fira <file> --dry-run
 
 - `tasks/sprints/<name>.md`: one sprint per file.
 - `tasks/single/<name>.md`: one unscheduled task per file.
-- `tasks/assets/<task-id>/`: files belonging to a task.
+- `tasks/assets/<task-id>/`: files belonging to a task. Only files listed
+  in the task's `### Attachments` section are uploaded; put your own notes
+  there unlisted and they stay local.
 - A task's sprint is the file it is in. Moving a task = moving its block
   (heading `##` in sprint files, `#` in single files).
 
@@ -85,8 +90,13 @@ After signing in, the user lands on an empty screen.
   both or neither), `track`, `tags: [a, b]`, `assignee`.
 - Sprint `tags`/`assignee` apply to tasks that don't set them; a task's
   `tags=` replaces them, `tags=""` means none.
-- The Subtasks section is a one-line-per-item checklist and comes last in
-  its task.
+- The Subtasks section is a one-line-per-item checklist. The Attachments
+  section is one link per line: `- [shot.png](../assets/<task-id>/shot.png)`.
+  Both come last in the task, Attachments first.
+- To attach an image: embed it anywhere in the repository
+  (`![Shot](../../shot.png)`) and run `task-cli fmt`; it moves the file into
+  the task's folder, rewrites the link and lists it. Filenames: letters,
+  digits, `.`, `_`, `-` only.
 
 ## Typical agent task
 

@@ -2,6 +2,7 @@
 //! Fira, with a field-level diff the user accepts before anything is
 //! written on either side.
 
+mod attachments;
 mod config;
 mod doc;
 mod fira;
@@ -290,18 +291,67 @@ fn docs_for(repo: &Repo, files: &[PathBuf]) -> Result<Vec<usize>> {
         .collect()
 }
 
+/// The repository a tasks root belongs to: linked files from anywhere in
+/// it may be moved into a task's folder.
+fn repo_root(tasks_root: &Path) -> PathBuf {
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(tasks_root)
+        .args(["rev-parse", "--show-toplevel"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| PathBuf::from(String::from_utf8_lossy(&o.stdout).trim()))
+        .unwrap_or_else(|| tasks_root.parent().unwrap_or(tasks_root).to_path_buf())
+}
+
 fn fmt(files: &[PathBuf], check: bool) -> Result<u8> {
     let repo = Repo::load(root()?)?;
     let docs = docs_for(&repo, files)?;
-    let mut writer = safety::Writer::new(&repo.root.dir);
-    let mut changed = 0;
+    let root_dir = repo.root.dir.clone();
+    let repo_dir = repo_root(&root_dir);
+    let mut planned = std::collections::HashMap::new();
+    let mut errors = vec![];
+    let mut copies = vec![];
+    // Source of a move → the docs whose links now point at the copy.
+    let mut moved: std::collections::HashMap<PathBuf, Vec<usize>> = std::collections::HashMap::new();
+    let mut new_texts = vec![];
     for d in docs {
         let doc = &repo.docs[d];
         let sid = repo.sprint_ids[d].map(|s| (s.id, s.new));
         let ids: Vec<(uuid::Uuid, bool)> = repo.task_ids[d].iter().map(|i| (i.id, i.new)).collect();
-        let edits = write::fmt_edits(doc, sid, &ids);
-        let new = safety::apply_edits(&doc.text, &edits)?;
+        let mut edits = write::fmt_edits(doc, sid, &ids);
+        for (t, b) in doc.tasks.iter().enumerate() {
+            let p = attachments::fmt_task(&root_dir, &repo_dir, doc, b, repo.task_ids[d][t].id, &mut planned);
+            errors.extend(p.errors);
+            edits.extend(p.edits);
+            copies.extend(p.copies);
+            for src in p.moved_from {
+                moved.entry(src).or_default().push(d);
+            }
+        }
+        new_texts.push((d, safety::apply_edits(&doc.text, &edits)?));
+    }
+    if !errors.is_empty() {
+        bail!("{}\nNothing was changed.", errors.join("\n"));
+    }
+
+    let mut changed = 0;
+    for (from, to) in &copies {
+        changed += 1;
+        if check {
+            println!("would move {} to {}", display_path(from), display_path(to));
+            continue;
+        }
+        std::fs::create_dir_all(to.parent().unwrap())?;
+        std::fs::copy(from, to).with_context(|| format!("copying {} to {}", display_path(from), display_path(to)))?;
+    }
+    let mut writer = safety::Writer::new(&repo.root.dir);
+    let mut written = std::collections::HashSet::new();
+    for (d, new) in new_texts {
+        let doc = &repo.docs[d];
         if new == doc.text {
+            written.insert(d);
             continue;
         }
         changed += 1;
@@ -310,8 +360,20 @@ fn fmt(files: &[PathBuf], check: bool) -> Result<u8> {
             continue;
         }
         match writer.write(&doc.path, &doc.text, &new)? {
-            safety::Outcome::Written => println!("formatted {}", doc.display),
+            safety::Outcome::Written => {
+                written.insert(d);
+                println!("formatted {}", doc.display);
+            }
             safety::Outcome::Skipped(why) => eprintln!("skipped {}: {why}", doc.display),
+        }
+    }
+    if !check {
+        // A moved file's source goes once every link to it was rewritten.
+        for (src, ds) in moved {
+            if ds.iter().all(|d| written.contains(d)) && src.exists() {
+                std::fs::remove_file(&src).with_context(|| format!("removing {}", display_path(&src)))?;
+                println!("moved {} into the task's attachments", display_path(&src));
+            }
         }
     }
     writer.report_backups();
@@ -473,11 +535,21 @@ fn sync_run(repo: Repo, mode: Mode, scope: Scope, into: Option<usize>, opts: &Sy
         println!("Nothing to write.");
         return Ok(0);
     }
-    println!("\nFira: {}", if plan.remote_lines.is_empty() { "no changes".into() } else { format!("{} ops", plan.ops.len()) });
+    let att_writes = plan.uploads.len() + plan.remote_deletes.len();
+    println!(
+        "\nFira: {}",
+        match (plan.ops.len(), att_writes) {
+            (0, 0) => "no changes".to_string(),
+            (n, 0) => format!("{n} ops"),
+            (0, a) => format!("{a} attachment write(s)"),
+            (n, a) => format!("{n} ops, then {a} attachment write(s)"),
+        }
+    );
     for l in &plan.remote_lines {
         println!("  {l}");
     }
-    println!("Local: {}", if plan.files.is_empty() { "no changes".into() } else { format!("{} file(s)", plan.files.len()) });
+    let local_writes = plan.files.len() + plan.downloads.len();
+    println!("Local: {}", if local_writes == 0 { "no changes".into() } else { format!("{local_writes} file(s)") });
     for l in &plan.local_lines {
         println!("  {l}");
     }
@@ -526,8 +598,61 @@ fn sync_run(repo: Repo, mode: Mode, scope: Scope, into: Option<usize>, opts: &Sy
         }
     }
 
+    // Attachments after the ops (a new task must exist first). Each write
+    // stands on its own: a failure leaves the rest, and the next diff
+    // shows what is left.
+    let mut att_failed = vec![];
+    for u in &plan.uploads {
+        let what = format!("{} of \"{}\"", u.name, u.task_title);
+        let data = match std::fs::read(&u.path) {
+            Ok(d) if attachments::sha256_hex(&d) == u.sha256 => d,
+            Ok(_) => {
+                att_failed.push(format!("{what}: the file changed after the preview; not uploaded"));
+                continue;
+            }
+            Err(e) => {
+                att_failed.push(format!("{what}: {e}"));
+                continue;
+            }
+        };
+        match client.put_attachment(u.task, &u.name, u.pre, data) {
+            Ok(true) => println!("Fira: uploaded {what}"),
+            Ok(false) => println!("Fira: {what} was already up to date"),
+            Err(e) => att_failed.push(format!("{what}: {e}")),
+        }
+    }
+    for x in &plan.remote_deletes {
+        let what = format!("{} of \"{}\"", x.name, x.task_title);
+        match client.delete_attachment(x.task, &x.name, x.id) {
+            Ok(()) => println!("Fira: deleted attachment {what}"),
+            Err(e) => att_failed.push(format!("{what}: {e}")),
+        }
+    }
+
     let mut writer = safety::Writer::new(&repo.root.dir);
     let mut skipped = 0;
+    // Files before the documents that list them.
+    for dl in &plan.downloads {
+        let data = match client.download_attachment(dl.id) {
+            Ok(d) => d,
+            Err(e) => {
+                for f in &att_failed {
+                    eprintln!("attachment not written: {f}");
+                }
+                return Err(e.context(format!(
+                    "downloading {} failed; no task files were written (Fira's side is done). Run the command again",
+                    display_path(&dl.dest)
+                )));
+            }
+        };
+        match writer.put_file(&dl.dest, dl.replaces.as_deref(), &data)? {
+            safety::Outcome::Written => println!("wrote {}", display_path(&dl.dest)),
+            safety::Outcome::Skipped(why) => {
+                skipped += 1;
+                eprintln!("skipped {}: {why}", display_path(&dl.dest));
+            }
+        }
+    }
     for f in &plan.files {
         let (label, outcome) = match f {
             sync::FileWrite::Edit { doc, new_text } => {
@@ -549,6 +674,13 @@ fn sync_run(repo: Repo, mode: Mode, scope: Scope, into: Option<usize>, opts: &Sy
         }
     }
     writer.report_backups();
+    if !att_failed.is_empty() {
+        for f in &att_failed {
+            eprintln!("attachment not written: {f}");
+        }
+        eprintln!("Everything else was written. Run the command again: the diff shows what is left (a conflict means the attachment changed in Fira).");
+        return Ok(2);
+    }
     if skipped > 0 {
         eprintln!("Fira already has the accepted values; run the command again to bring the skipped files in line.");
         return Ok(2);

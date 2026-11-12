@@ -7,7 +7,6 @@ use crate::{
 };
 use axum::{
     extract::{Multipart, Path, State},
-    http::HeaderValue,
     Json,
 };
 use chrono::Utc;
@@ -105,6 +104,7 @@ pub async fn upload_attachment(
                     storage_path: storage_path.clone(),
                     content_type,
                     size: file_size,
+                    sha256: Some(crate::cli_api::sha256_hex(&data)),
                     created_at: Utc::now()
                 };
                 let mut tx = state.pool.begin()
@@ -161,14 +161,9 @@ pub async fn get_attachment(
                 )
             })?;
 
-        // Prepare headers
-        let mut headers = axum::http::HeaderMap::new();
-        let content_type = HeaderValue::from_str(&attachment.content_type)
-            .map_err(|e| format!("content_type: {e}"))?;
-        let content_length = HeaderValue::from_str(&attachment.size.to_string())
-            .map_err(|e| format!("content_length: {e}"))?;
-        headers.insert(axum::http::header::CONTENT_TYPE, content_type);
-        headers.insert(axum::http::header::CONTENT_LENGTH, content_length);
+        // Only raster images render inline; everything else (HTML, SVG,
+        // …) is a download with nosniff, so it can never run same-origin.
+        let headers = crate::cli_attachments::download_headers(&attachment);
         Ok((headers, data))
     }
     .await;

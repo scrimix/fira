@@ -8,9 +8,10 @@
 Maintain human-writable sprint and task documents in a repository and sync
 them with Fira through `task-cli`, with a mandatory field-level diff before
 any write. This sprint delivers the document format, the canonical model,
-the diff engine, and the Fira target. Notion, attachments, and the release
-pipeline follow in [sprint 35](35-task-cli-notion-and-attachments.md), which
-builds on the design below.
+the diff engine, and the Fira target. Attachments and the release pipeline
+follow in [sprint 35](35-task-cli-attachments.md), write-only Notion in
+[sprint 36](36-task-cli-notion-write-only.md); both build on the design below.
+Later references to "sprint 35" below predate that split.
 
 ## Prerequisite
 

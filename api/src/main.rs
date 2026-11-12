@@ -16,6 +16,7 @@ use tower_http::trace::TraceLayer;
 use fira_api::{
     attachments,
     cli_api,
+    cli_attachments,
     auth::{self, AuthConfig, AuthCtx},
     db,
     error::{self, ApiResult},
@@ -644,6 +645,13 @@ async fn main() -> anyhow::Result<()> {
         .route("/cli/whoami", get(cli_api::whoami))
         .route("/cli/fetch", post(cli_api::fetch))
         .route("/cli/apply", post(cli_api::apply))
+        .route(
+            "/cli/tasks/:task_id/attachments/:filename",
+            put(cli_attachments::put_handler)
+                .delete(cli_attachments::delete_handler)
+                .layer(DefaultBodyLimit::max(cli_attachments::MAX_ATTACHMENT_BYTES + 64 * 1024)),
+        )
+        .route("/cli/attachments/:id", get(cli_attachments::get_handler))
         .route("/changes", get(ops::get_changes));
 
     let attachments_router = Router::new()

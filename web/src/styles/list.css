@@ -2143,3 +2143,13 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
   text-transform: var(--label-case);
   font-weight: 600;
 }
+
+/* `attachment:<name>` in a description that names no attachment of the task. */
+.desc-attachment-missing {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--danger, #b42318);
+  text-decoration: line-through;
+  text-decoration-style: dotted;
+}

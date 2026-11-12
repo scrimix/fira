@@ -53,6 +53,8 @@ enum Disp {
     Line(String),
     Lines(Vec<String>),
     Text(String),
+    /// A set compared per member; the lines already say which side.
+    Set(Vec<String>),
 }
 
 fn none(s: &str) -> String {
@@ -86,8 +88,34 @@ fn task_value(t: &Task, f: Field, r: &Resolver, repo: &Repo) -> Disp {
         } else {
             t.subtasks.iter().map(|s| format!("{} {}", if s.done { "[x]" } else { "[ ]" }, s.title)).collect()
         }),
+        Field::Attachments => Disp::Lines(if t.attachments.is_empty() {
+            vec![none("none")]
+        } else {
+            t.attachments.iter().map(|a| format!("{} ({})", a.name, crate::attachments::human_size(a.size))).collect()
+        }),
         Field::Dates | Field::Track => Disp::Line(String::new()),
     }
+}
+
+/// `+ shot.png (local only, 240 KB)` / `~ layout.png (differs)` /
+/// `- old.png (only in Fira)`.
+fn attachment_lines(local: &Task, remote: &Task, st: &Style) -> Vec<String> {
+    let mut names: Vec<&str> = local.attachments.iter().chain(&remote.attachments).map(|a| a.name.as_str()).collect();
+    names.sort_unstable();
+    names.dedup();
+    let w = names.iter().map(|n| n.chars().count()).max().unwrap_or(0);
+    let mut out = vec![];
+    for n in names {
+        let l = local.attachments.iter().find(|a| a.name == n);
+        let r = remote.attachments.iter().find(|a| a.name == n);
+        match (l, r) {
+            (Some(l), None) => out.push(st.local(&format!("+ {n:<w$} (local only, {})", crate::attachments::human_size(l.size)))),
+            (None, Some(_)) => out.push(st.remote(&format!("- {n:<w$} (only in Fira)"))),
+            (Some(l), Some(r)) if l.sha256 != r.sha256 => out.push(st.warn(&format!("~ {n:<w$} (differs)"))),
+            _ => {}
+        }
+    }
+    out
 }
 
 fn sprint_value(s: &Sprint, f: Field, r: &Resolver) -> Disp {
@@ -101,7 +129,10 @@ fn sprint_value(s: &Sprint, f: Field, r: &Resolver) -> Disp {
     }
 }
 
-fn values(e: &Entity, f: Field, r: &Resolver, repo: &Repo) -> (Disp, Disp) {
+fn values(e: &Entity, f: Field, r: &Resolver, repo: &Repo, st: &Style) -> (Disp, Disp) {
+    if let (Field::Attachments, Some(l), Some(rm)) = (f, &e.local_task, &e.remote_task) {
+        return (Disp::Set(attachment_lines(l, rm, st)), Disp::Set(vec![]));
+    }
     match e.kind {
         Kind::Task => (
             task_value(e.local_task.as_ref().unwrap(), f, r, repo),
@@ -144,6 +175,12 @@ fn render_field(out: &mut String, st: &Style, indent: &str, name: &str, local_la
             for (i, line) in b.iter().enumerate() {
                 let lab = if i == 0 { format!("{:<w$}", "fira:") } else { " ".repeat(w) };
                 out.push_str(&format!("{indent}{gap}{} {}\n", st.remote(&lab), st.remote(line)));
+            }
+        }
+        (Disp::Set(lines), _) => {
+            for (i, line) in lines.iter().enumerate() {
+                let p = if i == 0 { format!("{name:<12}") } else { " ".repeat(12) };
+                out.push_str(&format!("{indent}{p} {line}\n"));
             }
         }
         (Disp::Text(a), Disp::Text(b)) => {
@@ -193,8 +230,9 @@ fn entity_values_for_new(e: &Entity, r: &Resolver, repo: &Repo) -> Vec<(Field, D
     match e.kind {
         Kind::Task => {
             let t = e.local_task.as_ref().or(e.remote_task.as_ref()).unwrap();
-            for f in [Field::Status, Field::Sprint, Field::Tags, Field::Assignee, Field::Estimate, Field::Subtasks] {
+            for f in [Field::Status, Field::Sprint, Field::Tags, Field::Assignee, Field::Estimate, Field::Subtasks, Field::Attachments] {
                 let empty = match f {
+                    Field::Attachments => t.attachments.is_empty(),
                     Field::Tags => t.tags.is_empty(),
                     Field::Assignee => t.assignee.is_none(),
                     Field::Estimate => t.estimate_min.is_none(),
@@ -239,7 +277,7 @@ pub fn render(repo: &Repo, cmp: &Comparison, st: &Style, local_label: &str, all:
         match e.state {
             State::Differs => {
                 for f in &e.fields {
-                    let (l, rm) = values(e, f.field, &r, repo);
+                    let (l, rm) = values(e, f.field, &r, repo, st);
                     render_field(out, st, &inner, f.field.name(), local_label, l, rm);
                     if let Some(n) = &f.note {
                         out.push_str(&format!("{inner}{}\n", st.warn(&format!("  note: {n}"))));
@@ -249,11 +287,11 @@ pub fn render(repo: &Repo, cmp: &Comparison, st: &Style, local_label: &str, all:
             State::New | State::NewLocal if all || e.kind == Kind::Task => {
                 for (f, d) in entity_values_for_new(e, &r, repo) {
                     if let Disp::Line(v) = d {
-                        out.push_str(&format!("{inner}{:<10}{v}\n", f.name()));
+                        out.push_str(&format!("{inner}{:<12}{v}\n", f.name()));
                     } else if let Disp::Lines(v) = d {
                         for (i, line) in v.iter().enumerate() {
                             let n = if i == 0 { f.name() } else { "" };
-                            out.push_str(&format!("{inner}{n:<10}{line}\n"));
+                            out.push_str(&format!("{inner}{n:<12}{line}\n"));
                         }
                     }
                 }
@@ -312,6 +350,7 @@ pub fn render_json(repo: &Repo, cmp: &Comparison) -> Value {
                     Field::Estimate => json!(t.estimate_min.map(model::format_estimate)),
                     Field::Description => json!(t.description),
                     Field::Subtasks => json!(t.subtasks),
+                    Field::Attachments => json!(t.attachments),
                     _ => Value::Null,
                 }
             }
@@ -427,7 +466,7 @@ pub fn choose(repo: &Repo, cmp: &Comparison, st: &Style, local_label: &str) -> R
             }
             let what = if e.kind == Kind::Sprint { "sprint" } else { "task" };
             let mut block = format!("\n{what} {}  {}\n", st.bold(&format!("\"{}\"", e.title())), st.dim(&format!("({})", location(repo, e))));
-            let (l, rm) = values(e, f.field, &r, repo);
+            let (l, rm) = values(e, f.field, &r, repo, st);
             render_field(&mut block, st, "  ", f.field.name(), local_label, l, rm);
             if let Some(n) = &f.note {
                 block.push_str(&format!("  {}\n", st.warn(&format!("note: {n}"))));
