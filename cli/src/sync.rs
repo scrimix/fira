@@ -371,7 +371,7 @@ pub fn remote_task(t: &RemoteTask, r: &Resolver) -> Task {
     Task {
         id: t.id,
         title: t.title.clone(),
-        description: model::normalize_text(&t.description_md),
+        description: model::normalize_text(&canonical_remote_description(&t.description_md, &t.attachments)),
         status: Status::from_fira(&t.status),
         sprint: t.sprint_id,
         tags: model::normalize_tags(t.tag_ids.iter().filter_map(|x| r.tag_title(*x)).collect()),
@@ -384,6 +384,18 @@ pub fn remote_task(t: &RemoteTask, r: &Resolver) -> Task {
             size: a.size.max(0) as u64,
         }).collect(),
     }
+}
+
+/// Links to the task's own attachments by URL (`https://…/api/attachments/<id>?…`,
+/// what the web UI's links produce) read as `attachment:<filename>`, like
+/// the ones the CLI writes. Any host: the id must be one of this task's.
+pub fn canonical_remote_description(md: &str, atts: &[RemoteAttachment]) -> String {
+    crate::doc::rewrite_link_dests(md, |l| {
+        let (_, rest) = l.dest.split_once("/api/attachments/")?;
+        let id: Uuid = rest.split(['?', '#', '/']).next()?.parse().ok()?;
+        let a = atts.iter().find(|a| a.id == id && attachments::valid_name(&a.filename))?;
+        Some(format!("{}{}", attachments::SCHEME, a.filename))
+    })
 }
 
 /// The remote attachments the CLI can represent locally. Names it can't
@@ -1663,6 +1675,26 @@ mod tests {
         assert_eq!(ops[0]["subtask_id"], json!(Uuid::from_u128(2)));
         let ops = subtask_ops(Uuid::nil(), &have[..1], &[st("a", false), st("d", true)]);
         assert_eq!(kinds(&ops), ["subtask.create", "subtask.reorder"]);
+    }
+
+    #[test]
+    fn attachment_urls_in_fira_descriptions_read_as_attachment_links() {
+        let id: Uuid = "0973c0ee-a6cd-491a-8d95-6290a461f256".parse().unwrap();
+        let atts = vec![
+            RemoteAttachment { id, filename: "charts.png".into(), sha256: None, size: 1, content_type: "image/png".into() },
+            RemoteAttachment { id: Uuid::from_u128(2), filename: "Screen Shot.png".into(), sha256: None, size: 1, content_type: "image/png".into() },
+        ];
+        let md = format!(
+            "![charts](https://usefira.app/api/attachments/{id}?workspace_id=04d40276-4fb5-4b61-9e40-e0d1d6735828) \
+             [other](https://usefira.app/api/attachments/{}) [bad](https://usefira.app/api/attachments/{})",
+            Uuid::from_u128(9),
+            Uuid::from_u128(2)
+        );
+        let out = canonical_remote_description(&md, &atts);
+        assert!(out.starts_with("![charts](attachment:charts.png) "), "{out}");
+        // Not this task's attachment, or a name the CLI can't link: untouched.
+        assert!(out.contains(&format!("/api/attachments/{}", Uuid::from_u128(9))));
+        assert!(out.contains(&format!("/api/attachments/{})", Uuid::from_u128(2))));
     }
 
     #[test]
