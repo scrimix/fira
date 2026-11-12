@@ -18,7 +18,8 @@ fly deploy "$root" \
   --dockerfile "$root/ops/backup/Dockerfile" \
   "$@"
 
-ids="$(fly machine list -a "$app" -q)"
+# -q pads IDs with whitespace; keep just the first field of each non-empty line.
+ids="$(fly machine list -a "$app" -q | awk 'NF { print $1 }')"
 count="$(printf '%s\n' "$ids" | grep -c . || true)"
 if [ "$count" -ne 1 ]; then
   echo "deploy.sh: expected exactly 1 machine in $app, found $count:" >&2
