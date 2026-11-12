@@ -54,7 +54,7 @@ tags: [frontend]
 
 Optional sprint description (synced with Fira's).
 
-## ⬜ Welcome screen
+## ⚪ Welcome screen
 
 What to build, in Markdown.
 
@@ -63,14 +63,14 @@ What to build, in Markdown.
 - [ ] Copy
 - [ ] Illustration
 
-## ⬜ Email verification
+## ⚪ Email verification
 <!-- task: tags=backend estimate=4h -->
 ```
 
 ## Single task file
 
 ```md
-# ⬜ Login redirects to the wrong page
+# ⚪ Login redirects to the wrong page
 <!-- task: tags=bug assignee=rihard.g -->
 
 After signing in, the user lands on an empty screen.
@@ -82,7 +82,7 @@ After signing in, the user lands on an empty screen.
 
 ## Format details
 
-- Task heading: a heading starting with ⬜ (todo), 🚧 (in progress) or
+- Task heading: a heading starting with ⚪ (todo), 🚧 (in progress) or
   ✅ (done). `[ ]` / `[~]` / `[x]` also work; `task-cli fmt` converts them.
   Subtasks stay a normal `- [ ]` / `- [x]` checklist.
 - Task comment `<!-- task: … -->`, optional, under the heading:

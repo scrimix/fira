@@ -1791,7 +1791,7 @@ mod tests {
             s.push_str(&format!("\n{desc}\n"));
         }
         for n in order {
-            s.push_str(&format!("\n## ⬜ T{n}\n<!-- task: id={} -->\n\nBody {n}\n", tid(*n)));
+            s.push_str(&format!("\n## ⚪ T{n}\n<!-- task: id={} -->\n\nBody {n}\n", tid(*n)));
         }
         s
     }
@@ -1862,7 +1862,7 @@ mod tests {
         let mut second = String::new();
         second.push_str(&format!("---\nsprint_id: {sid2}\n---\n\n# S2\n"));
         for n in [4u128, 3] {
-            second.push_str(&format!("\n## ⬜ T{n}\n<!-- task: id={} -->\n\nBody {n}\n", tid(n)));
+            second.push_str(&format!("\n## ⚪ T{n}\n<!-- task: id={} -->\n\nBody {n}\n", tid(n)));
         }
         std::fs::write(dir.path().join("sprints/t.md"), second).unwrap();
         let repo = Repo::load(crate::config::load_root(dir.path().to_path_buf()).unwrap()).unwrap();
@@ -1930,7 +1930,7 @@ mod tests {
 
     #[test]
     fn new_task_takes_fira_sprint_default_assignee_and_goes_to_now() {
-        let md = file("", &[1]) + "\n## ⬜ New\n\nBody\n";
+        let md = file("", &[1]) + "\n## ⚪ New\n\nBody\n";
         let (_, plan, ..) = run(&md, remote_with_default("2026-01-01", "2026-01-14"), Mode::Publish, Side::Remote);
         let t = created(&plan);
         assert_eq!(t["assignee_id"], json!(Uuid::from_u128(0x77)));
@@ -1939,13 +1939,13 @@ mod tests {
         let text = new_text(&plan);
         let (front, body) = text.split_once("\n---\n").unwrap();
         assert!(front.contains("assignee: maya.c"), "{text}");
-        let (_, new_task) = body.split_once("## ⬜ New").unwrap();
+        let (_, new_task) = body.split_once("## ⚪ New").unwrap();
         assert!(!new_task.contains("assignee="), "{text}");
     }
 
     #[test]
     fn explicit_nobody_stays_unassigned_and_later() {
-        let md = file("", &[1]) + "\n## ⬜ New\n<!-- task: assignee=\"\" -->\n\nBody\n";
+        let md = file("", &[1]) + "\n## ⚪ New\n<!-- task: assignee=\"\" -->\n\nBody\n";
         let (_, plan, ..) = run(&md, remote_with_default("2026-01-01", "2026-01-14"), Mode::Publish, Side::Remote);
         let t = created(&plan);
         assert_eq!(t["assignee_id"], serde_json::Value::Null);
@@ -1954,7 +1954,7 @@ mod tests {
 
     #[test]
     fn new_task_in_future_sprint_goes_to_later() {
-        let md = file("", &[1]) + "\n## ⬜ New\n\nBody\n";
+        let md = file("", &[1]) + "\n## ⚪ New\n\nBody\n";
         let (_, plan, ..) = run(&md, remote_with_default("2026-02-01", "2026-02-14"), Mode::Publish, Side::Remote);
         let t = created(&plan);
         assert_eq!(t["assignee_id"], json!(Uuid::from_u128(0x77)));
@@ -1968,7 +1968,7 @@ mod tests {
         let mut sn = remote_with_default("2026-01-05", "2026-01-19");
         sn.sprints[0].default_assignee_id = None;
         let md = format!(
-            "---\nsprint_id: {SID}\nstarts_on: 2026-01-05\nends_on: 2026-01-19\n---\n\n# S\n\n## ⬜ T1\n<!-- task: id={} -->\n\nBody 1\n\n## ⬜ New\n\nBody\n",
+            "---\nsprint_id: {SID}\nstarts_on: 2026-01-05\nends_on: 2026-01-19\n---\n\n# S\n\n## ⚪ T1\n<!-- task: id={} -->\n\nBody 1\n\n## ⚪ New\n\nBody\n",
             tid(1)
         );
         let (dir, repo) = temp_repo(&md);
@@ -1981,7 +1981,7 @@ mod tests {
         assert_eq!(t["assignee_id"], json!(me));
         assert_eq!(t["section"], "now");
         let text = new_text(&plan);
-        let (_, new_task) = text.split_once("## ⬜ New").unwrap();
+        let (_, new_task) = text.split_once("## ⚪ New").unwrap();
         assert!(new_task.contains("assignee=maya.c"), "{text}");
     }
 

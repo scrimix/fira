@@ -17,19 +17,23 @@ impl Status {
     /// The status marker written at the start of a task heading.
     pub fn marker(self) -> &'static str {
         match self {
-            Status::Todo => "⬜",
+            Status::Todo => "⚪",
             Status::InProgress => "🚧",
             Status::Done => "✅",
         }
     }
 
-    /// A canonical marker at the start of `s` (an optional U+FE0F
-    /// variation selector after it included): its byte length and status.
-    pub fn from_marker_prefix(s: &str) -> Option<(usize, Status)> {
-        for st in [Status::Todo, Status::InProgress, Status::Done] {
-            if let Some(rest) = s.strip_prefix(st.marker()) {
+    /// A status marker at the start of `s` (an optional U+FE0F variation
+    /// selector after it included): its byte length, status, and whether it
+    /// is the canonical marker. `⬜` was the todo marker before `⚪`; it
+    /// still reads as todo and `fmt` rewrites it.
+    pub fn from_marker_prefix(s: &str) -> Option<(usize, Status, bool)> {
+        const LEGACY: [(&str, Status); 1] = [("⬜", Status::Todo)];
+        let canonical = [Status::Todo, Status::InProgress, Status::Done].map(|st| (st.marker(), st));
+        for (marker, st) in canonical.iter().chain(LEGACY.iter()) {
+            if let Some(rest) = s.strip_prefix(marker) {
                 let vs = if rest.starts_with('\u{FE0F}') { '\u{FE0F}'.len_utf8() } else { 0 };
-                return Some((st.marker().len() + vs, st));
+                return Some((marker.len() + vs, *st, *marker == st.marker()));
             }
         }
         None

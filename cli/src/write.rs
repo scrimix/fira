@@ -577,7 +577,7 @@ mod tests {
         let out = fmt(src);
         assert_eq!(
             out,
-            "---\nsprint_id: 00000000-0000-0000-0000-000000000009\n---\n\n# S\n\nProse  with   odd spacing.\n\n\n## ✅ A\n<!-- task: id=00000000-0000-0000-0000-000000000007 -->\n\nBody line\nwrapped here.\n\n## ⬜ B\n<!-- task: id=00000000-0000-0000-0000-000000000007 tags=x estimate=2h -->\n"
+            "---\nsprint_id: 00000000-0000-0000-0000-000000000009\n---\n\n# S\n\nProse  with   odd spacing.\n\n\n## ✅ A\n<!-- task: id=00000000-0000-0000-0000-000000000007 -->\n\nBody line\nwrapped here.\n\n## ⚪ B\n<!-- task: id=00000000-0000-0000-0000-000000000007 tags=x estimate=2h -->\n"
         );
         // Idempotent.
         assert_eq!(fmt(&out), out);
@@ -585,7 +585,7 @@ mod tests {
 
     #[test]
     fn emoji_markers_are_canonical() {
-        let src = format!("---\nsprint_id: {ID}\n---\n# S\n\n## ⬜ A\n<!-- task: id={ID} -->\n\n## 🚧 B\n<!-- task: id=00000000-0000-0000-0000-00000000000b -->\n\n## ✅\u{FE0F} C\n<!-- task: id=00000000-0000-0000-0000-00000000000c -->\n");
+        let src = format!("---\nsprint_id: {ID}\n---\n# S\n\n## ⚪ A\n<!-- task: id={ID} -->\n\n## 🚧 B\n<!-- task: id=00000000-0000-0000-0000-00000000000b -->\n\n## ✅\u{FE0F} C\n<!-- task: id=00000000-0000-0000-0000-00000000000c -->\n");
         let d = sprint(&src);
         let st: Vec<Status> = d.tasks.iter().map(|t| t.status).collect();
         assert_eq!(st, [Status::Todo, Status::InProgress, Status::Done]);
@@ -595,17 +595,26 @@ mod tests {
     }
 
     #[test]
+    fn fmt_rewrites_legacy_todo_marker() {
+        let src = format!("---\nsprint_id: {ID}\n---\n# S\n\n## ⬜ A\n<!-- task: id={ID} -->\n");
+        let d = sprint(&src);
+        assert_eq!(d.tasks[0].status, Status::Todo);
+        assert!(!d.tasks[0].checkbox_canonical);
+        assert_eq!(fmt(&src), src.replace('⬜', "⚪"));
+    }
+
+    #[test]
     fn fmt_pulls_comment_up_from_wysiwyg_spacing() {
         let src = format!("---\nsprint_id: {ID}\n---\n# S\n\n## [ ] A\n\n\n<!-- task: id={ID} -->\n\nBody\n");
         let out = fmt(&src);
-        assert!(out.contains(&format!("## ⬜ A\n<!-- task: id={ID} -->\n\nBody\n")), "{out}");
+        assert!(out.contains(&format!("## ⚪ A\n<!-- task: id={ID} -->\n\nBody\n")), "{out}");
     }
 
     #[test]
     fn fmt_moves_comment_out_of_the_middle() {
         let src = format!("---\nsprint_id: {ID}\n---\n# S\n\n## [ ] A\n\nFirst\n\n<!-- task: id={ID} -->\n\nSecond\n");
         let out = fmt(&src);
-        assert!(out.ends_with(&format!("## ⬜ A\n<!-- task: id={ID} -->\n\nFirst\n\nSecond\n")), "{out}");
+        assert!(out.ends_with(&format!("## ⚪ A\n<!-- task: id={ID} -->\n\nFirst\n\nSecond\n")), "{out}");
     }
 
     fn task_of(d: &Doc, i: usize, defaults: &Defaults) -> Task {

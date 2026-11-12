@@ -419,7 +419,7 @@ mod tests {
 
     #[test]
     fn fmt_moves_embeds_and_lists_them() {
-        let text = format!("# S\n\n## ⬜ A\n<!-- task: id={ID} -->\n\nShell: ![Layout](../../shot.png)\n\n### Subtasks\n\n- [ ] one\n");
+        let text = format!("# S\n\n## ⚪ A\n<!-- task: id={ID} -->\n\nShell: ![Layout](../../shot.png)\n\n### Subtasks\n\n- [ ] one\n");
         let (dir, d) = setup(&text);
         std::fs::write(dir.path().join("shot.png"), b"png").unwrap();
         let root = dir.path().join("tasks");
@@ -430,13 +430,13 @@ mod tests {
         let out = crate::safety::apply_edits(&d.text, &plan.edits).unwrap();
         assert_eq!(
             out,
-            format!("# S\n\n## ⬜ A\n<!-- task: id={ID} -->\n\nShell: ![Layout](../assets/{ID}/shot.png)\n\n### Attachments\n\n- [shot.png](../assets/{ID}/shot.png)\n\n### Subtasks\n\n- [ ] one\n")
+            format!("# S\n\n## ⚪ A\n<!-- task: id={ID} -->\n\nShell: ![Layout](../assets/{ID}/shot.png)\n\n### Attachments\n\n- [shot.png](../assets/{ID}/shot.png)\n\n### Subtasks\n\n- [ ] one\n")
         );
     }
 
     #[test]
     fn fmt_adds_to_an_existing_list_and_refuses_clashes() {
-        let text = format!("# S\n\n## ⬜ A\n<!-- task: id={ID} -->\n\n![a](../assets/{ID}/a.png)\n\n### Attachments\n\n- [spec.pdf](../assets/{ID}/spec.pdf)\n- [b.png](../../b.png)\n");
+        let text = format!("# S\n\n## ⚪ A\n<!-- task: id={ID} -->\n\n![a](../assets/{ID}/a.png)\n\n### Attachments\n\n- [spec.pdf](../assets/{ID}/spec.pdf)\n- [b.png](../../b.png)\n");
         let (dir, d) = setup(&text);
         let root = dir.path().join("tasks");
         std::fs::create_dir_all(task_dir(&root, id())).unwrap();
@@ -450,7 +450,7 @@ mod tests {
 
     #[test]
     fn local_set_validates() {
-        let text = format!("# S\n\n## ⬜ A\n<!-- task: id={ID} -->\n\n![a](../assets/{ID}/a.png)\n\n### Attachments\n\n- [spec.pdf](../assets/{ID}/spec.pdf)\n");
+        let text = format!("# S\n\n## ⚪ A\n<!-- task: id={ID} -->\n\n![a](../assets/{ID}/a.png)\n\n### Attachments\n\n- [spec.pdf](../assets/{ID}/spec.pdf)\n");
         let (dir, d) = setup(&text);
         let root = dir.path().join("tasks");
         std::fs::create_dir_all(task_dir(&root, id())).unwrap();

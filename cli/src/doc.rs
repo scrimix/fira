@@ -233,14 +233,14 @@ pub fn parse(path: PathBuf, display: String, text: String, kind: DocKind) -> Res
                 errs.at(
                     body_start,
                     format!(
-                        "a single task file holds exactly one task heading (`# ⬜ Title`), found {}",
+                        "a single task file holds exactly one task heading (`# ⚪ Title`), found {}",
                         heads.len()
                     ),
                 );
             } else {
                 let first = &s.headings[heads[0].0];
                 if !text[body_start..first.line_start].trim().is_empty() {
-                    errs.at(body_start, "text before the task heading; a single task file starts with `# ⬜ Title`");
+                    errs.at(body_start, "text before the task heading; a single task file starts with `# ⚪ Title`");
                 }
             }
         }
@@ -307,8 +307,8 @@ fn parse_heading(text: &str, h: &Heading) -> Option<ParsedHeading> {
     // literal brackets in every Markdown viewer.
     let mut checkbox = None;
     let mut title_start = 0;
-    let marker: Option<(usize, Status, bool)> = if let Some((len, st)) = Status::from_marker_prefix(content) {
-        Some((len, st, true))
+    let marker: Option<(usize, Status, bool)> = if let Some((len, st, canonical)) = Status::from_marker_prefix(content) {
+        Some((len, st, canonical))
     } else if content.starts_with('[') {
         content.find(']').and_then(|close| {
             let status = match content[1..close].trim() {

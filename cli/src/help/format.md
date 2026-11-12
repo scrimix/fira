@@ -32,7 +32,7 @@ assignee: rihard.g
 Sprint description: any prose, including plain headings. Synced with the
 description in Fira's sprint modal.
 
-## ⬜ Application shell
+## ⚪ Application shell
 <!-- task: id=9a1d2c3e-0000-4000-8000-000000000002 tags=frontend,layout estimate=4h -->
 
 Build the application shell.
@@ -62,7 +62,7 @@ Target layout:
   tasks that are in both are compared; a task only in Fira keeps its
   place. Reorder by moving blocks.
 - A heading that starts with a status marker is a task:
-  ⬜ todo, 🚧 in progress, ✅ done. You may type `[ ]`, `[~]` or `[x]`
+  ⚪ todo, 🚧 in progress, ✅ done. You may type `[ ]`, `[~]` or `[x]`
   instead; `task-cli fmt` turns them into the emoji (brackets in a heading
   render as plain text, emoji render everywhere).
 - A task's body runs to the next task heading. Its description is the body
@@ -83,7 +83,7 @@ Target layout:
 ## Single task file
 
 ```md
-# ⬜ Login redirects to the wrong page
+# ⚪ Login redirects to the wrong page
 <!-- task: id=9a1d2c3e-0000-4000-8000-000000000004 tags=bug,authentication assignee=rihard.g -->
 
 After signing in, the user lands on an empty screen.

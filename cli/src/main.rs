@@ -77,7 +77,7 @@ Examples:\n  task-cli login fira\n  task-cli login fira --project Atlas")]
     },
     /// Insert missing IDs and normalise structure lines; never changes prose
     #[command(after_help = "Moves each `task:` comment directly under its heading, rewrites status markers\n\
-to ⬜ / 🚧 / ✅, inserts missing ids and sprint_id, and orders comment keys.\n\
+to ⚪ / 🚧 / ✅, inserts missing ids and sprint_id, and orders comment keys.\n\
 Nothing is sent anywhere.\n\n\
 Exit codes: 0 done (or nothing to change), 1 with --check when something would change, 2 error.\n\n\
 Examples:\n  task-cli fmt\n  task-cli fmt tasks/sprints/001-onboarding.md\n  task-cli fmt --check    # pre-commit hook")]
