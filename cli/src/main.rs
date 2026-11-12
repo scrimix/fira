@@ -290,7 +290,22 @@ fn docs_for(repo: &Repo, files: &[PathBuf]) -> Result<Vec<usize>> {
     files
         .iter()
         .map(|f| {
-            repo.doc_index(f).ok_or_else(|| {
+            if let Some(i) = repo.doc_index(f) {
+                return Ok(i);
+            }
+            // A bare name (no directory part) is looked up by file name.
+            let bare = f.components().count() == 1;
+            if let Some(name) = f.to_str().filter(|_| bare) {
+                match repo.docs_named(name).as_slice() {
+                    [i] => return Ok(*i),
+                    [] => {}
+                    many => bail!(
+                        "{name} matches several task documents; give the path: {}",
+                        many.iter().map(|&i| repo.docs[i].display.as_str()).collect::<Vec<_>>().join(", ")
+                    ),
+                }
+            }
+            Err({
                 anyhow!(
                     "{} is not a task document under {}/{} or {}/{}",
                     f.display(),

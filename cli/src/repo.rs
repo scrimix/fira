@@ -156,4 +156,14 @@ impl Repo {
         let canon = path.canonicalize().ok()?;
         self.docs.iter().position(|d| d.path.canonicalize().ok().as_deref() == Some(canon.as_path()))
     }
+
+    /// Docs whose file name is `name`, or whose name without `.md` is
+    /// `name`: lets a bare `shadow-trading` or `shadow-trading.md` work
+    /// from any directory.
+    pub fn docs_named(&self, name: &str) -> Vec<usize> {
+        let want = name.strip_suffix(".md").unwrap_or(name);
+        (0..self.docs.len())
+            .filter(|&i| self.docs[i].path.file_stem().is_some_and(|s| s == want))
+            .collect()
+    }
 }

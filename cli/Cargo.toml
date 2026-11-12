@@ -1,6 +1,6 @@
 [package]
 name = "task-cli"
-version = "0.1.9"
+version = "0.1.10"
 edition = "2021"
 license = "MIT"
 description = "Sync sprint and task Markdown documents in a repository with Fira"
