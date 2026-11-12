@@ -62,17 +62,20 @@ revoke create on schema public from public;
 
 ```sh
 ops/backup/deploy.sh                          # or ./deploy.sh from ops/backup/
-fly scale count 1 -a fira-backup --yes
-fly machine list -a fira-backup
-fly machine update <id> -a fira-backup --schedule daily --restart no --yes
 ```
 
-`deploy.sh` always builds with the repo root as context, from any directory.
-The image compiles `api/`, so a plain `fly deploy` inside `ops/backup/` fails
-at `COPY api/` with "not found".
+`deploy.sh` deploys, then sets `--schedule daily` on the machine and checks
+it took. The schedule can't go in `fly.toml` (Fly only supports it per
+machine), so **always deploy through this script**, never plain `fly deploy`.
+It fails if the app doesn't have exactly one machine; fix with
+`fly scale count 1 -a fira-backup --yes` and rerun.
 
-After any redeploy, check that `fly machine status <id> -a fira-backup` still
-shows the daily schedule.
+It always builds with the repo root as context, from any directory. The image
+compiles `api/`, so a plain `fly deploy` inside `ops/backup/` fails at
+`COPY api/` with "not found".
+
+A scheduled run shows in `fly machine status <id> -a fira-backup` as a
+`start` event with source `flyd`; a manual start shows source `user`.
 
 ## Manual backup
 
