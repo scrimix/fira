@@ -1419,12 +1419,14 @@ pub async fn changes_for_user(
         DateTime<Utc>,
         Option<Uuid>,
         Option<Uuid>,
+        Uuid,
     )> = sqlx::query_as(
         "SELECT po.seq, po.op_id, po.kind, po.payload, po.applied_at, po.project_id,
                 CASE WHEN po.kind LIKE 'block.%' THEN
                   COALESCE(po.block_user_id,
                            CASE WHEN po.kind = 'block.create' THEN (po.payload->'block'->>'user_id')::uuid END, b.user_id)
-                END
+                END,
+                po.user_id
          FROM processed_ops po
          LEFT JOIN time_blocks b ON po.block_user_id IS NULL AND b.id = CASE WHEN po.kind IN ('block.update', 'block.delete') THEN (po.payload->>'block_id')::uuid END
          WHERE po.seq > $1
@@ -1474,7 +1476,7 @@ pub async fn changes_for_user(
     let ops = rows
         .into_iter()
         .filter_map(
-            |(seq, op_id, mut kind, mut payload, applied_at, project_id, block_owner)| {
+            |(seq, op_id, mut kind, mut payload, applied_at, project_id, block_owner, author)| {
                 if kind.starts_with("block.")
                     && project_id.is_some_and(|p| restricted.contains(&p))
                     && block_owner != Some(user_id)
@@ -1487,6 +1489,16 @@ pub async fn changes_for_user(
                         "kind": kind, "project_id": project,
                         "private_task_ids": private_tasks.iter().filter(|(_, p)| *p == project).map(|(id, _)| id).collect::<Vec<_>>()
                     });
+                }
+                if kind == "task.create" {
+                    // The row's created_by/created_at come from the server
+                    // (the op's author, apply time), not the payload; send
+                    // those, or a client that left them out (task-cli)
+                    // shows up as "Unknown" until the next full load.
+                    if let Some(task) = payload.get_mut("task").and_then(|t| t.as_object_mut()) {
+                        task.insert("created_by".into(), serde_json::json!(author));
+                        task.insert("created_at".into(), serde_json::json!(applied_at));
+                    }
                 }
                 if kind == "task.create" || kind == "task.move_project" {
                     if let Some(task) = payload.get_mut("task") {

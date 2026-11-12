@@ -13,7 +13,7 @@ binaries so a project can install the CLI without a Rust toolchain.
 
 Everything reuses sprint 34's canonical model, diff procedure, removal rules
 and local file safety unchanged. Notion follows in
-[sprint 36](36-task-cli-notion-write-only.md) and reuses this sprint's
+[sprint 36](36-task-cli-notion.md) and reuses this sprint's
 attachment model.
 
 ## Prerequisite
