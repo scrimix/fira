@@ -9,7 +9,7 @@ This page is everything you need to edit task documents in this repository.
    Fira; a copied one is a duplicate-id error.
 2. **Deleting a task block does not delete the task in Fira.** It is only
    listed as "only in Fira". Tell the user if a task should be deleted.
-3. **Do not publish or import unless the user explicitly asked you to.**
+3. **Do not publish, sync or import unless the user explicitly asked you to.**
    Even then, never pass `--prefer`: it skips the human review of the diff.
    Run `publish … --dry-run` and show the user what would change instead.
 4. Keep prose as the user wrote it. Change only what you were asked to.
@@ -24,6 +24,7 @@ task-cli fmt                      # add ids, normalise structure; prose untouche
 task-cli fmt --check              # exit 1 if fmt would change something
 task-cli diff --json              # working copy vs Fira, machine-readable
 task-cli publish fira <file> --dry-run
+task-cli sync fira --dry-run
 ```
 
 `diff` exits 0 in sync, 1 on differences, 2 on errors.
@@ -37,6 +38,8 @@ task-cli publish fira <file> --dry-run
   there unlisted and they stay local.
 - A task's sprint is the file it is in. Moving a task = moving its block
   (heading `##` in sprint files, `#` in single files).
+- The order of task blocks in a sprint file is the sprint's task order and
+  is synced with Fira. Don't reorder blocks unless asked.
 
 ## Sprint file
 
@@ -49,7 +52,7 @@ tags: [frontend]
 
 # Onboarding
 
-Optional sprint description.
+Optional sprint description (synced with Fira's).
 
 ## ⬜ Welcome screen
 

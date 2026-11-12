@@ -36,6 +36,9 @@ already (`c0027d4`): a task the CLI *creates* in a sprint gets a `sort_key`
 after that sprint's last task, in file order, so a fresh publish doesn't
 scramble. Revisit membership the same way if it causes friction in use.
 
+> **Revised in [sprint 37](37-sprint-description-and-task-order.md):** task
+> order within a sprint is now compared and synced. It caused friction in use.
+
 ## Attachments
 
 Attachments belong to tasks only. Files live in `tasks/assets/<task-id>/`.

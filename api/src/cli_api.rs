@@ -45,6 +45,9 @@ const TOKEN_PREFIX: &str = "fira_";
 /// leads in Fira.
 /// `subtask.delete` is allowed because subtasks are an ordered value list
 /// on the task — removing a checklist line is an edit of the task.
+/// `task.reorder` is how a sprint file's task order reaches Fira; the CLI
+/// sends the whole project order (`FetchResponse::task_order`) with only
+/// the sprint's own tasks permuted among their slots, as a drag does.
 const ALLOWED_KINDS: &[&str] = &[
     "task.create",
     "task.set_title",
@@ -54,6 +57,7 @@ const ALLOWED_KINDS: &[&str] = &[
     "task.set_estimate",
     "task.set_tags",
     "task.set_sprint",
+    "task.reorder",
     "subtask.create",
     "subtask.tick",
     "subtask.set_title",
@@ -61,6 +65,7 @@ const ALLOWED_KINDS: &[&str] = &[
     "subtask.reorder",
     "sprint.create",
     "sprint.set_title",
+    "sprint.set_description",
     "sprint.set_dates",
     "sprint.set_track",
     "sprint.set_defaults",
@@ -326,6 +331,10 @@ pub struct FetchResponse {
     pub sprints: Vec<CliSprint>,
     pub tasks: Vec<CliTask>,
     pub missing: Vec<Missing>,
+    /// Every task id in the project, in display order (sort_key in byte
+    /// order, as the web client compares). A reorder must send the whole
+    /// list so the relative order of tasks outside the sprint survives.
+    pub task_order: Vec<Uuid>,
 }
 
 #[derive(Serialize, sqlx::FromRow)]
@@ -345,6 +354,7 @@ pub struct CliMember {
 pub struct CliSprint {
     pub id: Uuid,
     pub title: String,
+    pub description_md: String,
     pub starts_on: Option<NaiveDate>,
     pub ends_on: Option<NaiveDate>,
     pub track_id: Option<Uuid>,
@@ -432,7 +442,7 @@ pub async fn fetch_state(
             .fetch_all(pool)
             .await?;
     let sprints: Vec<CliSprint> = sqlx::query_as(
-        "SELECT id, title, starts_on, ends_on, track_id, default_assignee_id, revision,
+        "SELECT id, title, description_md, starts_on, ends_on, track_id, default_assignee_id, revision,
                 ARRAY(SELECT tag_id FROM sprint_default_tags WHERE sprint_id = sprints.id ORDER BY tag_id) AS default_tag_ids
          FROM sprints
          WHERE project_id = $1 AND ($2 OR id = ANY($3))
@@ -449,7 +459,7 @@ pub async fn fetch_state(
                 ARRAY(SELECT tag_id FROM task_tags WHERE task_id = tasks.id ORDER BY tag_id) AS tag_ids
          FROM tasks
          WHERE project_id = $1 AND (id = ANY($2) OR sprint_id = ANY($3))
-         ORDER BY sort_key, created_at, id",
+         ORDER BY sort_key COLLATE \"C\", created_at, id",
     )
     .bind(req.project_id)
     .bind(&req.task_ids)
@@ -457,6 +467,10 @@ pub async fn fetch_state(
     .fetch_all(pool)
     .await?;
     let task_ids: Vec<Uuid> = tasks.iter().map(|t| t.id).collect();
+    let task_order: Vec<Uuid> = sqlx::query_scalar(TASK_ORDER_SQL)
+        .bind(req.project_id)
+        .fetch_all(pool)
+        .await?;
     let subtasks: Vec<CliSubtask> = sqlx::query_as(
         "SELECT task_id, id, title, done FROM subtasks
          WHERE task_id = ANY($1) ORDER BY sort_key, id",
@@ -531,6 +545,7 @@ pub async fn fetch_state(
         sprints,
         tasks,
         missing,
+        task_order,
     })
 }
 
@@ -568,6 +583,12 @@ async fn existence(
     Ok(if deleted { "deleted" } else { "never" })
 }
 
+/// The project's task order: what `fetch` returns as `task_order` and what
+/// a `task_order` precondition is compared with. Byte order, as the web
+/// compares sort keys.
+const TASK_ORDER_SQL: &str =
+    "SELECT id FROM tasks WHERE project_id = $1 ORDER BY sort_key COLLATE \"C\", created_at, id";
+
 // ---- POST /api/cli/apply ----
 
 #[derive(Deserialize)]
@@ -580,11 +601,16 @@ pub struct ApplyRequest {
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct Precondition {
-    /// `task` or `sprint`.
+    /// `task`, `sprint`, or `task_order` (id = the project).
     pub kind: String,
     pub id: Uuid,
     /// The revision the client previewed; `None` = "must not exist yet".
+    #[serde(default)]
     pub revision: Option<i64>,
+    /// `task_order` only: the project's task order the client previewed,
+    /// as `fetch` returns it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub order: Option<Vec<Uuid>>,
 }
 
 #[derive(Serialize, Debug)]
@@ -680,10 +706,37 @@ pub async fn apply_batch(
         return Err(ApplyError::NotFound);
     }
 
-    // Lock in a stable order so two concurrent publishes can't deadlock.
-    let mut pres = req.preconditions.clone();
-    pres.sort_by_key(|p| (p.kind.clone(), p.id));
     let mut conflicts = Vec::new();
+    // Task order has no revision, so it is checked by value: lock every
+    // task in the project (by id, before any per-row lock below, so two
+    // publishes can't deadlock) and compare the order with the previewed one.
+    let (order_pres, mut pres): (Vec<Precondition>, Vec<Precondition>) =
+        req.preconditions.iter().cloned().partition(|p| p.kind == "task_order");
+    if !order_pres.is_empty() {
+        sqlx::query("SELECT id FROM tasks WHERE project_id = $1 ORDER BY id FOR UPDATE")
+            .bind(req.project_id)
+            .fetch_all(&mut *tx)
+            .await?;
+        let actual: Vec<Uuid> = sqlx::query_scalar(TASK_ORDER_SQL)
+            .bind(req.project_id)
+            .fetch_all(&mut *tx)
+            .await?;
+        for p in &order_pres {
+            if p.id != req.project_id || p.order.is_none() {
+                return Err(ApplyError::Rejected {
+                    index: 0,
+                    op_id: String::new(),
+                    message: "a task_order precondition needs this project's id and an order".into(),
+                });
+            }
+            if p.order.as_ref() != Some(&actual) {
+                conflicts.push(Conflict { kind: p.kind.clone(), id: p.id, expected: None, actual: None });
+            }
+        }
+    }
+
+    // Lock in a stable order so two concurrent publishes can't deadlock.
+    pres.sort_by_key(|p| (p.kind.clone(), p.id));
     for p in &pres {
         let table = match p.kind.as_str() {
             "task" => "tasks",

@@ -26,6 +26,9 @@ use crate::write::{self, Defaults, Names};
 pub enum Mode {
     Publish,
     Import,
+    /// Publish and import for what exists on both sides: the same merge,
+    /// but nothing is created in Fira or in the repository.
+    Sync,
     Diff,
 }
 
@@ -43,6 +46,8 @@ pub enum Field {
     Subtasks,
     Attachments,
     Sprint,
+    /// A sprint's task order.
+    Order,
 }
 
 impl Field {
@@ -59,6 +64,7 @@ impl Field {
             Field::Subtasks => "subtasks",
             Field::Attachments => "attachments",
             Field::Sprint => "sprint",
+            Field::Order => "order",
         }
     }
 }
@@ -295,10 +301,12 @@ pub fn local_sprint(repo: &Repo, doc: usize, r: &Resolver) -> Result<Sprint, Vec
     Ok(Sprint {
         id: repo.sprint_ids[doc].map(|s| s.id).unwrap_or_default(),
         title: d.title.as_ref().map(|t| t.0.clone()).unwrap_or_default(),
+        description: d.description.as_ref().map(|x| x.1.clone()).unwrap_or_default(),
         dates: fm.dates,
         track: fm.track.clone(),
         tags,
         assignee,
+        tasks: repo.tasks_of(doc).map(|t| repo.task_id(t)).collect(),
     })
 }
 
@@ -356,10 +364,20 @@ pub fn local_task(repo: &Repo, t: TaskRef, defaults: &Defaults, r: &Resolver) ->
     })
 }
 
+/// The sprint's tasks in Fira's checklist order: sort_key in byte order,
+/// as the web client sorts (the server's order breaks ties).
+pub fn remote_task_order(snap: &Snapshot, sprint: Uuid) -> Vec<Uuid> {
+    let mut v: Vec<&RemoteTask> = snap.tasks.iter().filter(|t| t.sprint_id == Some(sprint)).collect();
+    v.sort_by(|a, b| a.sort_key.as_bytes().cmp(b.sort_key.as_bytes()));
+    v.into_iter().map(|t| t.id).collect()
+}
+
 pub fn remote_sprint(s: &crate::fira::RemoteSprint, r: &Resolver) -> Sprint {
     Sprint {
         id: s.id,
         title: s.title.clone(),
+        description: model::normalize_text(s.description_md.as_deref().unwrap_or_default()),
+        tasks: remote_task_order(r.snap, s.id),
         dates: s.starts_on.zip(s.ends_on),
         track: s.track_id.and_then(|t| r.track_title(t)),
         tags: model::normalize_tags(s.default_tag_ids.iter().filter_map(|t| r.tag_title(*t)).collect()),
@@ -411,6 +429,12 @@ fn sprint_fields(a: &Sprint, b: &Sprint) -> Vec<Field> {
     let mut f = vec![];
     if a.title != b.title {
         f.push(Field::Title);
+    }
+    if a.description != b.description {
+        f.push(Field::Description);
+    }
+    if model::order_differs(a, b) {
+        f.push(Field::Order);
     }
     if a.dates != b.dates {
         f.push(Field::Dates);
@@ -551,8 +575,8 @@ pub fn build(repo: &Repo, snap: Snapshot, mode: Mode, scope: &Scope, into: Optio
         Scope::Remote(id) => {
             if let Some(rs) = remote_sprints.get(id) {
                 sprint_docs.push((repo.sprint_doc(rs.id), rs.id));
-                for t in snap.tasks.iter().filter(|t| t.sprint_id == Some(*id)) {
-                    task_list.push((repo.find_task(t.id), t.id));
+                for t in remote_task_order(&snap, *id) {
+                    task_list.push((repo.find_task(t), t));
                 }
                 if let Some(d) = repo.sprint_doc(*id) {
                     for t in repo.tasks_of(d) {
@@ -587,8 +611,38 @@ pub fn build(repo: &Repo, snap: Snapshot, mode: Mode, scope: &Scope, into: Optio
         .collect();
 
     for (doc, id) in &sprint_docs {
-        let local = doc.and_then(|d| local_sprint_of(d, &mut errors));
-        let remote = remote_sprints.get(id).map(|s| remote_sprint(s, &r));
+        let mut local = doc.and_then(|d| local_sprint_of(d, &mut errors));
+        let mut remote = remote_sprints.get(id).map(|s| remote_sprint(s, &r));
+        if let (Some(l), Some(rm)) = (&mut local, &mut remote) {
+            // A server without sprint descriptions: nothing to compare.
+            if remote_sprints[id].description_md.is_none() {
+                rm.description = l.description.clone();
+            }
+            // Compare the order the run will produce, not the order now:
+            // publish appends the tasks it creates to Fira's checklist,
+            // import appends the tasks it adds to the file. So a task
+            // created in the middle of the file shows up as an order
+            // difference right away.
+            match mode {
+                Mode::Publish => {
+                    for t in &l.tasks {
+                        let creates = !remote_tasks.contains_key(t)
+                            && !matches!(missing.get(t).map(String::as_str), Some("deleted" | "other_project"));
+                        if creates {
+                            rm.tasks.push(*t);
+                        }
+                    }
+                }
+                Mode::Import if into.is_none() => {
+                    for t in &rm.tasks {
+                        if repo.find_task(*t).is_none() {
+                            l.tasks.push(*t);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
         let id_new = doc.and_then(|d| repo.sprint_ids[d]).is_some_and(|s| s.new);
         let state = match (&local, &remote) {
             (Some(l), Some(rm)) => {
@@ -602,6 +656,10 @@ pub fn build(repo: &Repo, snap: Snapshot, mode: Mode, scope: &Scope, into: Optio
         if let (Some(l), Some(rm)) = (&local, &remote) {
             for f in sprint_fields(l, rm) {
                 let mut fd = FieldDiff { field: f, allow_local: true, allow_remote: true, note: None };
+                if f == Field::Order && snap.task_order.is_empty() {
+                    fd.allow_local = false;
+                    fd.note = Some("this Fira server is too old to take task order from the CLI; reorder in Fira or keep Fira's order".into());
+                }
                 if f == Field::Dates && l.dates.is_none() {
                     fd.allow_local = false;
                     fd.note = Some("Fira can't unschedule a sprint from the CLI; clear the dates in Fira or keep them locally".into());
@@ -959,6 +1017,12 @@ fn merge_sprint(a: &Sprint, b: &Sprint, take_b: &dyn Fn(Field) -> bool) -> Sprin
     if take_b(Field::Assignee) {
         s.assignee = b.assignee;
     }
+    if take_b(Field::Description) {
+        s.description = b.description.clone();
+    }
+    if take_b(Field::Order) {
+        s.tasks = b.tasks.clone();
+    }
     s
 }
 
@@ -1069,10 +1133,16 @@ impl Ops<'_> {
                     self.push(json!({"kind": "sprint.set_defaults", "sprint_id": target.id,
                         "default_assignee_id": target.assignee, "default_tag_ids": tag_ids}));
                 }
+                if !target.description.is_empty() {
+                    self.push(json!({"kind": "sprint.set_description", "sprint_id": target.id, "description_md": target.description}));
+                }
             }
             Some(r) => {
                 if r.title != target.title {
                     self.push(json!({"kind": "sprint.set_title", "sprint_id": target.id, "title": target.title}));
+                }
+                if r.description != target.description {
+                    self.push(json!({"kind": "sprint.set_description", "sprint_id": target.id, "description_md": target.description}));
                 }
                 if r.dates != target.dates {
                     if let Some((a, b)) = target.dates {
@@ -1242,14 +1312,14 @@ pub fn plan(repo: &Repo, cmp: &Comparison, dec: &Decisions, project_id: Uuid) ->
                 let target_remote = merge_sprint(rm, l, &|f| choice(e.id, f) == Some(Side::Local));
                 let target_local = merge_sprint(l, rm, &|f| choice(e.id, f) == Some(Side::Remote));
                 if cmp.mode != Mode::Diff && ops.sprint_ops(Some(rm), &target_remote) {
-                    pre.push(Precondition { kind: "sprint", id: e.id, revision: e.revision });
+                    pre.push(Precondition { kind: "sprint", id: e.id, revision: e.revision, order: None });
                     remote_lines.push(format!("update sprint \"{}\"", target_remote.title));
                 }
                 sprint_local_target.insert(e.id, target_local);
             }
             (Some(l), None) if e.state == State::New && cmp.mode == Mode::Publish => {
                 ops.sprint_ops(None, l);
-                pre.push(Precondition { kind: "sprint", id: e.id, revision: None });
+                pre.push(Precondition { kind: "sprint", id: e.id, revision: None, order: None });
                 remote_lines.push(format!("create sprint \"{}\"", l.title));
                 sprint_local_target.insert(e.id, l.clone());
             }
@@ -1264,6 +1334,9 @@ pub fn plan(repo: &Repo, cmp: &Comparison, dec: &Decisions, project_id: Uuid) ->
     }
 
     let mut deletes_local: Vec<TaskRef> = vec![];
+    // Each task's Fira sprint after this run, and the tasks it creates.
+    let mut sprint_after: HashMap<Uuid, Option<Uuid>> = HashMap::new();
+    let mut created: Vec<Uuid> = vec![];
     for e in cmp.entities.iter().filter(|e| e.kind == Kind::Task) {
         match (&e.local_task, &e.remote_task) {
             (Some(l), Some(rm)) => {
@@ -1272,8 +1345,9 @@ pub fn plan(repo: &Repo, cmp: &Comparison, dec: &Decisions, project_id: Uuid) ->
                 if let Some(u) = target_remote.assignee.filter(|u| Some(*u) != rm.assignee && !r.is_active(*u)) {
                     bail!("cannot assign \"{}\" to {}: not an active member of the project", l.title, r.handle_of(u));
                 }
+                sprint_after.insert(e.id, target_remote.sprint);
                 if ops.task_ops(Some((rm, &e.remote_subtasks)), &target_remote) {
-                    pre.push(Precondition { kind: "task", id: e.id, revision: e.revision });
+                    pre.push(Precondition { kind: "task", id: e.id, revision: e.revision, order: None });
                     let changed: Vec<&str> = task_fields(rm, &target_remote).iter().filter(|f| **f != Field::Attachments).map(|f| f.name()).collect();
                     remote_lines.push(format!("update task \"{}\": {}", target_remote.title, changed.join(", ")));
                 }
@@ -1287,15 +1361,19 @@ pub fn plan(repo: &Repo, cmp: &Comparison, dec: &Decisions, project_id: Uuid) ->
             }
             (Some(l), None) => match (e.state, dec.deleted.get(&e.id)) {
                 (State::New, _) if cmp.mode == Mode::Publish => {
+                    sprint_after.insert(e.id, l.sprint);
+                    created.push(e.id);
                     ops.task_ops(None, l);
-                    pre.push(Precondition { kind: "task", id: e.id, revision: None });
+                    pre.push(Precondition { kind: "task", id: e.id, revision: None, order: None });
                     remote_lines.push(format!("create task \"{}\"", l.title));
                     attachment_writes(root, l, &[], &l.attachments, &mut uploads, &mut remote_deletes, &mut att_lines);
                     task_local_target.insert(e.id, l.clone());
                 }
                 (State::DeletedInFira, Some(DeletedChoice::Recreate)) => {
+                    sprint_after.insert(e.id, l.sprint);
+                    created.push(e.id);
                     ops.task_ops(None, l);
-                    pre.push(Precondition { kind: "task", id: e.id, revision: None });
+                    pre.push(Precondition { kind: "task", id: e.id, revision: None, order: None });
                     remote_lines.push(format!("recreate task \"{}\" (same id)", l.title));
                     attachment_writes(root, l, &[], &l.attachments, &mut uploads, &mut remote_deletes, &mut att_lines);
                     task_local_target.insert(e.id, l.clone());
@@ -1313,6 +1391,41 @@ pub fn plan(repo: &Repo, cmp: &Comparison, dec: &Decisions, project_id: Uuid) ->
             }
             _ => {}
         }
+    }
+    // Task order to Fira: the sprint's tasks take each other's slots in
+    // the project-wide order, in file order, and nothing else moves.
+    // After the creates, so new tasks can be placed too. One reorder for
+    // all sprints, so a second sprint's doesn't undo the first's, guarded
+    // by the order the diff showed: order has no revision, so it is
+    // checked by value.
+    let mut all = cmp.snap.task_order.clone();
+    for id in &created {
+        if !all.contains(id) {
+            all.push(*id);
+        }
+    }
+    let mut ordered = all.clone();
+    let mut reordered = Vec::new();
+    for e in cmp.entities.iter().filter(|e| e.kind == Kind::Sprint && cmp.mode != Mode::Diff) {
+        let (Some(l), Some(_)) = (&e.local_sprint, &e.remote_sprint) else { continue };
+        if choice(e.id, Field::Order) != Some(Side::Local) {
+            continue;
+        }
+        let in_sprint = |id: &Uuid| match sprint_after.get(id) {
+            Some(s) => *s == Some(e.id),
+            None => cmp.snap.tasks.iter().any(|t| t.id == *id && t.sprint_id == Some(e.id)),
+        };
+        let want: Vec<Uuid> = l.tasks.iter().copied().filter(in_sprint).collect();
+        let next = model::permute_slots(&ordered, &want);
+        if next != ordered {
+            ordered = next;
+            reordered.push(format!("reorder tasks in sprint \"{}\"", l.title));
+        }
+    }
+    if ordered != all {
+        ops.push(json!({"kind": "task.reorder", "project_id": project_id, "ordered": ordered}));
+        pre.push(Precondition { kind: "task_order", id: project_id, revision: None, order: Some(cmp.snap.task_order.clone()) });
+        remote_lines.extend(reordered);
     }
     remote_lines.extend(std::mem::take(&mut ops.lines));
     remote_lines.extend(att_lines);
@@ -1523,6 +1636,34 @@ pub fn plan(repo: &Repo, cmp: &Comparison, dec: &Decisions, project_id: Uuid) ->
             files.push(FileWrite::Edit { doc: d, new_text: base });
         }
     }
+    // Task order to the files: reorder blocks in the text after every
+    // other edit, so moved-in and newly added tasks take part.
+    for e in cmp.entities.iter().filter(|e| e.kind == Kind::Sprint) {
+        let (Some(d), Some(rm)) = (e.doc, &e.remote_sprint) else { continue };
+        if e.local_sprint.is_none() || choice(e.id, Field::Order) != Some(Side::Remote) {
+            continue;
+        }
+        let doc = &repo.docs[d];
+        let at = files.iter().position(|f| matches!(f, FileWrite::Edit { doc: x, .. } if *x == d));
+        let text = match at {
+            Some(i) => match &files[i] {
+                FileWrite::Edit { new_text, .. } => new_text.clone(),
+                _ => unreachable!(),
+            },
+            None => doc.text.clone(),
+        };
+        let parsed = crate::doc::parse(doc.path.clone(), doc.display.clone(), text, DocKind::Sprint)
+            .map_err(|e| anyhow::anyhow!("internal error re-reading {}: {}", doc.display, e.join("; ")))?;
+        let new_text = write::reorder_blocks(&parsed, &rm.tasks);
+        if new_text == parsed.text {
+            continue;
+        }
+        local_lines.push(format!("{}: reorder tasks", doc.display));
+        match at {
+            Some(i) => files[i] = FileWrite::Edit { doc: d, new_text },
+            None => files.push(FileWrite::Edit { doc: d, new_text }),
+        }
+    }
     for (_, (path, s, blocks)) in new_sprint_file {
         let handle = s.assignee.map(|u| r.handle_of(u));
         files.push(FileWrite::Create { path, text: write::render_sprint_file(&s, handle, &blocks) });
@@ -1576,7 +1717,217 @@ mod tests {
             sprints: vec![],
             tasks: vec![],
             missing: vec![],
+            task_order: vec![],
         }
+    }
+
+    // ---- order and description, end to end (temp repo → build → plan) ----
+
+    const PROJ: Uuid = Uuid::from_u128(0xabc);
+    const SID: Uuid = Uuid::from_u128(0x5);
+
+    fn tid(n: u128) -> Uuid {
+        Uuid::from_u128(0x100 + n)
+    }
+
+    fn temp_repo(sprint_md: &str) -> (tempfile::TempDir, Repo) {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("config.toml"), format!("[fira]\nurl = \"http://x\"\nproject_id = \"{PROJ}\"\n")).unwrap();
+        std::fs::create_dir(dir.path().join("sprints")).unwrap();
+        std::fs::write(dir.path().join("sprints/s.md"), sprint_md).unwrap();
+        let root = crate::config::load_root(dir.path().to_path_buf()).unwrap();
+        let repo = Repo::load(root).unwrap();
+        (dir, repo)
+    }
+
+    fn file(desc: &str, order: &[u128]) -> String {
+        let mut s = format!("---\nsprint_id: {SID}\n---\n\n# S\n");
+        if !desc.is_empty() {
+            s.push_str(&format!("\n{desc}\n"));
+        }
+        for n in order {
+            s.push_str(&format!("\n## ⬜ T{n}\n<!-- task: id={} -->\n\nBody {n}\n", tid(*n)));
+        }
+        s
+    }
+
+    fn remote(desc: Option<&str>, order: &[u128], extra_first: bool) -> Snapshot {
+        let mut sn = snap(&[]);
+        sn.sprints.push(serde_json::from_value(json!({
+            "id": SID, "title": "S", "starts_on": null, "ends_on": null, "track_id": null,
+            "default_assignee_id": null, "default_tag_ids": [], "revision": 1, "description_md": desc,
+        })).unwrap());
+        for (i, n) in order.iter().enumerate() {
+            sn.tasks.push(serde_json::from_value(json!({
+                "id": tid(*n), "sprint_id": SID, "title": format!("T{n}"), "description_md": format!("Body {n}"),
+                "status": "todo", "section": "later", "assignee_id": null, "estimate_min": null,
+                "tag_ids": [], "subtasks": [], "revision": 1, "sort_key": format!("{:08}", (i + 1) * 1000),
+            })).unwrap());
+        }
+        // Another project task sits between the sprint's tasks in the
+        // project-wide order; a reorder must leave it where it is.
+        let other = Uuid::from_u128(0x999);
+        sn.task_order = order.iter().map(|n| tid(*n)).collect();
+        sn.task_order.insert(if extra_first { 0 } else { 1 }, other);
+        sn
+    }
+
+    fn run(md: &str, sn: Snapshot, mode: Mode, side: Side) -> (Comparison, Plan, Repo, tempfile::TempDir) {
+        let (dir, repo) = temp_repo(md);
+        let scope = Scope::Docs(vec![0]);
+        let cmp = build(&repo, sn, mode, &scope, None).unwrap();
+        let dec = prefer(&cmp, side, &mut vec![]);
+        let plan = plan(&repo, &cmp, &dec, PROJ).unwrap();
+        (cmp, plan, repo, dir)
+    }
+
+    fn sprint_fields_of(cmp: &Comparison) -> Vec<Field> {
+        cmp.entities.iter().find(|e| e.kind == Kind::Sprint).unwrap().fields.iter().map(|f| f.field).collect()
+    }
+
+    #[test]
+    fn same_order_is_in_sync() {
+        let (cmp, plan, ..) = run(&file("Goal.", &[1, 2, 3]), remote(Some("Goal."), &[1, 2, 3], false), Mode::Publish, Side::Local);
+        assert!(cmp.in_sync(), "{:?}", sprint_fields_of(&cmp));
+        assert!(plan.is_empty());
+    }
+
+    #[test]
+    fn order_local_sends_project_wide_reorder() {
+        let (cmp, plan, ..) = run(&file("", &[3, 1, 2]), remote(Some(""), &[1, 2, 3], false), Mode::Publish, Side::Local);
+        assert_eq!(sprint_fields_of(&cmp), [Field::Order]);
+        let ops: Vec<&serde_json::Value> = plan.ops.iter().map(|o| &o.payload).collect();
+        assert_eq!(ops.len(), 1);
+        assert_eq!(ops[0]["kind"], "task.reorder");
+        // Project order was [1, other, 2, 3]; the sprint's slots get 3, 1, 2.
+        let want = json!([tid(3), Uuid::from_u128(0x999), tid(1), tid(2)]);
+        assert_eq!(ops[0]["ordered"], want);
+        assert!(plan.files.is_empty());
+        // Guarded by the order the diff showed, like every other field.
+        let guard: Vec<_> = plan.pre.iter().filter(|p| p.kind == "task_order").collect();
+        assert_eq!(guard.len(), 1);
+        assert_eq!(guard[0].id, PROJ);
+        assert_eq!(guard[0].order.as_deref(), Some(&[tid(1), Uuid::from_u128(0x999), tid(2), tid(3)][..]));
+    }
+
+    #[test]
+    fn two_sprints_reordered_in_one_run_both_stick() {
+        let sid2 = Uuid::from_u128(0x6);
+        let (dir, _) = temp_repo(&file("", &[2, 1]));
+        let mut second = String::new();
+        second.push_str(&format!("---\nsprint_id: {sid2}\n---\n\n# S2\n"));
+        for n in [4u128, 3] {
+            second.push_str(&format!("\n## ⬜ T{n}\n<!-- task: id={} -->\n\nBody {n}\n", tid(n)));
+        }
+        std::fs::write(dir.path().join("sprints/t.md"), second).unwrap();
+        let repo = Repo::load(crate::config::load_root(dir.path().to_path_buf()).unwrap()).unwrap();
+        let mut sn = remote(Some(""), &[1, 2], false);
+        sn.sprints.push(serde_json::from_value(json!({
+            "id": sid2, "title": "S2", "starts_on": null, "ends_on": null, "track_id": null,
+            "default_assignee_id": null, "default_tag_ids": [], "revision": 1, "description_md": "",
+        })).unwrap());
+        for (i, n) in [3u128, 4].iter().enumerate() {
+            sn.tasks.push(serde_json::from_value(json!({
+                "id": tid(*n), "sprint_id": sid2, "title": format!("T{n}"), "description_md": format!("Body {n}"),
+                "status": "todo", "section": "later", "assignee_id": null, "estimate_min": null,
+                "tag_ids": [], "subtasks": [], "revision": 1, "sort_key": format!("{:08}", (i + 3) * 1000),
+            })).unwrap());
+            sn.task_order.push(tid(*n));
+        }
+        let scope = Scope::Docs((0..repo.docs.len()).collect());
+        let cmp = build(&repo, sn, Mode::Sync, &scope, None).unwrap();
+        let dec = prefer(&cmp, Side::Local, &mut vec![]);
+        let plan = plan(&repo, &cmp, &dec, PROJ).unwrap();
+        let reorders: Vec<_> = plan.ops.iter().filter(|o| o.payload["kind"] == "task.reorder").collect();
+        assert_eq!(reorders.len(), 1, "one reorder, so the second sprint's can't undo the first's");
+        let other = Uuid::from_u128(0x999);
+        assert_eq!(reorders[0].payload["ordered"], json!([tid(2), other, tid(1), tid(4), tid(3)]));
+    }
+
+    #[test]
+    fn order_remote_reorders_blocks_in_the_file() {
+        let (_, plan, ..) = run(&file("Goal.", &[3, 1, 2]), remote(Some("Goal."), &[1, 2, 3], true), Mode::Publish, Side::Remote);
+        assert!(plan.ops.is_empty());
+        match plan.files.as_slice() {
+            [FileWrite::Edit { new_text, .. }] => assert_eq!(*new_text, file("Goal.", &[1, 2, 3])),
+            _ => panic!("expected one file edit"),
+        }
+    }
+
+    #[test]
+    fn task_created_mid_file_is_an_order_difference() {
+        // 4 is new: publish would append it, the file has it first.
+        let (cmp, plan, ..) = run(&file("", &[4, 1, 2]), remote(Some(""), &[1, 2], false), Mode::Publish, Side::Local);
+        assert_eq!(sprint_fields_of(&cmp), [Field::Order]);
+        let last = &plan.ops.last().unwrap().payload;
+        assert_eq!(last["kind"], "task.reorder");
+        assert_eq!(last["ordered"], json!([tid(4), Uuid::from_u128(0x999), tid(1), tid(2)]));
+        assert_eq!(plan.ops[0].payload["kind"], "task.create");
+    }
+
+    #[test]
+    fn task_only_in_fira_keeps_its_slot() {
+        // 2 is in Fira's sprint but in no file: not compared, not moved.
+        let (cmp, plan, ..) = run(&file("", &[3, 1]), remote(Some(""), &[1, 2, 3], false), Mode::Publish, Side::Local);
+        assert_eq!(sprint_fields_of(&cmp), [Field::Order]);
+        assert_eq!(plan.ops[0].payload["ordered"], json!([tid(3), Uuid::from_u128(0x999), tid(2), tid(1)]));
+    }
+
+    #[test]
+    fn old_server_cannot_take_order() {
+        let mut sn = remote(Some(""), &[1, 2], false);
+        sn.task_order.clear();
+        let (cmp, plan, ..) = run(&file("", &[2, 1]), sn, Mode::Publish, Side::Local);
+        let f = &cmp.entities.iter().find(|e| e.kind == Kind::Sprint).unwrap().fields[0];
+        assert_eq!(f.field, Field::Order);
+        assert!(!f.allow_local && f.allow_remote);
+        assert!(plan.ops.is_empty());
+    }
+
+    #[test]
+    fn description_both_directions() {
+        let (cmp, plan, ..) = run(&file("New goal.\n\nMore.", &[1]), remote(Some("Old goal."), &[1], false), Mode::Publish, Side::Local);
+        assert_eq!(sprint_fields_of(&cmp), [Field::Description]);
+        assert_eq!(plan.ops[0].payload, json!({"kind": "sprint.set_description", "sprint_id": SID, "description_md": "New goal.\n\nMore."}));
+
+        let (_, plan, ..) = run(&file("Old goal.", &[1]), remote(Some("Fira text."), &[1], false), Mode::Publish, Side::Remote);
+        match plan.files.as_slice() {
+            [FileWrite::Edit { new_text, .. }] => assert_eq!(*new_text, file("Fira text.", &[1])),
+            _ => panic!("expected one file edit"),
+        }
+        // Added where there was none, and removed again.
+        let (_, plan, ..) = run(&file("", &[1]), remote(Some("Added."), &[1], false), Mode::Publish, Side::Remote);
+        let FileWrite::Edit { new_text, .. } = &plan.files[0] else { panic!() };
+        assert_eq!(*new_text, file("Added.", &[1]));
+        let (_, plan, ..) = run(&file("Gone.", &[1]), remote(Some(""), &[1], false), Mode::Publish, Side::Remote);
+        let FileWrite::Edit { new_text, .. } = &plan.files[0] else { panic!() };
+        assert_eq!(*new_text, file("", &[1]));
+    }
+
+    #[test]
+    fn server_without_descriptions_compares_none() {
+        let (cmp, ..) = run(&file("Local only.", &[1]), remote(None, &[1], false), Mode::Publish, Side::Local);
+        assert!(cmp.in_sync());
+    }
+
+    #[test]
+    fn sync_creates_nothing() {
+        // 4 is not in Fira: sync lists it and leaves it to publish, and
+        // the order it writes covers the existing tasks only.
+        let (cmp, plan, ..) = run(&file("", &[4, 2, 1]), remote(Some(""), &[1, 2], false), Mode::Sync, Side::Local);
+        assert_eq!(sprint_fields_of(&cmp), [Field::Order]);
+        let t4 = cmp.entities.iter().find(|e| e.id == tid(4)).unwrap();
+        assert_eq!(t4.state, State::NotInFira);
+        let kinds: Vec<&str> = plan.ops.iter().map(|o| o.payload["kind"].as_str().unwrap()).collect();
+        assert_eq!(kinds, ["task.reorder"]);
+        assert_eq!(plan.ops[0].payload["ordered"], json!([tid(2), Uuid::from_u128(0x999), tid(1)]));
+    }
+
+    #[test]
+    fn permute_slots_moves_only_members() {
+        let u = |n| Uuid::from_u128(n);
+        assert_eq!(model::permute_slots(&[u(1), u(9), u(2), u(3)], &[u(3), u(1)]), [u(3), u(9), u(2), u(1)]);
+        assert_eq!(model::permute_slots(&[u(1), u(2)], &[u(7), u(2), u(1)]), [u(2), u(1)]);
     }
 
     #[test]

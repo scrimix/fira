@@ -7,12 +7,14 @@ import { X } from 'lucide-react';
 
 export function SprintModal({ sprint, onClose }: { sprint: Sprint; onClose: () => void }) {
   const [title, setTitle] = useState(sprint.title);
+  const [description, setDescription] = useState(sprint.description_md ?? '');
   const [assignee, setAssignee] = useState<UUID | null>(sprint.default_assignee_id ?? null);
   const [tagIds, setTagIds] = useState(sprint.default_tag_ids ?? []);
   const project = useFira(s => s.projects.find(p => p.id === sprint.project_id));
   const users = useFira(s => s.users);
   const tags = useFira(s => s.tags);
   const setTitleOnSprint = useFira(s => s.setSprintTitle);
+  const setDescriptionOnSprint = useFira(s => s.setSprintDescription);
   const setDefaults = useFira(s => s.setSprintDefaults);
   const downOnBackdrop = useRef(false);
   useEffect(() => {
@@ -27,6 +29,8 @@ export function SprintModal({ sprint, onClose }: { sprint: Sprint; onClose: () =
     const name = title.trim();
     if (!name) return;
     if (name !== sprint.title) setTitleOnSprint(sprint.id, name);
+    const desc = description.trim();
+    if (desc !== (sprint.description_md ?? '').trim()) setDescriptionOnSprint(sprint.id, desc);
     const validTags = tagIds.filter(id => tags.some(t => t.id === id && t.project_id === sprint.project_id));
     if (assignee !== (sprint.default_assignee_id ?? null) ||
       [...validTags].sort().join() !== [...(sprint.default_tag_ids ?? [])].sort().join()) {
@@ -47,6 +51,10 @@ export function SprintModal({ sprint, onClose }: { sprint: Sprint; onClose: () =
         <label className="np-label" htmlFor="sprint-name">Name</label>
         <input id="sprint-name" className="np-title" autoFocus aria-label="Sprint name"
           value={title} onChange={event => setTitle(event.target.value)} />
+        <label className="np-label" htmlFor="sprint-description">Description</label>
+        <textarea id="sprint-description" className="np-title np-description" rows={5}
+          aria-label="Sprint description" placeholder="Goal, scope, notes… (Markdown)"
+          value={description} onChange={event => setDescription(event.target.value)} />
         <div className="np-label">Default assignee</div>
           <Select value={assignee ?? ''} variant="inline" title="Default assignee" menuMinWidth={240}
             options={[{ value: '', label: 'Task creator' }, ...eligible.map(u => ({ value: u.id, label: u.name }))]}

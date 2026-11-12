@@ -93,7 +93,7 @@ fn task_value(t: &Task, f: Field, r: &Resolver, repo: &Repo) -> Disp {
         } else {
             t.attachments.iter().map(|a| format!("{} ({})", a.name, crate::attachments::human_size(a.size))).collect()
         }),
-        Field::Dates | Field::Track => Disp::Line(String::new()),
+        Field::Dates | Field::Track | Field::Order => Disp::Line(String::new()),
     }
 }
 
@@ -125,13 +125,48 @@ fn sprint_value(s: &Sprint, f: Field, r: &Resolver) -> Disp {
         Field::Track => Disp::Line(s.track.clone().unwrap_or_else(|| none("no track"))),
         Field::Tags => Disp::Line(if s.tags.is_empty() { none("none") } else { s.tags.join(", ") }),
         Field::Assignee => Disp::Line(s.assignee.map_or_else(|| none("nobody"), |u| r.handle_of(u))),
+        Field::Description => Disp::Text(s.description.clone()),
         _ => Disp::Line(String::new()),
     }
+}
+
+fn task_title(id: uuid::Uuid, r: &Resolver, repo: &Repo) -> String {
+    repo.find_task(id)
+        .map(|t| repo.docs[t.doc].tasks[t.task].title.clone())
+        .or_else(|| r.snap.tasks.iter().find(|t| t.id == id).map(|t| t.title.clone()))
+        .unwrap_or_else(|| id.to_string())
+}
+
+/// The shared tasks of both sides, numbered, from the first position
+/// where they differ to the last.
+fn order_lines(l: &Sprint, rm: &Sprint, r: &Resolver, repo: &Repo) -> (Vec<String>, Vec<String>) {
+    let a = model::common_order(&l.tasks, &rm.tasks);
+    let b = model::common_order(&rm.tasks, &l.tasks);
+    let first = (0..a.len()).find(|&i| a[i] != b[i]).unwrap_or(0);
+    let last = (0..a.len()).rev().find(|&i| a[i] != b[i]).unwrap_or(0);
+    let side = |v: &[uuid::Uuid]| {
+        let mut out = vec![];
+        if first > 0 {
+            out.push(none(&format!("{first} in the same order")));
+        }
+        for (i, id) in v.iter().enumerate().take(last + 1).skip(first) {
+            out.push(format!("{}. {}", i + 1, task_title(*id, r, repo)));
+        }
+        if last + 1 < v.len() {
+            out.push(none(&format!("{} more in the same order", v.len() - last - 1)));
+        }
+        out
+    };
+    (side(&a), side(&b))
 }
 
 fn values(e: &Entity, f: Field, r: &Resolver, repo: &Repo, st: &Style) -> (Disp, Disp) {
     if let (Field::Attachments, Some(l), Some(rm)) = (f, &e.local_task, &e.remote_task) {
         return (Disp::Set(attachment_lines(l, rm, st)), Disp::Set(vec![]));
+    }
+    if let (Field::Order, Some(l), Some(rm)) = (f, &e.local_sprint, &e.remote_sprint) {
+        let (a, b) = order_lines(l, rm, r, repo);
+        return (Disp::Lines(a), Disp::Lines(b));
     }
     match e.kind {
         Kind::Task => (
@@ -362,6 +397,14 @@ pub fn render_json(repo: &Repo, cmp: &Comparison) -> Value {
                     Field::Track => json!(s.track),
                     Field::Tags => json!(s.tags),
                     Field::Assignee => json!(s.assignee.map(|u| r.handle_of(u))),
+                    Field::Description => json!(s.description),
+                    Field::Order => {
+                        let other = if local { e.remote_sprint.as_ref() } else { e.local_sprint.as_ref() }.unwrap();
+                        json!(model::common_order(&s.tasks, &other.tasks)
+                            .iter()
+                            .map(|id| json!({"id": id, "title": task_title(*id, &r, repo)}))
+                            .collect::<Vec<_>>())
+                    }
                     _ => Value::Null,
                 }
             }

@@ -911,6 +911,14 @@
   text-decoration: underline; text-underline-offset: 2px;
 }
 .plan-sprint-info[data-warning] { color: var(--warn); }
+.plan-sprint-description {
+  white-space: pre-wrap;
+  max-height: 12em;
+  overflow-y: auto;
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--rule);
+}
 .plan-sprint-info:focus-visible { outline: 1px solid var(--focus-line); }
 .plan-sprint-menu-button[aria-expanded="true"] { opacity: 1; }
 .plan-sprint-menu {

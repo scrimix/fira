@@ -19,6 +19,9 @@ The loop:
    field-by-field diff, asks local or Fira for each differing field, shows
    a summary, and writes only after you confirm. The chosen values go to
    both sides, so afterwards the file and Fira agree.
+   `publish` also creates in Fira whatever the file has that Fira doesn't.
+   To merge edits on both sides without creating anything, use
+   `task-cli sync fira` (all files, or the ones you name).
 5. **Commit** the files as usual. The CLI never runs git commands that
    change anything.
 
@@ -39,6 +42,9 @@ Things to know:
 
 - Nothing is pre-selected: the CLI stores no sync state, so it can't know
   which side changed a field. You decide.
+- Task order counts: the order of task blocks in a sprint file is compared
+  with the sprint's checklist order in Fira, and shows up in the diff as
+  `order`. Choosing local reorders Fira; choosing Fira moves the blocks.
 - Absence never acts. A task missing from a file is not deleted or removed
   from its sprint in Fira, and an import never deletes local text.
 - A task deleted in Fira makes the next publish ask: recreate (same id),

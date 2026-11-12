@@ -743,6 +743,7 @@ button { font: inherit; color: inherit; background: transparent; border: 0; padd
 }
 .np-title:focus { border-color: var(--focus-line); }
 .np-title::placeholder { color: var(--ink-4); }
+.np-description { display: block; resize: vertical; min-height: 6em; max-height: 50vh; }
 /* Field-shaped but inert — for values the modal reports rather than asks
  * for (e.g. the Jira issue assignee, which is always the creator). Muted
  * fill + dashed rule so it reads as "not editable" next to real inputs. */

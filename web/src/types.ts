@@ -95,6 +95,9 @@ export interface Sprint {
   /// orphans its sprints rather than destroying them.
   track_id: UUID | null;
   title: string;
+  /// Markdown. task-cli syncs it with the prose between a sprint file's
+  /// title and its first task.
+  description_md?: string;
   default_assignee_id?: UUID | null;
   default_tag_ids?: UUID[];
   /// Week-aligned Monday, `YYYY-MM-DD`. Start of the card's span.

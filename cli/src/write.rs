@@ -374,6 +374,9 @@ pub fn render_sprint_file(s: &Sprint, assignee_handle: Option<String>, tasks: &[
         out.push_str(&format!("assignee: {}\n", doc::quote_front_scalar(&a)));
     }
     out.push_str(&format!("---\n\n# {}\n", one_line(&s.title)));
+    if !s.description.is_empty() {
+        out.push_str(&format!("\n{}\n", s.description));
+    }
     for t in tasks {
         out.push('\n');
         out.push_str(t);
@@ -486,7 +489,53 @@ pub fn sprint_edits(doc: &Doc, w: &SprintWrite, names: &dyn Names) -> Vec<Edit> 
             edits.push(Edit::replace(r.clone(), one_line(&w.target.title)));
         }
     }
+    if w.cur.description != w.target.description {
+        if let Some((r, _)) = &doc.description {
+            edits.push(description_edit(&doc.text, r.clone(), &w.target.description));
+        }
+    }
     edits
+}
+
+/// Replace the sprint description region (title line to first task) with
+/// `desc`, one blank line on each side.
+fn description_edit(text: &str, r: std::ops::Range<usize>, desc: &str) -> Edit {
+    let mut s = String::new();
+    if !text[..r.start].ends_with('\n') {
+        s.push('\n');
+    }
+    let follows = r.end < text.len();
+    if !desc.is_empty() {
+        s.push('\n');
+        s.push_str(desc);
+        s.push('\n');
+    }
+    if follows {
+        s.push('\n');
+    }
+    Edit::replace(r, s)
+}
+
+/// Reorder the task blocks of a sprint file so the tasks in `want` come
+/// in that order, each taking a slot one of them had; other blocks stay.
+/// Blocks keep their bytes apart from the blank lines between them.
+pub fn reorder_blocks(doc: &Doc, want: &[Uuid]) -> String {
+    let ids: Vec<Uuid> = doc.tasks.iter().map(|t| t.id().unwrap_or_default()).collect();
+    let order = model::permute_slots(&ids, want);
+    if order == ids || doc.tasks.is_empty() {
+        return doc.text.clone();
+    }
+    let text = &doc.text;
+    let start = doc.tasks[0].block.start;
+    let block = |id: Uuid| {
+        let i = ids.iter().position(|x| *x == id).expect("permutation");
+        text[doc.tasks[i].block.clone()].trim_end().to_string()
+    };
+    let mut out = text[..start].to_string();
+    let body: Vec<String> = order.iter().map(|id| block(*id)).collect();
+    out.push_str(&body.join("\n\n"));
+    out.push('\n');
+    out
 }
 
 #[cfg(test)]

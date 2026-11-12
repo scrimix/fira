@@ -55,6 +55,10 @@ pub struct RemoteSprint {
     pub default_assignee_id: Option<Uuid>,
     pub default_tag_ids: Vec<Uuid>,
     pub revision: i64,
+    /// Absent from servers before sprint descriptions; then the
+    /// description is not compared.
+    #[serde(default)]
+    pub description_md: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -115,6 +119,10 @@ pub struct Snapshot {
     pub sprints: Vec<RemoteSprint>,
     pub tasks: Vec<RemoteTask>,
     pub missing: Vec<Missing>,
+    /// Every task id in the project in display order. Absent from older
+    /// servers; the CLI then can't write task order to Fira.
+    #[serde(default)]
+    pub task_order: Vec<Uuid>,
 }
 
 #[derive(Debug, Serialize)]
@@ -130,6 +138,9 @@ pub struct Precondition {
     pub kind: &'static str,
     pub id: Uuid,
     pub revision: Option<i64>,
+    /// `task_order` only (id = the project): the order the diff showed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub order: Option<Vec<Uuid>>,
 }
 
 #[derive(Debug, Clone, Serialize)]

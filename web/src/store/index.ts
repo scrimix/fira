@@ -390,6 +390,7 @@ interface FiraState {
   addSprint: (projectId: UUID, trackId: UUID | null, title: string,
               startsOn: string, endsOn: string) => UUID | null;
   setSprintTitle: (sprintId: UUID, title: string) => void;
+  setSprintDescription: (sprintId: UUID, description_md: string) => void;
   setSprintDefaults: (sprintId: UUID, assigneeId: UUID | null, tagIds: UUID[]) => void;
   setSprintDates: (sprintId: UUID, startsOn: string, endsOn: string) => void;
   setSprintTrack: (sprintId: UUID, trackId: UUID | null) => void;
@@ -883,6 +884,10 @@ function applyOpToState(s: FiraState, op: AnyOpKind): Partial<FiraState> {
     case 'sprint.set_title':
       return {
         sprints: s.sprints.map((sp) => sp.id === op.sprint_id ? { ...sp, title: op.title } : sp),
+      };
+    case 'sprint.set_description':
+      return {
+        sprints: s.sprints.map((sp) => sp.id === op.sprint_id ? { ...sp, description_md: op.description_md } : sp),
       };
     case 'sprint.set_defaults':
       return { sprints: s.sprints.map(sp => sp.id === op.sprint_id ? {
@@ -2885,6 +2890,11 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
       ...pushOp(s, { kind: 'sprint.set_dates', sprint_id: sprintId, starts_on: startsOn, ends_on: endsOn }),
     };
   }),
+
+  setSprintDescription: (sprintId, description_md) => set((s) => ({
+    sprints: s.sprints.map((sp) => sp.id === sprintId ? { ...sp, description_md } : sp),
+    ...pushOp(s, { kind: 'sprint.set_description', sprint_id: sprintId, description_md }),
+  })),
 
   setSprintDefaults: (sprintId, assigneeId, tagIds) => set(s => {
     const ids = [...new Set(tagIds)];

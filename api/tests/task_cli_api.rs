@@ -71,7 +71,7 @@ async fn rev(pool: &PgPool, id: Uuid) -> i64 {
 }
 
 fn pre(id: Uuid, revision: Option<i64>) -> Precondition {
-    Precondition { kind: "task".into(), id, revision }
+    Precondition { kind: "task".into(), id, revision, order: None }
 }
 
 #[sqlx::test]
@@ -247,4 +247,75 @@ async fn tokens_are_hashed_and_follow_membership(pool: PgPool) {
         .bind(U).execute(&pool).await.unwrap();
     sqlx::query("UPDATE automation_tokens SET revoked_at = now()").execute(&pool).await.unwrap();
     assert!(load_token_ctx(&pool, token).await.unwrap().is_none(), "revoked token rejected");
+}
+
+#[sqlx::test]
+async fn sprint_description_round_trips_and_bumps_revision(pool: PgPool) {
+    tenancy(&pool).await;
+    let s = Uuid::new_v4();
+    apply(&pool, vec![], vec![env(json!({"kind": "sprint.create", "sprint": {
+        "id": s, "project_id": P1, "title": "S", "sort_key": "M"}}))]).await.unwrap();
+    let r0: i64 = sqlx::query_scalar("SELECT revision FROM sprints WHERE id = $1").bind(s).fetch_one(&pool).await.unwrap();
+    apply(
+        &pool,
+        vec![Precondition { kind: "sprint".into(), id: s, revision: Some(r0), order: None }],
+        vec![env(json!({"kind": "sprint.set_description", "sprint_id": s, "description_md": "Goal.\n\nMore."}))],
+    )
+    .await
+    .unwrap();
+    let snap = fetch_state(&pool, &storage(), &ctx(false), &FetchRequest {
+        project_id: P1, sprint_ids: vec![s], task_ids: vec![], all_sprints: false,
+    }).await.unwrap();
+    assert_eq!(snap.sprints[0].description_md, "Goal.\n\nMore.");
+    assert!(snap.sprints[0].revision > r0, "the CLI manages the description");
+}
+
+#[sqlx::test]
+async fn task_reorder_is_allowed_and_task_order_follows_it(pool: PgPool) {
+    tenancy(&pool).await;
+    let (a, b, c) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
+    apply(&pool, vec![], vec![env(task_create(a, P1)), env(task_create(b, P1)), env(task_create(c, P1))]).await.unwrap();
+    let ra = rev(&pool, a).await;
+    apply(&pool, vec![], vec![env(json!({"kind": "task.reorder", "project_id": P1, "ordered": [c, a, b]}))]).await.unwrap();
+    let snap = fetch_state(&pool, &storage(), &ctx(false), &FetchRequest {
+        project_id: P1, sprint_ids: vec![], task_ids: vec![], all_sprints: false,
+    }).await.unwrap();
+    assert_eq!(snap.task_order, vec![c, a, b]);
+    assert_eq!(rev(&pool, a).await, ra, "order is not a revisioned field");
+    // Byte order, as the web compares: '0…' sorts before 'M'.
+    let d = Uuid::new_v4();
+    apply(&pool, vec![], vec![env(task_create(d, P1))]).await.unwrap();
+    sqlx::query("UPDATE tasks SET sort_key = 'M' WHERE id = $1").bind(d).execute(&pool).await.unwrap();
+    let snap = fetch_state(&pool, &storage(), &ctx(false), &FetchRequest {
+        project_id: P1, sprint_ids: vec![], task_ids: vec![], all_sprints: false,
+    }).await.unwrap();
+    assert_eq!(snap.task_order, vec![c, a, b, d]);
+}
+
+#[sqlx::test]
+async fn task_order_precondition_rejects_a_concurrent_reorder(pool: PgPool) {
+    tenancy(&pool).await;
+    let (a, b, c) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
+    apply(&pool, vec![], vec![env(task_create(a, P1)), env(task_create(b, P1)), env(task_create(c, P1))]).await.unwrap();
+    let order = |o: Vec<Uuid>| Precondition { kind: "task_order".into(), id: P1, revision: None, order: Some(o) };
+    let fetched = |pool: PgPool| async move {
+        fetch_state(&pool, &storage(), &ctx(false), &FetchRequest {
+            project_id: P1, sprint_ids: vec![], task_ids: vec![], all_sprints: false,
+        }).await.unwrap().task_order
+    };
+    let seen = fetched(pool.clone()).await;
+    // Someone drags in the web UI after the CLI's fetch.
+    apply(&pool, vec![], vec![env(json!({"kind": "task.reorder", "project_id": P1, "ordered": [b, a, c]}))]).await.unwrap();
+    let res = apply(&pool, vec![order(seen)], vec![env(json!({"kind": "task.reorder", "project_id": P1, "ordered": [c, b, a]}))]).await;
+    assert!(matches!(res, Err(ApplyError::Conflicts(ref c)) if c.len() == 1 && c[0].kind == "task_order"), "{res:?}");
+    assert_eq!(fetched(pool.clone()).await, vec![b, a, c], "nothing applied");
+    // Against the current order it goes through.
+    let seen = fetched(pool.clone()).await;
+    apply(&pool, vec![order(seen)], vec![env(json!({"kind": "task.reorder", "project_id": P1, "ordered": [c, b, a]}))]).await.unwrap();
+    assert_eq!(fetched(pool.clone()).await, vec![c, b, a]);
+    // A task created since the fetch changes the order too.
+    let seen = fetched(pool.clone()).await;
+    apply(&pool, vec![], vec![env(task_create(Uuid::new_v4(), P1))]).await.unwrap();
+    let res = apply(&pool, vec![order(seen)], vec![]).await;
+    assert!(matches!(res, Err(ApplyError::Conflicts(_))), "{res:?}");
 }

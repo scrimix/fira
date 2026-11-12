@@ -129,6 +129,11 @@ pub enum Op {
     SprintCreate { sprint: SprintInput },
     #[serde(rename = "sprint.set_title")]
     SprintSetTitle { sprint_id: Uuid, title: String },
+    #[serde(rename = "sprint.set_description")]
+    SprintSetDescription {
+        sprint_id: Uuid,
+        description_md: String,
+    },
     #[serde(rename = "sprint.set_defaults")]
     SprintSetDefaults {
         sprint_id: Uuid,
@@ -208,6 +213,7 @@ impl Op {
             Op::TrackDelete { .. } => "track.delete",
             Op::SprintCreate { .. } => "sprint.create",
             Op::SprintSetTitle { .. } => "sprint.set_title",
+            Op::SprintSetDescription { .. } => "sprint.set_description",
             Op::SprintSetDefaults { .. } => "sprint.set_defaults",
             Op::SprintSetDates { .. } => "sprint.set_dates",
             Op::SprintSetTrack { .. } => "sprint.set_track",
@@ -1221,6 +1227,18 @@ pub async fn apply_payload(
             sqlx::query("UPDATE sprints SET title = $2 WHERE id = $1")
                 .bind(sprint_id)
                 .bind(&title)
+                .execute(&mut **tx)
+                .await?;
+        }
+        Op::SprintSetDescription {
+            sprint_id,
+            description_md,
+        } => {
+            *out_project_id =
+                Some(ensure_sprint_in_scope(tx, user_id, workspace_id, sprint_id).await?);
+            sqlx::query("UPDATE sprints SET description_md = $2 WHERE id = $1")
+                .bind(sprint_id)
+                .bind(&description_md)
                 .execute(&mut **tx)
                 .await?;
         }

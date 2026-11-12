@@ -164,6 +164,9 @@ pub struct Doc {
     pub front: Option<Frontmatter>,
     /// Sprint title: text, byte range of the text, line.
     pub title: Option<(String, Range<usize>, usize)>,
+    /// Sprint description: from just after the title line to the first
+    /// task heading (or EOF), and its normalised text.
+    pub description: Option<(Range<usize>, String)>,
     pub tasks: Vec<TaskBlock>,
 }
 
@@ -206,6 +209,7 @@ pub fn parse(path: PathBuf, display: String, text: String, kind: DocKind) -> Res
     let s = Structure::scan(&text, body_start);
 
     let mut title = None;
+    let mut title_next = None;
     // Task headings, in order.
     let mut heads: Vec<(usize, ParsedHeading)> = vec![];
     for (i, h) in s.headings.iter().enumerate() {
@@ -214,6 +218,7 @@ pub fn parse(path: PathBuf, display: String, text: String, kind: DocKind) -> Res
             heads.push((i, ph));
         } else if kind == DocKind::Sprint && h.level == 1 && title.is_none() && heads.is_empty() {
             title = Some((ph.title.clone(), ph.title_range.clone(), line_at(&text, h.line_start)));
+            title_next = Some(h.line_next);
         }
     }
 
@@ -262,7 +267,11 @@ pub fn parse(path: PathBuf, display: String, text: String, kind: DocKind) -> Res
     if !errs.list.is_empty() {
         return Err(errs.list);
     }
-    Ok(Doc { path, display, text, kind, front, title, tasks })
+    let description = title_next.map(|start| {
+        let end = tasks.first().map_or(text.len(), |t| t.block.start).max(start);
+        (start..end, model::normalize_text(&text[start..end]))
+    });
+    Ok(Doc { path, display, text, kind, front, title, description, tasks })
 }
 
 struct ParsedHeading {

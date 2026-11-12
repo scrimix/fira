@@ -5,6 +5,7 @@ import type { UUID } from '../types';
 import { createPortal } from 'react-dom';
 import { fmtMin } from '../time';
 import { ClickTooltip } from './ClickTooltip';
+import { useFira } from '../store';
 
 const outsideDate = (ms: number) => new Date(ms).toLocaleString(undefined, {
   day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
@@ -46,6 +47,9 @@ export function PlanSprintCard({
   onRename, onEdit, onDelete, onDropTask, onMovePointerDown, onResizePointerDown,
   dragging,
 }: Props) {
+  // Not part of the plan snapshot (history doesn't replay it), so read
+  // live and show it only where the live information is shown.
+  const description = useFira(s => s.sprints.find(x => x.id === sprint.id)?.description_md?.trim() ?? '');
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState('');
   const [renaming, setRenaming] = useState(false);
@@ -197,6 +201,7 @@ export function PlanSprintCard({
         </button>}
         <ClickTooltip className="plan-sprint-info" warning={!!info?.outsideBlocks || !!info?.hasPrivateTime}
           label="Sprint information" trigger="?">
+          {info && description && <div className="plan-sprint-description">{description}</div>}
           <div>{information}</div>
           {!!info?.outsidePortions.length && <div className="plan-sprint-outside-list"
             tabIndex={0} role="region" aria-label="Time outside sprint">

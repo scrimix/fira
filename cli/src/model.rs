@@ -94,10 +94,39 @@ pub struct Task {
 pub struct Sprint {
     pub id: Uuid,
     pub title: String,
+    /// The prose between the file's title and its first task.
+    pub description: String,
     pub dates: Option<(NaiveDate, NaiveDate)>,
     pub track: Option<String>,
     pub tags: Vec<String>,
     pub assignee: Option<Uuid>,
+    /// The sprint's tasks in order: file order locally, Fira's checklist
+    /// order remotely. Compared only over the tasks both sides have (see
+    /// `common_order`); membership is each task's own `sprint` field.
+    pub tasks: Vec<Uuid>,
+}
+
+/// `a` restricted to the ids that `b` also has, in `a`'s order.
+pub fn common_order(a: &[Uuid], b: &[Uuid]) -> Vec<Uuid> {
+    a.iter().copied().filter(|id| b.contains(id)).collect()
+}
+
+/// Do two sprints order their shared tasks differently?
+pub fn order_differs(a: &Sprint, b: &Sprint) -> bool {
+    common_order(&a.tasks, &b.tasks) != common_order(&b.tasks, &a.tasks)
+}
+
+/// Put `want`'s members into the slots `list` gives them, in `want`'s
+/// order. Ids of `list` not in `want` stay where they are, ids of `want`
+/// not in `list` are ignored. How both sides apply a task order: the
+/// tasks in the sprint swap places among themselves and nothing else
+/// moves.
+pub fn permute_slots(list: &[Uuid], want: &[Uuid]) -> Vec<Uuid> {
+    let want: Vec<Uuid> = want.iter().copied().filter(|id| list.contains(id)).collect();
+    let mut next = want.iter();
+    list.iter()
+        .map(|id| if want.contains(id) { *next.next().expect("same members") } else { *id })
+        .collect()
 }
 
 pub fn normalize_tags(mut tags: Vec<String>) -> Vec<String> {

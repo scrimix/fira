@@ -98,6 +98,18 @@ Examples:\n  task-cli publish fira tasks/sprints/001-onboarding.md\n  task-cli p
         #[command(flatten)]
         opts: SyncOpts,
     },
+    /// Merge files that are already in Fira: diff, choose per field, write both sides
+    #[command(after_help = "Like publish, for many files at once (all of tasks/ by default), and it creates\n\
+nothing on either side: tasks and sprints not in Fira yet are listed and left for\n\
+`publish`, Fira work not in any file is listed and left for `import`.\n\
+Without a terminal the command fails unless --prefer or --dry-run is given.\n\n\
+Examples:\n  task-cli sync fira\n  task-cli sync fira tasks/sprints/001-onboarding.md --dry-run")]
+    Sync {
+        target: Target,
+        files: Vec<PathBuf>,
+        #[command(flatten)]
+        opts: SyncOpts,
+    },
     /// Bring a Fira sprint or task into the repository, through the same diff
     #[command(after_help = "A sprint lands in tasks/sprints/<slug>.md, or updates the file with that sprint_id.\n\
 A task lands in tasks/single/ (or its sprint's file, or --into). Local text is never\n\
@@ -166,6 +178,7 @@ fn run(cli: Cli) -> Result<u8> {
         Cmd::Fmt { files, check } => fmt(&files, check),
         Cmd::Publish { file, opts, .. } => publish(&file, &opts),
         Cmd::Import { reference, into, opts, .. } => import(&reference, into.as_deref(), &opts),
+        Cmd::Sync { files, opts, .. } => sync_files(&files, &opts),
         Cmd::Diff { files, all, json, no_pager } => diff(&files, all, json, no_pager),
         Cmd::Sprints => sprints(),
         Cmd::Help { topic } => help(topic.as_deref()),
@@ -416,6 +429,12 @@ fn publish(file: &Path, opts: &SyncOpts) -> Result<u8> {
     sync_run(repo, Mode::Publish, Scope::Docs(vec![doc]), None, opts)
 }
 
+fn sync_files(files: &[PathBuf], opts: &SyncOpts) -> Result<u8> {
+    let repo = Repo::load(root()?)?;
+    let docs = docs_for(&repo, files)?;
+    sync_run(repo, Mode::Sync, Scope::Docs(docs), None, opts)
+}
+
 fn import(reference: &str, into: Option<&Path>, opts: &SyncOpts) -> Result<u8> {
     let repo = Repo::load(root()?)?;
     let id = match fira::parse_ref(reference) {
@@ -581,7 +600,11 @@ fn sync_run(repo: Repo, mode: Mode, scope: Scope, into: Option<usize>, opts: &Sy
             Err(ApplyFailure::Conflict(ids)) => {
                 let names: Vec<String> = ids
                     .iter()
-                    .map(|id| cmp.entities.iter().find(|e| e.id == *id).map_or(id.to_string(), |e| format!("\"{}\"", e.title())))
+                    .map(|id| match cmp.entities.iter().find(|e| e.id == *id) {
+                        Some(e) => format!("\"{}\"", e.title()),
+                        None if *id == project_id => "task order".to_string(),
+                        None => id.to_string(),
+                    })
                     .collect();
                 bail!(
                     "Fira changed after the diff was shown ({}). Nothing was written, locally or in Fira. Run the command again to see the new diff",

@@ -29,7 +29,8 @@ assignee: rihard.g
 
 # Initial scaffolding
 
-Sprint description: any prose, including plain headings. Local only.
+Sprint description: any prose, including plain headings. Synced with the
+description in Fira's sprint modal.
 
 ## ⬜ Application shell
 <!-- task: id=9a1d2c3e-0000-4000-8000-000000000002 tags=frontend,layout estimate=4h -->
@@ -55,7 +56,11 @@ Target layout:
 ```
 
 - The first `#` heading is the sprint title. Everything between it and the
-  first task is the sprint description.
+  first task is the sprint description, compared with Fira's.
+- The order of task headings is the sprint's task order, compared with the
+  order of Fira's sprint checklist (drag rows on the Plan board). Only
+  tasks that are in both are compared; a task only in Fira keeps its
+  place. Reorder by moving blocks.
 - A heading that starts with a status marker is a task:
   ⬜ todo, 🚧 in progress, ✅ done. You may type `[ ]`, `[~]` or `[x]`
   instead; `task-cli fmt` turns them into the emoji (brackets in a heading

@@ -1,0 +1,96 @@
+# Builds task-cli for each platform and publishes a GitHub release when a
+# `cli-v<version>` tag is pushed:
+#
+#   (bump version in cli/Cargo.toml, commit)
+#   git tag cli-v0.1.5 && git push origin cli-v0.1.5
+#
+# Asset names carry no version, so
+# https://github.com/scrimix/fira/releases/latest/download/task-cli-<target>.tar.gz
+# always points at the newest one (cli/install.sh relies on this).
+name: cli-release
+
+on:
+  push:
+    tags: ["cli-v*"]
+
+permissions:
+  contents: write
+
+defaults:
+  run:
+    shell: bash
+    working-directory: cli
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag matches Cargo.toml
+        run: |
+          want="cli-v$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
+          if [ "$GITHUB_REF_NAME" != "$want" ]; then
+            echo "tag $GITHUB_REF_NAME but cli/Cargo.toml says $want" >&2
+            exit 1
+          fi
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --locked
+
+  build:
+    needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: x86_64-unknown-linux-musl, os: ubuntu-latest }
+          - { target: aarch64-unknown-linux-musl, os: ubuntu-24.04-arm }
+          - { target: x86_64-apple-darwin, os: macos-14 }
+          - { target: aarch64-apple-darwin, os: macos-14 }
+          - { target: x86_64-pc-windows-msvc, os: windows-latest }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - if: contains(matrix.target, 'musl')
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - run: cargo build --release --locked --target ${{ matrix.target }}
+      - name: Package
+        run: |
+          name="task-cli-${{ matrix.target }}"
+          mkdir -p dist
+          if [[ "${{ matrix.target }}" == *windows* ]]; then
+            cp "target/${{ matrix.target }}/release/task-cli.exe" dist/
+            (cd dist && 7z a "$name.zip" task-cli.exe >/dev/null && rm task-cli.exe)
+            file="$name.zip"
+          else
+            cp "target/${{ matrix.target }}/release/task-cli" dist/
+            (cd dist && tar czf "$name.tar.gz" task-cli && rm task-cli)
+            file="$name.tar.gz"
+          fi
+          cd dist
+          if command -v sha256sum >/dev/null; then sha256sum "$file" > "$file.sha256"
+          else shasum -a 256 "$file" > "$file.sha256"; fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: cli/dist/*
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --title "task-cli ${GITHUB_REF_NAME#cli-v}" \
+            --generate-notes --verify-tag

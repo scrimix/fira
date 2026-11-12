@@ -142,7 +142,8 @@ Build the application shell.
 - Dates follow Fira's Monday-aligned, end-exclusive range. An unscheduled
   sprint may omit dates; validate date pairs and ranges before publication.
 - Fira sprints have no description field yet, so in this sprint the sprint
-  description is local only and not compared.
+  description is local only and not compared. (Synced since
+  [sprint 37](37-sprint-description-and-task-order.md).)
 
 ### Single task file
 
@@ -337,6 +338,7 @@ on absence alone.
 - Tasks in the local file that are no longer in the remote sprint follow the
   removal rules: listed, never moved or deleted by default.
 - Task order is taken from Fira on first import and is not managed after that.
+  (Compared and synced since [sprint 37](37-sprint-description-and-task-order.md).)
 - The sprint's frontmatter `tags`/`assignee` come from the Fira sprint
   defaults; task keys equal to them are omitted.
 
