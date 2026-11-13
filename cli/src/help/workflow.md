@@ -56,3 +56,36 @@ Things to know:
   being written.
 - `--dry-run` shows what would happen. `--prefer local|remote` answers
   every field in one direction for unattended runs.
+
+## Notion
+
+PMs can follow and edit a sprint on their own Notion page. Once per
+developer, `task-cli login notion` (an internal integration's secret; share
+each page with the integration: page menu ••• → Connections). Then:
+
+```sh
+task-cli link notion tasks/sprints/<file>.md <page link>   # once per file
+task-cli publish notion tasks/sprints/<file>.md
+task-cli sync notion                                       # every linked file
+```
+
+The CLI owns the part of the page from a `Tasks` heading to its gray
+footer line; the PM's text above and below is never touched. That part
+mirrors the file: the sprint description, then every task with its heading,
+description and subtasks. Tags, assignee and estimate stay in the
+repository. Attachment lists are not published; images and files embedded
+in descriptions travel both ways (a file a PM uploads is stored with its
+task).
+
+Edits made in Notion come back the same way as Fira's: the footer records
+what was last published, so if only one side changed it simply wins; if
+both did, you choose per field. Tasks are matched by title, so
+a task renamed in Notion shows up as one that disappeared (publishing puts
+it back) and one that appeared (added to the file); titles within a file
+must differ. When only the file changed, deleted tasks go from the page;
+otherwise each task on only one side is a choice: put it back or delete
+it from the file, add it to the file or remove it from the page. A new section a PM adds needs a status emoji (⬜ 🚧 ✅) in its
+heading to count as a task. With `task_ids = true` under `[notion]`, each
+task also shows its `<!-- task: … -->` line (short id, tags, assignee,
+estimate), so renames keep their identity. Only changed blocks are rewritten; Notion
+comments on a block are lost when that block changes.

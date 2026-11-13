@@ -1,6 +1,6 @@
 # Sprint 36 — task-cli: Notion as a document
 
-**Status:** planned
+**Status:** built; tested against a personal Notion workspace
 **Date:** 2026-11-12
 
 ## Goal
@@ -89,6 +89,22 @@ task-cli · edits here sync with the repository through `task-cli publish notion
       (`doc::format_comment_raw`), styled gray. The assignee is an
       `@mention` when the person matches a Notion user (see Users), and the
       handle in plain text otherwise. Everything else in it is plain text.
+- [ ] **Default: no task lines.** Unless `[notion] task_ids = true`, the
+      task line is left out: tags, assignee and estimate stay in the
+      repository, and tasks are matched by title (status marker aside). A
+      renamed task reads as one that disappeared (put back on publish) and
+      one that appeared (added to the file). A file with two tasks of the
+      same title can't be published. Task lines left on a page from a run
+      with `task_ids` on are dropped and the page rewritten. The rest of
+      this section describes `task_ids = true`.
+- [ ] **Short ids.** In Notion the task line shows the first 8 hex digits
+      of the id (`id=a2dea70a`), so it fits on one line; reading expands
+      them against the file's tasks. A short id that matches none (the task
+      moved to another file) reads as a section that isn't a task of this
+      file. The file and Fira always keep full ids.
+- [ ] **Format version.** The footer says which layout wrote the page
+      (`task-cli v3 · <hash> · …`). A page in an older layout is rewritten
+      once, even when its content agrees.
 - [ ] **Subtasks.** `### Subtasks` (`## Subtasks` in a single-task file)
       followed by `to_do` blocks with their checked state.
 - [ ] **Standalone task.** The same anchor and footer. The region has no
@@ -123,8 +139,9 @@ the CLI matches them automatically.
       assignee's email and name.
 - [ ] The CLI fetches the workspace's Notion users (`GET /v1/users`, people
       only, no bots). The integration needs the "read user information
-      including email addresses" capability; without it, the CLI matches by
-      name only and prints one notice saying so.
+      including email addresses" capability. Tokens that can't list users
+      (personal access tokens can't) match only the token's owner, with a
+      notice.
 - [ ] Fira users and Notion users are matched by email first
       (case-insensitive), then by exact normalised name. The match is used
       both ways: a handle is written as an `@mention`, and an `@mention`
@@ -153,32 +170,28 @@ the CLI matches them automatically.
 - [ ] Formatting the CLI doesn't render (colours, highlights, underline) is
       ignored when reading and lost on the next rewrite. `help` documents
       this.
-- [ ] **Images.** The CLI writes each embedded image with the caption
-      `attachment:<name>` and reads it back as `![alt](attachment:<name>)`.
-      An image without that caption (pasted by a PM) is listed as
-      `Notion-only image, not imported` and is kept only until the region
-      is next rewritten.
+- [ ] **Images and files.** Written without captions; read back by the
+      file's name, which Notion keeps (`![alt](attachment:<name>)`, alt
+      text from the file). A file a PM uploads is a new embed: taking that
+      description from Notion stores the file in the task's
+      `assets/<task-id>/` folder and adds it to the task's Attachments
+      list, so `publish fira` carries it on. Images linked by URL read back
+      as `![](<url>)`.
 - [ ] **Parse errors.** A task line the PM broke (an unknown key, a bad
       estimate) fails that file with the parser's message, pointing at the
       section's heading in Notion.
-- [ ] A section with no task line (an H2 a PM added) is a new task: "only in
-      Notion", offered for adding to the file. `fmt` then gives it an id.
-- [ ] A task missing from Notion but in the file is shown as removed in
-      Notion and restored on publish. As with Fira, local text is never
-      deleted because something is missing remotely.
-
-## Diff
-
-The footer hash is the hash of what the CLI last published. Comparing it
-with both sides tells which one changed:
-
-| Local file vs footer | Notion vs footer | Result |
-|---|---|---|
-| same | same | `unchanged`, no writes |
-| changed | same | Notion is updated without asking (still shown; `--dry-run` writes nothing) |
-| same | changed | the file is updated without asking |
-| changed | changed | field-level diff, choose per field |
-
+- [ ] A section with no task line is a new task, added to the file with a
+      new id. Its heading needs a status marker (⬜ 🚧 ✅, or `[ ]`) like any
+      task heading; without one it is a heading inside the previous task's
+      description.
+- [ ] Tasks on only one side. If only the file changed since the last
+      publish (per the footer), the file says what exists: sections of
+      deleted tasks go from the page, new tasks are added. Otherwise the
+      user picks per task: in the file but not on the page → put it back
+      or delete it from the file; on the page but not in the file → add it
+      to the file or remove it from the page. A PM rename is one of each.
+      `--prefer local` makes the page follow the file; `--prefer notion`
+      adds new sections but never deletes from the file.
 - [ ] Hash = SHA-256 of the canonical region model. It covers the sprint
       description, plus each task's id, status, title, tags, assignee,
       estimate, description, subtasks and order, plus the hashes of
@@ -202,12 +215,21 @@ with both sides tells which one changed:
 
 ## Writing to Notion
 
-- [ ] A changed region is replaced wholesale. The CLI archives the blocks
-      between the anchor and the footer, footer included, then appends the
-      new blocks after the anchor (the `after` parameter). Appends go in
-      chunks of 100, and lists deeper than two levels need follow-up
-      appends. The footer is written last, so an interrupted publish has
-      no footer and the next run treats both sides as changed.
+- [ ] `Notion-Version: 2026-03-11`; appends use `position: after_block`
+      (the older `after` parameter is deprecated).
+- [ ] A publish needs every task to have an id: run `task-cli fmt` first.
+- [ ] An empty region (no anchor yet, or nothing under it) is a first
+      publish: no field prompts.
+- [ ] Fields skipped in the prompt leave the Notion page untouched until
+      they are decided; the file still gets the fields taken from Notion.
+
+- [ ] A changed region is updated by difference: each top-level block is
+      compared by how it reads back, unchanged blocks stay (with their
+      Notion comments), changed and removed ones are deleted, new ones are
+      inserted after the block they follow. Only inserted files are
+      uploaded. The footer is deleted first and written last, so an
+      interrupted publish has no footer and the next run treats both sides
+      as changed.
 - [ ] Before writing, the CLI rereads the region's block list and compares
       it with what the diff saw. If anything changed meanwhile, it stops
       without writing and asks for a rerun. This narrows the window but
@@ -222,12 +244,13 @@ with both sides tells which one changed:
 ## Files: only what the description renders
 
 Notion shows what the description shows. The task's `Attachments` list is
-not published, and attachments are not synced.
+not published; files embedded in descriptions travel both ways.
 
 | Canonical | Notion |
 |---|---|
-| `![Layout](attachment:layout.png)` on its own line | image block at that position, caption `attachment:layout.png` (file block for non-images) |
-| inline `see [spec](attachment:spec.pdf)` | the label text only; nothing uploaded |
+| `![Layout](attachment:layout.png)` on its own line | image block at that position, no caption (file block for non-images) |
+| an image or file a PM uploads in a task's section | downloaded into the task's folder, embedded where it was, listed under Attachments |
+| inline `see [spec](attachment:spec.pdf)` | the label, underlined; nothing uploaded. Underlined text equal to such a label reads back as the link |
 | listed in `Attachments` only | nothing |
 
 - [ ] Upload embedded files through Notion's file upload API and attach
@@ -235,7 +258,8 @@ not published, and attachments are not synced.
       region is replaced.
 - [ ] Inline attachment links are compared by label. A PM who leaves the
       label alone keeps the local link; editing the label is a description
-      change.
+      change. Other relative links (to repository files) publish as their
+      label only, on both sides of the comparison.
 - [ ] Check the size limits and allowed types for the workspace's plan. An
       unsupported file is shown as "not publishable to Notion" and
       rendered as its alt text, never fatal.

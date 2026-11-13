@@ -73,7 +73,8 @@ Target layout:
   line (see below). Attachments and Subtasks come last in the task, in
   either order (canonically Attachments first).
 - Frontmatter keys, all optional: `sprint_id`, `starts_on`, `ends_on`,
-  `track`, `tags` (a `[a, b]` list), `assignee`.
+  `track`, `tags` (a `[a, b]` list), `assignee`, `notion` (the linked Notion
+  page, written by `task-cli link notion`).
 - Dates are Mondays and the range is end-exclusive (a two-week sprint
   starting 2026-11-09 has `ends_on: 2026-11-23`). Give both or neither.
 - Sprint `tags` and `assignee` apply to every task in the file that doesn't
@@ -107,6 +108,7 @@ holding `key=value` pairs:
 | `tags` | comma-separated: `tags=bug,"needs review"`; each must already exist in the Fira project (leads create tags there) |
 | `assignee` | a handle: first name, dot, surname initial (`maya.c` for Maya Chen); see below |
 | `estimate` | `4h`, `30m`, `1h30m` |
+| `notion` | single-task files only: the linked Notion page (`task-cli link notion`) |
 
 Assignee handles are derived from Fira display names. When two members
 would share one, the surname grows until they differ (`maya.ch`,

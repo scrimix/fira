@@ -330,7 +330,7 @@ pub fn section(level: usize, lines: &str) -> String {
 
 /// Append list lines to the task's Attachments section, creating it
 /// (after the description, before Subtasks) when there is none.
-fn add_items(text: &str, b: &TaskBlock, lines: &str) -> Edit {
+pub fn add_items(text: &str, b: &TaskBlock, lines: &str) -> Edit {
     match &b.attachments {
         Some(sec) => match &sec.list {
             Some(list) => {

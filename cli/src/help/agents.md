@@ -25,6 +25,7 @@ task-cli fmt --check              # exit 1 if fmt would change something
 task-cli diff --json              # working copy vs Fira, machine-readable
 task-cli publish fira <file> --dry-run
 task-cli sync fira --dry-run
+task-cli publish notion <file> --dry-run   # also needs `login notion`
 ```
 
 `diff` exits 0 in sync, 1 on differences, 2 on errors.
@@ -107,3 +108,11 @@ After signing in, the user lands on an empty screen.
 without ids, run `task-cli fmt`, run `task-cli diff --json` (new tasks show
 `"state": "new"`), then stop and tell the user to review and run
 `task-cli publish fira <file>`.
+
+## Notion
+
+`task-cli publish notion <file>` mirrors a linked file into a PM's Notion
+page, under a `Tasks` heading, and brings PM edits back through the same
+per-field diff. Run it only when the user asks; use `--dry-run` to look.
+Never remove or edit `notion:` / `notion=` keys; `task-cli link notion`
+writes them.

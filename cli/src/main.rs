@@ -8,6 +8,7 @@ mod doc;
 mod fira;
 mod handles;
 mod model;
+mod notion;
 mod repo;
 mod safety;
 mod sync;
@@ -43,11 +44,14 @@ struct Cli {
 #[derive(Clone, Copy, ValueEnum)]
 enum Target {
     Fira,
+    Notion,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
 enum Prefer {
     Local,
+    /// The other side: Fira, or Notion for `publish notion`.
+    #[value(alias = "notion", alias = "fira")]
     Remote,
 }
 
@@ -74,6 +78,17 @@ Examples:\n  task-cli login fira\n  task-cli login fira --project Atlas")]
         /// Project id or title, when the token's workspace has several
         #[arg(long)]
         project: Option<String>,
+    },
+    /// Link a sprint or single-task file to a Notion page (for `publish notion`)
+    #[command(after_help = "A sprint file gets `notion: <page id>` in its frontmatter, a single-task file\n\
+`notion=<page id>` in its task comment. Writing the line by hand works too.\n\
+Share the page with your integration in Notion (page menu ••• → Connections).\n\n\
+Example:\n  task-cli link notion tasks/sprints/atlas-nov-9.md https://www.notion.so/Atlas-1a2b…")]
+    Link {
+        target: Target,
+        file: PathBuf,
+        /// The Notion page's link (\"Copy link\") or id
+        url: String,
     },
     /// Insert missing IDs and normalise structure lines; never changes prose
     #[command(after_help = "Moves each `task:` comment directly under its heading, rewrites status markers\n\
@@ -174,7 +189,54 @@ fn main() -> ExitCode {
 fn run(cli: Cli) -> Result<u8> {
     match cli.cmd {
         Cmd::Init { url, dir } => init(&url, dir),
+        Cmd::Login { target: Target::Notion, .. } => notion::login(&root()?),
         Cmd::Login { project, .. } => login(project),
+        Cmd::Link { target: Target::Fira, .. } => bail!("`link` is for Notion pages: task-cli link notion <file> <page url>"),
+        Cmd::Link { file, url, .. } => {
+            let repo = Repo::load(root()?)?;
+            let d = docs_for(&repo, &[file])?[0];
+            notion::link(&repo, d, &url)
+        }
+        Cmd::Publish { target: Target::Notion, file, opts } => {
+            let repo = Repo::load(root()?)?;
+            let d = docs_for(&repo, &[file])?[0];
+            notion::publish(&repo, d, &notion::Opts {
+                dry_run: opts.dry_run,
+                prefer: opts.prefer.map(|p| if matches!(p, Prefer::Local) { Side::Local } else { Side::Remote }),
+                no_pager: opts.no_pager,
+            })
+        }
+        Cmd::Sync { target: Target::Notion, files, opts } => {
+            let repo = Repo::load(root()?)?;
+            let named = !files.is_empty();
+            let docs: Vec<usize> = docs_for(&repo, &files)?
+                .into_iter()
+                .filter(|&d| named || notion::is_linked(&repo.docs[d]))
+                .collect();
+            if docs.is_empty() {
+                println!("No file is linked to a Notion page yet: task-cli link notion <file> <page url>");
+                return Ok(0);
+            }
+            let o = notion::Opts {
+                dry_run: opts.dry_run,
+                prefer: opts.prefer.map(|p| if matches!(p, Prefer::Local) { Side::Local } else { Side::Remote }),
+                no_pager: opts.no_pager,
+            };
+            let mut failed = 0;
+            for (n, d) in docs.iter().enumerate() {
+                if docs.len() > 1 {
+                    println!("{}== {} ==", if n > 0 { "\n" } else { "" }, repo.docs[*d].display);
+                }
+                if let Err(e) = notion::publish(&repo, *d, &o) {
+                    eprintln!("error: {}: {e:#}", repo.docs[*d].display);
+                    failed += 1;
+                }
+            }
+            Ok(if failed > 0 { 2 } else { 0 })
+        }
+        Cmd::Import { target: Target::Notion, .. } => {
+            bail!("nothing to import from Notion: task-cli publish notion <file> brings a linked page's edits into the file")
+        }
         Cmd::Fmt { files, check } => fmt(&files, check),
         Cmd::Publish { file, opts, .. } => publish(&file, &opts),
         Cmd::Import { reference, into, opts, .. } => import(&reference, into.as_deref(), &opts),

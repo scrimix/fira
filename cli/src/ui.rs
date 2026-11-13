@@ -23,19 +23,19 @@ impl Style {
             s.to_string()
         }
     }
-    fn bold(&self, s: &str) -> String {
+    pub fn bold(&self, s: &str) -> String {
         self.paint("1", s)
     }
-    fn local(&self, s: &str) -> String {
+    pub fn local(&self, s: &str) -> String {
         self.paint("32", s)
     }
-    fn remote(&self, s: &str) -> String {
+    pub fn remote(&self, s: &str) -> String {
         self.paint("36", s)
     }
-    fn dim(&self, s: &str) -> String {
+    pub fn dim(&self, s: &str) -> String {
         self.paint("2", s)
     }
-    fn warn(&self, s: &str) -> String {
+    pub fn warn(&self, s: &str) -> String {
         self.paint("33", s)
     }
 }
@@ -181,11 +181,12 @@ fn values(e: &Entity, f: Field, r: &Resolver, repo: &Repo, st: &Style) -> (Disp,
 }
 
 /// One field, local vs Fira.
-fn render_field(out: &mut String, st: &Style, indent: &str, name: &str, local_label: &str, l: Disp, rm: Disp) {
+fn render_field(out: &mut String, st: &Style, indent: &str, name: &str, local_label: &str, remote_label: &str, l: Disp, rm: Disp) {
     let pad = format!("{name:<10}");
     let gap = " ".repeat(10);
     let ll = format!("{local_label}:");
-    let w = ll.len().max(5);
+    let rl = format!("{remote_label}:");
+    let w = ll.len().max(rl.len());
     match (l, rm) {
         (Disp::Line(a), Disp::Line(b)) => {
             if a.chars().count() <= 24 && b.chars().count() <= 24 {
@@ -193,12 +194,12 @@ fn render_field(out: &mut String, st: &Style, indent: &str, name: &str, local_la
                     "{indent}{pad}{} {}   {} {}\n",
                     st.local(&format!("{ll:<w$}")),
                     st.local(&format!("{a:<24}")),
-                    st.remote("fira:"),
+                    st.remote(&rl),
                     st.remote(&b)
                 ));
             } else {
                 out.push_str(&format!("{indent}{pad}{} {}\n", st.local(&format!("{ll:<w$}")), st.local(&a)));
-                out.push_str(&format!("{indent}{gap}{} {}\n", st.remote(&format!("{:<w$}", "fira:")), st.remote(&b)));
+                out.push_str(&format!("{indent}{gap}{} {}\n", st.remote(&format!("{rl:<w$}")), st.remote(&b)));
             }
         }
         (Disp::Lines(a), Disp::Lines(b)) => {
@@ -208,7 +209,7 @@ fn render_field(out: &mut String, st: &Style, indent: &str, name: &str, local_la
                 out.push_str(&format!("{indent}{p}{} {}\n", st.local(&lab), st.local(line)));
             }
             for (i, line) in b.iter().enumerate() {
-                let lab = if i == 0 { format!("{:<w$}", "fira:") } else { " ".repeat(w) };
+                let lab = if i == 0 { format!("{rl:<w$}") } else { " ".repeat(w) };
                 out.push_str(&format!("{indent}{gap}{} {}\n", st.remote(&lab), st.remote(line)));
             }
         }
@@ -219,7 +220,7 @@ fn render_field(out: &mut String, st: &Style, indent: &str, name: &str, local_la
             }
         }
         (Disp::Text(a), Disp::Text(b)) => {
-            out.push_str(&format!("{indent}{name}   ({} {local_label}, {} fira)\n", st.local("+"), st.remote("-")));
+            out.push_str(&format!("{indent}{name}   ({} {local_label}, {} {remote_label})\n", st.local("+"), st.remote("-")));
             let diff = similar::TextDiff::from_lines(&b, &a);
             for group in diff.grouped_ops(2) {
                 for op in group {
@@ -313,7 +314,7 @@ pub fn render(repo: &Repo, cmp: &Comparison, st: &Style, local_label: &str, all:
             State::Differs => {
                 for f in &e.fields {
                     let (l, rm) = values(e, f.field, &r, repo, st);
-                    render_field(out, st, &inner, f.field.name(), local_label, l, rm);
+                    render_field(out, st, &inner, f.field.name(), local_label, cmp.remote_label, l, rm);
                     if let Some(n) = &f.note {
                         out.push_str(&format!("{inner}{}\n", st.warn(&format!("  note: {n}"))));
                     }
@@ -434,7 +435,7 @@ pub fn render_json(repo: &Repo, cmp: &Comparison) -> Value {
 
 /// Print through `$PAGER` (default `less -R`) when stdout is a terminal.
 pub fn page(text: &str, no_pager: bool) {
-    if no_pager || !std::io::stdout().is_terminal() || text.lines().count() < 20 {
+    if no_pager || !std::io::stdout().is_terminal() {
         print!("{text}");
         return;
     }
@@ -446,7 +447,9 @@ pub fn page(text: &str, no_pager: bool) {
     };
     let child = std::process::Command::new(cmd)
         .args(parts)
-        .env("LESS", std::env::var("LESS").unwrap_or_else(|_| "FRX".into()))
+        // Always a pager on a terminal, even for one screen (no `F`): the
+        // prompt that may follow shouldn't receive keys meant for scrolling.
+        .env("LESS", std::env::var("LESS").unwrap_or_else(|_| "RX".into()))
         .stdin(std::process::Stdio::piped())
         .spawn();
     match child {
@@ -460,7 +463,7 @@ pub fn page(text: &str, no_pager: bool) {
     }
 }
 
-fn ask(prompt: &str) -> Result<String> {
+pub fn ask(prompt: &str) -> Result<String> {
     eprint!("{prompt}");
     std::io::stderr().flush()?;
     let mut line = String::new();
@@ -510,12 +513,13 @@ pub fn choose(repo: &Repo, cmp: &Comparison, st: &Style, local_label: &str) -> R
             let what = if e.kind == Kind::Sprint { "sprint" } else { "task" };
             let mut block = format!("\n{what} {}  {}\n", st.bold(&format!("\"{}\"", e.title())), st.dim(&format!("({})", location(repo, e))));
             let (l, rm) = values(e, f.field, &r, repo, st);
-            render_field(&mut block, st, "  ", f.field.name(), local_label, l, rm);
+            render_field(&mut block, st, "  ", f.field.name(), local_label, cmp.remote_label, l, rm);
             if let Some(n) = &f.note {
                 block.push_str(&format!("  {}\n", st.warn(&format!("note: {n}"))));
             }
             eprint!("{block}");
             let e_key = if e.kind == Kind::Sprint { "sprint" } else { "task" };
+            let other = if cmp.remote_label == "fira" { "Fira" } else { "Notion" };
             let prompt = format!(
                 "[l]ocal [r]emote  [t] {e_key}: all local  [T] {e_key}: all remote\n[L] everything local  [R] everything remote  [s]kip  [q]uit  [?] > "
             );
@@ -553,10 +557,10 @@ pub fn choose(repo: &Repo, cmp: &Comparison, st: &Style, local_label: &str) -> R
                     "q" => return Ok(Err(Quit)),
                     "l" | "r" => {}
                     _ => eprintln!(
-                        "l  use the local value for this field (written to Fira)\n\
-                         r  use Fira's value for this field (written to the file)\n\
-                         t/T  local/Fira for every remaining field of this {e_key}\n\
-                         L/R  local/Fira for every remaining field of everything\n\
+                        "l  use the local value for this field (written to {other})\n\
+                         r  use {other}'s value for this field (written to the file)\n\
+                         t/T  local/{other} for every remaining field of this {e_key}\n\
+                         L/R  local/{other} for every remaining field of everything\n\
                          s  skip: leave this field different on both sides\n\
                          q  quit: write nothing"
                     ),

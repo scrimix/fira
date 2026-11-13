@@ -54,6 +54,8 @@ pub struct Frontmatter {
     pub track: Option<String>,
     pub tags: Option<Vec<String>>,
     pub assignee: Option<String>,
+    /// The linked Notion page (`notion: <page id>`).
+    pub notion: Option<String>,
 }
 
 impl Frontmatter {
@@ -76,6 +78,8 @@ pub struct Comment {
     /// `None` = inherit; `Some("")` = explicitly nobody.
     pub assignee: Option<String>,
     pub estimate: Option<i32>,
+    /// The linked Notion page of a single task (`notion=<page id>`).
+    pub notion: Option<String>,
     /// Raw `key=value` tokens in source order, for `fmt`.
     pub raw: Vec<(String, String)>,
 }
@@ -181,8 +185,31 @@ fn line_bounds(text: &str, offset: usize) -> (usize, usize, usize) {
     (start, end, next)
 }
 
-pub const COMMENT_KEYS: &[&str] = &["id", "tags", "assignee", "estimate"];
-pub const FRONT_KEYS: &[&str] = &["sprint_id", "starts_on", "ends_on", "track", "tags", "assignee"];
+pub const COMMENT_KEYS: &[&str] = &["id", "tags", "assignee", "estimate", "notion"];
+pub const FRONT_KEYS: &[&str] = &["sprint_id", "starts_on", "ends_on", "track", "tags", "assignee", "notion"];
+
+/// A Notion page id as written after `notion`: the 32 hex digits, with or
+/// without dashes, or a page URL ending in them. Returns the dashed form.
+pub fn parse_notion_id(s: &str) -> Option<String> {
+    let s = s.trim();
+    let path = s.split(['?', '#']).next().unwrap_or(s);
+    let last = path.trim_end_matches('/').rsplit('/').next().unwrap_or(path);
+    let hex: String = if uuid::Uuid::try_parse(last).is_ok() {
+        last.replace('-', "")
+    } else {
+        // `<32 hex>` alone, or after a title slug: `Sprint-Atlas-<32 hex>`.
+        let cut = last.len().checked_sub(32)?;
+        if !last.is_char_boundary(cut) || !(cut == 0 || last[..cut].ends_with('-')) {
+            return None;
+        }
+        last[cut..].to_string()
+    };
+    if hex.len() != 32 || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
+        return None;
+    }
+    let t = hex.to_ascii_lowercase();
+    Some(format!("{}-{}-{}-{}-{}", &t[0..8], &t[8..12], &t[12..16], &t[16..20], &t[20..32]))
+}
 
 /// Errors are collected per file so one run reports everything at once.
 pub struct Errors<'a> {
@@ -256,6 +283,14 @@ pub fn parse(path: PathBuf, display: String, text: String, kind: DocKind) -> Res
             tasks.push(t);
         }
         let _ = h;
+    }
+
+    if kind == DocKind::Sprint {
+        for t in &tasks {
+            if let Some(c) = t.comment.as_ref().filter(|c| c.notion.is_some()) {
+                errs.at(c.range.start, "`notion=` links a single task file to its page; in a sprint file, link the sprint instead (`notion:` in the frontmatter)");
+            }
+        }
     }
 
     // `task:` comments outside any task (e.g. in the sprint description).
@@ -653,6 +688,7 @@ fn parse_comment(text: &str, range: Range<usize>, errs: &mut Errors) -> Option<C
         tags: None,
         assignee: None,
         estimate: None,
+        notion: None,
         raw: vec![],
     };
     let tokens = match tokenize(body) {
@@ -698,6 +734,12 @@ fn parse_comment(text: &str, range: Range<usize>, errs: &mut Errors) -> Option<C
                 "estimate" => {
                     let v = one()?;
                     c.estimate = if v.is_empty() { None } else { Some(model::parse_estimate(&v)?) };
+                }
+                "notion" => {
+                    let v = one()?;
+                    c.notion = Some(parse_notion_id(&v).ok_or_else(|| {
+                        format!("notion {v:?} is not a Notion page id; use `task-cli link notion <file> <page url>`")
+                    })?);
                 }
                 other => {
                     let hint = model::suggest(other, COMMENT_KEYS)
@@ -912,6 +954,15 @@ fn parse_frontmatter(text: &str, errs: &mut Errors) -> Option<Frontmatter> {
             "assignee" => {
                 need_scalar(errs);
                 fm.assignee = scalar.filter(|s| !s.is_empty());
+            }
+            "notion" => {
+                need_scalar(errs);
+                if let Some(s) = scalar.as_ref().filter(|s| !s.is_empty()) {
+                    match parse_notion_id(s) {
+                        Some(id) => fm.notion = Some(id),
+                        None => errs.at(l.range.start, format!("notion {s:?} is not a Notion page id; use `task-cli link notion <file> <page url>`")),
+                    }
+                }
             }
             "tags" => {
                 fm.tags = Some(model::normalize_tags(match &l.value {

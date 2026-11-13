@@ -144,6 +144,8 @@ impl Entity {
 
 pub struct Comparison {
     pub mode: Mode,
+    /// How the other side is labelled in diffs: `fira` or `notion`.
+    pub remote_label: &'static str,
     pub snap: Snapshot,
     pub entities: Vec<Entity>,
     pub notices: Vec<String>,
@@ -425,7 +427,7 @@ fn remote_attachments(t: &RemoteTask) -> impl Iterator<Item = &RemoteAttachment>
     v.into_iter()
 }
 
-fn sprint_fields(a: &Sprint, b: &Sprint) -> Vec<Field> {
+pub fn sprint_fields(a: &Sprint, b: &Sprint) -> Vec<Field> {
     let mut f = vec![];
     if a.title != b.title {
         f.push(Field::Title);
@@ -451,7 +453,7 @@ fn sprint_fields(a: &Sprint, b: &Sprint) -> Vec<Field> {
     f
 }
 
-fn task_fields(a: &Task, b: &Task) -> Vec<Field> {
+pub fn task_fields(a: &Task, b: &Task) -> Vec<Field> {
     let mut f = vec![];
     if a.title != b.title {
         f.push(Field::Title);
@@ -829,7 +831,7 @@ pub fn build(repo: &Repo, snap: Snapshot, mode: Mode, scope: &Scope, into: Optio
         errors.dedup();
         bail!("{}", errors.join("\n"));
     }
-    Ok(Comparison { mode, snap, entities, notices, into })
+    Ok(Comparison { mode, remote_label: "fira", snap, entities, notices, into })
 }
 
 fn local_only_state(mode: Mode, missing: Option<&str>) -> State {
@@ -1003,7 +1005,7 @@ fn attachment_downloads(root: &std::path::Path, task_id: Uuid, have: &[Attachmen
     }
 }
 
-fn merge_sprint(a: &Sprint, b: &Sprint, take_b: &dyn Fn(Field) -> bool) -> Sprint {
+pub fn merge_sprint(a: &Sprint, b: &Sprint, take_b: &dyn Fn(Field) -> bool) -> Sprint {
     let mut s = a.clone();
     if take_b(Field::Title) {
         s.title = b.title.clone();
@@ -1029,7 +1031,7 @@ fn merge_sprint(a: &Sprint, b: &Sprint, take_b: &dyn Fn(Field) -> bool) -> Sprin
     s
 }
 
-fn merge_task(a: &Task, b: &Task, take_b: &dyn Fn(Field) -> bool) -> Task {
+pub fn merge_task(a: &Task, b: &Task, take_b: &dyn Fn(Field) -> bool) -> Task {
     let mut t = a.clone();
     if take_b(Field::Title) {
         t.title = b.title.clone();

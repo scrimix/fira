@@ -35,3 +35,5 @@ web/scripts/visual-check-out/
 *.dump
 
 tasks/
+
+notion.env
