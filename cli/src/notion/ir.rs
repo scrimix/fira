@@ -54,8 +54,11 @@ pub enum Block {
     /// `lang` is Notion's language name; empty for plain text.
     Code { lang: String, text: String },
     Divider,
-    /// An embedded file: `dest` is `attachment:<name>` or an http(s) URL.
-    Embed { image: bool, dest: String, alt: String },
+    /// An embedded file: `dest` is `attachment:<name>` (or, for a file in
+    /// another task's folder, `attachment:<task-id>/<name>`) or an http(s)
+    /// URL. `linked`: the file of a `[label](…)` link in the text just
+    /// before it, so Notion has the file; it writes no Markdown of its own.
+    Embed { image: bool, dest: String, alt: String, linked: bool },
     /// A task's `<!-- task: … -->` line, verbatim.
     TaskLine(String),
     /// Read only: a Notion block the CLI doesn't write, as its text.
@@ -71,6 +74,101 @@ fn is_web(dest: &str) -> bool {
 
 fn is_image_name(name: &str) -> bool {
     crate::attachments::content_type(name).starts_with("image/")
+}
+
+/// The file name of an `attachment:` destination, without a task folder.
+fn file_part(dest: &str) -> &str {
+    let name = dest.strip_prefix(SCHEME).unwrap_or(dest);
+    name.rsplit('/').next().unwrap_or(name)
+}
+
+fn is_linked(b: &Block) -> bool {
+    matches!(b, Block::Embed { linked: true, .. })
+}
+
+/// The files linked blocks carry, in order (nested ones included): what a
+/// page must hold beyond its Markdown.
+pub fn linked_files(blocks: &[Block]) -> Vec<String> {
+    let mut out = vec![];
+    for b in blocks {
+        match b {
+            Block::Embed { linked: true, dest, .. } => out.push(dest.clone()),
+            Block::Item { children, .. } => out.extend(linked_files(children)),
+            _ => {}
+        }
+    }
+    out
+}
+
+/// The attachment destinations the underlined labels in `spans` stand for.
+fn links_of(spans: &[Span], attach: &[(String, String)]) -> Vec<String> {
+    let mut out: Vec<String> = vec![];
+    for s in spans.iter().filter(|s| s.marks.underline) {
+        if let Some((_, d)) = attach.iter().find(|(l, _)| l == s.text.trim()) {
+            if !out.contains(d) {
+                out.push(d.clone());
+            }
+        }
+    }
+    out
+}
+
+/// Reading a page: a file right after text that links that same file is
+/// the one publishing put there; mark it linked (taking the link's
+/// destination) so it reads back as nothing.
+pub fn mark_linked(blocks: &mut [Block], attach: &[(String, String)]) {
+    mark_after(blocks, attach, vec![]);
+}
+
+fn mark_after(blocks: &mut [Block], attach: &[(String, String)], mut prev: Vec<String>) {
+    for b in blocks.iter_mut() {
+        match b {
+            Block::Embed { dest, alt, linked, .. } if alt.is_empty() && dest.starts_with(SCHEME) => {
+                let name = file_part(dest).to_string();
+                if let Some(i) = prev.iter().position(|d| file_part(d) == name) {
+                    *dest = prev.remove(i);
+                    *linked = true;
+                    continue;
+                }
+                prev.clear();
+            }
+            Block::Paragraph(s) | Block::Heading(_, s) | Block::Quote(s) => prev = links_of(s, attach),
+            Block::Item { text, children, .. } => {
+                mark_after(children, attach, links_of(text, attach));
+                prev.clear();
+            }
+            _ => prev.clear(),
+        }
+    }
+}
+
+/// Drop linked files the description already embeds, or linked earlier.
+fn dedup_linked(blocks: &mut Vec<Block>, seen: &mut Vec<String>) {
+    blocks.retain_mut(|b| match b {
+        Block::Embed { linked: true, dest, .. } => {
+            if seen.contains(dest) {
+                false
+            } else {
+                seen.push(dest.clone());
+                true
+            }
+        }
+        Block::Item { children, .. } => {
+            dedup_linked(children, seen);
+            true
+        }
+        _ => true,
+    });
+}
+
+fn embedded(blocks: &[Block], out: &mut Vec<String>) {
+    for b in blocks {
+        match b {
+            Block::Embed { linked: false, dest, .. } => out.push(dest.clone()),
+            Block::Item { children, .. } => embedded(children, out),
+            _ => {}
+        }
+    }
 }
 
 // ---- Markdown → blocks ----
@@ -119,6 +217,9 @@ struct Builder<'a> {
     skip: u32,
     /// `[label](attachment:name)` links seen, as (label, dest).
     attach: &'a mut Vec<(String, String)>,
+    /// Attachment destinations linked in the current text, whose files
+    /// follow it.
+    linked: Vec<String>,
 }
 
 /// Notion's name for a fenced code block's language; empty = plain text.
@@ -208,7 +309,17 @@ impl Builder<'_> {
         }
     }
 
+    /// End the current text, then put the files it links after it (inside
+    /// a list item: as the item's first children).
     fn flush_inline(&mut self) {
+        self.flush_text();
+        for dest in std::mem::take(&mut self.linked) {
+            let image = is_image_name(file_part(&dest));
+            self.push_block(Block::Embed { image, dest, alt: String::new(), linked: true });
+        }
+    }
+
+    fn flush_text(&mut self) {
         let Some((target, pieces)) = self.inline.take() else { return };
         let only_image = {
             let mut it = pieces.iter().filter(|p| !matches!(p, Piece::Span(s) if s.text.trim().is_empty()));
@@ -320,8 +431,9 @@ impl Builder<'_> {
             Event::End(TagEnd::BlockQuote(_)) => {
                 self.flush_inline();
                 let f = self.frames.pop().unwrap();
+                let (files, blocks): (Vec<Block>, Vec<Block>) = f.blocks.into_iter().partition(is_linked);
                 let mut spans = vec![];
-                for b in f.blocks {
+                for b in blocks {
                     let s = block_spans(b);
                     if s.is_empty() {
                         continue;
@@ -332,6 +444,9 @@ impl Builder<'_> {
                     spans.extend(s);
                 }
                 self.push_block(Block::Quote(normalize(spans)));
+                for b in files {
+                    self.push_block(b);
+                }
             }
             Event::Start(Tag::CodeBlock(kind)) => {
                 self.flush_inline();
@@ -399,6 +514,9 @@ impl Builder<'_> {
             }
             Event::End(TagEnd::Link) => {
                 if let Some((LinkKind::Attachment(dest), label)) = self.links.pop() {
+                    if !self.linked.contains(&dest) {
+                        self.linked.push(dest.clone());
+                    }
                     if !self.attach.iter().any(|(l, _)| *l == label) {
                         self.attach.push((label, dest));
                     }
@@ -429,9 +547,9 @@ impl Builder<'_> {
 /// An embed for an image on its own line, when Notion can show it.
 fn embed(dest: &str, alt: &str) -> Option<Block> {
     if let Some(name) = dest.strip_prefix(SCHEME) {
-        return Some(Block::Embed { image: is_image_name(name), dest: dest.to_string(), alt: alt.to_string() });
+        return Some(Block::Embed { image: is_image_name(file_part(name)), dest: dest.to_string(), alt: alt.to_string(), linked: false });
     }
-    is_web(dest).then(|| Block::Embed { image: true, dest: dest.to_string(), alt: alt.to_string() })
+    is_web(dest).then(|| Block::Embed { image: true, dest: dest.to_string(), alt: alt.to_string(), linked: false })
 }
 
 fn block_spans(b: Block) -> Vec<Span> {
@@ -464,6 +582,7 @@ pub fn from_markdown(md: &str, attach: &mut Vec<(String, String)>) -> Vec<Block>
         html: None,
         skip: 0,
         attach,
+        linked: vec![],
     };
     for (ev, range) in Parser::new_ext(md, opts).into_offset_iter() {
         b.event(ev, range);
@@ -473,7 +592,11 @@ pub fn from_markdown(md: &str, attach: &mut Vec<(String, String)>) -> Vec<Block>
         let f = b.frames.pop().unwrap();
         b.top().blocks.extend(f.blocks);
     }
-    b.frames.pop().unwrap().blocks
+    let mut blocks = b.frames.pop().unwrap().blocks;
+    let mut seen = vec![];
+    embedded(&blocks, &mut seen);
+    dedup_linked(&mut blocks, &mut seen);
+    blocks
 }
 
 /// Merge neighbouring spans that look the same, and drop empty ones, so
@@ -665,8 +788,9 @@ fn block_md(b: &Block, ctx: &ReadCtx, indent: &str, number: usize) -> String {
             };
             let child_indent = format!("{indent}{pad}");
             let mut s = format!("{marker}{}", text_md(text, ctx, &child_indent));
+            let children: Vec<Block> = children.iter().filter(|c| !is_linked(c)).cloned().collect();
             if !children.is_empty() {
-                let inner = blocks_md(children, ctx, &child_indent);
+                let inner = blocks_md(&children, ctx, &child_indent);
                 let sep = if matches!(children[0], Block::Item { .. }) { "\n" } else { "\n\n" };
                 s.push_str(sep);
                 s.push_str(&child_indent);
@@ -688,10 +812,11 @@ fn same_list(a: &Block, b: &Block) -> bool {
 }
 
 fn blocks_md(blocks: &[Block], ctx: &ReadCtx, indent: &str) -> String {
+    let blocks: Vec<&Block> = blocks.iter().filter(|b| !is_linked(b)).collect();
     let mut out = String::new();
     let mut number = 0;
     for (i, b) in blocks.iter().enumerate() {
-        let continues = i > 0 && same_list(&blocks[i - 1], b);
+        let continues = i > 0 && same_list(blocks[i - 1], b);
         number = if continues { number + 1 } else { 1 };
         if i > 0 {
             out.push_str(if continues { "\n" } else { "\n\n" });
@@ -776,7 +901,49 @@ mod tests {
         assert_eq!(round("Inline ![x](attachment:x.png) image\n"), "Inline x image\n");
         let mut a = vec![];
         let b = from_markdown("![Spec](attachment:spec.pdf)\n", &mut a);
-        assert_eq!(b, vec![Block::Embed { image: false, dest: "attachment:spec.pdf".into(), alt: "Spec".into() }]);
+        assert_eq!(b, vec![Block::Embed { image: false, dest: "attachment:spec.pdf".into(), alt: "Spec".into(), linked: false }]);
+    }
+
+    fn linked(dest: &str, image: bool) -> Block {
+        Block::Embed { image, dest: dest.into(), alt: String::new(), linked: true }
+    }
+
+    #[test]
+    fn linked_files_follow_their_text() {
+        let mut a = vec![];
+        let b = from_markdown("See [runbook.md](attachment:runbook.md) and [x](attachment:9/x.png).\n\nMore.\n", &mut a);
+        assert_eq!(b[1..3], [linked("attachment:runbook.md", false), linked("attachment:9/x.png", true)]);
+        assert_eq!(b.len(), 4);
+        // They write no Markdown.
+        assert_eq!(round("See [runbook.md](attachment:runbook.md).\n"), "See [runbook.md](attachment:runbook.md).\n");
+        // In a list item: nested under it.
+        let b = from_markdown("- see [r](attachment:r.md)\n- next\n", &mut a);
+        assert!(matches!(&b[0], Block::Item { children, .. } if children[..] == [linked("attachment:r.md", false)]));
+        assert_eq!(round("- see [r](attachment:r.md)\n- next\n"), "- see [r](attachment:r.md)\n- next\n");
+    }
+
+    #[test]
+    fn linked_files_once_and_not_when_embedded() {
+        let mut a = vec![];
+        let b = from_markdown("[a](attachment:a.md)\n\nAgain [a](attachment:a.md).\n\n![](attachment:s.png)\n\nSee [s](attachment:s.png).\n", &mut a);
+        assert_eq!(linked_files(&b), ["attachment:a.md"]);
+    }
+
+    #[test]
+    fn page_files_after_their_link_are_marked() {
+        let mut a = vec![];
+        let written = from_markdown("See [runbook.md](attachment:7/runbook.md).\n\n![Flow](attachment:flow.png)\n", &mut a);
+        // As read from Notion: the label underlined, files by name only.
+        let mut read = vec![
+            Block::Paragraph(vec![Span::plain("See "), Span { marks: Marks { underline: true, ..Marks::default() }, ..Span::plain("runbook.md") }, Span::plain(".")]),
+            Block::Embed { image: false, dest: "attachment:runbook.md".into(), alt: String::new(), linked: false },
+            Block::Embed { image: true, dest: "attachment:flow.png".into(), alt: String::new(), linked: false },
+        ];
+        mark_linked(&mut read, &a);
+        assert_eq!(linked_files(&read), linked_files(&written));
+        assert!(!is_linked(&read[2]));
+        let ctx = ReadCtx { attach: &a, alts: &[] };
+        assert_eq!(to_markdown(&read, &ctx), "See [runbook.md](attachment:7/runbook.md).\n\n![](attachment:flow.png)\n");
     }
 
     #[test]

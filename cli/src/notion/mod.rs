@@ -245,40 +245,43 @@ struct Download {
 
 /// Embeds Notion can't take become their alt text, the same way every
 /// time, so the projection stays stable.
+/// A linked file Notion can't take is left out (its link stays as text).
 fn keep_embeds(blocks: Vec<Block>, task: Option<Uuid>, root: &std::path::Path, pending: &[(Uuid, String)], out: &mut Rendered) -> Vec<Block> {
     blocks
         .into_iter()
-        .map(|b| match b {
-            Block::Embed { image, dest, alt } if dest.starts_with(attachments::SCHEME) => {
+        .filter_map(|b| match b {
+            Block::Embed { image, dest, alt, linked } if dest.starts_with(attachments::SCHEME) => {
                 let name = &dest[attachments::SCHEME.len()..];
-                if !out.alts.iter().any(|(d, _)| *d == dest) {
+                if !linked && !out.alts.iter().any(|(d, _)| *d == dest) {
                     out.alts.push((dest.clone(), alt.clone()));
                 }
-                let path = task.map(|t| attachments::task_dir(root, t).join(name));
+                let path = attachments::attachment_path(root, task, name);
                 let coming = task.is_some_and(|t| pending.iter().any(|(pt, n)| *pt == t && n == name));
                 let size = path.as_ref().and_then(|p| std::fs::metadata(p).ok()).map(|m| m.len()).or(coming.then_some(0));
                 match (path, size) {
                     (Some(p), Some(s)) if s <= MAX_UPLOAD => {
                         out.files.push(p);
-                        Block::Embed { image, dest, alt }
+                        Some(Block::Embed { image, dest, alt, linked })
                     }
                     (_, s) => {
+                        let shown = if linked { "not uploaded" } else { "shown as text" };
                         out.notices.push(match s {
-                            Some(s) => format!("{name} is {} (over Notion's 5 MB); shown as text", attachments::human_size(s)),
-                            None => format!("{name} is not in the task's attachments folder; shown as text"),
+                            Some(s) => format!("{name} is {} (over Notion's 5 MB); {shown}", attachments::human_size(s)),
+                            None if linked => format!("{name} is linked but does not exist; {shown}"),
+                            None => format!("{name} is not in the task's attachments folder; {shown}"),
                         });
-                        Block::Paragraph(vec![ir::Span::plain(if alt.is_empty() { name.to_string() } else { alt })])
+                        (!linked).then(|| Block::Paragraph(vec![ir::Span::plain(if alt.is_empty() { name.to_string() } else { alt })]))
                     }
                 }
             }
-            Block::Embed { image, dest, alt } => {
+            Block::Embed { image, dest, alt, linked } => {
                 if !out.alts.iter().any(|(d, _)| *d == dest) {
                     out.alts.push((dest.clone(), alt.clone()));
                 }
-                Block::Embed { image, dest, alt }
+                Some(Block::Embed { image, dest, alt, linked })
             }
-            Block::Item { kind, text, children } => Block::Item { kind, text, children: keep_embeds(children, task, root, pending, out) },
-            other => other,
+            Block::Item { kind, text, children } => Some(Block::Item { kind, text, children: keep_embeds(children, task, root, pending, out) }),
+            other => Some(other),
         })
         .collect()
 }
@@ -308,7 +311,7 @@ fn render(repo: &Repo, d: usize, pending: &[(Uuid, String)], ids: bool) -> Rende
             let raw: Vec<(String, String)> = c.raw.iter().filter(|(k, _)| k != "notion").cloned().collect();
             out.blocks.push(Block::TaskLine(doc::format_comment_raw(&raw)));
         }
-        md(&mut out, &attachments::to_canonical(&b.description, root, &doc.path, id), Some(id));
+        md(&mut out, &attachments::to_canonical_shared(&b.description, root, &doc.path, id), Some(id));
         if let Some(s) = &b.subtasks {
             let items: String = s.items.iter().map(|x| format!("- [{}] {}\n", if x.done { "x" } else { " " }, x.title)).collect();
             md(&mut out, &format!("{} Subtasks\n\n{items}", "#".repeat(s.level)), None);
@@ -629,8 +632,12 @@ pub fn publish(full: &Repo, d: usize, opts: &Opts) -> Result<u8> {
             *raw = json::expand_id(raw, &ids);
         }
     }
+    let rendered = render(&repo, 0, &[], ids_shown);
+    notices.extend(rendered.notices.iter().cloned());
     let mut flat: Vec<Block> = old.iter().filter_map(|(_, b)| b.clone()).collect();
     let notion_files = scope_files(&mut flat, &notion_files, doc, &ids, &repo.root.dir);
+    // The files publishing put after their links are no content of their own.
+    ir::mark_linked(&mut flat, &rendered.attach);
     let mut flat = flat.into_iter();
     for (_, b) in old.iter_mut() {
         if b.is_some() {
@@ -645,8 +652,6 @@ pub fn publish(full: &Repo, d: usize, opts: &Opts) -> Result<u8> {
         .filter_map(|(_, b)| b.clone())
         .filter(|b| ids_shown || !matches!(b, Block::TaskLine(_)))
         .collect();
-    let rendered = render(&repo, 0, &[], ids_shown);
-    notices.extend(rendered.notices.iter().cloned());
     let read_ctx = ReadCtx { attach: &rendered.attach, alts: &rendered.alts };
     let local_md = ir::to_markdown(&rendered.blocks, &read_ctx);
     let notion_md = ir::to_markdown(&notion_blocks, &read_ctx);
@@ -910,7 +915,9 @@ pub fn publish(full: &Repo, d: usize, opts: &Opts) -> Result<u8> {
 
     // Notion.
     let outdated = loc.footer.as_ref().is_some_and(|f| f.2 != FORMAT) || (had_lines && !ids_shown);
-    let replace = skipped == 0 && (target_md != notion_md || outdated);
+    // Linked files follow the file's links; the page is fixed to match.
+    let files_differ = ir::linked_files(&target_render.blocks) != ir::linked_files(&notion_blocks);
+    let replace = skipped == 0 && (target_md != notion_md || outdated || files_differ);
     let footer_only = skipped == 0 && !replace && (footer_hash.as_deref() != Some(target_hash.as_str()) || loc.anchor.is_none());
     if skipped > 0 {
         println!("{skipped} field(s) skipped: the Notion page is left as it is until they are decided.");
@@ -1098,7 +1105,8 @@ fn file_changes(
             let prefix = attachments::link_prefix(root, &doc.path, id);
             let mut items = String::new();
             for l in doc::inline_links(&desc) {
-                let Some(name) = l.dest.strip_prefix(attachments::SCHEME) else { continue };
+                // Another task's file (`<task-id>/<name>`) is never downloaded.
+                let Some(name) = l.dest.strip_prefix(attachments::SCHEME).filter(|n| !n.contains('/')) else { continue };
                 if attachments::task_dir(root, id).join(name).exists() || downloads.iter().any(|d: &Download| d.task == id && d.name == name) {
                     continue;
                 }
@@ -1133,7 +1141,11 @@ fn embeds_in(b: &Block) -> usize {
 /// file renders to, by how each block reads back.
 fn page_diff(rd: &Rendered, old: &[(String, Option<Block>)]) -> (Vec<similar::DiffOp>, Vec<usize>) {
     let md_ctx = ReadCtx { attach: &rd.attach, alts: &rd.alts };
-    let sig = |b: &Block| ir::to_markdown(std::slice::from_ref(b), &md_ctx);
+    // Linked files write no Markdown; they count by name.
+    let sig = |b: &Block| {
+        let one = std::slice::from_ref(b);
+        format!("{}\u{1}{}", ir::to_markdown(one, &md_ctx), ir::linked_files(one).join("\u{1}"))
+    };
     // Old blocks the CLI doesn't write never match anything.
     let old_sigs: Vec<String> = old.iter().map(|(id, b)| b.as_ref().map_or_else(|| format!("\u{0}{id}"), &sig)).collect();
     let new_sigs: Vec<String> = rd.blocks.iter().map(&sig).collect();
@@ -1240,7 +1252,7 @@ mod tests {
     use ir::Span;
 
     fn embed(name: &str) -> Block {
-        Block::Embed { image: true, dest: format!("{}{name}", attachments::SCHEME), alt: String::new() }
+        Block::Embed { image: true, dest: format!("{}{name}", attachments::SCHEME), alt: String::new(), linked: false }
     }
 
     #[test]

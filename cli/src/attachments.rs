@@ -138,11 +138,42 @@ pub fn to_canonical(desc: &str, root: &Path, doc_path: &Path, id: Uuid) -> Strin
     })
 }
 
+/// Like `to_canonical`, and a link into another task's folder becomes
+/// `attachment:<task-id>/<name>`. For Notion, which gets every linked
+/// file; Fira keeps attachments per task and never sees this form.
+pub fn to_canonical_shared(desc: &str, root: &Path, doc_path: &Path, id: Uuid) -> String {
+    let assets = root.join(ASSETS_DIR);
+    doc::rewrite_link_dests(desc, |l| {
+        let p = resolve(doc_path, &l.dest)?;
+        if let Some(n) = own_name(root, id, &p) {
+            return Some(format!("{SCHEME}{n}"));
+        }
+        let mut parts = p.strip_prefix(&assets).ok()?.components();
+        let (Some(task), Some(name), None) = (parts.next(), parts.next(), parts.next()) else { return None };
+        let task: Uuid = task.as_os_str().to_str()?.parse().ok()?;
+        let name = name.as_os_str().to_str()?;
+        valid_name(name).then(|| format!("{SCHEME}{task}/{name}"))
+    })
+}
+
+/// The file an `attachment:` name stands for: `<name>` in `task`'s folder,
+/// or `<task-id>/<name>` in that task's.
+pub fn attachment_path(root: &Path, task: Option<Uuid>, name: &str) -> Option<PathBuf> {
+    match name.split_once('/') {
+        Some((t, n)) => valid_name(n).then(|| t.parse().ok().map(|t| task_dir(root, t).join(n))).flatten(),
+        None => task.filter(|_| valid_name(name)).map(|t| task_dir(root, t).join(name)),
+    }
+}
+
 /// Canonical description → local links for `doc_path`.
 pub fn to_local(desc: &str, root: &Path, doc_path: &Path, id: Uuid) -> String {
     let prefix = link_prefix(root, doc_path, id);
     doc::rewrite_link_dests(desc, |l| {
         let name = l.dest.strip_prefix(SCHEME)?;
+        if let Some((task, n)) = name.split_once('/') {
+            let task: Uuid = task.parse().ok()?;
+            return valid_name(n).then(|| format!("{}{n}", link_prefix(root, doc_path, task)));
+        }
         valid_name(name).then(|| format!("{prefix}{name}"))
     })
 }

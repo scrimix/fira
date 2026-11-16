@@ -165,7 +165,7 @@ fn to_node(b: &Block, ctx: &mut WriteCtx) -> Option<Node> {
         }
         // No captions: files are recognised by their name when read back,
         // and alt text stays in the file.
-        Block::Embed { image, dest, alt } => {
+        Block::Embed { image, dest, alt, .. } => {
             if dest.starts_with(SCHEME) {
                 let kind = if *image { "image" } else { "file" };
                 match ctx.uploads.next().flatten() {
@@ -318,11 +318,11 @@ pub fn from_json(v: &Value, children: Vec<Block>, handle_of: &dyn Fn(&str, &str)
                 // Names are made unique per task later (`scope_files`).
                 let name = file_name(body);
                 files.push((name.clone(), url));
-                return Some(Block::Embed { image: kind == "image", dest: format!("{SCHEME}{name}"), alt: String::new() });
+                return Some(Block::Embed { image: kind == "image", dest: format!("{SCHEME}{name}"), alt: String::new(), linked: false });
             }
             if kind == "image" && body["type"] == "external" {
                 if let Some(url) = body["external"]["url"].as_str() {
-                    return Some(Block::Embed { image: true, dest: url.to_string(), alt: String::new() });
+                    return Some(Block::Embed { image: true, dest: url.to_string(), alt: String::new(), linked: false });
                 }
             }
             notices.push(format!("a linked {kind} in Notion is not imported (upload it instead)"));

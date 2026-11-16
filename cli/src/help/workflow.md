@@ -75,7 +75,10 @@ mirrors the file: the sprint description, then every task with its heading,
 description and subtasks. Tags, assignee and estimate stay in the
 repository. Attachment lists are not published; images and files embedded
 in descriptions travel both ways (a file a PM uploads is stored with its
-task).
+task). A file linked from a description, `[runbook.md](../assets/<task-id>/runbook.md)`,
+is uploaded too, from any task's folder: the link stays in the text and
+the file follows its paragraph. Link a file to publish it; list it only
+to keep it out of Notion.
 
 Edits made in Notion come back the same way as Fira's: the footer records
 what was last published, so if only one side changed it simply wins; if
