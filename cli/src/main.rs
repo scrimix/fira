@@ -129,12 +129,13 @@ Examples:\n  task-cli sync fira\n  task-cli sync fira tasks/sprints/001-onboardi
     #[command(after_help = "A sprint lands in tasks/sprints/<slug>.md, or updates the file with that sprint_id.\n\
 A task lands in tasks/single/ (or its sprint's file, or --into). Local text is never\n\
 deleted or moved because something is missing in Fira.\n\n\
-Where to get the reference: a task's \"Copy link\" in Fira; a sprint's title, or\n\
-\"Copy import command\" in its menu on the Plan board; or `task-cli sprints`.\n\n\
-Examples:\n  task-cli import fira https://usefira.app/#/w/<ws>/t/<task-id>\n  task-cli import fira \"CLI publishing\"\n  task-cli import fira <sprint-id>\n  task-cli import fira <task-id> --into tasks/sprints/002-cli.md")]
+Where to get the reference: a task's \"Copy link\" in Fira; a sprint's title (or its\n\
+slug, e.g. atlas-nov-9), or \"Copy import command\" in its menu on the Plan board;\n\
+`task-cli sprints`; or a local file, named as for publish (path or bare file name).\n\n\
+Examples:\n  task-cli import fira https://usefira.app/#/w/<ws>/t/<task-id>\n  task-cli import fira \"CLI publishing\"\n  task-cli import fira atlas-nov-9\n  task-cli import fira <sprint-id>\n  task-cli import fira <task-id> --into tasks/sprints/002-cli.md")]
     Import {
         target: Target,
-        /// Sprint title, sprint/task id, or a Fira task link
+        /// Sprint title or slug, sprint/task id, a Fira task link, or a local file (as for publish)
         reference: String,
         /// Sprint file to add a new task to
         #[arg(long)]
@@ -194,12 +195,12 @@ fn run(cli: Cli) -> Result<u8> {
         Cmd::Link { target: Target::Fira, .. } => bail!("`link` is for Notion pages: task-cli link notion <file> <page url>"),
         Cmd::Link { file, url, .. } => {
             let repo = Repo::load(root()?)?;
-            let d = docs_for(&repo, &[file])?[0];
+            let d = resolve_task_files(&repo, &[file])?[0];
             notion::link(&repo, d, &url)
         }
         Cmd::Publish { target: Target::Notion, file, opts } => {
             let repo = Repo::load(root()?)?;
-            let d = docs_for(&repo, &[file])?[0];
+            let d = resolve_task_files(&repo, &[file])?[0];
             notion::publish(&repo, d, &notion::Opts {
                 dry_run: opts.dry_run,
                 prefer: opts.prefer.map(|p| if matches!(p, Prefer::Local) { Side::Local } else { Side::Remote }),
@@ -209,7 +210,7 @@ fn run(cli: Cli) -> Result<u8> {
         Cmd::Sync { target: Target::Notion, files, opts } => {
             let repo = Repo::load(root()?)?;
             let named = !files.is_empty();
-            let docs: Vec<usize> = docs_for(&repo, &files)?
+            let docs: Vec<usize> = resolve_task_files(&repo, &files)?
                 .into_iter()
                 .filter(|&d| named || notion::is_linked(&repo.docs[d]))
                 .collect();
@@ -345,7 +346,7 @@ fn titles(p: &[fira::Named]) -> String {
 
 // ---- fmt ----
 
-fn docs_for(repo: &Repo, files: &[PathBuf]) -> Result<Vec<usize>> {
+fn resolve_task_files(repo: &Repo, files: &[PathBuf]) -> Result<Vec<usize>> {
     if files.is_empty() {
         return Ok((0..repo.docs.len()).collect());
     }
@@ -397,7 +398,7 @@ fn repo_root(tasks_root: &Path) -> PathBuf {
 
 fn fmt(files: &[PathBuf], check: bool) -> Result<u8> {
     let repo = Repo::load(root()?)?;
-    let docs = docs_for(&repo, files)?;
+    let docs = resolve_task_files(&repo, files)?;
     let root_dir = repo.root.dir.clone();
     let repo_dir = repo_root(&root_dir);
     let mut planned = std::collections::HashMap::new();
@@ -483,7 +484,7 @@ fn fetch(repo: &Repo, client: &Client, scope: &Scope) -> Result<fira::Snapshot> 
 
 fn diff(files: &[PathBuf], all: bool, json: bool, no_pager: bool) -> Result<u8> {
     let repo = Repo::load(root()?)?;
-    let docs = docs_for(&repo, files)?;
+    let docs = resolve_task_files(&repo, files)?;
     let client = client(&repo.root)?;
     let scope = Scope::Docs(docs);
     let snap = fetch(&repo, &client, &scope)?;
@@ -502,13 +503,13 @@ fn diff(files: &[PathBuf], all: bool, json: bool, no_pager: bool) -> Result<u8> 
 
 fn publish(file: &Path, opts: &SyncOpts) -> Result<u8> {
     let repo = Repo::load(root()?)?;
-    let doc = docs_for(&repo, &[file.to_path_buf()])?[0];
+    let doc = resolve_task_files(&repo, &[file.to_path_buf()])?[0];
     sync_run(repo, Mode::Publish, Scope::Docs(vec![doc]), None, opts)
 }
 
 fn sync_files(files: &[PathBuf], opts: &SyncOpts) -> Result<u8> {
     let repo = Repo::load(root()?)?;
-    let docs = docs_for(&repo, files)?;
+    let docs = resolve_task_files(&repo, files)?;
     sync_run(repo, Mode::Sync, Scope::Docs(docs), None, opts)
 }
 
@@ -516,26 +517,52 @@ fn import(reference: &str, into: Option<&Path>, opts: &SyncOpts) -> Result<u8> {
     let repo = Repo::load(root()?)?;
     let id = match fira::parse_ref(reference) {
         Ok(id) => id,
-        Err(_) => sprint_by_title(&repo, reference)?,
+        Err(_) => match local_import_target(&repo, reference)? {
+            Some(id) => id,
+            None => sprint_by_title(&repo, reference)?,
+        },
     };
     let into = match into {
-        Some(p) => Some(docs_for(&repo, &[p.to_path_buf()])?[0]),
+        Some(p) => Some(resolve_task_files(&repo, &[p.to_path_buf()])?[0]),
         None => None,
     };
     sync_run(repo, Mode::Import, Scope::Remote(id), into, opts)
 }
 
-/// A sprint named by its title (exact, ignoring case). The sprint id has
-/// no place in the Fira UI besides the sprint menu's "Copy import
-/// command", so the title is the natural handle.
+/// A local file named the way `publish` takes it (a path, or a bare file
+/// name with or without `.md`): import into it what Fira has for its
+/// sprint, or for its task when it is a single-task file.
+fn local_import_target(repo: &Repo, reference: &str) -> Result<Option<uuid::Uuid>> {
+    let Ok(docs) = resolve_task_files(repo, &[PathBuf::from(reference.trim())]) else { return Ok(None) };
+    let d = docs[0];
+    let doc = &repo.docs[d];
+    let ident = match doc.kind {
+        doc::DocKind::Sprint => repo.sprint_ids[d],
+        doc::DocKind::Single => repo.task_ids[d].first().copied(),
+    };
+    match ident {
+        Some(i) if !i.new => Ok(Some(i.id)),
+        _ => bail!("{} is not in Fira yet (no id); publish it first: task-cli publish fira {}", doc.display, doc.display),
+    }
+}
+
+/// A sprint named by its title (ignoring case), or by the slug of its
+/// title (the file name `import` gives it, e.g. `atlas-nov-9`). The
+/// sprint id has no place in the Fira UI besides the sprint menu's "Copy
+/// import command", so the title is the natural handle.
 fn sprint_by_title(repo: &Repo, title: &str) -> Result<uuid::Uuid> {
     let snap = all_sprints(repo)?;
     let want = title.trim();
-    let found: Vec<&fira::RemoteSprint> = snap.sprints.iter().filter(|s| s.title.trim().eq_ignore_ascii_case(want)).collect();
+    let want_slug = model::slug(want.strip_suffix(".md").unwrap_or(want));
+    let found: Vec<&fira::RemoteSprint> = snap
+        .sprints
+        .iter()
+        .filter(|s| s.title.trim().eq_ignore_ascii_case(want) || (!want_slug.is_empty() && model::slug(&s.title) == want_slug))
+        .collect();
     match found.as_slice() {
         [s] => Ok(s.id),
         [] => bail!(
-            "{title:?} is not a task link, an id, or the title of a sprint in project \"{}\". \
+            "{title:?} is not a task link, an id, a local task file, or the title of a sprint in project \"{}\". \
              Run `task-cli sprints` to list sprints; for a task, use \"Copy link\" in its Fira modal",
             snap.project.title
         ),
