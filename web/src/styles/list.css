@@ -81,7 +81,7 @@
  * underneath. The strip's `border-bottom` provides the single rule
  * between header zone and the Now section, instead of two parallel
  * rules with a 24px gap. */
-.list-proj-head:has(+ .list-tag-filter) {
+.list-proj-head:has(+ .list-filter-bar) {
   margin-bottom: 0;
   padding-bottom: 8px;
   border-bottom: 0;
@@ -190,13 +190,97 @@
   font-size: calc(10px * var(--fs-scale));
 }
 
-/* Tag filter strip — sticks to the top of the list scroll container
- * so the active selection stays visible as the user scrolls through
- * Now / Later / Done. Hidden when the project has no tags. */
-.list-tag-filter {
+/* Filter bar — sticks to the top of the list scroll container so the
+ * active selection stays visible as the user scrolls through Now /
+ * Later / Done. Row 1: search, sprint, assignee scope, clear. Row 2:
+ * the tag filter strip (absent when the project has no tags). */
+.list-filter-bar {
   position: sticky;
   top: 0;
   z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: calc(8px * var(--density)) 0;
+  margin: 0 0 calc(12px * var(--density));
+  background: var(--paper);
+  border-bottom: 1px solid var(--rule-chrome);
+}
+.list-filter-bar:has(+ .list-totals) { margin-bottom: 0; }
+.list-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.list-search {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: calc(22px * var(--density));
+  padding: 0 8px;
+  font: inherit;
+  font-size: var(--fs-sm);
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--rule-2);
+  border-radius: var(--r-sm);
+  outline: 0;
+}
+.list-search:focus { border-color: var(--focus-line); }
+.list-search::placeholder { color: var(--ink-4); }
+/* Shared `Select` (size sm) tuned to sit in the filter row: shrinks
+ * before the search box does, trigger height tracks the search input,
+ * and a set filter reads darker than the resting "All sprints". */
+.list-sprint-select {
+  /* Don't shrink below the label's width — the search box gives way
+   * first; max-width alone caps a long sprint title (ellipsised). */
+  flex: none;
+  min-width: 0;
+  max-width: 220px;
+}
+.list-sprint-select .select-trigger {
+  width: 100%;
+  height: calc(22px * var(--density));
+  color: var(--ink-3);
+}
+/* Set state wears the project color, the same wash an "on" tag chip
+ * gets from its tag color — a neutral dark border read as keyboard
+ * focus rather than "this filter is active". `--proj-color` is set
+ * inline on `.list-doc`. */
+.list-sprint-select-set .select-trigger,
+.list-sprint-select-set .select-trigger:hover,
+.list-sprint-select-set.select-open .select-trigger {
+  color: var(--ink);
+  border-color: color-mix(in srgb, var(--proj-color, var(--rule-2)) 55%, var(--paper));
+  background: color-mix(in srgb, var(--proj-color, var(--rule-2)) 12%, var(--paper));
+}
+:root[data-theme="dark"] .list-sprint-select-set .select-trigger {
+  border-color: color-mix(in srgb, var(--proj-color, var(--rule-2)) 60%, var(--paper));
+  background: color-mix(in srgb, var(--proj-color, var(--rule-2)) 26%, var(--paper));
+}
+.list-filter-clear {
+  flex: none;
+  font-family: var(--font-label);
+  font-size: calc(10px * var(--fs-scale) * var(--label-size));
+  letter-spacing: calc(0.04em * var(--label-track));
+  text-transform: var(--label-case);
+  color: var(--ink-3);
+  background: transparent;
+  border: 0;
+  padding: 0 4px;
+  cursor: pointer;
+}
+.list-filter-clear:hover { color: var(--ink); }
+.list-filter-empty {
+  margin: calc(12px * var(--density)) 0;
+  color: var(--ink-3);
+  font-size: var(--fs-sm);
+}
+.list-filter-empty .list-empty-link { font-size: inherit; }
+
+/* Tag filter strip (row 2 of the filter bar; also used standalone by
+ * the plan rail). */
+.list-tag-filter {
   /* 2-column grid: chips own the wrapping left column, the OR/AND
    * toggle + clear pin to the right. Center-aligned vertically so the
    * single-row case looks like a normal inline toolbar; when chips
@@ -206,18 +290,6 @@
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 6px 10px;
-  padding: calc(8px * var(--density)) 0;
-  margin: 0 0 calc(12px * var(--density));
-  background: var(--paper);
-  border-bottom: 1px solid var(--rule-chrome);
-}
-/* When totals follow the tag filter, drop its bottom margin so the
- * totals row's own padding-top alone controls the gap above the
- * numbers — otherwise the tag filter's 12px margin compounds with
- * the totals' 8px padding-top to create ~20px above the text while
- * only 8px sits below, reading as off-balance. */
-.list-tag-filter:has(+ .list-totals) {
-  margin-bottom: 0;
 }
 .list-tag-filter-chips {
   display: flex;
@@ -235,10 +307,16 @@
  * stripe leaves too little room for chips and can push either control
  * group beyond the visible document. */
 @media (max-width: 700px) {
-  .list-tag-filter {
-    grid-template-columns: minmax(0, 1fr);
+  .list-filter-bar {
     /* Don't pin: wrapped chips eat too much of a short viewport. */
     position: static;
+  }
+  /* Narrow screens: search keeps a usable floor, and only once it
+   * hits it does the sprint trigger start ellipsising. */
+  .list-search { font-size: var(--fs-md); min-width: 96px; }
+  .list-sprint-select { flex: 0 1 auto; max-width: 45%; }
+  .list-tag-filter {
+    grid-template-columns: minmax(0, 1fr);
   }
   .list-tag-filter-chips {
     flex-wrap: wrap;
@@ -333,7 +411,8 @@
  * between the numbers and "Now" — the same double-padding shape as the
  * topbar/toolbar pair. The block's own trailing space is the gap. */
 .list-totals + .section,
-.list-tag-filter + .section {
+.list-filter-bar + .section,
+.list-filter-empty + .section {
   margin-top: 0;
 }
 .section-head {
@@ -745,6 +824,21 @@
   /* Lives at the head of .task-trail; the trail's `gap: 4px` alone
    * leaves the key crowding whatever chip follows it, so buy a little
    * extra room on the trailing side. */
+  margin-right: 4px;
+}
+
+.task-row .sprint-label {
+  max-width: 16ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: calc(10px * var(--fs-scale));
+  color: var(--ink-4);
+  /* Faint dashed outline keeps it from reading as part of the ext-id
+   * key beside it, while staying quieter than the solid tag chips. */
+  padding: 0 4px;
+  border: 1px dashed var(--rule-2);
+  border-radius: var(--r-xs);
   margin-right: 4px;
 }
 

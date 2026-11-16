@@ -8,7 +8,9 @@ import { useAutosizeTextarea, useIsMobile } from '../hooks';
 import { fmtMin, fmtWeekOf, taskCompletedMin, taskPlannedMin, taskTimeLeft } from '../time';
 import { ProjectIcon } from './ProjectIcon';
 import { ConfirmDelete } from './ConfirmDelete';
-import type { Tag, Task, TimeBlock, Section, UUID } from '../types';
+import { Select } from './Select';
+import type { SelectOption } from './Select';
+import type { Sprint, Tag, Task, TimeBlock, Section, Track, UUID } from '../types';
 
 const byKey = (a: Task, b: Task) => a.sort_key.localeCompare(b.sort_key);
 
@@ -32,6 +34,8 @@ export function ListView() {
   const blocks = useFira((s) => s.blocks);
   const projects = useFira((s) => s.projects);
   const allTags = useFira((s) => s.tags);
+  const sprints = useFira((s) => s.sprints);
+  const tracks = useFira((s) => s.tracks);
   const users = useFira((s) => s.users);
   const meId = useFira((s) => s.meId);
   const listFilter = useFira((s) => s.listFilter);
@@ -93,6 +97,11 @@ export function ListView() {
   // row. Suspend the hover background until the user nudges the cursor or
   // a short timeout lapses, whichever comes first.
   const [hoverSuspended, setHoverSuspended] = useState(false);
+  // Title / ext-id / sprint search. Local and unpersisted, like the
+  // calendar rail's filter — it's a "find that one task" tool, not a
+  // standing view, so it clears when the project changes.
+  const [query, setQuery] = useState('');
+  useEffect(() => { setQuery(''); }, [listFilter.project_id]);
 
   // All hook calls (useRef / useEffect / useState) MUST run on every
   // render — including the empty-state path below. Hoisted up here
@@ -165,8 +174,36 @@ export function ListView() {
   const tagMode = listFilter.tag_mode;
   // Default `all` covers persisted state from before this field existed.
   const assigneeScope = listFilter.assignee_scope ?? 'all';
+  const projectSprints = sprints.filter((sp) => sp.project_id === project.id);
+  const sprintById = new Map(projectSprints.map((sp) => [sp.id, sp] as const));
+  // A persisted sprint id can outlive its sprint (deleted elsewhere, or
+  // moved projects) — fall back to no sprint filter rather than an
+  // inexplicably empty list.
+  const rawSprintFilter = listFilter.sprint_filter ?? 'all';
+  const sprintFilter = rawSprintFilter === 'all' || rawSprintFilter === 'active'
+    || rawSprintFilter === 'none' || sprintById.has(rawSprintFilter)
+    ? rawSprintFilter : 'all';
+  const q = query.trim().toLowerCase();
+  const filtersActive = q !== '' || sprintFilter !== 'all' || tagFilter.length > 0;
+  const clearFilters = () => {
+    setQuery('');
+    setListFilter({ tag_ids: [], sprint_filter: 'all' });
+  };
   const projectTasks = allProjectTasks.filter((t) => {
     if (assigneeScope === 'me' && t.assignee_id !== meId) return false;
+    const sprint = t.sprint_id ? sprintById.get(t.sprint_id) : undefined;
+    if (sprintFilter === 'none') {
+      if (sprint) return false;
+    } else if (sprintFilter === 'active') {
+      if (!sprint?.active) return false;
+    } else if (sprintFilter !== 'all' && t.sprint_id !== sprintFilter) {
+      return false;
+    }
+    if (q && !(
+      t.title.toLowerCase().includes(q)
+      || (t.external_id?.toLowerCase().includes(q) ?? false)
+      || (sprint?.title.toLowerCase().includes(q) ?? false)
+    )) return false;
     if (tagFilter.length > 0) {
       if (tagMode === 'and') {
         return tagFilter.every((id) => t.tag_ids.includes(id));
@@ -175,6 +212,14 @@ export function ListView() {
     }
     return true;
   });
+  // Row-level sprint label: redundant when the selector already pins
+  // one sprint, so it's dropped there.
+  const sprintLabelFor = (t: Task) =>
+    sprintFilter !== 'all' && sprintFilter !== 'active' && sprintFilter !== 'none'
+      ? null
+      : (t.sprint_id ? sprintById.get(t.sprint_id)?.title ?? null : null);
+  const hasProjectTags = allTags.some((t) => t.project_id === project.id);
+  const showAssigneeScope = project.members.filter((m) => m.role !== 'inactive').length > 1;
   // Time totals across the filtered task set. Done / Planned aggregate
   // time blocks (completed / planned) so they reflect what's actually
   // booked on the calendar; Est sums task estimates; Total is the
@@ -648,6 +693,7 @@ export function ListView() {
 
   const renderRow = (t: Task, sectionList: Task[], idx: number) => (
     <TaskRow key={t.id} task={t} blocks={blocks}
+             sprintLabel={sprintLabelFor(t)}
              onTick={tickTask}
              onSubTick={tickSubtask}
              onSubSave={setSubtaskTitle}
@@ -725,17 +771,79 @@ export function ListView() {
           </div>
         </div>
 
-        <ListTagFilter
-          projectId={project.id}
-          allTags={allTags}
-          tagIds={listFilter.tag_ids}
-          mode={listFilter.tag_mode}
-          scope={assigneeScope}
-          showAssigneeScope={project.members.filter((m) => m.role !== 'inactive').length > 1}
-          onChange={(tag_ids) => setListFilter({ tag_ids })}
-          onModeChange={(tag_mode) => setListFilter({ tag_mode })}
-          onScopeChange={(assignee_scope) => setListFilter({ assignee_scope })}
-        />
+        {/* Sticky filter bar. Row 1 narrows the list (search, sprint,
+          * assignee scope, clear); row 2 is the tag filter, whose any/all
+          * toggle stays beside the chips it qualifies. */}
+        <div className="list-filter-bar">
+          <div className="list-filter-row">
+            <input
+              type="search"
+              className="list-search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Escape') { setQuery(''); e.currentTarget.blur(); } }}
+              placeholder="Filter tasks…"
+              aria-label="Filter tasks by title, issue key or sprint"
+              spellCheck={false}
+            />
+            {(projectSprints.length > 0 || sprintFilter !== 'all') && (
+              <SprintSelect
+                value={sprintFilter}
+                sprints={projectSprints}
+                tracks={tracks.filter((tr) => tr.project_id === project.id)}
+                onChange={(sprint_filter) => setListFilter({ sprint_filter })}
+              />
+            )}
+            {showAssigneeScope && (
+              <div className="list-tag-filter-mode" role="group" aria-label="Assignee scope">
+                <button
+                  type="button"
+                  className="list-tag-filter-mode-seg"
+                  data-active={assigneeScope === 'all' || undefined}
+                  onClick={() => setListFilter({ assignee_scope: 'all' })}
+                  title="Show every task in this project"
+                >
+                  all
+                </button>
+                <button
+                  type="button"
+                  className="list-tag-filter-mode-seg"
+                  data-active={assigneeScope === 'me' || undefined}
+                  onClick={() => setListFilter({ assignee_scope: 'me' })}
+                  title="Show only tasks assigned to me"
+                >
+                  me
+                </button>
+              </div>
+            )}
+            {filtersActive && (
+              <button type="button" className="list-filter-clear" onClick={clearFilters}
+                      title="Clear search, sprint and tag filters">
+                clear
+              </button>
+            )}
+          </div>
+          {hasProjectTags && (
+            <ListTagFilter
+              projectId={project.id}
+              allTags={allTags}
+              tagIds={listFilter.tag_ids}
+              mode={listFilter.tag_mode}
+              scope={assigneeScope}
+              showAssigneeScope={false}
+              onChange={(tag_ids) => setListFilter({ tag_ids })}
+              onModeChange={(tag_mode) => setListFilter({ tag_mode })}
+              onScopeChange={(assignee_scope) => setListFilter({ assignee_scope })}
+            />
+          )}
+        </div>
+
+        {filtersActive && projectTasks.length === 0 && (
+          <p className="list-filter-empty">
+            No tasks match.{' '}
+            <button type="button" className="list-empty-link" onClick={clearFilters}>Clear filters</button>
+          </p>
+        )}
 
         {showListTimes && (
           <div className="totals list-totals" aria-label="Filtered totals">
@@ -1049,6 +1157,67 @@ export function ListView() {
 // flash all four counts at once. Re-keys the span on each change so the
 // CSS animation restarts cleanly even when the value bounces during
 // the previous animation.
+/// Sprint selector for the list toolbar, built on the shared `Select`
+/// popover so it matches the rest of the app instead of OS chrome.
+/// Fixed scopes come first; active sprints follow grouped by track (in
+/// track order, "No track" last), and inactive sprints collect in a
+/// trailing group. Each sprint shows its date span as a hint line.
+type SprintFilterValue = UUID | 'active' | 'all' | 'none';
+function SprintSelect({ value, sprints, tracks, onChange }: {
+  value: SprintFilterValue;
+  sprints: Sprint[];
+  tracks: Track[];
+  onChange: (v: SprintFilterValue) => void;
+}) {
+  const options = useMemo(() => {
+    const bySort = (a: { sort_key: string }, b: { sort_key: string }) => a.sort_key.localeCompare(b.sort_key);
+    const toOpt = (sp: Sprint, group: string): SelectOption<SprintFilterValue> => ({
+      value: sp.id, label: sp.title, group, hint: sprintSpan(sp) ?? undefined,
+    });
+    const active = sprints.filter((sp) => sp.active).sort(bySort);
+    const known = new Set(tracks.map((tr) => tr.id));
+    const opts: SelectOption<SprintFilterValue>[] = [
+      { value: 'all', label: 'All sprints' },
+      { value: 'active', label: 'Active sprints' },
+      { value: 'none', label: 'No sprint' },
+    ];
+    for (const tr of [...tracks].sort(bySort)) {
+      for (const sp of active) if (sp.track_id === tr.id) opts.push(toOpt(sp, tr.title));
+    }
+    for (const sp of active) if (!sp.track_id || !known.has(sp.track_id)) opts.push(toOpt(sp, 'No track'));
+    for (const sp of sprints.filter((x) => !x.active).sort(bySort)) opts.push(toOpt(sp, 'Inactive'));
+    return opts;
+  }, [sprints, tracks]);
+  return (
+    <Select<SprintFilterValue>
+      size="sm"
+      className={`list-sprint-select${value !== 'all' ? ' list-sprint-select-set' : ''}`}
+      value={value}
+      options={options}
+      onChange={onChange}
+      menuMinWidth={220}
+      ariaLabel="Filter by sprint"
+      title="Filter by sprint"
+    />
+  );
+}
+
+/// "Oct 5 – Oct 18" from a sprint's week-aligned span. `ends_on` is
+/// exclusive, so the last shown day is the one before it.
+function sprintSpan(sp: Sprint): string | null {
+  if (!sp.starts_on) return null;
+  const parse = (d: string) => {
+    const [y, m, day] = d.split('-').map(Number);
+    return new Date(y, m - 1, day);
+  };
+  const fmt = (d: Date) => d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  const start = parse(sp.starts_on);
+  if (!sp.ends_on) return `from ${fmt(start)}`;
+  const last = parse(sp.ends_on);
+  last.setDate(last.getDate() - 1);
+  return `${fmt(start)} – ${fmt(last)}`;
+}
+
 function SectionCount({ value }: { value: number }) {
   const [bump, setBump] = useState(0);
   const prev = useRef(value);
@@ -1265,6 +1434,8 @@ function ListSubtaskRow({
 
 interface RowProps {
   task: Task;
+  /// Sprint title shown in the trail (desktop only); null hides it.
+  sprintLabel: string | null;
   blocks: TimeBlock[];
   onTick: (id: string) => void;
   onSubTick: (taskId: string, subId: string) => void;
@@ -1299,7 +1470,7 @@ interface RowProps {
 }
 
 function TaskRow({
-  task, blocks, onTick, onSubTick, onSubSave, onSubDelete, onOpen,
+  task, sprintLabel, blocks, onTick, onSubTick, onSubSave, onSubDelete, onOpen,
   onDragStart, onRowDragEnd, onRowDragOver, onRowDrop, onRowDragLeave,
   onGripTouchStart, onGripTouchMove, onGripTouchEnd,
   dropMark,
@@ -1659,15 +1830,21 @@ function TaskRow({
         // key sits at the row's right edge instead of crowding the
         // title text. Mobile keeps it hidden (sprint 17 row strip).
         const showExtId = !isMobile && !!task.external_id;
+        // Sprint name follows the ext-id, desktop only for the same
+        // reason — on a phone the row has no room to spare.
+        const showSprint = !isMobile && !!sprintLabel;
         // Trail collapses to nothing when there's neither a tag chip
         // nor an ext-id to render — same data-driven hide we had
         // before, just extended to consider the new ext-id slot.
         if (isMobile && trailTagIds.length === 0) return null;
-        if (!isMobile && trailTagIds.length === 0 && !showExtId && !showListTimes) return null;
+        if (!isMobile && trailTagIds.length === 0 && !showExtId && !showSprint && !showListTimes) return null;
         return (
           <div className="task-trail" data-has-filter={filterSet.size > 0 || undefined}>
             {showExtId && (
               <span className="ext-id">{task.external_id}</span>
+            )}
+            {showSprint && (
+              <span className="sprint-label" title={`Sprint: ${sprintLabel}`}>{sprintLabel}</span>
             )}
             {trailTagIds.map((tid) => {
               const tag = tags.find((t) => t.id === tid);

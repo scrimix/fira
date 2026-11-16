@@ -88,7 +88,12 @@ function loadLastView(userId: UUID): LastView | null {
 interface ListFilter {
   project_id: UUID | null;
   track_id: UUID | null;
-  sprint_id: UUID | 'active' | 'all' | 'none';
+  /// Sprint selector in the list toolbar. `'all'` (default) applies no
+  /// sprint filter, `'active'` keeps tasks in an active sprint, `'none'`
+  /// keeps tasks with no sprint, a UUID keeps that one sprint. Optional
+  /// because persisted state predates it — read it as `?? 'all'`.
+  /// (Replaces an older, never-read `sprint_id` field.)
+  sprint_filter?: UUID | 'active' | 'all' | 'none';
   status: 'open' | 'all' | 'in_progress' | 'todo' | 'done';
   assignee_id: UUID | 'all' | null;
   /// Assignee scope toggle in the list toolbar. `'all'` (default)
@@ -967,7 +972,7 @@ function applyOpToState(s: FiraState, op: AnyOpKind): Partial<FiraState> {
         );
         const nextProjects = s.projects.filter((p) => p.id !== op.project_id);
         const listFilter = s.listFilter.project_id === op.project_id
-          ? { ...s.listFilter, project_id: nextProjects[0]?.id ?? null, tag_ids: [] }
+          ? { ...s.listFilter, project_id: nextProjects[0]?.id ?? null, tag_ids: [], sprint_filter: 'all' }
           : s.listFilter;
         return {
           projects: nextProjects,
@@ -1002,7 +1007,7 @@ function applyOpToState(s: FiraState, op: AnyOpKind): Partial<FiraState> {
       );
       const nextProjects = s.projects.filter((p) => p.id !== op.project_id);
       const listFilter = s.listFilter.project_id === op.project_id
-        ? { ...s.listFilter, project_id: nextProjects[0]?.id ?? null, tag_ids: [] }
+        ? { ...s.listFilter, project_id: nextProjects[0]?.id ?? null, tag_ids: [], sprint_filter: 'all' }
         : s.listFilter;
       return {
         projects: nextProjects,
@@ -1127,6 +1132,7 @@ function applyBootstrap(
       project_id: projectScopeId ?? (data.projects.some((p) => p.id === savedListProject) ? savedListProject : firstProject),
       assignee_id: me.id,
       tag_ids: [],
+      sprint_filter: 'all',
     },
     // Empty workspace lands on list: that view's empty state has the
     // owner-aware "Create your first project" / "ask an admin" CTA.
@@ -1216,7 +1222,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
   listFilter: {
     project_id: null,
     track_id: null,
-    sprint_id: 'active',
+    sprint_filter: 'all',
     status: 'open' as const,
     assignee_id: null,
     assignee_scope: 'all',
@@ -1278,7 +1284,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
         set((s) => ({
           view: data.projects.length === 0 ? 'list' : lastView.view,
           projectScopeId: scopeId,
-          listFilter: { ...s.listFilter, project_id: listId, tag_ids: [] },
+          listFilter: { ...s.listFilter, project_id: listId, tag_ids: [], sprint_filter: 'all' },
         }));
       }
     } catch (e) {
@@ -1367,7 +1373,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
         projectScopeId: data.projects.some((p) => p.id === s.projectScopeId) ? s.projectScopeId : null,
         listFilter: data.projects.some((p) => p.id === s.listFilter.project_id)
           ? s.listFilter
-          : { ...s.listFilter, project_id: data.projects[0]?.id ?? null, tag_ids: [] },
+          : { ...s.listFilter, project_id: data.projects[0]?.id ?? null, tag_ids: [], sprint_filter: 'all' },
         ...(s.projectScopeId && !data.projects.some((p) => p.id === s.projectScopeId)
           ? { planVersionAt: null, planVersionSeq: null } : {}),
         tracks: data.tracks,
@@ -1893,7 +1899,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
       projectScopeId: id,
       listFilter: id === null ? s.listFilter : {
         ...s.listFilter, project_id: id,
-        ...(id !== s.listFilter.project_id ? { tag_ids: [] } : {}),
+        ...(id !== s.listFilter.project_id ? { tag_ids: [], sprint_filter: 'all' } : {}),
       },
       ...(id !== s.projectScopeId ? { planVersionAt: null, planVersionSeq: null } : {}),
     };
@@ -1944,7 +1950,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
       listFilter: {
         ...s.listFilter,
         ...patch,
-        ...(switchingProject && patch.tag_ids === undefined ? { tag_ids: [] } : {}),
+        ...(switchingProject && patch.tag_ids === undefined ? { tag_ids: [], sprint_filter: 'all' } : {}),
       },
     };
   }),
@@ -2323,7 +2329,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
         // Switch into the new project's list so the user lands
         // somewhere useful instead of an empty calendar.
         view: 'list',
-        listFilter: { ...s.listFilter, project_id: project.id, tag_ids: [] },
+        listFilter: { ...s.listFilter, project_id: project.id, tag_ids: [], sprint_filter: 'all' },
         projectModal: null,
       };
     });
