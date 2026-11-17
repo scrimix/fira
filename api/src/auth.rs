@@ -524,7 +524,19 @@ pub async fn sign_out_everywhere(
 
 // ---- /auth/google/login ----
 
-pub async fn google_login(State(s): State<AppState>, jar: CookieJar) -> Response {
+#[derive(Deserialize)]
+pub struct LoginParams {
+    /// Email to preselect in Google's chooser — used when signing in a
+    /// linked account on this device, so Google doesn't just hand back
+    /// the account that's already signed in.
+    login_hint: Option<String>,
+}
+
+pub async fn google_login(
+    State(s): State<AppState>,
+    Query(params): Query<LoginParams>,
+    jar: CookieJar,
+) -> Response {
     if s.auth.google_client_id.is_empty() {
         return (
             StatusCode::SERVICE_UNAVAILABLE,
@@ -533,17 +545,25 @@ pub async fn google_login(State(s): State<AppState>, jar: CookieJar) -> Response
             .into_response();
     }
     let state = random_token(24);
+    let hint = params
+        .login_hint
+        .map(|h| h.trim().to_string())
+        .filter(|h| !h.is_empty() && h.len() <= 320);
+    let mut query: Vec<(&str, &str)> = vec![
+        ("client_id", &s.auth.google_client_id),
+        ("redirect_uri", &s.auth.redirect_url),
+        ("response_type", "code"),
+        ("scope", "openid email profile"),
+        ("state", &state),
+        ("prompt", "select_account"),
+        ("access_type", "online"),
+    ];
+    if let Some(h) = hint.as_deref() {
+        query.push(("login_hint", h));
+    }
     let url = format!(
         "https://accounts.google.com/o/oauth2/v2/auth?{}",
-        querystring(&[
-            ("client_id", &s.auth.google_client_id),
-            ("redirect_uri", &s.auth.redirect_url),
-            ("response_type", "code"),
-            ("scope", "openid email profile"),
-            ("state", &state),
-            ("prompt", "select_account"),
-            ("access_type", "online"),
-        ]),
+        querystring(&query),
     );
     let state_cookie = build_cookie(OAUTH_STATE_COOKIE, state, STATE_TTL_SECONDS, &s.auth);
     (jar.add(state_cookie), Redirect::to(&url)).into_response()

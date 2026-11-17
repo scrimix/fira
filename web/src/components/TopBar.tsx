@@ -2,7 +2,6 @@ import { Menu } from 'lucide-react';
 import { useFira } from '../store';
 import { weekStartFor, fmtWeekRange, fmtWeekSpan, fmtMonth } from '../time';
 import { useIsMobile } from '../hooks';
-import { ProjectScope } from './ProjectScope';
 import { SyncPill, RefreshButton } from './SyncPill';
 import { WorkspaceSwitcher } from './WorkspaceSwitcher';
 
@@ -21,11 +20,13 @@ export function TopBar() {
 
   const isMobile = useIsMobile();
 
-  const title = isMobile ? ''
-    : view === 'calendar' ? `Week of ${fmtWeekRange(weekStartFor(weekOffset))}`
+  // Every page: its name, then (in grey) what it's showing.
+  const page = { calendar: 'Calendar', list: 'List', plan: 'Plan', dashboard: 'Dashboard' }[view] ?? '';
+  const detail = isMobile ? ''
+    : view === 'calendar' ? fmtWeekRange(weekStartFor(weekOffset))
     : view === 'dashboard' ? fmtMonth(monthOffset)
     : view === 'plan' ? fmtWeekSpan(planWeekOffset, planWeekCount, { compact: true })
-    : 'List';
+    : '';
 
   return (
     <div className="topbar" data-view={view}>
@@ -38,17 +39,17 @@ export function TopBar() {
         >
           <Menu size={18} strokeWidth={1.75} />
         </button>
-      ) : (
-        <>
-          <span className="crumb">Fira</span>
-          <span className="crumb-sep">/</span>
-        </>
+      ) : null}
+      {!isMobile && (
+        <span className="title topbar-period">
+          {page}
+          {detail && <span className="topbar-detail">{detail}</span>}
+        </span>
       )}
-      <WorkspaceSwitcher />
-      <span className="crumb-sep">/</span>
-      <ProjectScope />
-      {title && <span className="title topbar-period">{title}</span>}
       <div className="grow" />
+      {/* Workspace lives with the other "where am I / who am I" controls
+          on the right, not in a breadcrumb. */}
+      <WorkspaceSwitcher />
       {playgroundMode && !isMobile && (
         <span
           className="playground-pill"

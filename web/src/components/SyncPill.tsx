@@ -130,8 +130,8 @@ export function SyncPill() {
         title={title}
       >
         <Icon
-          size={11}
-          strokeWidth={2}
+          size={14}
+          strokeWidth={1.75}
           className={tone === 'syncing' ? 'sync-pill-spin' : undefined}
         />
         {label && <span>{label}</span>}
@@ -218,7 +218,7 @@ export function RefreshButton() {
       aria-label="Refresh from server"
     >
       <RefreshCw
-        size={11}
+        size={14}
         strokeWidth={1.75}
         className={refreshing ? 'sync-pill-spin' : undefined}
       />

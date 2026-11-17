@@ -4,11 +4,10 @@
     <meta charset="utf-8" />
     <script>
       // Prevents a flash of the wrong appearance: read the persisted
-      // theme (palette) and ui style (shape/density) straight out of
-      // localStorage (bypassing React/Zustand, which hydrate async) and
-      // set data-theme / data-style before first paint. Runtime changes
-      // to either are kept in sync afterward by the useFira.subscribe()
-      // call in store/index.ts.
+      // theme straight out of localStorage (bypassing React/Zustand,
+      // which hydrate async) and set data-theme before first paint.
+      // Runtime changes are kept in sync afterward by the
+      // useFira.subscribe() call in store/index.ts.
       (function () {
         // Installed iOS apps can report display-mode: standalone as false.
         // Use Safari's standalone flag before paint for status-bar clearance.
@@ -21,9 +20,6 @@
           var state = (parsed && parsed.state) || {};
           if (state.theme && state.theme !== 'classic') {
             document.documentElement.setAttribute('data-theme', state.theme);
-          }
-          if (state.uiStyle && state.uiStyle !== 'classic') {
-            document.documentElement.setAttribute('data-style', state.uiStyle);
           }
         } catch (e) { /* private mode / corrupt JSON — fall back to classic */ }
       })();

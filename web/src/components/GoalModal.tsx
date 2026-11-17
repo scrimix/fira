@@ -129,8 +129,8 @@ export function GoalModal({ goalId }: { goalId: UUID | null }) {
               value={direction}
               onChange={setDirection}
               options={[
-                { value: 'at_least', label: 'at least', hint: 'A floor to reach' },
-                { value: 'at_most', label: 'at most', hint: 'A cap to stay under' },
+                { value: 'at_least', label: 'At least', hint: 'A floor to reach' },
+                { value: 'at_most', label: 'At most', hint: 'A cap to stay under' },
               ]}
               menuMinWidth={190}
             />
@@ -138,22 +138,22 @@ export function GoalModal({ goalId }: { goalId: UUID | null }) {
               className="np-title goal-target-input"
               value={target}
               onChange={(e) => setTarget(e.target.value)}
-              placeholder={direction === 'at_most' ? '30m' : '1h30'}
+              placeholder={direction === 'at_most' ? '30m' : '1h 30m'}
               aria-label="Target duration"
             />
             <Select<GoalCadence>
               value={cadence}
               onChange={setCadence}
               options={[
-                { value: 'daily', label: 'daily' },
-                { value: 'weekly', label: 'weekly' },
+                { value: 'daily', label: 'Daily' },
+                { value: 'weekly', label: 'Weekly' },
               ]}
               menuMinWidth={140}
             />
           </div>
           <p className="goal-hint">
             {targetInvalid
-              ? <span className="goal-hint-err">Couldn't read that duration — try "1h30", "90m" or "2h".</span>
+              ? <span className="goal-hint-err">Couldn't read that duration — try "1h 30m", "90m" or "2h".</span>
               : capNeedsTarget
                 ? <span className="goal-hint-err">A cap needs a target — "at most" what?</span>
                 : targetMin == null

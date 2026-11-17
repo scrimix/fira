@@ -20,27 +20,27 @@
      the chrome. */
   /* `--density` multiplies *padding*, never a line box — read its own
      definition: "padding / gaps that are allowed to breathe". Written
-     as a flat calc(22px * var(--density)) these rows breathed the text
+     as a flat 32px these rows breathed the text
      as well, so modern came out at 31.9px against classic's 22px: not
      30% roomier, a size and a half bigger. Line box + padding, and only
      the padding scales. */
   /* Axis labels are chrome, so they sit *below* the content they label.
-     They had been `--fs-xs * --label-size`, which is 15.8px in modern
+     They had been `--fs-12 * --label-size`, which is 15.8px in modern
      against 13.8px of task text — the scaffolding outranking the thing
      on it, and the two rows eating 57px of the board's height. */
-  --plan-axis-label-fs: calc(10px * var(--fs-scale));
+  --plan-axis-label-fs: var(--fs-11);
   /* The month strip is subordinate to the week row: it groups, it
      doesn't name a column. Same line box, less padding. */
-  --plan-axis-month-h: calc(var(--plan-axis-label-fs) * 1.4 + 4px * var(--density));
-  --plan-axis-week-h: calc(var(--plan-axis-label-fs) * 1.4 + 5px * var(--density));
+  --plan-axis-month-h: calc(var(--plan-axis-label-fs) * 1.4 + 6px);
+  --plan-axis-week-h: calc(var(--plan-axis-label-fs) * 1.4 + 8px);
   /* One task line, everywhere a task line appears: a card's checklist,
      its add-task row, the Past band's rows, and the rail. These sit a
      few hundred pixels apart on the same screen and are the same
      object, so they are built to one height and one size. The rail used
      to be a 44px two-line row with meta while a checklist row was an
-     18px `--fs-xs` sliver, and the board read as two designs. */
-  --plan-task-h: calc(var(--plan-task-fs) * 1.35 + 4px * var(--density));
-  --plan-task-fs: var(--fs-sm);
+     18px `--fs-12` sliver, and the board read as two designs. */
+  --plan-task-h: calc(var(--plan-task-fs) * 1.35 + 6px);
+  --plan-task-fs: var(--fs-13);
   /* Panel widths are fixed per style, as `--side-w` is (220 / 248) and
      the calendar's rail is (a flat 320px). Scaling them by --density
      instead put the rail at 319px and the track column at 261px in
@@ -49,17 +49,26 @@
   --plan-rail-w: 220px;
   --plan-head-w: 160px;
 }
-:root[data-style="modern"] .plan-wrap {
+.plan-wrap {
   --plan-rail-w: 248px;
   --plan-head-w: 180px;
 }
 
-.plan-toolbar { gap: calc(8px * var(--density)); padding-left: var(--task-rail-inset); }
+.plan-toolbar { gap: 12px; padding-left: var(--gutter-x); }
+/* Ends where the track column ends: rail + track column, less the
+ * toolbar's left padding and the gap + margin before the divider. */
+.plan-toolbar-lead {
+  display: flex; align-items: center; gap: 12px; flex: none;
+  min-width: calc(var(--plan-rail-w) + var(--plan-head-w) - var(--gutter-x) - 15px);
+}
+/* Inbox hidden: the track column is too close for the controls to fit
+ * before it, so the group just takes its natural width. */
+.plan-wrap:not(:has(.plan-rail)) .plan-toolbar-lead { min-width: 0; }
 .plan-toolbar-sep {
   width: 1px;
   align-self: stretch;
-  margin: 0 calc(2px * var(--density));
-  background: var(--rule);
+  margin: 0 2px;
+  background: var(--line);
 }
 /* Every control in this toolbar is a segment of a `.week-nav` pill —
  * pan, resize, window size, the three view switches, the two add
@@ -69,7 +78,7 @@
  * The height is *inherited*, not set: `.cal-toolbar .week-nav-btn` is a
  * flat 22px in both styles, so this bar lands on exactly the calendar
  * toolbar's metrics — same control, same size, same row. It briefly
- * took `--control-h` instead, which is calc(26px * var(--density)) and
+ * took `--control-h` instead, which is 40px and
  * so 37.7px in modern for a bar of 12.65px labels. Only the flex
  * layout is ours, because these segments carry an icon beside a label
  * and the base rule centres a single child with `inline-grid`. */
@@ -77,32 +86,28 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 0 calc(7px * var(--density));
+  padding: 0 10px;
 }
+.plan-adds { display: inline-flex; align-items: center; gap: 8px; }
+.seg > button { display: inline-flex; align-items: center; gap: 6px; }
 .plan-toolbar .week-nav-btn[data-on="true"] {
-  color: var(--ink);
-  background: var(--paper-3);
+  color: var(--text);
+  background: var(--surface-3);
 }
 
 .week-nav-count {
   display: inline-flex;
   align-items: center;
-  padding: 0 calc(5px * var(--density));
-  border-right: 1px solid var(--rule-2);
-  color: var(--ink-3);
-  font-family: var(--font-mono);
-  font-size: calc(10px * var(--fs-scale));
+  padding: 0 12px;
+  border-right: 1px solid var(--line-2);
+  color: var(--text);
+  font-size: var(--fs-13);
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
 .week-nav-btn:disabled { opacity: 0.4; cursor: default; }
-.week-nav-btn:disabled:hover { color: var(--ink-3); background: none; }
+.week-nav-btn:disabled:hover { color: var(--text-3); background: none; }
 
-/* Width is one-of-three, so the on-segment reads as a selection rather
-   than a switch: inverted, like a segmented radio. */
-.plan-width .week-nav-btn[data-on="true"] {
-  color: var(--paper);
-  background: var(--ink-2);
-}
 
 .plan-body {
   display: flex;
@@ -130,19 +135,19 @@
  * project panel (the board is already one project), and its filter is
  * tags rather than projects. */
 .plan-rail {
-  --plan-rail-gutter: var(--task-rail-inset);
-  --plan-rail-gutter-right: 20px;
+  --plan-rail-gutter: 16px;  /* text column; hover boxes sit 8px inside both edges */
+  --plan-rail-gutter-right: 16px;
   width: var(--plan-rail-w);
   flex: 0 0 auto;
   min-height: 0;
   border-left: 0;
-  /* `--rule`, not `--rule-chrome`: modern sets chrome rules to
+  /* `--line`, not `--line`: modern sets chrome rules to
      transparent, which is right for the app frame but leaves the rail
      and the week grid bleeding into each other with no edge between
      two surfaces that scroll independently. */
-  border-right: 1px solid var(--rule);
+  border-right: 1px solid var(--line);
 }
-.plan-rail[data-over] { background: var(--paper-3); }
+.plan-rail[data-over] { background: var(--surface-3); }
 /* The calendar reserves this gutter unconditionally so its rows keep
    the head's content edge whether or not the list overflows — and its
    rows subtract `--scrollbar-w` to match. These rows don't, and the
@@ -169,66 +174,42 @@
    round: the caret led the heading, pushing the words inward past the
    left edge of the very rows they introduced. */
 /* Blocks separated by space, not by rules. */
-.plan-rail-group { padding-top: 12px; }
-.plan-rail-group:first-child { padding-top: 8px; }
+.plan-rail-group { padding-top: 8px; }
+.plan-rail-group:first-child { padding-top: 4px; }
 .plan-rail-group .section-head {
   align-items: center;
-  padding: 0 var(--plan-rail-gutter-right) 4px var(--plan-rail-gutter);
-  gap: 6px;
+  height: 36px;
+  margin: 0;
+  padding: 0 var(--plan-rail-gutter-right) 0 var(--plan-rail-gutter);
+  border-bottom: 0;
+  gap: 8px;
 }
 .plan-rail-spacer { flex: 1; }
+.plan-rail-swatch { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
 .plan-rail-group .section-head h2 {
-  font-size: var(--fs-xs);
+  font-size: var(--fs-14);
+  font-weight: 600;
   line-height: 1.4;
-  letter-spacing: 0;
-  text-transform: none;
-  color: var(--ink-2);
+  color: var(--text);
 }
-.plan-rail-group .section-head .count { font-size: calc(10px * var(--fs-scale)); }
-.plan-rail-group .section-head .caret { width: 12px; height: 12px; }
+.plan-rail-group .section-head .caret { width: 14px; height: 14px; color: var(--text-3); }
 .plan-rail-group[data-section="now"] .section-head h2,
 .plan-rail-group[data-section="now"] .section-head .caret { color: var(--accent); }
 .plan-rail-group[data-section="recurring"] .section-head h2,
 .plan-rail-group[data-section="recurring"] .section-head .caret { color: var(--recurring); }
 
-/* The list's tag filter, in a 220px column: its chips must wrap, and
-   its framing margins belong to a wide page, not a rail. The divider
-   belongs to the panel, not to the control — on the control it was
-   inset by the rail's gutter and stopped 16px short of the edge, a
-   rule that visibly failed to reach the border beside it while
-   `.rail-head`'s own rule above it spanned fully. */
-.plan-rail-tags {
-  padding: 6px var(--plan-rail-gutter-right) 8px var(--plan-rail-gutter);
-  border-bottom: 1px solid var(--rule);
-}
-.plan-rail-tags .list-tag-filter {
-  grid-template-columns: minmax(0, 1fr);
-  margin: 0;
-  padding: 0;
-  border-bottom: 0;
-}
-.plan-rail-tags .list-tag-filter-chips { flex-wrap: wrap; }
-/* Match the task-row rhythm rather than scaling chip height with density. */
-:root[data-style="modern"] .plan-rail-tags .list-tag-filter-chip,
-:root[data-style="modern"] .plan-rail-tags .list-tag-filter-mode-seg {
-  height: var(--plan-task-h);
-  padding: 0 6px;
-  font-size: calc(10px * var(--fs-scale));
-  line-height: 1;
-}
-:root[data-style="modern"] .plan-rail-tags .list-tag-filter-mode {
-  height: var(--plan-task-h);
-}
 /* Compact task rows; the inbox's outer gutter supplies its breathing room. */
 .plan-rail-task {
   display: flex;
   align-items: center;
   gap: 6px;
-  min-height: var(--plan-task-h);
-  line-height: var(--plan-task-h);
-  padding: 0 var(--plan-rail-gutter-right) 0 calc(var(--plan-rail-gutter) + 8px);
+  min-height: 32px;
+  line-height: 32px;
+  margin: 0 calc(var(--plan-rail-gutter-right) - 8px) 0 calc(var(--plan-rail-gutter) - 8px);
+  padding: 0 8px;
+  border-radius: var(--r-sm);
   font-size: var(--plan-task-fs);
-  color: var(--ink-2);
+  color: var(--text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -236,16 +217,14 @@
   user-select: none;
   -webkit-user-select: none;
 }
-.plan-rail-task > svg { flex: 0 0 auto; color: var(--ink-4); }
 .plan-rail-task > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.plan-rail-task:hover { background: var(--paper-3); color: var(--ink); }
+.plan-rail-task:hover { background: var(--surface-3); }
 .plan-rail-task:active { cursor: grabbing; }
 .plan-rail-empty {
   margin: 0;
   padding: 8px var(--plan-rail-gutter-right) 8px var(--plan-rail-gutter);
-  font-size: var(--fs-xs);
-  color: var(--ink-4);
-  font-style: italic;
+  font-size: var(--fs-12);
+  color: var(--text-4);
 }
 
 /* --- the board ---------------------------------------------------- */
@@ -276,15 +255,15 @@
      Same fix, same reason, as `.plan-rows`. */
   width: max-content;
   min-width: 100%;
-  background: var(--paper);
-  border-bottom: 1px solid var(--rule-2);
+  background: var(--bg);
+  border-bottom: 1px solid var(--line-2);
 }
 /* The week columns' rules begin at this line. Without it they started
    in mid-air at the month/week junction — short verticals hanging off
    nothing, which is what "lines that go nowhere" means. A month
    boundary's rule crosses it and carries on, which is exactly the
    hierarchy the strip is for. */
-.plan-axis-months { border-bottom: 1px solid var(--rule); }
+.plan-axis-months { border-bottom: 1px solid var(--line); }
 
 .plan-axis-months,
 .plan-axis-weeks {
@@ -301,8 +280,8 @@
   position: sticky;
   left: 0;
   z-index: 4;
-  border-right: 1px solid var(--rule-2);
-  background: var(--paper);
+  border-right: 1px solid var(--line-2);
+  background: var(--bg);
 }
 
 .plan-month,
@@ -311,8 +290,8 @@
   align-items: center;
   box-sizing: border-box;
   padding: 0 6px;
-  border-left: 1px solid var(--rule);
-  color: var(--ink-4);
+  border-left: 1px solid var(--line-soft);
+  color: var(--text-3);
   font-size: var(--plan-axis-label-fs);
   white-space: nowrap;
   overflow: hidden;
@@ -322,15 +301,12 @@
    twenty-six of them. */
 .plan-week {
   height: var(--plan-axis-week-h);
-  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
   font-variant-numeric: tabular-nums;
 }
 .plan-month {
   height: var(--plan-axis-month-h);
-  color: var(--ink-3);
-  font-family: var(--font-label);
-  text-transform: var(--label-case);
-  letter-spacing: calc(0.06em * var(--label-track));
+  color: var(--text-3);
   /* No padding: the floating label carries its own inset, because the
      cell's padding would scroll away with the cell. */
   padding: 0;
@@ -348,7 +324,7 @@
   padding-right: 6px;
 }
 /* The current week, lifted verbatim from the calendar's current *day*:
-   `.cal-dayhead[data-today]` tints with --accent-soft, underscores with
+   `.cal-dayhead[data-today]` tints with --accent-tint, underscores with
    a 2px --accent rule and colours its text --accent, and
    `.cal-daycol[data-today]` runs a 1px --accent line down the column.
    Same fact, same marking — a week board and a day board disagreeing
@@ -360,14 +336,10 @@
    here it is doing the job it does everywhere else in the app. */
 .plan-week[data-now] {
   color: var(--accent);
-  background: var(--accent-soft);
-  box-shadow: inset 0 -2px 0 var(--accent);
+  background: var(--accent-tint);
   font-weight: 600;
 }
-.plan-cell[data-now] {
-  border-left: 1px solid var(--accent);
-  background: color-mix(in srgb, var(--accent) 5%, transparent);
-}
+.plan-cell[data-now] { background: var(--accent-tint-2); }
 
 .plan-rows {
   display: flex;
@@ -379,12 +351,12 @@
 .plan-row {
   display: grid;
   grid-template-columns: var(--plan-grid);
-  border-bottom: 1px solid var(--rule);
-  min-height: calc(44px * var(--density));
+  border-bottom: 1px solid var(--line);
+  min-height: 64px;
 }
 .plan-row[data-over] {
-  background: var(--paper-2);
-  box-shadow: inset 0 0 0 1px var(--rule-3);
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--line-3);
 }
 
 /* Keep the name first, with a compact control group directly below it. */
@@ -396,25 +368,24 @@
   flex-direction: column;
   align-items: stretch;
   justify-content: flex-start;
-  gap: calc(6px * var(--density));
-  padding: calc(6px * var(--density)) 10px;
-  border-right: 1px solid var(--rule-2);
-  border-left: 3px solid var(--track-color, var(--rule-3));
-  background: var(--paper);
+  gap: 8px;
+  padding: 8px 10px;
+  border-right: 1px solid var(--line);
+  background: var(--bg);
   /* NB: `position: sticky` above is also what anchors a track's
      `.plan-row-grid` alignment. Don't add `position: relative` here —
      it overrides the sticky and the track names scroll away. */
 }
 .plan-row-controls { position: relative; align-self: flex-start; }
-.plan-track-color span { width: 12px; height: 12px; border-radius: var(--r-sm); }
+.plan-track-color span { width: 12px; height: 12px; border-radius: var(--r-ctl); }
 .plan-row-head:focus-within { z-index: 5; }
 .plan-track-colors {
-  position: absolute; top: calc(100% + 4px); left: 0; width: 148px;
-  grid-template-columns: repeat(4, 1fr); gap: 4px;
-  padding: 6px; border: 1px solid var(--rule); border-radius: var(--r-sm);
-  background: var(--paper);
+  position: absolute; top: calc(100% + 4px); left: 0; width: auto;
+  grid-template-columns: repeat(4, 28px); gap: 10px;
+  padding: 12px; border: 1px solid var(--line-2); border-radius: var(--r-card);
+  background: var(--surface);
+  box-shadow: var(--shadow-float);
 }
-.plan-track-colors .np-color { height: 24px; padding: 3px; }
 .plan-row-title,
 .plan-row-title-input {
   flex: 0 0 auto;
@@ -424,10 +395,10 @@
   background: none;
   padding: 0;
   font: inherit;
-  font-size: var(--fs-sm);
+  font-size: var(--fs-13);
   font-weight: 500;
   line-height: 1.3;
-  color: var(--ink);
+  color: var(--text);
   text-align: left;
   cursor: text;
 }
@@ -440,13 +411,13 @@
 }
 .plan-row-title:disabled { cursor: default; }
 .plan-row-title-input {
-  border-bottom: 1px solid var(--focus-line);
+  border-bottom: 1px solid var(--accent);
   outline: none;
 }
 .plan-row-sub {
-  font-size: var(--fs-xs);
-  color: var(--ink-4);
-  font-style: italic;
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: var(--fs-12);
+  color: var(--text-3);
 }
 /* The band's head carries a caption under its name. */
 .plan-row-head-stacked .plan-row-sub {
@@ -459,8 +430,8 @@
 .plan-row-actions {
   align-self: flex-start;
   display: inline-flex;
-  border: 1px solid var(--rule);
-  border-radius: var(--r-sm);
+  border: 1px solid var(--line);
+  border-radius: var(--r-ctl);
   overflow: hidden;
   opacity: 0;
   pointer-events: none;
@@ -478,15 +449,15 @@
   height: 22px;
   border: 0;
   background: none;
-  color: var(--ink-3);
+  color: var(--text-3);
   padding: 0;
   cursor: pointer;
 }
-.plan-row-btn + .plan-row-btn { border-left: 1px solid var(--rule); }
-.plan-row-btn:hover:not(:disabled) { color: var(--ink); background: var(--paper-3); }
+.plan-row-btn + .plan-row-btn { border-left: 1px solid var(--line); }
+.plan-row-btn:hover:not(:disabled) { color: var(--text); background: var(--surface-3); }
 .plan-row-btn:disabled { opacity: 0.35; cursor: default; }
 .plan-row-del:hover { color: var(--danger); }
-.plan-row-btn:focus-visible { outline: 2px solid var(--focus-line); outline-offset: -2px; }
+.plan-row-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
 .plan-row-grid {
   grid-column: 2 / -1;
@@ -500,7 +471,7 @@
   padding: 0;
 }
 .plan-cell {
-  border-left: 1px solid var(--rule);
+  border-left: 1px solid var(--line);
   pointer-events: none;
 }
 /* --- placing a sprint -------------------------------------------- */
@@ -509,13 +480,13 @@
    crosshair, and cards stop taking events so a sweep can cross one. */
 .plan-wrap[data-placing] .plan-rows { cursor: crosshair; }
 .plan-wrap[data-placing] .plan-card { pointer-events: none; }
-.plan-wrap[data-placing] .plan-row-grid { background: var(--paper-2); }
+.plan-wrap[data-placing] .plan-row-grid { background: var(--surface-2); }
 .plan-wrap[data-placing] .plan-cell {
   pointer-events: auto;
   cursor: crosshair;
-  border-left-color: var(--rule-2);
+  border-left-color: var(--line-2);
 }
-.plan-wrap[data-placing] .plan-cell:hover { background: var(--paper-3); }
+.plan-wrap[data-placing] .plan-cell:hover { background: var(--surface-3); }
 .plan-wrap[data-placing] .plan-row-retro { opacity: 0.4; pointer-events: none; }
 
 /* The live selection band. */
@@ -524,34 +495,34 @@
   margin: 0 1px;
   display: grid;
   place-items: center;
-  border: 1px dashed var(--ink-3);
-  border-radius: var(--r-sm);
-  background: color-mix(in srgb, var(--ink) 8%, transparent);
-  color: var(--ink-2);
-  font-family: var(--font-mono);
-  font-size: calc(10px * var(--fs-scale));
+  border: 1px dashed var(--text-3);
+  border-radius: var(--r-ctl);
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-11);
   pointer-events: none;
 }
 
 .plan-hint {
-  color: var(--ink-3);
-  font-size: var(--fs-xs);
-  font-style: italic;
+  color: var(--text-3);
+  font-size: var(--fs-12);
   white-space: nowrap;
 }
 
 /* --- sprint cards ------------------------------------------------- */
 
+/* Sprint card: --surface, --line-2 border, radius 10. Track colour
+ * lives in the code badge only. */
 .plan-card {
   position: relative;
   z-index: 1;
   align-self: start;
-  margin: calc(4px * var(--density)) 2px;
+  margin: 4px 3px;
   min-width: 0;
-  border: 1px solid var(--rule-2);
-  border-left: 3px solid var(--track-color, var(--rule-3));
-  border-radius: var(--r-sm);
-  background: var(--paper);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-card);
+  background: var(--surface);
   overflow: hidden;
 }
 /* A finished sprint is dulled, the same way a done row is in the list
@@ -564,14 +535,14 @@
  * says — next to the axis's own now marker. */
 .plan-card[data-done] { opacity: 0.6; }
 .plan-card[data-done]:hover { opacity: 1; }
-.plan-card[data-over] { background: var(--paper-3); box-shadow: inset 0 0 0 1px var(--rule-3); }
+.plan-card[data-over] { background: var(--surface-3); box-shadow: inset 0 0 0 1px var(--line-3); }
 /* `pointer-events: none` is load-bearing, not cosmetic: the drag
    hit-tests `document.elementFromPoint` to find the track row under the
    cursor, and the card itself would always win. */
 .plan-card[data-dragging] {
   opacity: 0.75;
   pointer-events: none;
-  box-shadow: 0 2px 8px rgb(0 0 0 / 0.18);
+  box-shadow: var(--e-drag);
 }
 /* Torn edge where the span continues outside the window — a square edge
    would read as "the sprint ends here", which is a different fact. */
@@ -605,21 +576,22 @@
 .plan-card-head {
   display: flex;
   align-items: center;
-  gap: 3px;
-  min-height: var(--plan-task-h);
-  padding: 0 4px;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 10px;
   /* The whole header is the move handle; the edges resize. */
   cursor: grab;
   user-select: none;
 }
 .plan-badge {
+  --c: var(--track-color, var(--text-3));
   flex: 0 0 auto;
-  padding: 0 3px;
-  border-radius: var(--r-2xs);
-  background: var(--track-color, var(--rule-3));
-  color: var(--accent-fg);
-  font-family: var(--font-mono);
-  font-size: calc(10px * var(--fs-scale));
+  padding: 1px 6px;
+  border-radius: var(--r-xs);
+  background: color-mix(in oklab, var(--c) var(--tag-fill), transparent);
+  color: color-mix(in oklab, var(--c) var(--tint-text), var(--text));
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-11);
   font-weight: 600;
   line-height: 1.5;
 }
@@ -631,18 +603,23 @@
   background: none;
   padding: 0;
   font: inherit;
-  font-size: var(--fs-sm);
-  color: var(--ink);
+  font-size: var(--fs-13);
+  font-weight: 600;
+  color: var(--text);
   text-align: left;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.plan-card-dot {
+  width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0;
+  background: var(--track-color, var(--text-3));
+}
 /* Inherits `grab` from the header: the title is part of the handle. */
 .plan-card-title { cursor: inherit; }
 .plan-card-title-input { cursor: text; }
 .plan-card-title-input {
-  border-bottom: 1px solid var(--focus-line);
+  border-bottom: 1px solid var(--accent);
   outline: none;
 }
 /* Rename and delete. Hover-revealed so a resting card is just a badge,
@@ -651,44 +628,44 @@
 .plan-card-btn {
   flex: 0 0 auto;
   display: inline-flex;
-  width: 15px;
-  height: 15px;
+  width: var(--h-sm);
+  height: var(--h-sm);
   align-items: center;
   justify-content: center;
   border: 0;
-  border-radius: var(--r-2xs);
+  border-radius: var(--r-sm);
   background: none;
-  color: var(--ink-4);
+  color: var(--text-2);
   padding: 0;
   cursor: pointer;
   opacity: 0;
 }
 .plan-card:hover .plan-card-btn,
 .plan-card-btn:focus-visible { opacity: 1; }
-.plan-card-btn:hover { color: var(--ink); background: var(--paper-3); }
-.plan-card-del:hover { color: var(--danger); background: var(--paper-3); }
+.plan-card-btn:hover { color: var(--text); background: var(--surface-3); }
+.plan-card-del:hover { color: var(--danger); background: var(--surface-3); }
 
 .plan-card-tasks {
   margin: 0;
-  padding: 0 0 calc(3px * var(--density));
+  padding: 0 4px 6px;
   list-style: none;
-  border-top: 1px solid var(--rule);
 }
 .plan-task {
   display: flex;
   align-items: center;
-  gap: 3px;
-  min-height: var(--plan-task-h);
-  padding: 0 4px;
+  gap: 8px;
+  min-height: 28px;
+  padding: 0 6px;
+  border-radius: var(--r-sm);
   font-size: var(--plan-task-fs);
-  color: var(--ink-2);
+  color: var(--text);
   cursor: grab;
 }
-.plan-task:hover { background: var(--paper-2); }
+.plan-task:hover { background: var(--surface-3); }
 /* Where the dragged row would land. An inset shadow rather than a
    border so the row doesn't shift by a pixel as the line appears. */
-.plan-task[data-drop="before"] { box-shadow: inset 0 1px 0 0 var(--ink-3); }
-.plan-task[data-drop="after"] { box-shadow: inset 0 -1px 0 0 var(--ink-3); }
+.plan-task[data-drop="before"] { box-shadow: inset 0 1px 0 0 var(--text-3); }
+.plan-task[data-drop="after"] { box-shadow: inset 0 -1px 0 0 var(--text-3); }
 .plan-task-title {
   flex: 1;
   min-width: 0;
@@ -697,46 +674,30 @@
   white-space: nowrap;
 }
 .plan-task[data-done] .plan-task-title {
-  color: var(--ink-4);
+  color: var(--text-3);
   text-decoration: line-through;
 }
 .plan-task-tick {
   flex: 0 0 auto;
   display: inline-flex;
-  width: 12px;
-  height: 12px;
+  width: 15px;
+  height: 15px;
+  box-sizing: border-box;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--rule-3);
-  border-radius: var(--r-2xs);
-  background: var(--paper);
-  color: var(--accent-fg);
+  border: 1.5px solid var(--line-3);
+  border-radius: var(--r-xs);
+  background: transparent;
+  color: var(--bg);
   padding: 0;
   cursor: pointer;
 }
 .plan-task[data-done] .plan-task-tick {
-  background: var(--done);
-  border-color: var(--done);
+  background: var(--text-3);
+  border-color: var(--text-3);
 }
 /* Unplan, not delete — so it does NOT take the danger colour. The only
    destructive control on a card is its trash button. */
-.plan-task-x {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 13px;
-  height: 13px;
-  border: 0;
-  border-radius: var(--r-2xs);
-  background: none;
-  color: var(--ink-4);
-  padding: 0;
-  cursor: pointer;
-  opacity: 0;
-}
-.plan-task:hover .plan-task-x { opacity: 1; }
-.plan-task-x:hover { color: var(--ink); background: var(--paper-3); }
 
 .plan-card-add {
   display: flex;
@@ -751,21 +712,21 @@
   border: 0;
   background: none;
   padding: 0;
-  color: var(--ink-4);
+  color: var(--text-4);
   font: inherit;
   font-size: var(--plan-task-fs);
   cursor: pointer;
 }
-.plan-card-add-btn:hover { color: var(--ink); }
+.plan-card-add-btn:hover { color: var(--text); }
 .plan-card-add-input {
   width: 100%;
   border: 0;
-  border-bottom: 1px solid var(--focus-line);
+  border-bottom: 1px solid var(--accent);
   background: none;
   padding: 0;
   font: inherit;
   font-size: var(--plan-task-fs);
-  color: var(--ink);
+  color: var(--text);
   outline: none;
 }
 
@@ -774,22 +735,23 @@
 /* Deliberately a different class of object from a sprint card: dashed,
  * desaturated, no track rail. The board's whole thesis is that a record
  * is not a plan, so the two must not share a visual slot. */
-.plan-row-retro { background: var(--paper-2); }
-.plan-row-retro .plan-row-actions { background: var(--paper-2); }
-.plan-row-retro .plan-row-head { border-left-color: transparent; background: var(--paper-2); }
-.plan-row-retro .plan-row-title { color: var(--ink-3); }
+.plan-row-retro { background: var(--surface-2); }
+.plan-row-retro .plan-row-actions { background: var(--surface-2); }
+.plan-row-retro .plan-row-head { border-left-color: transparent; background: var(--surface-2); }
+.plan-row-retro .plan-row-title { color: var(--text-3); }
 .plan-card-retro .plan-task-tick { cursor: inherit; }
+/* Unplanned (finished, never planned): compact muted cards. */
 .plan-card-retro {
-  border: 1px dashed var(--rule-2);
-  border-left: 1px dashed var(--rule-2);
-  background: transparent;
-  opacity: 0.8;
+  border: 1px solid var(--line);
+  background: var(--card-muted);
 }
+.plan-card-retro .plan-task { color: var(--text-3); }
+.plan-card-retro .plan-task-tick { display: none; }
 .plan-card-retro .plan-card-head { cursor: default; }
 .plan-card-retro .plan-badge {
   background: none;
-  color: var(--ink-4);
-  border: 1px solid var(--rule-2);
+  padding: 0;
+  color: var(--text-3);
 }
 /* A record isn't editable, so the band's one write is to stop being a
  * record: Promote turns the fortnight into a real sprint, and a row
@@ -798,22 +760,20 @@
 .plan-card-retro .plan-task { cursor: grab; }
 .plan-card-promote {
   flex: 0 0 auto;
-  border: 1px solid var(--rule-2);
-  border-radius: var(--r-2xs);
-  background: var(--paper);
-  padding: 0 4px;
-  color: var(--ink-3);
+  height: var(--h-sm);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-sm);
+  background: transparent;
+  padding: 0 8px;
+  color: var(--text-2);
   font: inherit;
-  font-family: var(--font-label);
-  font-size: calc(9px * var(--fs-scale) * var(--label-size));
-  text-transform: var(--label-case);
-  letter-spacing: calc(0.06em * var(--label-track));
+  font-size: var(--fs-12);
   cursor: pointer;
   opacity: 0;
 }
 .plan-card-retro:hover .plan-card-promote,
 .plan-card-promote:focus-visible { opacity: 1; }
-.plan-card-promote:hover { color: var(--ink); border-color: var(--rule-3); }
+.plan-card-promote:hover { color: var(--text); border-color: var(--line-3); }
 
 /* --- mobile ------------------------------------------------------- */
 
@@ -822,7 +782,7 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: calc(10px * var(--density));
+  gap: 14px;
   flex: 1;
   min-height: 0;
   padding: var(--gutter-x);
@@ -830,22 +790,22 @@
 }
 .plan-mobile-msg {
   margin: 0;
-  color: var(--ink-3);
-  font-size: var(--fs-sm);
+  color: var(--text-3);
+  font-size: var(--fs-13);
 }
 
 /* History has its own time axis below the roadmap, independent of week columns. */
-.plan-history-panel { flex: 0 0 auto; border-top: 1px solid var(--rule-2); background: var(--paper); }
-.plan-history-status { color: var(--ink-3); }
-.plan-history-status button { color: var(--ink); text-decoration: underline; }
+.plan-history-panel { flex: 0 0 auto; border-top: 1px solid var(--line-2); background: var(--bg); }
+.plan-history-status { color: var(--text-3); }
+.plan-history-status button { color: var(--text); text-decoration: underline; }
 .plan-history-message { display: inline-block; max-width: 180px; vertical-align: bottom; overflow: hidden; text-overflow: ellipsis; }
 .plan-timeline {
   flex: 0 0 auto;
   min-width: 0;
   padding: 10px 16px 8px;
-  background: var(--paper);
+  background: var(--bg);
 }
-.plan-revision-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: var(--fs-xs); }
+.plan-revision-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: var(--fs-12); }
 .plan-revision-toolbar strong { font-weight: 500; margin-right: 4px; }
 .plan-revision-toolbar > strong,
 .plan-revision-transport,
@@ -858,14 +818,14 @@
   white-space: nowrap;
 }
 .plan-revision-toolbar .plan-revision-play { min-width: 76px; }
-.plan-revision-play[aria-pressed="true"] { color: var(--ink); background: var(--paper-3); }
+.plan-revision-play[aria-pressed="true"] { color: var(--text); background: var(--surface-3); }
 .plan-revision-picker { flex: 1; min-width: 220px; max-width: 420px; }
 .plan-revision-toolbar .select-trigger {
   height: 24px;
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-12);
   letter-spacing: normal;
-  border-color: var(--rule-2);
+  border-color: var(--line-2);
   padding: 0 8px;
 }
 .plan-revision-picker .select-trigger { width: 100%; }
@@ -883,55 +843,55 @@
 }
 .plan-revision-axis:active { cursor: grabbing; }
 .plan-revision-axis:focus-visible { outline: 1px solid var(--accent); outline-offset: 4px; }
-.plan-revision-baseline { position: absolute; left: 0; right: 0; top: 46px; height: 2px; background: var(--rule-2); }
-.plan-revision-tick { position: absolute; top: 0; height: 48px; border-left: 1px solid var(--rule); pointer-events: none; }
-.plan-revision-tick span { position: absolute; top: 1px; left: 5px; white-space: nowrap; color: var(--ink-4); font-size: var(--fs-xs); }
+.plan-revision-baseline { position: absolute; left: 0; right: 0; top: 46px; height: 2px; background: var(--line-2); }
+.plan-revision-tick { position: absolute; top: 0; height: 48px; border-left: 1px solid var(--line); pointer-events: none; }
+.plan-revision-tick span { position: absolute; top: 1px; left: 5px; white-space: nowrap; color: var(--text-4); font-size: var(--fs-12); }
 .plan-revision-marker {
   position: absolute; top: 24px; width: 7px; height: 32px; margin-left: -3px;
   /* Dense revisions overlap; opaque edges would erase neighboring markers. */
-  background: var(--ink-3); background-clip: padding-box; opacity: .6;
+  background: var(--text-3); background-clip: padding-box; opacity: .6;
   border: 2px solid transparent; border-radius: 2px; cursor: pointer;
 }
 .plan-revision-marker:hover, .plan-revision-marker[data-selected] { background: var(--accent); opacity: 1; z-index: 2; }
 .plan-revision-playhead { position: absolute; top: 0; height: 68px; width: 12px; margin-left: -6px; cursor: ew-resize; background: linear-gradient(90deg, transparent 5px, var(--accent) 5px, var(--accent) 7px, transparent 7px); }
 .plan-revision-playhead span { position: absolute; top: 60px; left: 1px; width: 10px; height: 10px; background: var(--accent); transform: rotate(45deg); }
-.plan-revision-caption { display: flex; justify-content: space-between; gap: 16px; height: calc(var(--fs-xs) * 1.4); line-height: 1.4; white-space: nowrap; color: var(--ink-3); font-size: var(--fs-xs); }
+.plan-revision-caption { display: flex; justify-content: space-between; gap: 16px; height: calc(var(--fs-12) * 1.4); line-height: 1.4; white-space: nowrap; color: var(--text-3); font-size: var(--fs-12); }
 .plan-revision-caption > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.plan-revision-caption > span:last-child { color: var(--ink-4); }
+.plan-revision-caption > span:last-child { color: var(--text-4); }
 .plan-wrap[data-history] .plan-card-head,
 .plan-wrap[data-history] .plan-task,
 .plan-wrap[data-history] .plan-rail-task { cursor: default; }
 
 /* Sprint information stays visible; editing actions share a compact menu. */
 .plan-sprint-info {
-  flex: 0 0 14px; width: 14px; height: 15px; padding: 0;
-  border: 0; border-radius: var(--r-2xs); background: none;
-  font: inherit; font-size: var(--fs-xs); font-weight: 600;
-  color: var(--ink-4); cursor: pointer;
-  text-decoration: underline; text-underline-offset: 2px;
+  flex: 0 0 auto; width: var(--h-sm); height: var(--h-sm); padding: 0;
+  display: inline-grid; place-items: center;
+  border: 0; border-radius: var(--r-sm); background: none;
+  color: var(--text-3); cursor: pointer;
 }
-.plan-sprint-info[data-warning] { color: var(--warn); }
+.plan-sprint-info:hover { color: var(--text); background: var(--surface-3); }
+.plan-sprint-info[data-warning] { color: var(--warning); }
 .plan-sprint-description {
   white-space: pre-wrap;
   max-height: 12em;
   overflow-y: auto;
   padding-bottom: 8px;
   margin-bottom: 8px;
-  border-bottom: 1px solid var(--rule);
+  border-bottom: 1px solid var(--line);
 }
-.plan-sprint-info:focus-visible { outline: 1px solid var(--focus-line); }
+.plan-sprint-info:focus-visible { outline: 1px solid var(--accent); }
 .plan-sprint-menu-button[aria-expanded="true"] { opacity: 1; }
 .plan-sprint-menu {
   position: fixed; z-index: 1300; width: 168px; padding: 4px;
-  background: var(--paper); border: 1px solid var(--rule); border-radius: var(--r-sm);
-  box-shadow: 0 2px 8px rgb(0 0 0 / 0.15);
+  background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-ctl);
+  box-shadow: var(--shadow-float);
 }
 .plan-sprint-menu button {
   display: flex; align-items: center; gap: 6px; width: 100%; padding: 6px;
-  border: 0; border-radius: var(--r-2xs); background: none; color: var(--ink);
-  font: inherit; font-size: var(--fs-xs); text-align: left; cursor: pointer;
+  border: 0; border-radius: var(--r-xs); background: none; color: var(--text);
+  font: inherit; font-size: var(--fs-12); text-align: left; cursor: pointer;
 }
-.plan-sprint-menu button:hover, .plan-sprint-menu button:focus-visible { background: var(--paper-3); }
+.plan-sprint-menu button:hover, .plan-sprint-menu button:focus-visible { background: var(--surface-3); }
 .plan-sprint-menu .plan-sprint-menu-delete { color: var(--danger); }
 
 .plan-sprint-menu-button { width: 14px; }
@@ -939,13 +899,13 @@
 .plan-sprint-outside-list {
   max-height: min(240px, 40dvh); overflow-y: auto;
   margin-top: 10px; margin-right: -12px; padding-right: 8px;
-  border-top: 1px solid var(--rule);
+  border-top: 1px solid var(--line);
   overscroll-behavior: contain; scrollbar-gutter: stable;
 }
-.plan-sprint-outside-list:focus-visible { outline: 1px solid var(--focus-line); outline-offset: 2px; }
+.plan-sprint-outside-list:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; }
 .plan-sprint-outside { padding-top: 8px; white-space: normal; }
-.plan-sprint-outside > strong { color: var(--warn); font-weight: 600; }
+.plan-sprint-outside > strong { color: var(--warning); font-weight: 600; }
 .plan-sprint-outside ul { list-style: none; margin: 4px 0 0; padding: 0; }
-.plan-sprint-outside li { display: flex; flex-direction: column; gap: 2px; padding: 6px 0; color: var(--ink-3); }
-.plan-sprint-outside li + li { border-top: 1px solid var(--rule); }
-.plan-sprint-outside-task { color: var(--ink); font-weight: 500; overflow-wrap: anywhere; }
+.plan-sprint-outside li { display: flex; flex-direction: column; gap: 2px; padding: 6px 0; color: var(--text-3); }
+.plan-sprint-outside li + li { border-top: 1px solid var(--line); }
+.plan-sprint-outside-task { color: var(--text); font-weight: 500; overflow-wrap: anywhere; }

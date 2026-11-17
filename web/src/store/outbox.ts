@@ -3,7 +3,7 @@
 export type OpKind =
   | { kind: 'task.create'; task: import('../types').Task }
   | { kind: 'task.tick'; task_id: string; done: boolean }
-  | { kind: 'task.set_status'; task_id: string; status: 'backlog' | 'todo' | 'in_progress' | 'done' }
+  | { kind: 'task.set_status'; task_id: string; status: 'todo' | 'in_progress' | 'done' }
   | { kind: 'task.set_section'; task_id: string; section: 'now' | 'later' | 'done' | 'someday' | 'recurring' }
   | { kind: 'task.set_assignee'; task_id: string; assignee_id: string | null }
   | { kind: 'task.set_estimate'; task_id: string; estimate_min: number | null }

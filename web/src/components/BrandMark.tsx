@@ -26,7 +26,7 @@ export function BrandMark({ size = 32, className, title }: Props) {
     >
       <defs>
         {/* Brand gradient stays inside the cyan accent family —
-            --accent (#0891B2) → --accent-line (#67E8F9) — so the mark
+            --accent (#0891B2) → --accent-2 (#67E8F9) — so the mark
             reads as part of the same palette as the rest of the UI. */}
         <linearGradient id={gid} x1="50%" y1="0%" x2="50%" y2="100%">
           <stop offset="0%" stopColor="#0891B2" />

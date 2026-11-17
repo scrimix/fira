@@ -410,10 +410,10 @@ export default function App() {
           .links.some((l) => l.direction === 'received' && l.status === 'pending');
         if (!sticky) useFira.getState().closeLinkModal();
       }
-      if (e.key === 'g') useFira.getState().setView('calendar');
+      if (e.key === 'g') { useFira.getState().setView('calendar'); useFira.getState().setProjectScope(null); }
       if (e.key === 'i') useFira.getState().setView('list');
       if (e.key === 'd') useFira.getState().setView('dashboard');
-      if (e.key === 'p') useFira.getState().setView('plan');
+      if (e.key === 'p') { useFira.getState().setView('plan'); useFira.getState().setProjectScope(null); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -421,10 +421,10 @@ export default function App() {
 
   if (error) {
     return (
-      <div style={{ padding: 24, fontFamily: 'var(--font-mono)' }}>
+      <div style={{ padding: 24, fontVariantNumeric: 'tabular-nums' }}>
         <h2 style={{ color: 'var(--danger)' }}>Failed to load</h2>
         <pre>{error}</pre>
-        <p style={{ color: 'var(--ink-3)' }}>
+        <p style={{ color: 'var(--text-3)' }}>
           Is the API running? Try <code>docker compose up api</code>.
         </p>
       </div>
@@ -433,7 +433,7 @@ export default function App() {
 
   if (!authChecked) {
     return (
-      <div style={{ padding: 24, color: 'var(--ink-3)', fontFamily: 'var(--font-mono)', fontSize: 'calc(12px * var(--fs-scale))' }}>
+      <div style={{ padding: 24, color: 'var(--text-3)', fontVariantNumeric: 'tabular-nums', fontSize: 'var(--fs-13)' }}>
         loading…
       </div>
     );
@@ -445,7 +445,7 @@ export default function App() {
 
   if (!loaded) {
     return (
-      <div style={{ padding: 24, color: 'var(--ink-3)', fontFamily: 'var(--font-mono)', fontSize: 'calc(12px * var(--fs-scale))' }}>
+      <div style={{ padding: 24, color: 'var(--text-3)', fontVariantNumeric: 'tabular-nums', fontSize: 'var(--fs-13)' }}>
         loading…
       </div>
     );

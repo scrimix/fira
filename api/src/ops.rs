@@ -306,7 +306,7 @@ pub struct TrackInput {
 }
 
 fn default_track_color() -> String {
-    "#334155".into()
+    "#6E7A8F".into()
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -712,7 +712,7 @@ pub async fn apply_payload(
             .bind(&task.title)
             .bind(&task.description_md)
             .bind(&task.section)
-            .bind(&task.status)
+            .bind(normalize_status(&task.status))
             .bind(&task.priority)
             .bind(&task.source)
             .bind(&task.external_id)
@@ -769,7 +769,7 @@ pub async fn apply_payload(
                  WHERE id = $1",
             )
             .bind(task_id)
-            .bind(&status)
+            .bind(normalize_status(&status))
             .execute(&mut **tx)
             .await?;
         }
@@ -1660,4 +1660,10 @@ pub(crate) async fn record_fixture_op(
     .execute(&mut **tx)
     .await?;
     Ok(())
+}
+
+/// "backlog" was dropped (migration 0041); older clients may still send
+/// it. Read it as "todo", the same way the CLI always has.
+fn normalize_status(status: &str) -> &str {
+    if status == "backlog" { "todo" } else { status }
 }

@@ -1,15 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Check, MoreVertical, Pencil, Play, Plus, Terminal, Trash2 } from 'lucide-react';
+import { Check, Plus } from 'lucide-react';
 import type { PlanSprint, PlanTask } from '../plan';
 import type { UUID } from '../types';
-import { createPortal } from 'react-dom';
-import { fmtMin } from '../time';
-import { ClickTooltip } from './ClickTooltip';
-import { useFira } from '../store';
-
-const outsideDate = (ms: number) => new Date(ms).toLocaleString(undefined, {
-  day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
-});
 
 export const PLAN_TASK_MIME = 'application/x-fira-plan-task';
 
@@ -48,16 +40,11 @@ interface Props {
 
 export function PlanSprintCard({
   sprint, showTasks, onTick, onRemoveTask, onAddTask, onOpenTask, onReorderTask,
-  onRename, onEdit, onDelete, parkedCount = 0, onMoveToNow, onDropTask, onMovePointerDown, onResizePointerDown,
+  onEdit, onDropTask, onMovePointerDown, onResizePointerDown,
   dragging,
 }: Props) {
-  // Not part of the plan snapshot (history doesn't replay it), so read
-  // live and show it only where the live information is shown.
-  const description = useFira(s => s.sprints.find(x => x.id === sprint.id)?.description_md?.trim() ?? '');
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState('');
-  const [renaming, setRenaming] = useState(false);
-  const [titleDraft, setTitleDraft] = useState(sprint.title);
   const [over, setOver] = useState(false);
   const [taskDrop, setTaskDrop] = useState<{ id: UUID; before: boolean } | null>(null);
   const taskDropRef = useRef<typeof taskDrop>(null);
@@ -74,48 +61,9 @@ export function PlanSprintCard({
       document.removeEventListener('drop', clear);
     };
   }, []);
-  const [menuRect, setMenuRect] = useState<DOMRect | null>(null);
-  const menuButton = useRef<HTMLButtonElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!menuRect) return;
-    menuRef.current?.querySelector('button')?.focus({ preventScroll: true });
-    const outside = (event: Event) => {
-      const target = event.target as Node;
-      if (!menuRef.current?.contains(target) && !menuButton.current?.contains(target)) setMenuRect(null);
-    };
-    const close = () => setMenuRect(null);
-    document.addEventListener('pointerdown', outside);
-    // Safari can blur a tapped button before click without focusing a
-    // replacement. Close on a real focus destination outside the menu.
-    document.addEventListener('focusin', outside);
-    window.addEventListener('scroll', close, true);
-    window.addEventListener('resize', close);
-    return () => {
-      document.removeEventListener('pointerdown', outside);
-      document.removeEventListener('focusin', outside);
-      window.removeEventListener('scroll', close, true);
-      window.removeEventListener('resize', close);
-    };
-  }, [menuRect]);
-  useEffect(() => { if (!onRename && !onDelete) setMenuRect(null); }, [onRename, onDelete]);
-  const info = sprint.information;
-  const information = !info ? 'Task estimates and time blocks are unavailable in historical snapshots.' : [
-    `Load: ${fmtMin(Math.round(info.estimatedMinutes))} estimated / ${fmtMin(info.capacityMinutes)} capacity (${Math.round(info.estimatedMinutes / info.capacityMinutes * 100)}%)`,
-    'Capacity: 40 hours per week, for the full sprint.',
-    ...(info.missingEstimates ? [`${info.missingEstimates} task${info.missingEstimates === 1 ? '' : 's'} without estimates.`] : []),
-    ...(info.hasPrivateTime ? ['Private time excluded; full sprint time is unavailable.'] : []),
-    ...(info.outsideBlocks ? [
-      `${info.ownTimeOnly ? 'Visible time: ' : ''}${info.outsideBlocks} block${info.outsideBlocks === 1 ? '' : 's'} outside the sprint across ${info.outsideTasks} task${info.outsideTasks === 1 ? '' : 's'}.`,
-      `Logged ${info.ownTimeOnly ? 'visible time ' : ''}outside: ${fmtMin(Math.round(info.loggedOutsideMinutes))}. Scheduled ${info.ownTimeOnly ? 'visible time ' : ''}outside: ${fmtMin(Math.round(info.plannedOutsideMinutes))}.`,
-    ] : [info.ownTimeOnly ? 'No visible time blocks outside the sprint.' : 'No time blocks outside the sprint.']),
-  ].join('\n');
   const addRef = useRef<HTMLInputElement>(null);
-  const renameRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { if (adding) addRef.current?.focus(); }, [adding]);
-  useEffect(() => { if (renaming) renameRef.current?.focus(); }, [renaming]);
-  useEffect(() => { setTitleDraft(sprint.title); }, [sprint.title]);
 
   const commitAdd = () => {
     const t = draft.trim();
@@ -125,11 +73,14 @@ export function PlanSprintCard({
     addRef.current?.focus();
   };
 
-  const commitRename = () => {
-    const t = titleDraft.trim();
-    setRenaming(false);
-    if (t && t !== sprint.title && onRename) onRename(t);
-    else setTitleDraft(sprint.title);
+  // The header is the move handle, so a click only opens the sprint when
+  // the pointer didn't travel (a drag ends in a click on the same node).
+  const downAt = useRef<{ x: number; y: number } | null>(null);
+  const openFromHead = (e: React.MouseEvent) => {
+    const d = downAt.current;
+    downAt.current = null;
+    if (!onEdit || (d && Math.hypot(e.clientX - d.x, e.clientY - d.y) > 4)) return;
+    onEdit();
   };
 
   return (
@@ -170,94 +121,14 @@ export function PlanSprintCard({
                onPointerDown={(e) => onResizePointerDown(e, 'end')} />
         </>
       )}
-      <div className="plan-card-head" onPointerDown={onMovePointerDown}>
-        <span className="plan-badge">{sprint.code}</span>
-        {renaming ? (
-          <input
-            ref={renameRef}
-            className="plan-card-title-input"
-            value={titleDraft}
-            onChange={(e) => setTitleDraft(e.target.value)}
-            onBlur={commitRename}
-            onPointerDown={(e) => e.stopPropagation()}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') commitRename();
-              if (e.key === 'Escape') { setTitleDraft(sprint.title); setRenaming(false); }
-            }}
-          />
-        ) : (
-          // Plain text, not a button. The header is the move handle and
-          // the title fills most of it, so anything click-to-edit here
-          // fights the drag: either the title swallows pointerdown and
-          // the card won't move from the place everyone grabs it, or it
-          // doesn't and every short drag ends in an edit box. Renaming
-          // gets its own target instead.
-          <span className="plan-card-title" title={sprint.title}>
-            {sprint.title}
-          </span>
-        )}
-        {<button ref={menuButton} type="button"
-          className="plan-card-btn plan-sprint-menu-button" aria-label="Sprint actions" title="Sprint actions"
-          aria-haspopup="menu" aria-expanded={!!menuRect}
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={() => setMenuRect(menuRect ? null : menuButton.current!.getBoundingClientRect())}>
-          <MoreVertical size={13} strokeWidth={1.75} />
-        </button>}
-        <ClickTooltip className="plan-sprint-info" warning={!!info?.outsideBlocks || !!info?.hasPrivateTime}
-          label="Sprint information" trigger="?">
-          {info && description && <div className="plan-sprint-description">{description}</div>}
-          <div>{information}</div>
-          {!!info?.outsidePortions.length && <div className="plan-sprint-outside-list"
-            tabIndex={0} role="region" aria-label="Time outside sprint">
-          {(['before', 'after'] as const).map(side => {
-            const portions = info?.outsidePortions.filter(portion => portion.side === side) ?? [];
-            return portions.length > 0 && <section className="plan-sprint-outside" key={side}>
-              <strong>{side === 'before' ? 'Before sprint' : 'After sprint'}</strong>
-              <ul>{portions.map((portion, index) => <li key={`${portion.blockId}-${index}`}>
-                <span className="plan-sprint-outside-task">{portion.taskTitle}</span>
-                <span>{portion.state === 'completed' ? 'Logged' : 'Scheduled'} · {fmtMin(Math.round((portion.to - portion.from) / 60_000))}</span>
-                <span>{outsideDate(portion.from)} – {outsideDate(portion.to)}</span>
-              </li>)}</ul>
-            </section>;
-          })}
-          </div>}
-        </ClickTooltip>
+      <div className="plan-card-head"
+           data-openable={onEdit ? true : undefined}
+           title={onEdit ? 'Open sprint' : undefined}
+           onPointerDown={(e) => { downAt.current = { x: e.clientX, y: e.clientY }; onMovePointerDown?.(e); }}
+           onClick={openFromHead}>
+        <span className="plan-card-dot" aria-hidden />
+        <span className="plan-card-title" title={sprint.title}>{sprint.title}</span>
       </div>
-
-      {menuRect && createPortal(<div ref={menuRef}
-        className="plan-sprint-menu" role="menu" aria-label="Sprint actions"
-        style={{ left: Math.max(8, Math.min(menuRect.right - 168, window.innerWidth - 176)),
-          top: menuRect.bottom + 132 < window.innerHeight ? menuRect.bottom + 4 : Math.max(8, menuRect.top - 132) }}
-        onPointerDown={(e) => e.stopPropagation()}
-        onKeyDown={(e) => {
-          if (e.key === 'Escape') { e.stopPropagation(); setMenuRect(null); menuButton.current?.focus(); }
-          if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-            e.preventDefault(); e.stopPropagation();
-            const items = [...e.currentTarget.querySelectorAll<HTMLButtonElement>('button')];
-            const index = items.indexOf(document.activeElement as HTMLButtonElement);
-            items[(index + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length]?.focus();
-          }
-        }}>
-        {onEdit && <button role="menuitem" onClick={() => { setMenuRect(null); onEdit(); }}>
-          <Pencil size={12} /> Edit sprint
-        </button>}
-        {!onEdit && onRename && <button role="menuitem" onClick={() => { setMenuRect(null); setRenaming(true); }}>
-          <Pencil size={12} /> Rename sprint
-        </button>}
-        {onMoveToNow && parkedCount > 0 && <button role="menuitem" onClick={() => { setMenuRect(null); onMoveToNow(); }}>
-          <Play size={12} /> Move {parkedCount} {parkedCount === 1 ? 'task' : 'tasks'} to Now
-        </button>}
-        {/* The sprint id has no other place in the UI; task-cli needs
-            it to bring the sprint into a repository. */}
-        <button role="menuitem" onClick={() => {
-          setMenuRect(null);
-          void navigator.clipboard?.writeText(`task-cli import fira ${sprint.id}`);
-        }}>
-          <Terminal size={12} /> Copy import command
-        </button>
-        {onDelete && <button role="menuitem" className="plan-sprint-menu-delete"
-          onClick={() => { setMenuRect(null); onDelete(); }}><Trash2 size={12} /> Delete sprint</button>}
-      </div>, document.body)}
 
       {showTasks && (
         <ul className="plan-card-tasks"
@@ -356,6 +227,8 @@ function PlanCardTask({ task, onTick, onRemove, onOpen, drop }: {
       data-task-id={task.id}
       data-section={task.section}
       data-drop={drop}
+      // Editable boards only. Dragging to the rail unplans the task;
+      // the task modal's Sprint field does the same.
       draggable={onRemove != null}
       onDragStart={(e) => {
         e.currentTarget.dataset.planTaskSource = 'true';
@@ -377,21 +250,6 @@ function PlanCardTask({ task, onTick, onRemove, onOpen, drop }: {
         {task.done && <Check size={10} strokeWidth={2.5} />}
       </button>
       <span className="plan-task-title">{task.title}</span>
-      {/* An arrow back toward the rail, not a cross. This does not
-          delete anything — it clears `sprint_id`, the task returns to
-          the rail on the left, and dragging it back undoes it. A cross
-          means "destroy" everywhere else in the app, which is exactly
-          the gesture the board deliberately does NOT offer; task
-          deletion stays in the task modal behind its own confirm. */}
-      {onRemove && (
-        <button
-          className="plan-task-x"
-          title="Unplan — move back to the rail"
-          onClick={(e) => { e.stopPropagation(); onRemove(task.id); }}
-        >
-          <ArrowLeft size={11} strokeWidth={2} />
-        </button>
-      )}
     </li>
   );
 }

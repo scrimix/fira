@@ -10,12 +10,9 @@
 // First run needs a Chromium binary: `pnpm exec playwright install chromium`
 // (and, on a bare Linux box, `sudo pnpm exec playwright install-deps chromium`).
 //
-// Appearance is two independent axes — theme (palette) and style
-// (shape/density) — so the sweep below walks the combinations that
-// matter rather than a single "dark" pass. Extend it for a new styling
-// task by adding another `await page...` block + `shot()` call, or
-// another entry in COMBOS; it's a plain Playwright script, not a
-// framework.
+// The sweep walks both themes (light and dark). Extend it for a new
+// styling task by adding another `await page...` block + `shot()` call;
+// it's a plain Playwright script, not a framework.
 
 import { chromium } from 'playwright';
 import { mkdirSync } from 'node:fs';
@@ -26,13 +23,8 @@ const OUT_DIR = process.env.VISUAL_CHECK_OUT ?? 'scripts/visual-check-out';
 mkdirSync(OUT_DIR, { recursive: true });
 const shot = (name) => `${OUT_DIR}/${name}.png`;
 
-// [theme, style] pairs. classic/classic is the untouched baseline — worth
-// shooting so a regression there is as visible as one in a new combo.
-const COMBOS = [
-  ['classic', 'classic'],
-  ['classic', 'modern'],
-  ['dark', 'modern'],
-];
+// Theme picker labels, as shown in the account modal.
+const THEMES = ['Light', 'Dark'];
 
 const browser = await chromium.launch({ args: ['--no-sandbox'] });
 const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
@@ -55,23 +47,19 @@ await page.waitForSelector('button.login-playground', { timeout: 15000 });
 await page.click('button.login-playground');
 await page.waitForSelector('.avatar', { timeout: 15000 });
 
-// The two segmented pickers live side by side in the account modal's
-// Appearance section and share their option labels ("classic"), so scope
-// each click to its own group by aria-label.
-async function setAppearance(theme, style) {
+async function setAppearance(theme) {
   await page.click('button[aria-label="Account settings"]');
   await page.waitForSelector('text=Appearance', { timeout: 10000 });
   await page.click(`[aria-label="Theme"] button:has-text("${theme}")`);
-  await page.click(`[aria-label="Style"] button:has-text("${style}")`);
   await page.waitForTimeout(200);
-  await page.screenshot({ path: shot(`account-modal-${theme}-${style}`) });
+  await page.screenshot({ path: shot(`account-modal-${theme.toLowerCase()}`) });
   await page.click('button[aria-label="Close"]');
   await page.waitForTimeout(300);
 }
 
-for (const [theme, style] of COMBOS) {
-  const tag = `${theme}-${style}`;
-  await setAppearance(theme, style);
+for (const theme of THEMES) {
+  const tag = theme.toLowerCase();
+  await setAppearance(theme);
 
   // Calendar first — it's the default view after login.
   await page.click('.sidebar .nav-btn', { timeout: 5000 }).catch(() => {});
@@ -248,12 +236,9 @@ if (process.env.VISUAL_CHECK_HISTORY === '1') {
   await historyPage.getByRole('button', { name: 'Next revision', exact: true }).click();
   must(await picker.inputValue() === String(revision.seq), 'Next change did not restore the exact revision');
   await waitRevision(revision.seq);
-  for (const [theme, style] of COMBOS) {
-    await historyPage.evaluate(({ theme, style }) => {
-      document.documentElement.dataset.theme = theme;
-      document.documentElement.dataset.style = style;
-    }, { theme, style });
-    await historyPage.screenshot({ path: shot(`plan-history-${theme}-${style}`) });
+  for (const theme of ['classic', 'dark']) {
+    await historyPage.evaluate((t) => { document.documentElement.dataset.theme = t; }, theme);
+    await historyPage.screenshot({ path: shot(`plan-history-${theme}`) });
   }
   const axis = historyPage.getByRole('slider', { name: 'Scrub plan history', exact: true });
   const box = await axis.boundingBox();

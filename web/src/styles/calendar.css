@@ -23,118 +23,75 @@
   overflow: hidden;
 }
 .cal-toolbar {
-  border-bottom: 1px solid var(--rule-chrome);
+  border-bottom: 1px solid var(--line);
   display: flex;
   align-items: center;
   gap: var(--bar-gap);
-  padding: var(--bar-pad-t) var(--gutter-x) var(--bar-pad-b);
-  font-family: var(--font-mono);
-  font-size: var(--fs-sm);
+  height: var(--bar-h);
+  box-sizing: border-box;
+  padding: 0 var(--gutter-x);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-13);
 }
 .cal-toolbar { white-space: nowrap; }
-.calendar .cal-toolbar,
-.calendar .rail-head { padding-left: var(--task-rail-inset); }
+/* Toolbar uses the shared --gutter-x like the top bar above it. */
+.calendar .rail-head { gap: 8px; }
 .cal-toolbar > * { flex-shrink: 0; }
 .cal-toolbar .week-label { font-weight: 500; white-space: nowrap; }
+/* Stepper / pager: one bordered 32px group with inner dividers. */
 :is(.cal-toolbar, .plan-revision-toolbar) .week-nav {
   display: inline-flex;
   align-items: stretch;
-  border: 1px solid var(--rule-2);
-  border-radius: var(--r-sm);
-  /* Segments share collapsed borders; clipping rounds the pair's outer
-   * corners without giving each button its own radius. */
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-ctl);
   overflow: hidden;
-  background: var(--paper);
+  background: transparent;
 }
 :is(.cal-toolbar, .plan-revision-toolbar) .week-nav-btn {
-  padding: 0 8px;
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-  color: var(--ink-3);
+  padding: 0 10px;
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-13);
+  font-weight: 500;
+  color: var(--text);
   cursor: pointer;
   background: transparent;
   border: 0;
-  border-right: 1px solid var(--rule-2);
-  height: 22px;
+  border-right: 1px solid var(--line-2);
+  height: calc(var(--h-ctl) - 2px);
+  min-width: calc(var(--h-ctl) - 2px);
   display: inline-grid;
   place-items: center;
+  transition: background-color var(--t-hover) ease-out;
 }
+:is(.cal-toolbar, .plan-revision-toolbar) .week-nav-btn svg { color: var(--text-2); }
 :is(.cal-toolbar, .plan-revision-toolbar) .week-nav-btn:last-child { border-right: 0; }
-:is(.cal-toolbar, .plan-revision-toolbar) .week-nav-btn:hover { color: var(--ink); background: var(--paper-3); }
-.cal-toolbar .week-nav-btn.week-nav-today { letter-spacing: 0.06em; text-transform: uppercase; font-size: calc(10px * var(--fs-scale)); }
-.cal-toolbar .week-nav-btn.week-nav-today[data-active="true"] {
-  color: var(--accent);
-  background: var(--accent-soft);
-}
+:is(.cal-toolbar, .plan-revision-toolbar) .week-nav-btn:hover { background: var(--surface-3); }
+.cal-toolbar .week-nav-btn.week-nav-today { padding: 0 12px; }
+.cal-toolbar .week-nav-btn.week-nav-today[data-active="true"] { color: var(--text); }
+/* Person selector: same shell as a select — --surface-2, 32px, chevron. */
 .cal-toolbar .user-picker {
   position: relative;
-  /* One extra gap marks the break between the week nav and the person
-   * cluster; the bar's own gap covers the rest. */
   margin-left: var(--bar-gap);
   display: inline-flex;
-  align-items: center;
-  border: 1px solid var(--rule-2);
-  border-radius: var(--r-sm);
-  /* The search popover is absolutely positioned below this group, so the
-   * container must not clip it. The shared border still groups the pills. */
-  overflow: visible;
-  background: var(--paper);
-  height: 24px;
 }
-.cal-toolbar .user-pill {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 0 6px 0 4px;
-  height: 100%;
-  line-height: 1;
-  font-family: var(--font-sans);
-  font-size: var(--fs-xs);
-  color: var(--ink-3);
-  cursor: pointer;
-  user-select: none;
-  letter-spacing: 0;
-  border-right: 1px solid var(--rule-2);
+.person-select {
+  display: inline-flex; align-items: center; gap: 8px;
+  height: var(--h-ctl);
+  box-sizing: border-box;
+  padding: 0 10px; /* same as the other dropdowns, now there's no avatar */
+  border: 1px solid transparent;
+  border-radius: var(--r-ctl);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: var(--fs-13);
+  font-weight: 500;
+  transition: border-color var(--t-hover) ease-out;
 }
-.cal-toolbar .user-pill .avatar { width: 16px; height: 16px; font-size: calc(8px * var(--fs-scale)); }
-.cal-toolbar .user-pill:last-child { border-right: 0; }
-.cal-toolbar .user-pill:hover { color: var(--ink); background: var(--paper-3); }
-.cal-toolbar .user-pill[data-active="true"] {
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-.cal-toolbar .user-pill[data-active="true"] .avatar {
-  border-color: var(--accent-line);
-}
-.cal-toolbar .user-pill .user-name { font-weight: 500; }
-.cal-toolbar .user-pill.add-pill {
-  padding: 0 8px;
-  color: var(--ink-3);
-  cursor: pointer;
-}
-.cal-toolbar .user-pill.add-pill:hover { color: var(--ink); background: var(--paper-3); }
-.cal-toolbar .user-pill.tab-pill {
-  cursor: pointer;
-  padding: 0 4px;
-}
-.cal-toolbar .user-pill.tab-pill:hover { background: var(--paper-3); }
-.cal-toolbar .user-pill.tab-pill[data-active="true"] {
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-.cal-toolbar .user-pill.tab-pill[data-active="true"] .avatar {
-  border-color: var(--accent-line);
-}
-.user-pill-x {
-  display: inline-grid; place-items: center;
-  width: 14px; height: 14px;
-  margin-left: 2px;
-  color: inherit;
-  cursor: pointer;
-  background: transparent;
-  opacity: 0.6;
-  border: 0;
-  padding: 0;
-}
-.user-pill-x:hover { opacity: 1; color: var(--danger); }
+.person-select:hover { border-color: var(--line-2); }
+.person-select[data-open] { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); }
+.person-select-name { max-width: 16ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.person-select-chevron { color: var(--text-3); }
+.user-row-check { color: var(--text-2); }
 .user-row {
   grid-template-columns: 22px 1fr auto;
 }
@@ -143,9 +100,9 @@
   position: absolute;
   top: calc(100% + 4px);
   width: 220px;
-  background: var(--paper);
-  border: 1px solid var(--rule-3);
-  border-radius: var(--r-md);
+  background: var(--bg);
+  border: 1px solid var(--line-3);
+  border-radius: var(--r-card);
   box-shadow: var(--e-float);
   /* Rows paint edge-to-edge hover backgrounds, so clip them to the
    * container's corners rather than rounding each one. */
@@ -154,39 +111,25 @@
   display: flex;
   flex-direction: column;
 }
+.user-popover { background: var(--surface); border-color: var(--line-2); box-shadow: var(--shadow-float); padding: 4px; }
 .user-popover[data-align="right"] { right: 0; }
 .user-popover[data-align="left"]  { left: 0; }
-/* Compact row: stack name + email vertically. The narrower popover would
- * clip the side-by-side layout. */
-.user-popover .user-row {
-  grid-template-columns: 22px 1fr;
-  grid-template-rows: auto auto;
-  row-gap: 0;
-}
-.user-popover .user-row .avatar { grid-row: 1 / span 2; }
-.user-popover .user-row .user-row-name {
-  grid-column: 2; grid-row: 1;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.user-popover .user-row .user-row-email {
-  grid-column: 2; grid-row: 2;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
+.user-popover .user-row { grid-template-columns: 20px 1fr auto; }
+.user-popover .user-row .user-row-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .user-search {
   font: inherit;
-  font-size: var(--fs-sm);
-  padding: 8px 10px;
+  font-size: var(--fs-13);
+  height: var(--h-ctl);
+  padding: 0 10px;
+  margin-bottom: 4px;
   border: 0;
-  border-bottom: 1px solid var(--rule);
+  border-radius: var(--r-sm);
   outline: 0;
-  background: var(--paper);
-  color: var(--ink);
+  background: var(--surface-2);
+  color: var(--text);
 }
-.user-search:focus { border-bottom-color: var(--focus-line); }
+.user-search::placeholder { color: var(--text-3); }
+.user-search:focus { border-bottom-color: var(--accent); }
 .user-list {
   max-height: 280px;
   overflow: auto;
@@ -194,9 +137,9 @@
 }
 .user-empty {
   padding: 12px;
-  color: var(--ink-4);
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-12);
   text-align: center;
 }
 .user-row {
@@ -204,51 +147,46 @@
   grid-template-columns: 22px 1fr auto;
   align-items: center;
   gap: 8px;
-  padding: 6px 10px;
+  padding: 6px 8px;
   width: 100%;
+  border-radius: var(--r-sm);
   text-align: left;
   cursor: pointer;
-  background: var(--paper);
-  font-size: var(--fs-sm);
-  color: var(--ink);
+  background: transparent;
+  font-size: var(--fs-13);
+  color: var(--text);
 }
-.user-row[data-active="true"] { background: var(--paper-3); }
-.user-row[data-selected="true"] {
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-.user-row[data-selected="true"][data-active="true"] {
-  background: color-mix(in oklab, var(--accent-soft) 70%, var(--paper-3));
-}
+.user-row[data-active="true"] { background: var(--surface-3); }
+.user-row[data-selected="true"] { background: var(--surface-3); }
 .user-row-name { font-weight: 500; }
-.user-row-you { color: var(--ink-4); font-weight: 400; }
+.user-row-you { color: var(--text-3); font-weight: 400; }
 .user-row-email {
-  font-family: var(--font-mono);
-  font-size: calc(10px * var(--fs-scale));
-  color: var(--ink-4);
+  font-size: var(--fs-12);
+  color: var(--text-3);
 }
 /* Shared totals styling — render in three places: the calendar
  * toolbar (legacy/none now), the rail head (desktop), and a
  * mobile-only strip above the calendar grid. The position-specific
  * rules below tweak alignment/visibility per slot. */
+/* Stats: label-and-value groups. Value 14/600 in --text, label 11px
+ * --text-3 above it. Values are never individually coloured. */
 .totals {
   display: flex;
-  gap: 14px;
-  color: var(--ink-3);
-  font-size: var(--fs-xs);
+  gap: 20px;
+  color: var(--text-3);
+  font-size: var(--fs-11);
   white-space: nowrap;
-  font-family: var(--font-mono);
-}
-.totals span { white-space: nowrap; }
-.totals strong {
-  font-weight: 500;
   font-variant-numeric: tabular-nums;
-  margin-right: 2px;
 }
-.totals .totals-done strong    { color: var(--done); }
-.totals .totals-planned strong { color: var(--accent); }
-.totals .totals-est strong     { color: var(--ink-2); }
-.totals .totals-total strong   { color: var(--ink); }
+.totals > span { display: inline-flex; flex-direction: column; gap: 2px; white-space: nowrap; }
+.totals .totals-label { font-size: var(--fs-11); color: var(--text-3); line-height: 1.2; }
+.totals strong {
+  font-size: var(--fs-14);
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
 
 /* Inline copy lives in the toolbar at the right; strip copy lives
  * below the toolbar. Exactly one is visible at a time — the inline
@@ -260,7 +198,7 @@
 .cal-totals-strip {
   display: none;
   padding: 6px 12px;
-  border-bottom: 1px solid var(--rule-chrome);
+  border-bottom: 1px solid var(--line);
 }
 @media (max-width: 700px) {
   .cal-totals-inline { display: none; }
@@ -295,57 +233,61 @@
 .cal-headcorner {
   position: sticky; top: 0; left: 0;
   z-index: 5;
-  background: var(--paper);
-  border-bottom: 1px solid var(--rule-chrome);
-  border-right: 1px solid var(--rule);
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+  border-right: 1px solid var(--line);
   height: var(--topbar-h);
 }
+/* Day header: day name · date · planned total (right). */
 .cal-dayhead {
   position: sticky; top: 0;
   z-index: 4;
-  background: var(--paper);
-  border-bottom: 1px solid var(--rule-chrome);
-  border-right: 1px solid var(--rule);
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+  border-right: 1px solid var(--line-soft);
   height: var(--topbar-h);
-  padding: 6px calc(10px * var(--density));
+  padding: 0 10px;
   display: flex;
-  flex-direction: column;
-  justify-content: center;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
 }
 .cal-dayhead .dow {
-  font-family: var(--font-label);
-  /* Deliberately outside --label-size: the day band is chrome and was
-   * already outsized next to the grid it labels. */
-  font-size: calc(10px * var(--fs-scale));
-  letter-spacing: calc(0.1em * var(--label-track));
-  text-transform: var(--label-case);
-  color: var(--ink-3);
+  font-size: var(--fs-13);
+  color: var(--text-3);
 }
 .cal-dayhead .dnum {
-  font-family: var(--font-mono);
-  font-size: calc(13px * var(--fs-scale));
-  font-weight: 500;
+  display: inline-grid;
+  place-items: center;
+  height: 24px;
+  border-radius: var(--r-full);
+  font-size: var(--fs-14);
+  font-weight: 600;
+  color: var(--text);
   font-variant-numeric: tabular-nums;
 }
-.cal-dayhead[data-today="true"] {
-  background: var(--accent-soft);
-  box-shadow: inset 0 -2px 0 var(--accent);
+.cal-dayhead .dtotal {
+  margin-left: auto;
+  font-size: var(--fs-11);
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
-.cal-dayhead[data-today="true"] .dow,
-.cal-dayhead[data-today="true"] .dnum { color: var(--accent); }
-.cal-dayhead[data-weekend="true"] { background: var(--panel); }
+.cal-dayhead[data-today="true"] .dow { color: var(--text); }
+.cal-dayhead[data-today="true"] .dnum { min-width: 24px; padding: 0 4px; box-sizing: border-box; background: var(--danger); color: var(--accent-fg); }
+.cal-dayhead[data-weekend="true"] { background: var(--weekend); }
 /* The last day borders the grid scrollbar. Modern leaves that edge open so
  * the grid ends cleanly against the track. */
-:root[data-style="modern"] .cal-dayhead[data-day-idx="6"],
-:root[data-style="modern"] .cal-daycol[data-day-idx="6"] { border-right: 0; }
+.cal-dayhead[data-day-idx="6"],
+.cal-daycol[data-day-idx="6"] { border-right: 0; }
 
-.cal-gutter { border-right: 1px solid var(--rule); position: relative; }
+.cal-gutter { border-right: 1px solid var(--line); position: relative; }
 .cal-gutter-hour {
   height: var(--hour-h, 56px);
   position: relative;
-  font-family: var(--font-mono);
-  font-size: calc(10px * var(--fs-scale));
-  color: var(--ink-4);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-11);
+  color: var(--text-3);
   text-align: right;
   padding-right: 6px;
 }
@@ -353,65 +295,64 @@
   content: attr(data-label);
   position: absolute;
   top: -6px; right: 6px;
-  background: var(--paper);
+  background: var(--bg);
   padding: 0 2px;
 }
 
 .cal-daycol {
-  border-right: 1px solid var(--rule);
+  border-right: 1px solid var(--line-soft);
   position: relative;
-  background: var(--paper);
+  background: var(--bg);
 }
-.cal-daycol[data-weekend="true"] { background: var(--panel); }
-.cal-daycol[data-today="true"]::after {
-  content: '';
-  position: absolute; left: 0; top: 0; bottom: 0;
-  width: 1px; background: var(--accent);
-  pointer-events: none;
-  z-index: 2;
-}
+.cal-daycol[data-weekend="true"] { background: var(--weekend); }
 
 .cal-hourline {
   position: absolute;
   left: 0; right: 0;
-  border-top: 1px solid var(--rule);
+  border-top: 1px solid var(--line-soft);
   pointer-events: none;
 }
 .cal-halfhourline {
   position: absolute;
   left: 0; right: 0;
-  border-top: 1px dashed var(--rule);
-  opacity: 0.5;
+  border-top: 1px dashed var(--line-soft);
+  opacity: 0.6;
   pointer-events: none;
 }
 
+/* Current time: 2px --danger line with an 8px dot. */
 .cal-nowline {
   position: absolute;
   left: 0; right: 0;
-  border-top: 1px solid var(--accent);
+  border-top: 2px solid var(--danger);
   z-index: 3;
   pointer-events: none;
 }
 .cal-nowline::before {
   content: '';
   position: absolute;
-  left: -3px; top: -3px;
-  width: 6px; height: 6px;
-  background: var(--accent);
+  left: -4px; top: -5px;
+  width: 8px; height: 8px;
+  background: var(--danger);
   border-radius: 50%;
 }
 
+/* Task time block — the §3 colour formula: project colour at
+ * --tint-fill / --tint-line alpha, --text on top. Radius 6, 1px border,
+ * inset 3px from the column edges (set inline). */
 .tblock {
+  --c: var(--proj-color, var(--text-3));
   position: absolute;
-  left: 1px; right: 1px;
-  border: 1px solid var(--proj-color, var(--ink));
-  background: color-mix(in oklab, var(--proj-color, var(--ink)) 14%, var(--paper));
-  border-left: 3px solid var(--proj-color, var(--ink));
-  border-radius: max(3px, var(--r-sm));
-  box-shadow: var(--e-rest);
-  padding: 4px 6px 4px 7px;
-  font-size: var(--fs-xs);
-  color: var(--ink);
+  left: 3px; right: 3px;
+  border: 1px solid color-mix(in oklab, var(--c) var(--tint-line), transparent);
+  /* Mixed with transparent, not --bg: the hour grid shows through.
+     Over another event (gcal, linked/overlay blocks) the tint gets an
+     opaque --bg base so that event's text doesn't bleed through. */
+  background: color-mix(in oklab, var(--c) var(--tint-fill), transparent);
+  border-radius: var(--r-sm);
+  padding: 4px 8px;
+  font-size: var(--fs-12);
+  color: var(--text);
   cursor: grab;
   overflow: hidden;
   display: flex;
@@ -420,34 +361,14 @@
   z-index: 2;
   user-select: none;
   -webkit-user-select: none;
+  transition: border-color var(--t-hover) ease-out;
   /* `touch-action: pan-y` lets a single-finger swipe over a block scroll
    * the calendar normally — short-press + move = scroll. The block's
-   * own drag is gated on a 220 ms long-press, so the user has to hold
-   * still long enough to commit to "drag this block" before the gesture
-   * starts. Once the long-press fires, the .cal-grid-wrap-level
-   * `touchmove` listener flips to preventDefault (see `freezeBlockDrag`
-   * in CalendarView) so the in-flight drag isn't pulled out from under
-   * us by an iOS scroll commit. The always-on / branch-on-flag pattern
-   * matches the rail-task → calendar drag flow. */
+   * own drag is gated on a 220 ms long-press (see `freezeBlockDrag` in
+   * CalendarView). */
   touch-action: pan-y;
 }
-/* Dark theme: the light-mode ratios above were tuned against a near-white
- * paper, where a fully-saturated 1px/3px border reads as a crisp accent
- * next to a pale 14%-mix fill. Against dark paper the same numbers invert
- * the relationship — the raw border glows neon while the barely-tinted
- * fill goes nearly invisible — so dark gets its own, recalibrated mix. */
-:root[data-theme="dark"] .tblock {
-  border-color: color-mix(in oklab, var(--proj-color, var(--ink)) 60%, var(--paper));
-  background: color-mix(in oklab, var(--proj-color, var(--ink)) 30%, var(--paper));
-  /* Left stripe stays the full raw color (matching classic) rather than
-   * a muted mix — it's the block's main color identifier, and against
-   * the now-visible 30%-mix fill a dimmed stripe read as barely there. */
-  border-left-color: var(--proj-color, var(--ink));
-}
-.tblock:hover { box-shadow: 0 0 0 1px var(--proj-color, var(--ink)); z-index: 3; border-radius: max(3px, var(--r-sm)); }
-:root[data-theme="dark"] .tblock:hover {
-  box-shadow: 0 0 0 1px color-mix(in oklab, var(--proj-color, var(--ink)) 60%, var(--paper));
-}
+.tblock:hover { border-color: color-mix(in oklab, var(--c) 60%, transparent); z-index: 3; }
 /* Overlap stripe — thin colored bar on the right edge of an active
  * block, scoped (via inline `top` + `height`) to exactly the time
  * span where an underlay (linked / personal / work / gcal block)
@@ -470,119 +391,64 @@
   opacity: 0.85;
   border-radius: 1px;
 }
+/* Block done (it happened): half alphas, --text-2 title, a small check
+ * in the project colour. No strikethrough — that's reserved for the
+ * *task* being done (below). */
 .tblock[data-state="completed"] {
-  background: color-mix(in oklab, var(--proj-color, var(--ink)) 22%, var(--paper));
+  border-color: color-mix(in oklab, var(--c) var(--tint-line-done), transparent);
+  background: color-mix(in oklab, var(--c) var(--tint-fill-done), transparent);
 }
-/* Completed also fades the title (strikethrough + 0.65 opacity, below) —
- * the background should follow that same "done, fading" language rather
- * than fight it. Classic's own completed background is a few points
- * *more* saturated than a normal block's (22% vs 14%), which is barely
- * visible against light paper; carrying that same ratio into dark mode
- * at 2x the percentage made it read as distinctly *brighter*, the
- * opposite of what "completed" should look like. Dark gets a background
- * dimmer than the base block instead. */
-:root[data-theme="dark"] .tblock[data-state="completed"] {
-  background: color-mix(in oklab, var(--proj-color, var(--ink)) 18%, var(--paper));
+.tblock[data-covers="true"] {
+  background-image: linear-gradient(color-mix(in oklab, var(--c) var(--tint-fill), transparent), color-mix(in oklab, var(--c) var(--tint-fill), transparent));
+  background-color: var(--bg);
 }
-.tblock[data-state="completed"] .tb-title { text-decoration: line-through; opacity: 0.65; }
-/* Task is done AND this specific block already happened (completed) — muted
-   to read as archived. No diagonal hatch (gcal events already use that
-   pattern, don't want a visual collision). */
-.tblock[data-task-done="true"][data-state="completed"] {
-  background: color-mix(in oklab, var(--proj-color, var(--ink)) 8%, var(--paper));
-  border-color: color-mix(in oklab, var(--proj-color, var(--ink)) 50%, var(--paper-2));
-  border-left-color: color-mix(in oklab, var(--proj-color, var(--ink)) 60%, var(--paper-2));
-  opacity: 0.75;
+.tblock[data-covers="true"][data-state="completed"] {
+  background-image: linear-gradient(color-mix(in oklab, var(--c) var(--tint-fill-done), transparent), color-mix(in oklab, var(--c) var(--tint-fill-done), transparent));
 }
-:root[data-theme="dark"] .tblock[data-task-done="true"][data-state="completed"] {
-  background: color-mix(in oklab, var(--proj-color, var(--ink)) 18%, var(--paper));
-}
-.tblock[data-task-done="true"][data-state="completed"] .tb-title {
-  text-decoration: line-through;
-  color: var(--ink-3);
-}
-.tblock[data-task-done="true"][data-state="completed"] .tb-meta { color: var(--ink-4); }
+.tblock[data-state="completed"] .tb-title { color: var(--text-3); }
+.tblock[data-state="completed"] .tb-meta { color: var(--text-3); }
+.tb-done-icon { flex-shrink: 0; color: var(--c); }
 
-/* Task is done but this block is still PLANNED — it hasn't happened, so don't
-   strike it through; keep the project color but use a dashed border + a small
-   warning glyph so the user notices and either reopens the task or deletes
-   the block. */
-.tblock[data-task-done="true"][data-state="planned"] {
-  border-style: dashed;
-}
-.tblock[data-task-done="true"][data-state="planned"]::before {
-  content: '⚠';
-  position: absolute;
-  top: 2px;
-  right: 4px;
-  font-family: var(--font-mono);
-  font-size: calc(11px * var(--fs-scale));
-  color: var(--warn);
-  pointer-events: none;
-  z-index: 1;
-}
-.tblock[data-task-done="true"][data-state="planned"]:hover::before {
-  /* Don't fight with tb-actions on hover. */
-  display: none;
-}
+/* Task done: strikethrough on the title. */
+.tblock[data-task-done="true"] .tb-title-text { text-decoration: line-through; }
+.tblock[data-task-done="true"][data-state="completed"] .tb-title { color: var(--text-3); }
+.tblock[data-task-done="true"][data-state="completed"] .tb-meta { color: var(--text-3); }
 
-/* Recurring task: each ticked block is a completed instance, so it
-   looks the same as a finished task's completed block (muted, struck).
-   Planned blocks stay normal — there's no "stale planned" warning
-   because the task itself is the schedule, not a one-time goal. */
-.tblock[data-task-recurring="true"][data-state="completed"] {
-  background: color-mix(in oklab, var(--proj-color, var(--ink)) 8%, var(--paper));
-  border-color: color-mix(in oklab, var(--proj-color, var(--ink)) 50%, var(--paper-2));
-  border-left-color: color-mix(in oklab, var(--proj-color, var(--ink)) 60%, var(--paper-2));
-  opacity: 0.75;
-}
-:root[data-theme="dark"] .tblock[data-task-recurring="true"][data-state="completed"] {
-  background: color-mix(in oklab, var(--proj-color, var(--ink)) 18%, var(--paper));
-}
-.tblock[data-task-recurring="true"][data-state="completed"] .tb-title {
-  text-decoration: line-through;
-  color: var(--ink-3);
-}
-.tblock[data-task-recurring="true"][data-state="completed"] .tb-meta { color: var(--ink-4); }
-/* Small loop glyph inside the block's title for recurring-task blocks —
-   matches the rail-task indicator so the connection between a rail row
-   and the block it produced is obvious. Sits flush with the title text;
-   currentColor so it tracks the muted/strikethrough states for free. */
+/* Task done but this block is still PLANNED — it hasn't happened. Dashed
+ * border + a warning icon so the user either reopens the task or deletes
+ * the block. */
+.tblock[data-task-done="true"][data-state="planned"] { border-style: dashed; }
+.tb-warn-icon { flex-shrink: 0; margin-left: auto; color: var(--warning); }
+.tblock:hover .tb-warn-icon { visibility: hidden; }
+
+/* Recurring task: each ticked block is a completed instance, struck
+ * through like a finished task's block. */
+.tblock[data-task-recurring="true"][data-state="completed"] .tb-title { color: var(--text-3); }
 .tb-recurring-icon {
-  display: inline-block;
-  vertical-align: -1px;
-  margin-right: 3px;
-  color: var(--recurring);
   flex-shrink: 0;
-}
-.tblock[data-state="completed"] .tb-recurring-icon,
-.tblock[data-task-recurring="true"][data-state="completed"] .tb-recurring-icon {
-  opacity: 0.65;
+  color: var(--text-2);
 }
 .tblock[data-dragging="true"] {
   cursor: grabbing;
-  opacity: 0.85;
+  opacity: 0.9;
   z-index: 10;
-  box-shadow: var(--e-drag), 0 0 0 1px var(--proj-color, var(--ink));
+  border-color: var(--c);
+  box-shadow: var(--e-drag);
 }
-:root[data-theme="dark"] .tblock[data-dragging="true"] {
-  box-shadow: var(--e-drag), 0 0 0 1px color-mix(in oklab, var(--proj-color, var(--ink)) 60%, var(--paper));
-}
+/* Running or selected: full-opacity border in the project colour. */
 .tblock[data-active="true"] {
-  box-shadow: 0 0 0 2px var(--accent);
+  border-color: var(--c);
   z-index: 3;
 }
+/* ≤ 30 min: title and start time on one row. */
 .tblock[data-short="true"] {
-  padding: 1px 6px 1px 7px;
-  gap: 0;
+  padding: 0 8px;
+  gap: 6px;
   flex-direction: row;
   align-items: center;
 }
-.tblock[data-short="true"] .tb-meta { display: none; }
-.tblock[data-short="true"] .tb-title {
-  font-size: calc(10px * var(--fs-scale));
-  line-height: 1.1;
-}
+.tblock[data-short="true"] .tb-title { flex: 1 1 auto; min-width: 0; }
+.tblock[data-short="true"] .tb-meta { flex-shrink: 0; }
 
 .tb-actions {
   position: absolute;
@@ -619,17 +485,17 @@
   transform: translateY(-50%);
 }
 .tb-kebab[data-open="true"] {
-  background: var(--ink);
-  border-color: var(--ink);
-  color: var(--paper);
+  background: var(--text);
+  border-color: var(--text);
+  color: var(--bg);
 }
 /* On compact blocks the kebab is the only interactive icon, so it can
  * sit a half-step smaller without disappearing. Keeps it from eating
  * the entire title row on a 30-minute block while the popup carries
  * the larger touch targets. */
 .tb-actions-compact .tb-kebab {
-  width: calc(14px * var(--fs-scale));
-  height: calc(14px * var(--fs-scale));
+  width: var(--fs-16);
+  height: var(--fs-16);
 }
 /* Long-press feedback: while the hold timer is armed, scale the block
  * up slightly with a soft shadow so the user feels the gesture register
@@ -638,48 +504,48 @@
  * menu). */
 .tblock[data-pressing="true"] {
   transform: scale(1.04);
-  box-shadow: var(--e-drag), 0 0 0 1px var(--proj-color, var(--ink));
+  box-shadow: var(--e-drag), 0 0 0 1px var(--proj-color, var(--text));
   z-index: 6;
   transition: transform 100ms ease-out, box-shadow 100ms ease-out;
 }
 :root[data-theme="dark"] .tblock[data-pressing="true"] {
-  box-shadow: var(--e-drag), 0 0 0 1px color-mix(in oklab, var(--proj-color, var(--ink)) 60%, var(--paper));
+  box-shadow: var(--e-drag), 0 0 0 1px color-mix(in oklab, var(--proj-color, var(--text)) 60%, var(--bg));
 }
 .tb-action {
   /* Scale with --fs-scale so the row tracks user readability the same
    * way every other Fira surface does. The icons inside scale via
    * .tb-icon below. */
-  width: calc(16px * var(--fs-scale));
-  height: calc(16px * var(--fs-scale));
+  width: var(--fs-18);
+  height: var(--fs-18);
   display: grid; place-items: center;
-  font-family: var(--font-mono);
-  font-size: calc(11px * var(--fs-scale));
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-12);
   line-height: 1;
-  background: var(--paper);
-  border: 1px solid var(--rule-2);
-  color: var(--ink-3);
+  background: var(--bg);
+  border: 1px solid var(--line-2);
+  color: var(--text-3);
   cursor: pointer;
-  border-radius: max(2px, var(--r-xs));
+  border-radius: max(2px, var(--r-sm));
 }
 /* Lucide renders an inline SVG with hard-coded width/height attributes;
  * this CSS rule wins because it's more specific, and lets the icon scale
  * with --fs-scale without burning a magic number into every <Check>
  * call site. */
 .tb-icon {
-  width: calc(11px * var(--fs-scale));
-  height: calc(11px * var(--fs-scale));
+  width: var(--fs-12);
+  height: var(--fs-12);
 }
 .tb-tick[data-checked="true"] {
-  background: var(--done);
-  border-color: var(--done);
-  color: var(--paper);
+  background: var(--success);
+  border-color: var(--success);
+  color: var(--bg);
 }
 /* Hover styles only apply where hover is a real input (mouse/trackpad).
  * On touch, `:hover` would stick after a tap and leave the button
  * looking "hovered" indefinitely until the user taps elsewhere. */
 @media (hover: hover) {
-  .tb-action:hover { color: var(--ink); border-color: var(--ink-3); background: var(--paper); }
-  .tb-tick[data-checked="true"]:hover { background: var(--done); color: var(--paper); opacity: 0.9; }
+  .tb-action:hover { color: var(--text); border-color: var(--text-3); background: var(--bg); }
+  .tb-tick[data-checked="true"]:hover { background: var(--success); color: var(--bg); opacity: 0.9; }
   .tb-dup:hover { color: var(--accent); border-color: var(--accent); }
   .tb-close:hover { color: var(--danger); border-color: var(--danger); }
 }
@@ -694,9 +560,9 @@
   gap: 3px;
   padding: 4px;
   width: max-content;
-  background: var(--paper);
-  border: 1px solid var(--proj-color, var(--rule-2));
-  border-radius: max(3px, var(--r-sm));
+  background: var(--bg);
+  border: 1px solid var(--proj-color, var(--line-2));
+  border-radius: max(3px, var(--r-ctl));
   box-shadow: var(--e-pop);
   z-index: 12;
   /* Don't let the popup get re-targeted by the long-press / pointer-down
@@ -706,7 +572,7 @@
   touch-action: none;
 }
 :root[data-theme="dark"] .tb-popup {
-  border-color: color-mix(in oklab, var(--proj-color, var(--rule-2)) 60%, var(--paper));
+  border-color: color-mix(in oklab, var(--proj-color, var(--line-2)) 60%, var(--bg));
 }
 
 .tb-resize {
@@ -722,27 +588,40 @@
 .cal-grid-wrap[data-dragging="true"] { user-select: none; -webkit-user-select: none; }
 .cal-grid-wrap[data-dragging="true"] .tblock { cursor: grabbing; }
 .tb-title {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
   font-weight: 500;
-  font-size: var(--fs-xs);
+  font-size: var(--fs-12);
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   line-height: 1.25;
 }
+.tb-title-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* Blocks of an hour or more have room: let the title wrap to two lines. */
+.tblock[data-tall="true"] .tb-title { white-space: normal; align-items: flex-start; }
+.tblock[data-tall="true"] .tb-title svg { margin-top: 2px; }
+.tblock[data-tall="true"] .tb-title-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
 .tb-meta {
-  font-family: var(--font-mono);
-  font-size: calc(9px * var(--fs-scale));
-  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-11);
+  color: var(--text-2);
   display: flex;
   align-items: center;
   gap: 4px;
 }
+.tb-meta { white-space: nowrap; min-width: 0; }
+.tb-meta .tb-time { flex: none; }
+.tb-meta .tb-meta-id { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .tb-meta .dot { width: 3px; height: 3px; background: currentColor; border-radius: 50%; }
 .tb-extid {
-  font-family: var(--font-mono);
-  font-size: calc(9px * var(--fs-scale));
-  color: var(--ink-3);
-  opacity: 0.75;
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-11);
+  color: var(--text-3);
   margin-top: auto;
   white-space: nowrap;
   overflow: hidden;
@@ -752,56 +631,63 @@
 
 .tblock-preview {
   position: absolute;
-  left: 1px; right: 1px;
+  left: 3px; right: 3px;
   border: 1px dashed var(--accent);
-  background: var(--accent-soft);
+  border-radius: var(--r-sm);
+  background: var(--accent-tint);
   pointer-events: none;
   z-index: 4;
 }
 .cal-daycol[data-drop-target="true"] {
-  background: color-mix(in oklab, var(--accent) 6%, var(--paper));
+  background: color-mix(in oklab, var(--accent) 6%, var(--bg));
 }
 .cal-daycol[data-drop-target="true"][data-weekend="true"] {
-  background: color-mix(in oklab, var(--accent) 8%, var(--paper-2));
+  background: color-mix(in oklab, var(--accent) 8%, var(--surface-2));
 }
 
 .rail-task[draggable="true"] { cursor: grab; }
 .rail-task[draggable="true"]:active { cursor: grabbing; }
 
+/* Google Calendar events — the only hatched thing in the app: a 135°
+ * stripe on transparent, --line-2 border, --text-2 text, 10px glyph. */
 .gcal-evt {
   position: absolute;
-  left: 1px; right: 1px;
+  left: 3px; right: 3px;
   background: repeating-linear-gradient(
-    -45deg,
-    transparent, transparent 4px,
-    var(--rule) 4px, var(--rule) 5px
+    135deg,
+    transparent 0 5px,
+    var(--hatch) 5px 10px
   );
-  border: 1px dashed var(--rule-3);
-  padding: 3px 6px;
-  font-family: var(--font-mono);
-  font-size: calc(10px * var(--fs-scale));
-  color: var(--ink-3);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-sm);
+  padding: 4px 8px;
+  font-size: var(--fs-12);
+  font-weight: 500;
+  color: var(--text-2);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  box-sizing: border-box;
   /* Background layer — sits *behind* .tblock (z:2) so dragging a task
-   * onto a slot that overlaps a meeting still hits the day column.
-   * The hatch + dashed border is intentionally subtle; an overlying
-   * time block fully covers it where they overlap. */
+   * onto a slot that overlaps a meeting still hits the day column. */
   z-index: 1;
-  opacity: 0.85;
-  /* The band itself never blocks pointers — drag-to-create on empty
-   * grid still works through it. The inner label opts back in to
-   * receive the click for the description popover. */
+  /* The band never blocks pointers — drag-to-create on empty grid still
+   * works through it. The inner label opts back in for the popover. */
   pointer-events: none;
   white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
 }
+.gcal-glyph { flex-shrink: 0; color: var(--text-3); margin-right: 6px; vertical-align: -1px; }
+.gcal-evt-time {
+  font-size: var(--fs-11);
+  font-weight: 400;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.gcal-evt-label-static { overflow: hidden; text-overflow: ellipsis; }
 
-/* Linked partner's gcal events — same hatch but a fainter ink so it
- * reads as "their busy time" not yours. */
-.gcal-evt-linked {
-  opacity: 0.55;
-  border-style: dotted;
-}
+/* Linked partner's gcal events — same hatch, fainter. */
+.gcal-evt-linked { opacity: 0.6; }
 
 /* Own gcal events expose a small clickable label inside the band so
  * the description popover is reachable, while the band itself stays
@@ -818,27 +704,21 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   vertical-align: top;
-  /* Slight opacity bump on hover so the user notices the affordance. */
 }
-.gcal-evt-label:hover {
-  color: var(--ink-2);
-  text-decoration: underline;
-  text-decoration-style: dotted;
-  text-underline-offset: 2px;
-}
+.gcal-evt-label:hover { color: var(--text); }
 
 /* Popover anchored to a clicked .gcal-evt. Same visual idiom as the
  * tag editor / status popover (paper background, light shadow,
  * rounded). Portaled to body so the calendar's overflow:auto can't
  * clip it. */
 .gcal-popover {
-  background: var(--paper);
-  border: 1px solid var(--rule-2);
-  border-radius: max(6px, var(--r-md));
-  box-shadow: var(--e-float);
-  padding: calc(10px * var(--density)) calc(12px * var(--density));
-  font-size: calc(12px * var(--fs-scale));
-  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-card);
+  box-shadow: var(--shadow-float);
+  padding: 14px 16px;
+  font-size: var(--fs-13);
+  color: var(--text);
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -855,23 +735,23 @@
   word-break: break-word;
 }
 .gcal-popover-time {
-  font-family: var(--font-mono);
-  font-size: calc(11px * var(--fs-scale));
-  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-12);
+  color: var(--text-2);
 }
 .gcal-popover-desc {
   white-space: pre-wrap;
   line-height: 1.4;
-  color: var(--ink-2);
+  color: var(--text-2);
   max-height: 220px;
   overflow: auto;
-  font-size: calc(12px * var(--fs-scale));
+  font-size: var(--fs-13);
 }
 .gcal-popover-link {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: calc(11px * var(--fs-scale));
+  font-size: var(--fs-12);
   color: var(--accent);
   text-decoration: none;
 }
@@ -880,74 +760,32 @@
 /* Linked partner's time blocks — read-only overlay. Full column width
  * (no lane logic), behind personal blocks (lower z-index), with a
  * desaturated palette so it's visually distinct from your own work. */
-.tblock-linked {
-  left: 1px !important;
-  width: calc(100% - 2px) !important;
-  z-index: 1;
-  opacity: 0.55;
-  cursor: default;
-  background: color-mix(in oklab, var(--proj-color, var(--ink-3)) 14%, var(--paper));
-  border: 1px dashed color-mix(in oklab, var(--proj-color, var(--ink-3)) 50%, var(--rule-3));
-  /* Override the colored left stripe the regular .tblock gets — keep
-   * the project hint subtle so personal blocks dominate the eye. */
-}
-:root[data-theme="dark"] .tblock-linked {
-  background: color-mix(in oklab, var(--proj-color, var(--ink-3)) 28%, var(--paper));
-}
-.tblock-linked .tb-title { color: var(--ink-2); }
-.tblock-linked .tb-meta { color: var(--ink-3); }
-.tblock-linked:hover {
-  /* Slightly less faded on hover so the title is fully readable, but no
-   * box-shadow elevation — it's not interactive. */
-  opacity: 0.75;
-  z-index: 1;
-}
-
-/* Personal-workspace overlay — caller's own blocks from a different
- * workspace. Read-only like the linked overlay, but visually distinct:
- * left accent stripe instead of dashed border, slightly less faded.
- * Shape mirrors .tblock-linked so the layout treats them the same. */
-.tblock-personal {
-  left: 1px !important;
-  width: calc(100% - 2px) !important;
-  z-index: 1;
-  opacity: 0.7;
-  cursor: default;
-  background: color-mix(in oklab, var(--proj-color, var(--ink-3)) 10%, var(--paper));
-  border: 1px solid color-mix(in oklab, var(--proj-color, var(--ink-3)) 35%, var(--rule-2));
-  border-left: 3px solid color-mix(in oklab, var(--proj-color, var(--ink-3)) 65%, var(--rule-3));
-}
-:root[data-theme="dark"] .tblock-personal {
-  background: color-mix(in oklab, var(--proj-color, var(--ink-3)) 22%, var(--paper));
-  border-color: color-mix(in oklab, var(--proj-color, var(--ink-3)) 55%, var(--rule-2));
-  border-left-color: color-mix(in oklab, var(--proj-color, var(--ink-3)) 80%, var(--rule-3));
-}
-.tblock-personal .tb-title { color: var(--ink-2); }
-.tblock-personal .tb-meta { color: var(--ink-3); }
-.tblock-personal:hover { opacity: 0.9; z-index: 1; }
-
-/* Work-workspace overlay — caller's blocks aggregated from every
- * non-personal workspace, projected onto the personal calendar. Mirrors
- * .tblock-personal in shape; the right-accent stripe (vs personal's
- * left) keeps the two distinguishable if both ever render together. */
+/* Read-only overlays from another account (linked partner, personal or
+ * work workspace). Same block formula; the account is shown by a small
+ * initial marker in the meta line (.tb-acct), not by a different style.
+ * They sit full-width behind your own blocks. */
+.tblock-linked,
+.tblock-personal,
 .tblock-work {
-  left: 1px !important;
-  width: calc(100% - 2px) !important;
+  left: 3px !important;
+  width: calc(100% - 6px) !important;
   z-index: 1;
-  opacity: 0.7;
   cursor: default;
-  background: color-mix(in oklab, var(--proj-color, var(--ink-3)) 10%, var(--paper));
-  border: 1px solid color-mix(in oklab, var(--proj-color, var(--ink-3)) 35%, var(--rule-2));
-  border-right: 3px solid color-mix(in oklab, var(--proj-color, var(--ink-3)) 65%, var(--rule-3));
 }
-:root[data-theme="dark"] .tblock-work {
-  background: color-mix(in oklab, var(--proj-color, var(--ink-3)) 22%, var(--paper));
-  border-color: color-mix(in oklab, var(--proj-color, var(--ink-3)) 55%, var(--rule-2));
-  border-right-color: color-mix(in oklab, var(--proj-color, var(--ink-3)) 80%, var(--rule-3));
+.tblock-linked:hover,
+.tblock-personal:hover,
+.tblock-work:hover { z-index: 1; }
+.tb-acct {
+  display: inline-grid;
+  place-items: center;
+  width: 16px; height: 16px;
+  border-radius: var(--r-xs);
+  background: var(--surface-4);
+  color: var(--text);
+  font-size: var(--fs-11);
+  font-weight: 600;
+  flex-shrink: 0;
 }
-.tblock-work .tb-title { color: var(--ink-2); }
-.tblock-work .tb-meta { color: var(--ink-3); }
-.tblock-work:hover { opacity: 0.9; z-index: 1; }
 
 /* Toolbar toggle for showing the linked partner's calendar. Same
  * baseline as the rail "Mine/All" button. */
@@ -955,48 +793,26 @@
   display: inline-flex; align-items: center;
   height: 22px;
   padding: 0 10px;
-  font-family: var(--font-mono);
-  font-size: calc(10px * var(--fs-scale));
-  letter-spacing: 0.04em;
-  color: var(--ink-3);
-  border: 1px solid var(--rule-2);
-  border-radius: var(--r-sm);
-  background: var(--paper);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-11);
+  color: var(--text-3);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-ctl);
+  background: var(--bg);
   cursor: pointer;
 }
 .link-toggle:hover {
-  color: var(--ink);
-  border-color: var(--rule-3);
+  color: var(--text);
+  border-color: var(--line-3);
 }
 .link-toggle[data-active="true"] {
   color: var(--accent);
-  background: var(--accent-soft);
-  border-color: var(--accent-line);
+  background: var(--accent-tint);
+  border-color: var(--accent-2);
 }
 
-/* Segmented pair built out of .link-toggle so it keeps the toolbar's
- * sizing, mono face and lit-accent active state — this only collapses
- * the shared border into one seam and rounds the outer corners, the
- * same shape as .list-tag-filter-mode in the list. */
-.cal-seg { display: inline-flex; flex: none; }
-.cal-seg .link-toggle { border-radius: 0; }
-/* Overlap the shared edge rather than dropping one side's border: with
- * `border-left: 0` the seam belongs to the left segment, so a lit right
- * segment lost its accent on exactly that edge. Both keep all four
- * borders, the pair overlaps by 1px, and the lit one is raised so its
- * accent paints over the neighbour's grey. */
-.cal-seg .link-toggle + .link-toggle { margin-left: -1px; }
-.cal-seg .link-toggle:first-child { border-radius: var(--r-sm) 0 0 var(--r-sm); }
-.cal-seg .link-toggle:last-child { border-radius: 0 var(--r-sm) var(--r-sm) 0; }
-/* The lit segment is the current state, not an action — no pointer. */
-.cal-seg .link-toggle[data-active="true"] {
-  cursor: default;
-  position: relative;
-  z-index: 1;
-}
-/* Workspace titles are user-set and unbounded. Without a cap, one long
- * name pushes the toolbar into a horizontal scroll — and unlike the old
- * label this one is on screen in both states. */
+/* Calendar sources toggle uses the shared .seg control. */
+.cal-seg { margin-left: var(--bar-gap); }
 .cal-seg-name {
   display: block;
   max-width: 14ch;
@@ -1007,59 +823,53 @@
 
 .cal-rail {
   /* Keep independently scrolling calendar and task surfaces separated in modern style. */
-  border-left: 1px solid var(--rule);
+  border-left: 1px solid var(--line);
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
 .rail-head {
-  border-bottom: 1px solid var(--rule-chrome);
+  border-bottom: 1px solid var(--line);
   display: flex; align-items: center;
   gap: var(--bar-gap);
-  padding: var(--bar-pad-t) var(--gutter-x) var(--bar-pad-b);
+  height: var(--bar-h);
+  box-sizing: border-box;
+  padding: 0 var(--gutter-x);
 }
 .rail-new-btn {
-  display: inline-flex; align-items: center; gap: 6px;
-  height: 24px;
-  padding: 0 10px;
-  font-size: var(--fs-sm);
-  font-weight: 500;
+  display: inline-flex; align-items: center; gap: 5px;
+  flex-shrink: 0;
+  height: var(--h-ctl);
+  padding: 0 12px 0 10px; /* the + glyph has ~2px of built-in side bearing */
+  font-size: var(--fs-13);
+  font-weight: 600;
   color: var(--accent-fg);
   background: var(--accent);
   border: 1px solid var(--accent);
-  border-radius: var(--r-sm);
+  border-radius: var(--r-ctl);
   cursor: pointer;
   letter-spacing: 0;
 }
-.rail-new-btn:hover {
-  background: color-mix(in oklab, var(--accent) 88%, black);
-  border-color: color-mix(in oklab, var(--accent) 88%, black);
-}
+.rail-new-btn:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
 .rail-new-btn .rail-new-plus {
-  font-family: var(--font-mono);
-  font-size: calc(14px * var(--fs-scale));
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-16);
   line-height: 1;
 }
 .rail-scope-btn {
   flex: 0 0 auto;
-  height: 24px;
-  padding: 0 10px;
-  font-family: var(--font-label);
-  font-size: calc(10px * var(--fs-scale) * var(--label-size));
-  letter-spacing: calc(0.08em * var(--label-track));
-  text-transform: var(--label-case);
-  color: var(--ink-3);
-  background: var(--paper);
-  border: 1px solid var(--rule-2);
-  border-radius: var(--r-sm);
+  height: var(--h-ctl);
+  padding: 0 12px;
+  font-size: var(--fs-13);
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-ctl);
   cursor: pointer;
+  transition: background-color var(--t-hover) ease-out;
 }
-.rail-scope-btn:hover { color: var(--ink); border-color: var(--rule-3); }
-.rail-scope-btn[data-active="true"] {
-  color: var(--ink);
-  background: var(--paper-2);
-  border-color: var(--ink-3);
-}
+.rail-scope-btn:hover { background: var(--surface-3); }
+.rail-scope-btn[data-active="true"] { background: var(--surface-3); }
 .rail-collapse-btn {
   display: inline-flex;
   align-items: center;
@@ -1067,21 +877,10 @@
   padding: 0 6px;
 }
 .rail-body[hidden] { display: none; }
-.rail-search {
-  flex: 1;
-  min-width: 0;
-  height: 24px;
-  padding: 0 8px;
-  font: inherit;
-  font-size: var(--fs-sm);
-  color: var(--ink);
-  background: var(--paper);
-  border: 1px solid var(--rule-2);
-  border-radius: var(--r-sm);
-  outline: 0;
-}
-.rail-search:focus { border-color: var(--focus-line); }
-.rail-search::placeholder { color: var(--ink-4); }
+/* Shrinks before anything overflows the rail head — the Now/All toggle
+ * must end on the same edge as the topbar avatar above it. */
+.rail-search { flex: 1; min-width: 56px; }
+.rail-scope { flex: none; }
 
 /* Tasks not owned by the active person are dimmed so the assignee's own
  * tasks still read first, but they remain draggable so you can log time on
@@ -1090,15 +889,15 @@
 .rail-task[data-others]:hover { opacity: 1; }
 .rail-task[data-others] .rail-task-title::before {
   content: '↗ ';
-  color: var(--ink-4);
-  font-family: var(--font-mono);
-  font-size: calc(10px * var(--fs-scale));
+  color: var(--text-4);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-11);
 }
 .rail-body {
-  /* Reserved unconditionally so the rows below keep the same content
-   * edge as .rail-head above them whether or not the list overflows.
-   * The rows subtract --scrollbar-w from their right gutter to match. */
-  scrollbar-gutter: stable;
+  /* No scrollbar compensation: on macOS the scrollbar overlays the
+   * content (reserves 0px), so subtracting a scrollbar width pushed the
+   * rows past the header's edge. Plain --gutter-x on both sides lines
+   * header buttons, headings and task text up with the topbar avatar. */
   flex: 1;
   overflow: auto;
 }
@@ -1106,171 +905,126 @@
   /* No closing rule — the next group's header rule is the boundary. */
 }
 .rail-group-head {
-  display: flex; align-items: center; gap: 6px;
+  display: flex; align-items: center; gap: 8px;
   width: 100%;
-  padding: calc(8px * var(--density)) calc(var(--gutter-x) - var(--scrollbar-w)) calc(6px * var(--density)) calc(8px * var(--density));
+  height: 44px;
+  padding: 0 var(--gutter-x);
   box-sizing: border-box;
   font: inherit;
-  font-family: var(--font-label);
-  font-size: calc(10px * var(--fs-scale) * var(--label-size));
-  letter-spacing: calc(0.1em * var(--label-track));
-  text-transform: var(--label-case);
-  color: var(--ink-3);
+  font-size: var(--fs-13);
+  color: var(--text-3);
   position: sticky; top: 0;
-  background: var(--paper);
-  border-bottom: 1px solid var(--rule);
-  border-left: 0;
-  border-right: 0;
-  border-top: 0;
+  background: var(--bg);
+  border: 0;
   text-align: left;
   cursor: pointer;
   z-index: 1;
 }
-.rail-group-head:hover { color: var(--ink-2); }
-.rail-group-head .swatch { width: 8px; height: 8px; }
-:root[data-theme="dark"] .rail-group-head .swatch { filter: saturate(0.7) brightness(0.85); }
+.rail-group:not(:first-child) .rail-group-head { margin-top: 8px; }
+.rail-group-head:hover { color: var(--text-2); }
+.rail-group-head .swatch { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
 .rail-group-head .pname {
-  color: var(--ink-2);
-  font-size: calc(10px * var(--fs-scale) * var(--label-size));
-  font-weight: 500;
+  color: var(--text);
+  font-size: var(--fs-14);
+  font-weight: 600;
 }
+.rail-group-caret { color: var(--text-3); flex-shrink: 0; margin-left: auto; }
 .rail-group-head .pcount {
   margin-left: auto;
-  color: var(--ink-4);
-  font-family: var(--font-mono);
-  font-size: calc(10px * var(--fs-scale));
+  margin-right: 0;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-12);
   font-weight: 400;
 }
 
+/* Rail rows: no borders between them; hover --surface-3 with the box
+ * bleeding into the gutter so it has padding. */
 .rail-task {
-  padding: calc(7px * var(--density)) calc(var(--gutter-x) - var(--scrollbar-w)) calc(7px * var(--density)) var(--gutter-x);
-  /* Kept in both styles: a task with no estimate has no progress bar
-   * under it, so without this the rows have nothing separating them and
-   * run together — worst on the light paper. The group's own closing
-   * rule is what was making the rail look over-lined; that one is gone. */
-  border-bottom: 1px solid var(--rule);
+  margin: 0 calc(var(--gutter-x) - 8px);
+  padding: 8px;
+  border-radius: var(--r-sm);
   display: flex;
   align-items: flex-start;
   gap: 8px;
   cursor: pointer;
   position: relative;
+  transition: background-color var(--t-hover) ease-out;
   /* Default touch-action: auto — the rail body's overflow handles scroll.
    * The long-press handler in CalendarView attaches a non-passive document
-   * touchmove listener once the press fires and preventDefaults from there
-   * (iOS Safari only respects non-passive listeners for blocking scroll
-   * mid-gesture). Same pattern as the list row long-press. */
+   * touchmove listener once the press fires. */
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
 }
-.rail-task:hover { background: var(--paper-3); }
-/* Long-press feedback: matches the time block's pressing visual so the
- * "yes, drag is locked" signal feels consistent across surfaces. Set
- * by the lock callback in CalRail and cleared on touchend / cancel. */
+.rail-task:hover { background: var(--surface-3); }
 .rail-task[data-pressing="true"] {
-  background: var(--paper-3);
-  transform: scale(1.03);
+  background: var(--surface-3);
   box-shadow: var(--e-drag);
-  border-radius: var(--r-sm);
   z-index: 4;
-  transition: transform 100ms ease-out, box-shadow 100ms ease-out;
 }
-.rail-task[data-status="done"] { background: var(--paper-2); }
 .rail-task[data-status="done"] .rail-task-title {
   text-decoration: line-through;
-  color: var(--ink-4);
+  color: var(--text-3);
 }
-.rail-task[data-status="done"] .rail-task-meta { color: var(--ink-4); }
-.rail-task[data-status="done"]::after {
-  content: '✓';
-  position: absolute;
-  right: 12px; top: 9px;
-  font-family: var(--font-mono);
-  font-size: calc(10px * var(--fs-scale));
-  color: var(--done);
-}
-.rail-task[data-blocker="true"]::before {
-  content: '';
-  position: absolute; left: 5px; top: 12px;
-  width: 5px; height: 5px;
-  border-radius: 50%;
-  border: 1px solid var(--warn);
-}
+.rail-task[data-status="done"] .rail-task-meta { color: var(--text-3); }
 .rail-task-body { flex: 1; min-width: 0; }
 .rail-task-title {
-  font-size: var(--fs-sm);
-  line-height: 1.3;
+  font-size: var(--fs-13);
+  line-height: 1.35;
+  color: var(--text);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
 .rail-task-meta {
-  margin-top: 3px;
+  margin-top: 2px;
   display: flex; align-items: center; gap: 6px;
-  font-family: var(--font-mono);
-  font-size: calc(10px * var(--fs-scale));
-  color: var(--ink-3);
+  /* Proportional figures: tabular ones made "ATL-433" and "+16h over"
+   * read as monospace next to the title. Nothing here lines up in
+   * columns, so there's no reason for them. */
+  font-variant-numeric: normal;
+  font-size: var(--fs-12);
+  color: var(--text-3);
 }
-/* The external ticket ref reads as a label here, not as data to scan in
- * a column — it sits inline under the title, one per row. Mono made it
- * the loudest thing in the rail; the numeric time-left beside it keeps
- * mono, where the tabular figures actually earn it. */
-.rail-task-ext {
-  font-family: var(--font-label);
-  letter-spacing: calc(0.01em * var(--label-track));
-  color: var(--ink-4);
-}
-.rail-task-meta .left {
-  margin-left: auto;
-  font-variant-numeric: tabular-nums;
-}
-.rail-task-meta .left[data-over="true"] {
-  color: var(--warn);
-}
-.rail-task-meta .left[data-plenty="true"] {
-  color: var(--accent);
-}
-/* Loop glyph that prefixes a rail-task title for tasks in the recurring
-   section. Inline with the title; muted recurring tint. */
+.rail-task-ext { color: var(--text-3); }
+.rail-task-meta .left { margin-left: auto; }
+.rail-task-meta .left[data-over="true"] { color: var(--warning); }
+.rail-task-meta .left[data-plenty="true"] { color: var(--text-2); }
 .rail-task-recurring-icon {
   display: inline-block;
   vertical-align: -1px;
   margin-right: 4px;
-  color: var(--recurring);
+  color: var(--text-2);
   flex-shrink: 0;
 }
 
+/* Progress: 3px, --track, project-colour fill, radius 2. Over-estimate
+ * is a solid --warning segment (no hatching). */
 .rail-fill {
+  --rail-done: 85%;
+  --rail-planned: 40%;
   position: relative;
   height: 4px;
-  background: var(--paper-3);
-  border-radius: var(--r-2xs);
+  margin-top: 6px !important;
+  background: var(--track);
+  border-radius: 2px;
   display: flex;
+  align-items: stretch;
   overflow: hidden;
 }
+/* Done is solid, planned a clearly paler tint — no per-block gaps. */
 .rail-fill-spent { height: 100%; }
 .rail-fill-planned { height: 100%; }
-/* Both set their raw project color via inline style, so `filter` (not
- * `background`) is the only way to dim them for dark mode. */
-:root[data-theme="dark"] .rail-fill-spent { filter: saturate(0.7) brightness(0.82); }
-:root[data-theme="dark"] .rail-fill-planned { filter: saturate(0.7) brightness(0.9); }
-.rail-fill-over {
-  height: 100%;
-  background: repeating-linear-gradient(
-    -45deg,
-    var(--warn), var(--warn) 2px,
-    color-mix(in oklab, var(--warn) 50%, var(--paper)) 2px,
-    color-mix(in oklab, var(--warn) 50%, var(--paper)) 4px
-  );
-}
-.rail-fill-est-line {
-  position: absolute;
-  top: -1px; bottom: -1px;
-  width: 1px;
-  background: var(--ink-2);
-  pointer-events: none;
-}
+.rail-fill-rest { height: 100%; }
+/* The estimate: a 2px notch in the bar, only drawn when time runs past it. */
+.rail-fill-tick { flex: 0 0 2px; background: var(--bg); }
+/* Overrun tail: solid (hatching means "calendar event" in this app).
+ * Amber when logged work is past the estimate; a neutral grey when only
+ * the plan is. */
+.rail-fill-over { height: 100%; background: var(--text-4); }
+.rail-fill-over[data-kind="spent"] { background: color-mix(in oklab, var(--warning) var(--rail-done), transparent); }
 
 /* ── Phone overrides ────────────────────────────────────────────────────
  * Stack the rail below the calendar so touch-drag scheduling stays
@@ -1290,7 +1044,7 @@
     display: flex;
     min-width: 0;
     border-left: 0;
-    border-top: 1px solid var(--rule);
+    border-top: 1px solid var(--line);
   }
   .cal-grid {
     min-width: 0;
@@ -1308,14 +1062,12 @@
   .cal-toolbar .link-toggle {
     padding: 0 6px;
     margin-left: 2px;
-    font-size: calc(9px * var(--fs-scale));
+    font-size: var(--fs-11);
   }
   /* The segment's members sit inside their own wrapper, so the toolbar's
    * inter-pill margin would reopen the seam as a 2px gap. The wrapper
    * itself still takes the toolbar's gap; the second segment keeps the
    * -1px border overlap from the base rule. */
-  .cal-toolbar .cal-seg .link-toggle { margin-left: 0; }
-  .cal-toolbar .cal-seg .link-toggle + .link-toggle { margin-left: -1px; }
   .cal-toolbar .cal-seg-name { max-width: 9ch; }
   /* Smaller spacing inside the toolbar so prev/today/next + totals fit
    * without horizontal scroll. */
@@ -1323,9 +1075,6 @@
    * fit one row at 360px. */
   /* Let the search shrink before it pushes the All/My scope control out.
    * Own top inset because --bar-pad-t is 0 (no toolbar above it here). */
-  .rail-head {
-    min-width: 0;
-    padding-top: calc(8px * var(--density));
-  }
-  .rail-search { font-size: var(--fs-md); }
+  .rail-head { min-width: 0; }
+  .rail-search .input { font-size: var(--fs-14); }
 }

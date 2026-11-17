@@ -11,7 +11,7 @@
 .list-doc {
   max-width: 980px;
   margin: 0 auto;
-  padding: calc(24px * var(--density)) calc(36px * var(--density)) 80px;
+  padding: 16px 48px 80px; /* + .list-head 16px = 32px, same as the dashboard */
 }
 /* Phone: drop the editorial side margins and run the document near the
  * viewport edges so the title column is the widest part of the row. The
@@ -19,11 +19,10 @@
  * trailing `auto` column, but the left only loses a few pixels for the
  * grip + check (which together total ~32px). */
 @media (max-width: 700px) {
-  .list-doc { padding: calc(16px * var(--density)) calc(8px * var(--density)) 80px; }
+  .list-doc { padding: 8px 12px 80px; }
   /* Project header runs out of horizontal room with tasks/members count
    * + Archive button on a 360px screen — drop the count, the action is
    * what the user came here for. */
-  .list-proj-head .meta { display: none; }
   /* Mobile keeps a single tag chip in the trail column when the task
    * has tags, so leave a small right gutter; the +N spillover sits
    * beside it. With no tags the column stays empty and there's no
@@ -48,186 +47,34 @@
 }
 .list-empty-msg {
   margin: 0;
-  font-size: var(--fs-md);
-  color: var(--ink-2);
+  font-size: var(--fs-14);
+  color: var(--text-2);
 }
 .list-empty-sub {
   margin: 0;
-  font-size: var(--fs-sm);
-  color: var(--ink-3);
+  font-size: var(--fs-13);
+  color: var(--text-3);
 }
 .list-empty-link {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: var(--fs-md);
+  font-size: var(--fs-14);
   color: var(--accent);
   background: transparent;
   border: none;
-  border-bottom: 1px dashed var(--accent-line);
+  border-bottom: 1px dashed var(--accent-2);
   padding: 2px 0;
   cursor: pointer;
 }
-.list-empty-link:hover { color: var(--ink); border-bottom-color: var(--ink-3); }
-.list-proj-head {
-  display: flex; align-items: baseline; gap: 12px;
-  min-width: 0;
-  margin: 6px 0 calc(24px * var(--density));
-  padding-bottom: calc(12px * var(--density));
-  border-bottom: 1px solid var(--rule-chrome);
-}
-/* When the tag filter strip follows the project header, drop the
- * head's own bottom border + spacing so the strip docks flush
- * underneath. The strip's `border-bottom` provides the single rule
- * between header zone and the Now section, instead of two parallel
- * rules with a 24px gap. */
-.list-proj-head:has(+ .list-filter-bar) {
-  margin-bottom: 0;
-  padding-bottom: 8px;
-  border-bottom: 0;
-}
-.list-proj-head h1 {
-  min-width: 0;
-  margin: 0;
-  font-size: var(--fs-xxl);
-  font-weight: 500;
-  letter-spacing: -0.02em;
-  overflow-wrap: anywhere;
-}
-.list-proj-head .icon {
-  display: inline-flex;
-  align-self: center;
-  color: var(--proj-color);
-  /* Legacy unicode-glyph fallback: fixture projects pre-Lucide render their
-   * stored char as text. New projects nest a Lucide SVG that ignores these. */
-  font-family: var(--font-mono);
-  font-size: calc(22px * var(--fs-scale));
-  line-height: 1;
-}
-/* The component also sets `color` inline (higher specificity than the
- * rule above), so `filter` is the only hook left to dim it for dark
- * mode. */
-:root[data-theme="dark"] .list-proj-head .icon {
-  filter: saturate(0.7) brightness(0.86);
-}
-/* Right-side cluster: meta text, edit, archive. Centered against each
- * other so the icon-only edit button sits on the same line as the text in
- * its neighbours, regardless of font baselines. align-self: baseline anchors
- * the whole cluster to the h1's baseline so meta still reads correctly with
- * the title. */
-.list-proj-head .proj-actions {
-  margin-left: auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  align-self: baseline;
-}
-.list-proj-head .proj-actions .proj-edit-btn + .proj-edit-btn {
-  margin-left: -8px;
-}
-.list-proj-head .meta {
-  font-family: var(--font-label);
-  font-size: calc(var(--fs-xs) * var(--label-size));
-  color: var(--ink-3);
-  letter-spacing: calc(0.04em * var(--label-track));
-}
-.list-proj-head .proj-edit-btn {
-  width: auto; min-width: 22px; height: 24px;
-  padding: 0 4px;
-  color: var(--ink-3);
-  border: 1px solid transparent;
-}
-.list-proj-head .proj-edit-btn:hover {
-  color: var(--ink);
-  background: var(--paper-3);
-  border-color: var(--rule-2);
-}
-/* Time-label toggle: regular clock when "on" (labels visible), the
- * custom ClockOffIcon (clock with a × in the bottom-right corner)
- * when "off". Drawing the × inside the icon's own SVG keeps the
- * strokes crisp at 14×14 — the previous CSS pseudo-element slash
- * read as a foreign rule pasted on top. */
-.list-proj-head .time-toggle-btn[data-off] {
-  /* Mixed against ink-4 (cool grey) instead of paper-3 (warm beige)
-   * so the result stays in the red family rather than drifting toward
-   * terracotta/orange. 65% danger keeps it muted without going pink. */
-  color: color-mix(in oklab, var(--danger) 65%, var(--ink-4));
-}
-.list-proj-head .archive-btn {
-  height: 28px;
-  padding: 0 12px;
-  font-size: calc(var(--fs-xs) * var(--label-size));
-  font-family: var(--font-label);
-  letter-spacing: calc(0.06em * var(--label-track));
-  text-transform: var(--label-case);
-  color: var(--ink-3);
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  /* Otherwise "Archive ticked" wraps to two lines on phone widths
-   * where the head row is tight. The button is fine being wider
-   * than the others. */
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-.list-proj-head .archive-btn:not([disabled]) {
-  color: var(--ink-2);
-}
-.list-proj-head .archive-btn:not([disabled]):hover {
-  color: var(--ink);
-}
-.list-proj-head .archive-btn[disabled] {
-  cursor: not-allowed;
-  opacity: 0.5;
-}
-.list-proj-head .archive-btn .archive-count {
-  font-variant-numeric: tabular-nums;
-  background: var(--ink);
-  color: var(--paper);
-  padding: 1px 6px;
-  border-radius: var(--r-xs);
-  letter-spacing: 0;
-  font-size: calc(10px * var(--fs-scale));
-}
-
-/* Filter bar — sticks to the top of the list scroll container so the
- * active selection stays visible as the user scrolls through Now /
- * Later / Done. Row 1: search, sprint, assignee scope, clear. Row 2:
- * the tag filter strip (absent when the project has no tags). */
-.list-filter-bar {
-  position: sticky;
-  top: 0;
-  z-index: 4;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: calc(8px * var(--density)) 0;
-  margin: 0 0 calc(12px * var(--density));
-  background: var(--paper);
-  border-bottom: 1px solid var(--rule-chrome);
-}
-.list-filter-bar:has(+ .list-totals) { margin-bottom: 0; }
+.list-empty-link:hover { color: var(--text); border-bottom-color: var(--text-3); }
 .list-filter-row {
   display: flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
 }
-.list-search {
-  flex: 1 1 auto;
-  min-width: 0;
-  height: calc(22px * var(--density));
-  padding: 0 8px;
-  font: inherit;
-  font-size: var(--fs-sm);
-  color: var(--ink);
-  background: var(--paper);
-  border: 1px solid var(--rule-2);
-  border-radius: var(--r-sm);
-  outline: 0;
-}
-.list-search:focus { border-color: var(--focus-line); }
-.list-search::placeholder { color: var(--ink-4); }
+.list-search { flex: 1 1 auto; min-width: 0; }
 /* Shared `Select` (size sm) tuned to sit in the filter row: shrinks
  * before the search box does, trigger height tracks the search input,
  * and a set filter reads darker than the resting "All sprints". */
@@ -240,41 +87,32 @@
 }
 .list-sprint-select .select-trigger {
   width: 100%;
-  height: calc(22px * var(--density));
-  color: var(--ink-3);
+  height: 34px;
 }
 /* Set state wears the project color, the same wash an "on" tag chip
  * gets from its tag color — a neutral dark border read as keyboard
  * focus rather than "this filter is active". `--proj-color` is set
  * inline on `.list-doc`. */
 .list-sprint-select-set .select-trigger,
-.list-sprint-select-set .select-trigger:hover,
-.list-sprint-select-set.select-open .select-trigger {
-  color: var(--ink);
-  border-color: color-mix(in srgb, var(--proj-color, var(--rule-2)) 55%, var(--paper));
-  background: color-mix(in srgb, var(--proj-color, var(--rule-2)) 12%, var(--paper));
-}
-:root[data-theme="dark"] .list-sprint-select-set .select-trigger {
-  border-color: color-mix(in srgb, var(--proj-color, var(--rule-2)) 60%, var(--paper));
-  background: color-mix(in srgb, var(--proj-color, var(--rule-2)) 26%, var(--paper));
+.list-sprint-select-set .select-trigger:hover {
+  color: var(--text);
+  border-color: color-mix(in oklab, var(--proj-color, var(--text-3)) var(--tint-line), transparent);
+  background: color-mix(in oklab, var(--proj-color, var(--text-3)) var(--tint-fill), transparent);
 }
 .list-filter-clear {
   flex: none;
-  font-family: var(--font-label);
-  font-size: calc(10px * var(--fs-scale) * var(--label-size));
-  letter-spacing: calc(0.04em * var(--label-track));
-  text-transform: var(--label-case);
-  color: var(--ink-3);
+  font-size: var(--fs-12);
+  color: var(--text-3);
   background: transparent;
   border: 0;
   padding: 0 4px;
   cursor: pointer;
 }
-.list-filter-clear:hover { color: var(--ink); }
+.list-filter-clear:hover { color: var(--text); }
 .list-filter-empty {
-  margin: calc(12px * var(--density)) 0;
-  color: var(--ink-3);
-  font-size: var(--fs-sm);
+  margin: 16px 0;
+  color: var(--text-3);
+  font-size: var(--fs-13);
 }
 .list-filter-empty .list-empty-link { font-size: inherit; }
 
@@ -294,7 +132,7 @@
 .list-tag-filter-chips {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   flex-wrap: wrap;
   min-width: 0;
 }
@@ -313,14 +151,18 @@
   }
   /* Narrow screens: search keeps a usable floor, and only once it
    * hits it does the sprint trigger start ellipsising. */
-  .list-search { font-size: var(--fs-md); min-width: 96px; }
+  .list-search { min-width: 96px; }
+  .list-search .input { font-size: var(--fs-14); }
   .list-sprint-select { flex: 0 1 auto; max-width: 45%; }
+  /* One wrapping flow: Or/And follows the last chip instead of taking
+   * a row of its own. */
   .list-tag-filter {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .list-tag-filter-chips {
+    display: flex;
     flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
   }
+  .list-tag-filter-chips { display: contents; }
   .list-tag-filter-controls {
     flex-direction: row;
     flex-wrap: wrap;
@@ -328,129 +170,132 @@
     gap: 4px;
   }
 }
-/* Filter chips reuse `.chip.tag-chip` typography. Off state stays
- * dim (low-saturation outline only); on state fills with the same
- * color-mix wash the dropdown row uses for selection feedback. */
-.list-tag-filter-chip {
+/* Filter pills: --surface-2 with a 6px colour dot and a --text-2
+ * label; "on" lifts to --surface-4 / --text. */
+.list-tag-filter-chip,
+.chip.tag-chip.list-tag-filter-chip {
   max-width: 100%;
+  height: 28px;
+  padding: 0 12px 0 10px;
+  font-size: var(--fs-13);
+  gap: 6px;
+  border: 0;
+  border-radius: var(--r-sm); /* blocky, like every other tag */
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-weight: 400;
   overflow: hidden;
   text-overflow: ellipsis;
   cursor: pointer;
-  opacity: 0.55;
-  transition: opacity 80ms ease;
+  transition: background-color var(--t-hover) ease-out, color var(--t-hover) ease-out;
 }
-.list-tag-filter-chip:hover { opacity: 0.85; }
-/* 0.55 fades a dark-on-light chip toward a still-legible grey; against
- * dark paper the same opacity fades a light-on-dark chip toward
- * near-invisible instead, since it's blending down rather than up. */
-:root[data-theme="dark"] .list-tag-filter-chip { opacity: 0.75; }
-:root[data-theme="dark"] .list-tag-filter-chip:hover { opacity: 0.95; }
-.list-tag-filter-chip[data-on] {
-  opacity: 1;
-  background: color-mix(in srgb, var(--tag-color, var(--rule-2)) 12%, var(--paper));
+.list-tag-filter-chip::before {
+  content: '';
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--tag-color, var(--text-3));
+  flex-shrink: 0;
 }
-:root[data-theme="dark"] .list-tag-filter-chip[data-on] {
-  background: color-mix(in srgb, var(--tag-color, var(--rule-2)) 26%, var(--paper));
+.chip.tag-chip.list-tag-filter-chip:hover { background: var(--surface-3); color: var(--text); }
+.chip.tag-chip.list-tag-filter-chip[data-on] {
+  background: var(--surface-4);
+  color: var(--text);
 }
-/* Segmented any / all toggle: each segment is a button, active segment
- * is filled with --ink so the current mode is visually unambiguous;
- * clicking the *other* segment switches mode. Borders collapse
- * between segments so they read as one control. */
+/* Segmented any / all and All / Me toggles. */
 .list-tag-filter-mode {
   display: inline-flex;
   flex: none;
-  height: calc(18px * var(--density));
+  gap: 2px;
+  padding: 2px;
+  height: var(--h-ctl);
+  box-sizing: border-box;
+  background: var(--surface-2);
+  border-radius: var(--r-ctl);
 }
 /* Tag matching is visually closest to the chips it qualifies; the
  * assignee scope stays as the trailing, broader task-visibility filter. */
 .list-tag-filter-mode[aria-label="Tag match mode"] { order: -1; }
 .list-tag-filter-mode-seg {
-  font-family: var(--font-label);
-  font-size: calc(10px * var(--fs-scale) * var(--label-size));
-  letter-spacing: calc(0.04em * var(--label-track));
-  text-transform: var(--label-case);
+  font-size: var(--fs-13);
   background: transparent;
-  border: 1px solid var(--rule-2);
-  color: var(--ink-3);
+  border: 0;
+  border-radius: calc(var(--r-ctl) - 2px);
+  color: var(--text-2);
   display: inline-flex; align-items: center; justify-content: center;
-  padding: 0 calc(8px * var(--density));
-  height: calc(18px * var(--density));
+  padding: 0 10px;
+  height: var(--h-seg);
   cursor: pointer;
+  transition: background-color var(--t-hover) ease-out, color var(--t-hover) ease-out;
 }
-/* Segments collapse their shared borders into one seam, so only the
- * control's outer corners round. */
-.list-tag-filter-mode-seg + .list-tag-filter-mode-seg { border-left: 0; }
-.list-tag-filter-mode-seg:first-child { border-radius: var(--r-xs) 0 0 var(--r-xs); }
-.list-tag-filter-mode-seg:last-child { border-radius: 0 var(--r-xs) var(--r-xs) 0; }
-.list-tag-filter-mode-seg:hover { color: var(--ink); }
+.list-tag-filter-mode-seg:hover { color: var(--text); }
 .list-tag-filter-mode-seg[data-active] {
-  background: var(--ink);
-  border-color: var(--ink);
-  color: var(--paper);
+  background: var(--surface-4);
+  color: var(--text);
+  font-weight: 500;
   cursor: default;
 }
-.list-tag-filter-mode-seg[data-active]:hover { color: var(--paper); }
 
 /* Roll-up of time totals for the currently filtered task set. Sits
  * directly under the tag filter strip so the numbers read as a
  * consequence of the filter above. Visual language reuses the
  * calendar's `.totals` (mono digits, color per slot); this rule
  * only handles position and the divider underneath. */
+/* One quiet line of totals under the filters — the same "value label ·
+ * value label" form as the task modal's time summary. No rule: the
+ * section heading below draws the only line. */
 .list-totals {
+  display: flex;
   flex-wrap: wrap;
-  justify-content: center;
-  padding: calc(8px * var(--density)) 0;
-  margin: 0 0 calc(12px * var(--density));
-  border-bottom: 1px dashed var(--rule-chrome);
+  align-items: baseline;
+  gap: 4px 16px;
+  margin: 0 0 24px;
+  font-size: var(--fs-13);
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
 }
+.list-totals strong { font-weight: 500; color: var(--text); }
+.list-totals-over { color: var(--warning); font-weight: 500; margin-left: auto; }
 
-.section { margin: calc(28px * var(--density)) 0; }
+.section { margin: 28px 0; }
 /* The header block (project head → tag filter → totals) already ends
  * with its own bottom spacing. The first section adding a full
  * section-to-section gap on top of that stacked into a visible hole
  * between the numbers and "Now" — the same double-padding shape as the
  * topbar/toolbar pair. The block's own trailing space is the gap. */
 .list-totals + .section,
-.list-filter-bar + .section,
+.list-head + .section,
 .list-filter-empty + .section {
   margin-top: 0;
 }
 .section-head {
-  display: flex; align-items: baseline; gap: 10px;
-  padding: 0 0 calc(6px * var(--density));
+  display: flex; align-items: baseline; gap: 8px;
+  padding: 0 0 10px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--line);
   cursor: pointer;
   user-select: none;
 }
 .section-head h2 {
   margin: 0;
-  font-size: calc(13px * var(--fs-scale) * var(--label-size));
-  font-weight: 500;
-  font-family: var(--font-label);
-  letter-spacing: calc(0.12em * var(--label-track));
-  text-transform: var(--label-case);
+  font-size: var(--fs-16);
+  font-weight: 600;
 }
 .section-head .caret {
-  color: var(--ink-4);
+  color: var(--text-3);
   width: 14px;
   height: 14px;
   display: grid;
   place-items: center;
 }
 .section-head .count {
-  font-family: var(--font-mono);
-  font-size: calc(11px * var(--fs-scale) * var(--label-size));
-  color: var(--ink-3);
-  font-variant-numeric: tabular-nums;
-}
-/* Word captions sharing the .count slot ("week of apr 27", "parking
- * lot"). They're prose, not the numeric count beside the heading, so
- * they take the label family while .count keeps its tabular mono. */
-.section-head .section-caption {
-  font-family: var(--font-label);
-  font-variant-numeric: normal;
+  /* Same size as the heading, lighter: reads as part of it rather than
+   * a smaller, different-looking label sitting on its baseline. */
+  font-size: var(--fs-16);
+  font-weight: 400;
+  color: var(--text-3);
 }
 /* Pulse the numeric count when the filtered task count changes. Resting
- * state stays faint (`--ink-4`) so the row is calm at rest; the pulse
+ * state stays faint (`--text-4`) so the row is calm at rest; the pulse
  * jumps to the accent + a soft glow so a 1→5 swap is unmissable next
  * to the chip flashes happening above. `display: inline-block` lets
  * `transform: scale` apply to an otherwise inline span. */
@@ -462,87 +307,81 @@
 @keyframes section-count-pulse {
   0% {
     transform: scale(1);
-    color: var(--ink-4);
+    color: var(--text-4);
     text-shadow: none;
   }
   18% {
-    transform: scale(1.7);
+    transform: scale(1.4);
     color: var(--accent);
-    text-shadow:
-      0 0 6px color-mix(in srgb, var(--accent) 70%, transparent),
-      0 0 14px var(--accent-soft);
   }
   100% {
     transform: scale(1);
-    color: var(--ink-4);
+    color: var(--text-4);
     text-shadow: none;
   }
 }
 @media (prefers-reduced-motion: reduce) {
   .section-head .count[data-pulse] { animation: none; }
 }
+/* Right-hand subtitle: the section's time at a glance. */
 .section-head .est {
-  font-family: var(--font-label);
-  font-size: calc(11px * var(--fs-scale));
-  color: var(--ink-2);
+  font-size: var(--fs-13);
+  color: var(--text-3);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
-  cursor: help;
+  cursor: default;
 }
-.section-head .rule { flex: 1; height: 1px; background: var(--rule); margin-bottom: 4px; }
-.section[data-section="now"] .section-head h2 { color: var(--accent); }
-.section[data-section="now"] .section-head .caret { color: var(--accent); }
-.section[data-section="recurring"] .section-head h2 { color: var(--recurring); }
-.section[data-section="recurring"] .section-head .caret { color: var(--recurring); }
-.section[data-section="done"] .section-head h2 { color: var(--ink-3); }
-.archive-date-group { margin-top: calc(14px * var(--density)); }
+.section-head .rule { flex: 1; }
+/* Collapse chevrons sit at the right end so names stay flush with the
+ * column edge (same as the calendar and plan rails). */
+.section-head .caret { order: 99; margin-left: 4px; }
+/* Section headings share one colour; Done alone steps back. */
+.section[data-section="done"] .section-head h2 { color: var(--text-3); }
+.archive-date-group { margin-top: 20px; }
 .archive-date-head {
   display: flex; align-items: baseline; gap: 8px;
   cursor: pointer;
   user-select: none;
-  padding: 0 0 calc(4px * var(--density));
-  color: var(--ink-4);
-  font-family: var(--font-label);
-  font-size: calc(10px * var(--fs-scale) * var(--label-size));
-  letter-spacing: calc(0.08em * var(--label-track));
-  text-transform: var(--label-case);
+  padding: 0 0 6px;
+  color: var(--text-4);
+  font-size: var(--fs-12);
 }
-.archive-date-head:hover { color: var(--ink-3); }
+.archive-date-head:hover { color: var(--text-3); }
 .archive-date-head .archive-caret {
   width: 13px; height: 13px;
   display: grid; place-items: center;
 }
-.archive-date-head .rule { flex: 1; height: 1px; background: var(--rule); }
-.archive-date-head .count { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.archive-date-head .rule { flex: 1; }
+.archive-date-head .count { font-variant-numeric: tabular-nums; font-variant-numeric: tabular-nums; }
 
 .assignee-group[data-assignee-drop="true"] {
-  background: var(--accent-soft);
-  outline: 1px dashed var(--accent-line);
+  background: var(--accent-tint);
+  outline: 1px dashed var(--accent-2);
   outline-offset: -2px;
 }
 
 .assignee-head {
   display: flex; align-items: center; gap: 8px;
-  margin: 16px 0 6px;
-  font-family: var(--font-label);
-  font-size: calc(10px * var(--fs-scale) * var(--label-size));
-  letter-spacing: calc(0.08em * var(--label-track));
-  text-transform: var(--label-case);
-  color: var(--ink-3);
+  margin: 16px 0 4px;
+  font-size: var(--fs-13);
+  font-weight: 600;
+  color: var(--text);
   cursor: pointer;
   user-select: none;
 }
 .assignee-head .ah-caret {
-  color: var(--ink-4);
-  width: 14px;
-  height: 14px;
-  display: grid;
-  place-items: center;
+  width: 14px; height: 14px; display: grid; place-items: center;
+  color: var(--text-3);
 }
-.assignee-head .ah-rule { flex: 1; height: 1px; background: var(--rule); }
+.assignee-head .ah-rule { flex: 1; }
+/* Phones: the caret sits at the right end, like the section carets. */
+@media (max-width: 700px) {
+  .assignee-head .ah-caret { order: 99; }
+}
 .assignee-head .ah-count {
-  font-size: calc(11px * var(--fs-scale) * var(--label-size));
-  color: var(--ink-3);
+  font-size: var(--fs-13);
+  font-weight: 400;
+  color: var(--text-3);
   font-variant-numeric: tabular-nums;
 }
 
@@ -551,11 +390,18 @@
   /* Trailing `auto` column hosts the .task-trail (tags / "Xh left").
    * Phone widths hide that pill via `!isMobile` in TaskRow, so the
    * column collapses to zero — no spacing surprise on mobile. */
-  grid-template-columns: 14px 18px 1fr auto;
+  /* check · title · trail. No grip column: on desktop the whole row is
+   * a native drag source; on touch it's long-press. The row bleeds 8px
+   * left so the hover box doesn't clip the checkbox. */
+  grid-template-columns: 16px 1fr auto;
   align-items: start;
   gap: 8px;
-  padding: calc(6px * var(--density)) 8px calc(6px * var(--density)) 0;
-  border-radius: var(--r-md);
+  min-height: var(--h-row);
+  box-sizing: border-box;
+  margin-left: -8px;
+  padding: 8px 4px 8px 8px;
+  border-radius: var(--r-sm);
+  transition: background-color var(--t-hover) ease-out;
   cursor: pointer;
   position: relative;
   /* The row is click-to-open; there's no useful text selection here.
@@ -570,11 +416,7 @@
  * behind whichever row the user last touched — which during a scroll
  * looks like the highlight is "jumping" between rows. */
 @media (hover: hover) {
-  .task-row:hover {
-    background: linear-gradient(to right, transparent, var(--paper-3) 30px, var(--paper-3));
-  }
-  .task-row:hover .task-grip { opacity: 1; }
-  .task-grip:hover { color: var(--ink-2); }
+  .task-row:hover { background: var(--surface-3); }
   /* Right after a drop the cursor is still parked over whatever screen
    * position the user released at, but the row at that position is now
    * a *different* task than the one they dragged — :hover would
@@ -584,7 +426,6 @@
   .list[data-suspend-hover] .task-row:hover {
     background: transparent;
   }
-  .list[data-suspend-hover] .task-row:hover .task-grip { opacity: 0; }
 }
 /* Long-press feedback: scale + accent outline + glow when the row's
  * hold timer fires, mirroring `.tblock[data-pressing]` so the lock
@@ -596,22 +437,22 @@
  * `.task-row[data-status="done"]` rule below is more specific by
  * attribute count and would otherwise win on done tasks. */
 .task-row[data-pressing="true"] {
-  background: var(--accent-soft) !important;
+  background: var(--accent-tint) !important;
   transform: scale(1.05) !important;
-  box-shadow: 0 8px 22px rgba(8, 145, 178, 0.32) !important;
-  border-radius: max(6px, var(--r-md));
+  box-shadow: var(--e-drag) !important;
+  border-radius: var(--r-sm);
   outline: 2px solid var(--accent);
   outline-offset: -1px;
   z-index: 10;
   transition: transform 120ms ease-out, box-shadow 120ms ease-out, background 120ms ease-out;
 }
 .task-row[data-drop-mark="before"]::before {
-  content: ''; position: absolute; left: 22px; right: 0; top: -1px;
+  content: ''; position: absolute; left: 8px; right: 0; top: -1px;
   height: 2px; background: var(--accent);
   pointer-events: none;
 }
 .task-row[data-drop-mark="after"]::after {
-  content: ''; position: absolute; left: 22px; right: 0; bottom: -1px;
+  content: ''; position: absolute; left: 8px; right: 0; bottom: -1px;
   height: 2px; background: var(--accent);
   pointer-events: none;
 }
@@ -622,71 +463,44 @@
  * it". `!important` clears the row's :hover gradient and beats the
  * `[data-status="done"]` rule that's more specific by attribute count. */
 .task-row[data-drop-mark="merge"] {
-  background: var(--accent-soft) !important;
+  background: var(--accent-tint) !important;
   outline: 2px solid var(--accent);
   outline-offset: -1px;
-  border-radius: max(6px, var(--r-md));
+  border-radius: var(--r-sm);
 }
 
-.task-grip {
-  width: 14px;
-  margin-top: 2px;
-  display: grid; place-items: center;
-  font-family: var(--font-mono);
-  font-size: calc(12px * var(--fs-scale));
-  line-height: 1;
-  color: var(--ink-4);
-  cursor: grab;
-  letter-spacing: -2px;
-  opacity: 0;
-  transition: opacity 0.08s;
-  user-select: none;
-  /* Pointer events handle touch reorder. touch-action: none stops the
-   * browser from claiming the gesture as a scroll before we can. */
-  touch-action: none;
-  -webkit-touch-callout: none;
-}
-.task-grip:active { cursor: grabbing; }
-/* On touch (no hover), keep the grip permanently visible so it's
- * findable. The desktop fade-in is just polish; on mobile it's a
- * dead end. */
-@media (hover: none) {
-  .task-grip { opacity: 0.5; }
-}
 .task-row[data-status="done"] .task-title {
   text-decoration: line-through;
-  color: var(--ink-4);
+  color: var(--text-3);
 }
 
-.task-check {
-  margin-top: 2px;
-  width: 14px; height: 14px;
-  border: 1px solid var(--rule-3);
-  border-radius: var(--r-2xs);
-  background: var(--paper);
+/* Checkbox: 15px, radius 4, 1.5px --line-3 border; checked fills
+ * --text-3 with a dark check. */
+.task-check,
+.subtask .sc {
+  margin-top: 3px;
+  width: 15px; height: 15px;
+  box-sizing: border-box;
+  border: 1.5px solid var(--line-3);
+  border-radius: var(--r-xs);
+  background: transparent;
   display: grid; place-items: center;
   cursor: pointer;
   flex-shrink: 0;
-  color: var(--paper);
+  color: var(--bg);
   line-height: 1;
+  transition: border-color var(--t-hover) ease-out;
 }
-.task-check:hover { border-color: var(--ink-2); }
+.task-check:hover { border-color: var(--text-2); }
 .task-check[data-checked="true"] {
-  background: var(--ink-3);
-  border-color: var(--ink-3);
+  background: var(--text-3);
+  border-color: var(--text-3);
 }
-/* Modern keeps task completion controls easier to see and tap without
- * widening the list grid. Modal and list subtasks inherit the same size. */
-:root[data-style="modern"] .task-check,
-:root[data-style="modern"] .subtask .sc {
-  width: 16px;
-  height: 16px;
-}
-:root[data-style="modern"] .task-check svg,
-:root[data-style="modern"] .subtask .sc svg {
+.task-check svg,
+.subtask .sc svg {
   display: block;
-  width: 12px;
-  height: 12px;
+  width: 11px;
+  height: 11px;
   transform: none;
 }
 
@@ -712,7 +526,7 @@
   display: inline-grid;
   min-width: 0;
   max-width: 100%;
-  font-size: var(--fs-md);
+  font-size: var(--fs-14);
   font-family: inherit;
   line-height: 1.45;
 }
@@ -744,7 +558,7 @@
 }
 .task-title {
   min-width: 0;
-  font-size: var(--fs-md);
+  font-size: var(--fs-14);
   line-height: 1.45;
   word-break: break-word;
 }
@@ -773,7 +587,7 @@
   height: 16px;
   display: inline-grid;
   place-items: center;
-  color: var(--ink-4);
+  color: var(--text-4);
   cursor: pointer;
   line-height: 1;
   flex-shrink: 0;
@@ -787,8 +601,19 @@
   position: relative;
   top: 2px;
 }
-.task-toggle:hover { color: var(--ink-2); }
-.task-toggle[data-expanded] { color: var(--ink-3); }
+.task-toggle:hover { color: var(--text-2); }
+.task-toggle { color: var(--text-3); }
+.task-toggle:has(.task-toggle-count) {
+  width: auto;
+  gap: 2px;
+  grid-auto-flow: column;
+  padding: 0 4px 0 2px;
+  border-radius: var(--r-xs);
+  font-size: var(--fs-12);
+  font-variant-numeric: tabular-nums;
+}
+.task-toggle:hover { background: var(--surface-4); color: var(--text-2); }
+.task-toggle[data-expanded] { color: var(--text-3); }
 /* Inline title editor — desktop only. Mirrors .task-add-input's shape
  * (textarea sized as a single line via line-height + min-height) so
  * the cursor lands exactly where the static .task-title text was. */
@@ -796,7 +621,7 @@
   width: 100%;
   min-width: 0;
   font: inherit;
-  font-size: var(--fs-md);
+  font-size: var(--fs-14);
   font-family: inherit;
   /* Chrome's UA stylesheet drops `letter-spacing` and `text-rendering`
    * on form controls, so a textarea lays the same string out wider than
@@ -809,7 +634,7 @@
   border: 0;
   outline: 0;
   background: transparent;
-  color: var(--ink);
+  color: var(--text);
   padding: 0;
   line-height: 1.45;
   resize: none;
@@ -817,78 +642,65 @@
   min-height: calc(1.45em);
   display: block;
 }
+/* Trail: id · sprint · tags, each at its natural width. */
 .task-row .ext-id {
-  font-family: var(--font-mono);
-  font-size: calc(10px * var(--fs-scale));
-  color: var(--ink-4);
-  /* Lives at the head of .task-trail; the trail's `gap: 4px` alone
-   * leaves the key crowding whatever chip follows it, so buy a little
-   * extra room on the trailing side. */
-  margin-right: 4px;
+  /* Trail items sit flush right at their natural width — fixed
+   * columns left gaps whenever one was empty (e.g. a sprint picked). */
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-12);
+  color: var(--text-3);
 }
 
 .task-row .sprint-label {
-  max-width: 16ch;
+  display: inline-flex; align-items: center; gap: 5px;
+  max-width: 18ch;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: calc(10px * var(--fs-scale));
-  color: var(--ink-4);
-  /* Faint dashed outline keeps it from reading as part of the ext-id
-   * key beside it, while staying quieter than the solid tag chips. */
-  padding: 0 4px;
-  border: 1px dashed var(--rule-2);
-  border-radius: var(--r-xs);
-  margin-right: 4px;
+  font-size: var(--fs-12);
+  color: var(--text-3);
 }
 
 .task-trail {
-  display: flex; align-items: center; gap: 4px;
-  font-family: var(--font-mono);
-  font-size: calc(11px * var(--fs-scale));
-  color: var(--ink-3);
+  display: flex; align-items: center; gap: 10px;
+  min-height: 22px;
   font-variant-numeric: tabular-nums;
+  font-size: var(--fs-12);
+  color: var(--text-3);
   white-space: nowrap;
 }
-.task-trail .left-est { margin-left: 4px; }
+.task-trail .task-tags {
+  display: inline-flex; gap: 4px; justify-content: flex-end;
+}
+.task-trail .left-est { margin-left: 4px; min-width: 13ch; text-align: right; } /* fixed so tags line up */
 /* When the user has an active filter, fade unmatched tag chips so the
  * matched ones (which always sort to the front of the row) read as the
  * dominant signal. With no filter active, every chip stays bright. */
 /* Compact variant of .chip.tag-chip for the row's trailing column —
  * one step down from the filter strip's chips, but on the same tokens
  * so it tracks the label scale instead of drifting away from them. */
-.task-trail .tag-chip {
-  height: calc(16px * var(--density));
-  font-size: calc(9px * var(--fs-scale) * var(--label-size));
-}
-.task-trail[data-has-filter] .tag-chip { opacity: 0.45; }
-.task-trail[data-has-filter] .tag-chip[data-match] {
-  opacity: 1;
-  background: color-mix(in srgb, var(--tag-color, var(--rule-2)) 14%, var(--paper));
-  border-color: color-mix(in srgb, var(--tag-color, var(--rule-2)) 60%, var(--paper));
-}
-:root[data-theme="dark"] .task-trail[data-has-filter] .tag-chip[data-match] {
-  background: color-mix(in srgb, var(--tag-color, var(--rule-2)) 28%, var(--paper));
-  border-color: color-mix(in oklab, var(--tag-color, var(--rule-2)) 52%, var(--ink-3));
-}
-/* Same sizing as the tag chips above (incl. --label-size), quieter ink. */
+.task-trail .tag-chip { height: 22px; font-size: var(--fs-12); padding-inline: 7px; }
+/* Row tags support the title, not compete with it: a weaker tint. */
+.task-trail { --tag-fill: 10%; }
+:root[data-theme="dark"] .task-trail { --tag-fill: 14%; }
+.task-trail[data-has-filter] .tag-chip { opacity: 0.5; }
+.task-trail[data-has-filter] .tag-chip[data-match] { opacity: 1; }
 .task-trail .tag-chip-more {
-  height: calc(16px * var(--density));
-  font-size: calc(9px * var(--fs-scale) * var(--label-size));
-  color: var(--ink-4);
-  border-color: var(--rule-2);
-  padding: 0 6px;
-  letter-spacing: 0;
+  height: 22px;
+  font-size: var(--fs-12);
+  color: var(--text-3);
+  background: transparent;
+  padding: 0 4px;
 }
-.task-trail .left-est { color: var(--ink-2); }
-.task-trail .left-est[data-plenty="true"] { color: var(--accent); }
-.task-trail .left-est[data-over="true"] { color: var(--warn); }
-.task-trail .left-est[data-none="true"] { color: var(--ink-4); }
+.task-trail .left-est { color: var(--text-2); }
+.task-trail .left-est[data-plenty="true"] { color: var(--text-2); }
+.task-trail .left-est[data-over="true"] { color: var(--warning); }
+.task-trail .left-est[data-none="true"] { color: var(--text-3); }
 .task-trail .src {
   width: 14px; height: 14px;
   display: grid; place-items: center;
-  color: var(--ink-4);
-  font-size: calc(10px * var(--fs-scale));
+  color: var(--text-3);
+  font-size: var(--fs-11);
   font-weight: 500;
 }
 
@@ -899,30 +711,32 @@
   /* Mirror .task-row's grid (incl. the trailing trail column) so the
    * "+" lines up with the check column and the input cursor lands at
    * the same x as a task title. */
-  grid-template-columns: 14px 18px 1fr auto;
+  grid-template-columns: 16px 1fr auto;
   align-items: start;
   gap: 8px;
-  padding: 6px 8px 6px 0;
-  font-size: var(--fs-md);
-  color: var(--ink-4);
+  margin-left: -8px;
+  padding: 8px 8px 8px 8px;
+  font-size: var(--fs-14);
+  color: var(--text-3);
   cursor: text;
   user-select: none;
 }
-.task-add:hover { color: var(--ink-2); }
-.task-add[data-editing="true"] { color: var(--ink); cursor: default; }
+.task-add:hover { color: var(--text-2); }
+.task-add[data-editing="true"] { color: var(--text); cursor: default; }
 .task-add-plus {
-  grid-column: 2;
+  grid-column: 1;
+  margin-left: -1px;
   margin-top: 2px;
   width: 18px; height: 18px;
   display: grid; place-items: center;
-  font-family: var(--font-mono);
-  font-size: calc(13px * var(--fs-scale));
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-14);
   line-height: 1;
 }
 .task-add-input {
-  grid-column: 3;
+  grid-column: 2;
   font: inherit;
-  font-size: var(--fs-md);
+  font-size: var(--fs-14);
   /* Same UA reset as .list-title-input — without it the text re-flows
    * when the typed title commits and becomes a .task-title. */
   letter-spacing: inherit;
@@ -930,7 +744,7 @@
   border: 0;
   outline: 0;
   background: transparent;
-  color: var(--ink);
+  color: var(--text);
   padding: 0;
   line-height: 1.45;
   /* Render the textarea as a single-line input. `resize: none` kills
@@ -950,35 +764,29 @@
 
 .subtask-add {
   display: flex; align-items: center; gap: 8px;
-  font-size: var(--fs-sm);
-  color: var(--ink-4);
+  font-size: var(--fs-13);
+  color: var(--text-4);
   padding: 2px 0;
   cursor: text;
   user-select: none;
 }
-/* Mirror the grip column on subtask rows so the "+ Add subtask" input lines
- * up with subtask titles instead of laddering left. Width matches
- * `.subtask .subtask-grip` exactly. */
-.subtask-add .grip-spacer {
-  width: 14px; height: 14px;
-  flex-shrink: 0;
-}
+
 .subtask-add .sc-spacer {
   width: 14px; height: 14px;
   display: inline-flex; align-items: center; justify-content: center;
-  color: var(--ink-4);
+  color: var(--text-4);
   flex-shrink: 0;
 }
-.subtask-add:hover { color: var(--ink-2); }
-.subtask-add[data-editing="true"] { color: var(--ink); cursor: default; }
+.subtask-add:hover { color: var(--text-2); }
+.subtask-add[data-editing="true"] { color: var(--text); cursor: default; }
 .subtask-add-input {
   flex: 1;
   font: inherit;
-  font-size: var(--fs-sm);
+  font-size: var(--fs-13);
   border: 0;
   outline: 0;
   background: transparent;
-  color: var(--ink);
+  color: var(--text);
   padding: 0;
   line-height: 1.45;
   resize: none;
@@ -988,15 +796,15 @@
   width: 100%;
 }
 /* Match the muted "No description." / "No blocks yet" empty-state look —
- * same family + size, same `--ink-4` tint, no browser-default placeholder
+ * same family + size, same `--text-4` tint, no browser-default placeholder
  * dimming on top of it. */
 .subtask-add-input::placeholder {
-  color: var(--ink-4);
+  color: var(--text-4);
   opacity: 1;
 }
 
 .subtasks {
-  grid-column: 2 / -1;
+  grid-column: 1 / -1;
   /* Subtasks read as a denser inner list than the parent task row.
    * The math: subtask→subtask gap = padding-bottom + padding-top
    * (3 + 3 = 6); title→first-subtask gap = this margin-top + first
@@ -1004,7 +812,9 @@
    * tighter than the parent row's 6 + 6 = 12-px task-to-task cadence,
    * which gives subtasks the "secondary list" rhythm without making
    * them feel cramped. */
-  margin: 3px 0 0;
+  /* Same 36px pitch as task rows: title → first subtask and subtask →
+   * subtask are both one row apart. */
+  margin: 8px 0 0;
   display: flex; flex-direction: column; gap: 0;
 }
 /* List subtask rows: same font as task rows (so they read as
@@ -1013,12 +823,14 @@
  * outer task list. Modal subtasks still use the shared .subtask
  * defaults via .modal-subtasks, so this scoped rule doesn't leak. */
 .subtasks .subtask {
-  padding: 3px 8px 3px 0;
-  font-size: var(--fs-md);
+  padding: 8px 8px 8px 0;
+  font-size: var(--fs-14);
   align-items: flex-start;
 }
+/* The row's own bottom padding follows the last subtask. */
+.subtasks > .subtask:last-child { padding-bottom: 0; }
 .subtasks .subtask .sname {
-  font-size: var(--fs-md);
+  font-size: var(--fs-14);
   line-height: 1.45;
 }
 /* Match .task-check's vertical offset (margin-top: 2 px) so the
@@ -1026,10 +838,10 @@
  * parent row — without this, the subtask checkbox floats a couple of
  * pixels lower and the columns visibly disagree. */
 .subtasks .subtask .sc {
-  margin-top: 2px;
+  margin-top: 3px;
 }
 .subtasks .subtask .subtask-edit-input {
-  font-size: var(--fs-md);
+  font-size: var(--fs-14);
   line-height: 1.45;
   resize: none;
   overflow-y: hidden;
@@ -1039,8 +851,8 @@
 }
 .subtask {
   display: flex; align-items: flex-start; gap: 8px;
-  font-size: var(--fs-sm);
-  color: var(--ink-2);
+  font-size: var(--fs-13);
+  color: var(--text-2);
   padding: 2px 0;
   /* Subtask rows toggle into edit mode on click; outside edit mode
    * there's no selection use case, and touch grip-drag passing over
@@ -1051,25 +863,16 @@
   -webkit-touch-callout: none;
 }
 .subtask input, .subtask textarea { user-select: text; -webkit-user-select: text; }
-.subtask .sc {
-  width: 14px; height: 14px;
-  margin-top: 2px;
-  border: 1px solid var(--rule-3);
-  border-radius: var(--r-2xs);
-  background: var(--paper);
-  display: inline-flex; align-items: center; justify-content: center;
-  flex-shrink: 0;
-  cursor: pointer;
-  padding: 0;
-  color: var(--paper);
-}
+/* Same box as .task-check (shared rule above); only reset button chrome. */
+.subtask .sc { padding: 0; }
+.subtask .sc:hover { border-color: var(--text-2); }
 .subtask[data-done="true"] .sc {
-  background: var(--ink-3);
-  border-color: var(--ink-3);
+  background: var(--text-3);
+  border-color: var(--text-3);
 }
 .subtask[data-done="true"] .sname {
   text-decoration: line-through;
-  color: var(--ink-4);
+  color: var(--text-4);
 }
 /* Subtask titles wrap to multiple lines when long. The row was
  * `align-items: center` with no min-width on the title, which on
@@ -1077,7 +880,9 @@
  * the modal. flex-start + min-width:0 lets the line wrap and lines up
  * the checkbox with the first line. */
 .subtask .sname {
-  flex: 1;
+  /* Text width only, like a task title: clicking the text edits, the
+   * rest of the row is free to drag. */
+  flex: 0 1 auto;
   min-width: 0;
   line-height: 1.4;
   word-break: break-word;
@@ -1086,34 +891,26 @@
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(24, 24, 27, 0.45);
+  background: var(--scrim);
   z-index: 50;
   display: grid;
   place-items: center;
+  animation: fade-in var(--t-pop) ease-out;
 }
-/* Modern dialogs keep their contents opaque and crisp. Blur belongs on the
- * full-screen scrim, so the workspace recedes behind the dialog instead. */
-:root[data-style="modern"] .modal-backdrop {
-  background: rgb(24 24 27 / 0.40);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-}
-:root[data-style="modern"] .modal {
-  box-shadow:
-    0 2px 8px rgb(var(--shadow-rgb) / calc(7% * var(--shadow-a))),
-    0 16px 36px -18px rgb(var(--shadow-rgb) / calc(20% * var(--shadow-a)));
-}
+@keyframes fade-in { from { opacity: 0; } }
+@keyframes pop-in { from { opacity: 0; transform: translateY(4px); } }
 .modal {
+  animation: pop-in var(--t-pop) ease-out;
   width: min(1080px, 92vw);
   max-height: 88vh;
   max-height: 88dvh;
   height: min(88vh, 1080px);
-  --head-pad-y: calc(14px * var(--density));
-  --head-pad-x: calc(18px * var(--density));
-  background: var(--paper);
-  border: 1px solid var(--rule-3);
-  border-radius: var(--r-lg);
-  box-shadow: var(--e-dialog);
+  --head-pad-y: 16px;
+  --head-pad-x: 32px;
+  background: var(--surface);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-modal);
+  box-shadow: var(--shadow-float);
   display: flex; flex-direction: column;
   overflow: clip;
 }
@@ -1136,13 +933,12 @@
 .modal-head {
   display: flex; align-items: center; gap: 10px;
   padding: var(--head-pad-y) var(--head-pad-x);
-  border-bottom: 1px solid var(--rule-chrome);
   flex-shrink: 0;
 }
 .modal-head .ext {
-  font-family: var(--font-mono);
-  font-size: calc(11px * var(--fs-scale));
-  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-12);
+  color: var(--text-3);
 }
 .modal-head .grow { flex: 1; }
 /* The side pane is a tinted column that used to begin only *below* the
@@ -1155,7 +951,7 @@
 .modal-head-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 4px;
   align-self: stretch;
   flex: none;
   box-sizing: border-box;
@@ -1163,7 +959,7 @@
    * exact pixel .modal-main's border-right uses below it — the two are
    * one unbroken rule down the side pane's edge, not two offset ones. */
   width: calc(var(--side-w) + 1px);
-  border-left: 1px solid var(--rule-chrome);
+  border-left: 1px solid var(--line);
   justify-content: flex-end;
   /* The extra -1px at the bottom paints this band over .modal-head's
    * bottom rule, which otherwise runs straight across the side column
@@ -1171,8 +967,8 @@
    * where the main pane does. */
   margin: calc(-1 * var(--head-pad-y)) calc(-1 * var(--head-pad-x))
           calc(-1 * var(--head-pad-y) - 1px) 0;
-  padding: 0 var(--head-pad-x);
-  background: var(--paper-2);
+  padding: 0 16px;
+  background: var(--surface-2);
 }
 /* Details collapsed — there's no column to continue, so the cluster goes
  * back to being plain trailing buttons. */
@@ -1204,25 +1000,25 @@
   border-right: 0;
 }
 .modal-main {
-  padding: calc(16px * var(--density)) calc(22px * var(--density)) calc(22px * var(--density));
+  padding: 8px 32px 32px;
   overflow-y: auto;
   overflow-x: hidden;
   min-height: 0;
   min-width: 0;
   height: 100%;
   box-sizing: border-box;
-  border-right: 1px solid var(--rule-chrome);
+  border-right: 1px solid var(--line);
   scrollbar-gutter: stable;
 }
 .modal-side {
-  padding: calc(16px * var(--density)) calc(18px * var(--density));
+  padding: 12px 20px 24px;
   overflow-y: auto;
   overflow-x: hidden;
   min-height: 0;
   min-width: 0;
   height: 100%;
   box-sizing: border-box;
-  background: var(--paper-2);
+  background: var(--surface-2);
   scrollbar-gutter: stable;
 }
 /* On phones the side panel keeps eating ~220 px even when collapsed
@@ -1230,8 +1026,8 @@
  * the right edge. Shrink the main pane's horizontal padding to claw
  * back the pixels — the content reads fine tighter to the edges. */
 @media (max-width: 700px) {
-  .modal-main { padding: calc(12px * var(--density)) calc(10px * var(--density)) calc(16px * var(--density)); }
-  .modal-side { padding: calc(12px * var(--density)) calc(10px * var(--density)); }
+  .modal-main { padding: 16px 14px 24px; }
+  .modal-side { padding: 16px 14px; }
 }
 
 .attachment-preview-modal {
@@ -1248,14 +1044,14 @@
   align-items: center;
   padding: 12px;
   overflow: auto;
-  background: var(--paper-2);
+  background: var(--surface-2);
 }
 .attachment-preview-loading {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 12px;
-  color: var(--ink-3);
+  color: var(--text-3);
 }
 .attachment-preview-asset {
   display: block;
@@ -1277,36 +1073,44 @@
   height: 100%;
   min-height: 60vh;
   border: 0;
-  background: #fff;
+  background: var(--surface);
 }
 
-.modal-side h5,
+.modal-side h5 {
+  margin: 0;
+  font-size: var(--fs-13);
+  line-height: 1.4;
+  color: var(--text-3);
+  font-weight: 400;
+}
+/* Section headings: 13/600 --text-2. */
 .tm-section-h {
   margin: 0 0 4px;
-  font-family: var(--font-label);
-  font-size: calc(var(--fs-sm) * var(--label-size));
-  color: var(--ink-3);
-  font-weight: 500;
-  letter-spacing: calc(0.02em * var(--label-track));
-  text-transform: var(--label-case);
+  font-size: var(--fs-13);
+  color: var(--text-2);
+  font-weight: 600;
 }
 /* Sections in the main pane stack vertically; give all of them the same
  * generous breathing room so Description / Subtasks / Time blocks read as
  * peers rather than three different things. */
 .tm-section-h {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 6px;
-  margin: 18px 0 4px;
+  /* Fixed height so headings with and without trailing actions line up
+   * and stack with identical rhythm. */
+  min-height: 28px;
+  margin: 20px 0 4px;
 }
+.tm-section-add { height: var(--h-sm); padding: 0 8px; margin-right: -8px; color: var(--text-2); }
 .tm-section-h-title { /* base color from .tm-section-h */ }
 .tm-section-h-hint {
   /* Deliberately outside --label-size. The hint is usually a bare
    * figure ("· 5", "· 2/4"), and lining digits sit at cap height while
    * the sentence-case title beside them is mostly x-height — at the
    * title's size the number reads as the larger of the two. */
-  font-size: var(--fs-sm);
-  color: var(--ink-4);
+  font-size: var(--fs-13);
+  color: var(--text-3);
   font-weight: 400;
 }
 .tm-section-h-trailing {
@@ -1321,27 +1125,27 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: var(--h-sm);
+  height: var(--h-sm);
   padding: 0;
-  color: var(--ink-3);
+  color: var(--text-2);
   background: transparent;
   border: 0;
-  border-radius: max(3px, var(--r-sm));
+  border-radius: var(--r-sm);
   cursor: pointer;
-  transition: color 120ms ease, background 120ms ease;
+  transition: color var(--t-hover) ease-out, background-color var(--t-hover) ease-out;
 }
-.tm-section-btn:hover { color: var(--ink); background: var(--paper-3); }
+.tm-section-btn:hover { color: var(--text); background: var(--surface-3); }
 /* Destructive variant — keeps the shared geometry/background but signals
  * a remove/delete with a red icon on hover (e.g. block/attachment delete). */
 .tm-section-btn[data-danger]:hover { color: var(--danger); }
 /* Transient "copied" confirmation on the markdown button. */
 .tm-section-btn[data-copied],
-.tm-section-btn[data-copied]:hover { color: var(--done); background: transparent; }
+.tm-section-btn[data-copied]:hover { color: var(--success); background: transparent; }
 /* In-flight attachment upload — inert while the spinner runs. */
 .tm-section-btn[data-uploading],
 .tm-section-btn[data-uploading]:hover {
-  color: var(--ink-3);
+  color: var(--text-3);
   background: transparent;
   cursor: default;
 }
@@ -1351,94 +1155,119 @@
  * single record. The previous fixed grid (5 fixed columns + 1fr) ran
  * out of room for "18:00 – 19:00" on phone widths and split each cell
  * onto its own wrapped line. */
+/* Time blocks: a bordered list. avatar · date · range · duration
+ * (right, 500) · status · delete (visible on row hover). */
 .tm-block-row {
   display: grid;
-  grid-template-columns: 20px auto 1fr auto auto auto auto;
+  grid-template-columns: 20px 12ch 1fr auto 14ch auto auto;
   grid-template-areas: "ava date time dur state jira del";
-  column-gap: 10px;
+  column-gap: 12px;
   row-gap: 2px;
-  padding: 4px 0;
-  border-bottom: 1px solid var(--rule-chrome);
+  min-height: var(--h-row);
+  box-sizing: border-box;
+  padding: 4px 8px;
+  margin: 0 -8px;
+  border-radius: var(--r-sm);
   align-items: center;
+  transition: background-color var(--t-hover) ease-out;
 }
+.tm-block-list { display: flex; flex-direction: column; }
+.tm-block-row:hover { background: var(--surface-3); }
+.tm-block-row .tm-block-del { color: var(--text-3); }
 .tm-block-ava { grid-area: ava; }
 .tm-block-date {
   grid-area: date;
-  color: var(--ink-2);
-  font-family: var(--font-mono);
-  font-size: calc(11px * var(--fs-scale));
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-13);
   white-space: nowrap;
 }
 .tm-block-time {
   grid-area: time;
-  color: var(--ink-3);
-  font-family: var(--font-mono);
-  font-size: calc(11px * var(--fs-scale));
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-13);
   white-space: nowrap;
   display: inline-flex;
   align-items: center;
-  gap: 0;
+  gap: 4px;
 }
-.tm-block-time-sep { color: var(--ink-4); }
-.tm-block-time-end { color: var(--ink-3); }
+.tm-block-time-sep { color: var(--text-3); }
+.tm-block-time-end { color: var(--text-2); }
 .tm-block-dur {
   grid-area: dur;
-  color: var(--ink-2);
-  font-family: var(--font-mono);
-  font-size: calc(11px * var(--fs-scale));
+  color: var(--text);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-13);
   text-align: right;
   white-space: nowrap;
 }
 .tm-block-state {
   grid-area: state;
-  font-family: var(--font-label);
-  font-size: calc(9px * var(--fs-scale) * var(--label-size));
-  letter-spacing: calc(0.08em * var(--label-track));
-  text-transform: var(--label-case);
-  text-align: right;
+  justify-self: end;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  justify-content: flex-end;
-  color: var(--ink-4);
+  gap: 6px;
+  height: var(--h-sm);
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  font: inherit;
+  font-size: var(--fs-13); /* same as the date, range and duration */
+  color: var(--text-3);
   white-space: nowrap;
+  cursor: pointer;
+  transition: background-color var(--t-hover) ease-out;
 }
+.tm-block-state:hover { background: var(--surface-3); color: var(--text-2); }
+/* Same reading as the calendar: completed is a filled project-colour
+ * dot, planned an outline of it. */
+.tm-block-state-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  box-sizing: border-box;
+  border: 1.5px solid var(--block-color, var(--text-3));
+  background: transparent;
+  flex: none;
+}
+.tm-block-state[data-state="completed"] { color: var(--text-2); }
+.tm-block-state[data-state="completed"] .tm-block-state-dot { background: var(--block-color, var(--text-3)); }
 /* Geometry + idle/hover come from .tm-section-btn (danger cue via
  * data-danger); this only pins the button to the row grid. */
 .tm-block-del { grid-area: del; }
 /* Jira worklog sync status. Idle (never pushed) renders a sync-arrows
  * icon in the default .tm-section-btn muted color; "ok" (already synced)
- * swaps to a ticket icon in --done green and "error" (last push/resync
+ * swaps to a ticket icon in --success green and "error" (last push/resync
  * failed) swaps to a warning icon in --danger red — shape *and* color
  * differ between states so it doesn't rely on a green-vs-muted color
  * distinction alone (too subtle at 12px, esp. at a glance). */
 .tm-block-jira { grid-area: jira; }
-.tm-block-jira[data-tone="ok"] { color: var(--done); }
-.tm-block-jira[data-tone="ok"]:hover { color: var(--done); background: var(--paper-3); }
+.tm-block-jira[data-tone="ok"] { color: var(--success); }
+.tm-block-jira[data-tone="ok"]:hover { color: var(--success); background: var(--surface-3); }
 .tm-block-jira[data-tone="error"] { color: var(--danger); }
-.tm-block-jira[data-tone="error"]:hover { color: var(--danger); background: var(--paper-3); }
+.tm-block-jira[data-tone="error"]:hover { color: var(--danger); background: var(--surface-3); }
 /* Click-to-edit cells: read state is a span that hints at editability
  * via a soft underline on hover, edit state is a native input matching
  * the surrounding mono-tabular column. */
 .tm-block-cell {
   cursor: text;
-  border-radius: max(2px, var(--r-xs));
-  padding: 1px 2px;
-  margin: -1px -2px;
+  border-radius: var(--r-sm);
+  padding: 2px 4px;
+  margin: -2px -4px;
 }
 @media (hover: hover) {
-  .tm-block-cell:hover {
-    background: var(--paper-2);
-    box-shadow: inset 0 -1px 0 var(--rule-2);
-  }
+  .tm-block-cell:hover { background: var(--surface-3); }
 }
 .tm-block-cell-input {
-  font-family: var(--font-mono);
-  font-size: calc(11px * var(--fs-scale));
-  color: var(--ink);
-  background: var(--paper);
-  border: 1px solid var(--focus-line);
-  border-radius: max(2px, var(--r-xs));
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-13);
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-ring);
+  border-radius: var(--r-sm);
   padding: 1px 4px;
   margin: -2px 0;
   outline: none;
@@ -1449,42 +1278,48 @@
   min-width: 0;
 }
 input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
-.tm-block-row[data-state="planned"] .tm-block-state { color: var(--accent); }
-.tm-block-row[data-state="completed"] .tm-block-state { color: var(--done); }
 .tm-block-warn {
-  color: var(--warn);
-  font-size: calc(11px * var(--fs-scale));
+  color: var(--warning);
+  font-size: var(--fs-12);
 }
 
 /* Mirror .desc-md[data-empty] so "No blocks yet." reads as a peer of
  * "No description. Click to edit." — same font family (inherit, sans),
  * same size, same ink, same vertical rhythm. */
 .tm-section-empty {
-  font-size: var(--fs-sm);
+  font-size: var(--fs-13);
   line-height: 1.55;
-  color: var(--ink-4);
+  color: var(--text-3);
   padding: 4px 6px;
   margin: 6px 0 14px;
   margin-left: -6px;
   min-height: 1.55em;
 }
+/* Details panel: 40px field rows on a 92px label column. Labels are
+ * 12px --text-3 and never larger than the 13px --text values. */
 .modal-side .field {
-  padding: 8px 0;
-  border-bottom: 1px solid var(--rule);
+  display: grid;
+  grid-template-columns: 80px minmax(0, 1fr);
+  align-items: center;
+  column-gap: 12px;
+  min-height: 36px;
+  padding: 2px 0;
+  box-sizing: border-box;
 }
-.modal-side .field:last-child { border-bottom: none; }
+.modal-side .field > h5 { align-self: center; }
+.modal-side .field > :not(h5) { font-size: var(--fs-13) !important; min-width: 0; }
 .modal h2.task-title-big {
-  margin: 0 0 10px;
-  font-size: calc(22px * var(--fs-scale));
-  font-weight: 500;
-  letter-spacing: -0.015em;
+  margin: 0 0 12px;
+  font-size: var(--fs-26);
+  font-weight: 600;
+  letter-spacing: -0.02em;
   line-height: 1.2;
   outline: none;
 }
 .desc-md {
-  font-size: var(--fs-sm);
+  font-size: var(--fs-13);
   line-height: 1.55;
-  color: var(--ink-2);
+  color: var(--text-2);
   white-space: normal;
   /* Negative side margins cancel the 6px horizontal padding so the
    * rendered text spans the full content width — left edge flush with the
@@ -1496,7 +1331,7 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
   cursor: default;
   padding: 4px 6px;
   box-sizing: border-box;
-  border-radius: max(2px, var(--r-xs));
+  border-radius: max(2px, var(--r-sm));
 }
 .desc-md > *:first-child { margin-top: 0; }
 .desc-md > *:last-child { margin-bottom: 0; }
@@ -1506,9 +1341,9 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
 .desc-md blockquote {
   margin: 0 0 0.7em;
   padding: 0.5em 0.9em;
-  border-left: 4px solid var(--rule-2);
-  color: var(--ink-2);
-  background: var(--paper-2);
+  border-left: 4px solid var(--line-2);
+  color: var(--text-2);
+  background: var(--surface-2);
   font-size: 0.95em;
 }
 /* The inner paragraph carries its own 0.7em bottom margin, which stacked
@@ -1519,21 +1354,21 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
 .desc-md h1, .desc-md h2, .desc-md h3, .desc-md h4, .desc-md h5, .desc-md h6 {
   margin: 0.8em 0 0.4em;
   font-weight: 600;
-  color: var(--ink-2);
+  color: var(--text-2);
 }
 .desc-md a { color: var(--accent); text-decoration: underline; }
 .desc-md code {
   font-family: var(--font-mono);
   font-size: 0.95em;
-  background: var(--paper-2);
+  background: var(--surface-2);
   padding: 0.1em 0.3em;
-  border-radius: max(2px, var(--r-xs));
+  border-radius: max(2px, var(--r-sm));
 }
 .desc-md pre {
   margin: 0 0 0.7em;
   padding: 0.7em 0.8em;
-  border-radius: max(4px, var(--r-sm));
-  background: var(--paper-2);
+  border-radius: max(4px, var(--r-ctl));
+  background: var(--surface-2);
   overflow-x: auto;
 }
 .desc-md pre code {
@@ -1572,17 +1407,17 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
   width: 100%;
   border-collapse: collapse;
   margin: 0 0 0.7em;
-  font-size: var(--fs-md);
+  font-size: var(--fs-14);
 }
 .desc-md th, .desc-md td {
-  border: 1px solid var(--rule);
+  border: 1px solid var(--line);
   padding: 6px 10px;
   text-align: left;
   vertical-align: top;
 }
 .desc-md thead th {
-  background: var(--paper-2);
-  color: var(--ink-3);
+  background: var(--surface-2);
+  color: var(--text-3);
   font-weight: 600;
 }
 /* GFM tables support per-column alignment via the header's separator
@@ -1599,9 +1434,9 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
   display: block;
   max-width: 100%;
   height: auto;
-  border-radius: max(4px, var(--r-sm));
+  border-radius: max(4px, var(--r-ctl));
   margin: 0.4em 0;
-  border: 1px solid var(--rule);
+  border: 1px solid var(--line);
 }
 
 .modal-subtasks {
@@ -1611,35 +1446,31 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
   padding: 4px 6px;
   margin-left: -6px;
 }
-.desc-md[data-empty="true"] { color: var(--ink-4); }
+.desc-md[data-empty="true"] { color: var(--text-4); }
 .desc-md.desc-md-edit {
-  font-family: var(--font-mono);
-  font-size: calc(11px * var(--fs-scale));
-  line-height: 1.45;
+  font-family: var(--font-sans);
+  font-size: var(--fs-13);
+  line-height: 1.55;
   width: 100%;
   box-sizing: border-box;
   white-space: pre-wrap;
-  /* Reset the read-mode negative side margins: the bordered edit box aligns
-   * flush with the heading (its border would otherwise stick out 6px each
-   * side). Also drop the read-mode 14px bottom margin: the textarea is
-   * inline-block so it doesn't collapse with the next heading's top margin,
-   * and 14 + 18 = 32px reads as dead space below the box. */
+  /* Reset the read-mode negative side margins so the edit box aligns
+   * flush with the heading. */
   margin: 6px 0 0 0;
+  padding: 14px;
   resize: none;
   /* Autosize sets the height to scrollHeight on every keystroke, so the
-   * scrollbar should never be needed. Hide it outright — without this,
-   * line-height rounding shows a 1–2px ghost scrollbar on multi-line
-   * descriptions. The modal itself already scrolls. */
+   * scrollbar should never be needed. */
   overflow: hidden;
-  border: 1px solid var(--rule-2);
-  background: var(--paper);
+  border: 1px solid transparent;
+  border-radius: var(--r-card);
+  background: var(--surface-2);
   cursor: text;
 }
 .desc-md.desc-md-edit:focus {
-  border-color: var(--focus-line);
-  outline: 1px solid var(--focus-line);
-  outline-offset: -1px;
-  background: var(--paper);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-ring);
+  outline: none;
 }
 
 /* Layout/hover come from .tm-section-btn; the spinner reuses the
@@ -1649,16 +1480,16 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
 }
 
 .attachment-list {
-  font-size: var(--fs-sm);
+  font-size: var(--fs-13);
   line-height: 1.55;
-  color: var(--ink-2);
+  color: var(--text-2);
   white-space: pre-wrap;
   margin: 6px 0 14px;
   outline: none;
   min-height: 1.55em;
   padding: 4px 6px;
   margin-left: -6px;
-  border-radius: max(2px, var(--r-xs));
+  border-radius: max(2px, var(--r-sm));
 }
 .attachment-item {
   display: flex; align-items: flex-start; gap: 8px;
@@ -1669,13 +1500,13 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
   flex: 1;
   min-width: 0;
   font: inherit;
-  font-size: var(--fs-sm);
+  font-size: var(--fs-13);
   border: 0;
   outline: 0;
   background: transparent;
   padding: 0;
   line-height: 1.55;
-  color: var(--ink-2);
+  color: var(--text-2);
   cursor: pointer;
   text-decoration: underline;
 }
@@ -1697,12 +1528,12 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
   padding: 16px 20px;
   overflow: auto;
   box-sizing: border-box;
-  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
   font-size: 0.85em;
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;
-  background: var(--paper);
+  background: var(--bg);
 }
 .attachment-preview-markdown {
   width: 100%;
@@ -1710,10 +1541,10 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
   overflow: auto;
   box-sizing: border-box;
   padding: 16px 20px;
-  background: var(--paper);
+  background: var(--bg);
 }
 .attachment-preview-unsupported {
-  color: var(--ink-4);
+  color: var(--text-4);
   padding: 20px;
 }
 
@@ -1723,7 +1554,7 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
   gap: 8px;
 }
 .task-attachment-error {
-  font-size: calc(11px * var(--fs-scale));
+  font-size: var(--fs-12);
   color: var(--danger);
 }
 .task-attachment-actions {
@@ -1740,7 +1571,7 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
   max-height: min(88dvh, 900px);
 }
 .ac-body {
-  padding: calc(16px * var(--density)) calc(22px * var(--density)) calc(10px * var(--density));
+  padding: 24px 32px 14px;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -1751,9 +1582,9 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
   flex-wrap: wrap;
   gap: 6px;
   margin-top: 8px;
-  font-family: var(--font-mono);
-  font-size: calc(11px * var(--fs-scale));
-  color: var(--ink-4);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-12);
+  color: var(--text-4);
 }
 .ac-text {
   box-sizing: border-box;
@@ -1761,16 +1592,16 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
   min-height: 220px;
   resize: vertical;
   padding: 10px 12px;
-  border: 1px solid var(--rule-2);
-  border-radius: var(--r-sm);
-  background: var(--paper);
-  color: var(--ink);
-  font-family: var(--font-mono);
-  font-size: var(--fs-sm);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-ctl);
+  background: var(--bg);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-13);
   line-height: 1.5;
 }
-.ac-text:focus { outline: none; border-color: var(--focus-line); }
-.ac-text::placeholder { color: var(--ink-4); }
+.ac-text:focus { outline: none; border-color: var(--accent); }
+.ac-text::placeholder { color: var(--text-4); }
 .ac-preview {
   box-sizing: border-box;
   display: flex;
@@ -1778,9 +1609,9 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
   justify-content: center;
   min-height: 160px;
   padding: 12px;
-  border: 1px solid var(--rule-2);
-  border-radius: var(--r-sm);
-  background: var(--paper-2);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-ctl);
+  background: var(--surface-2);
   overflow: auto;
 }
 .ac-image {
@@ -1793,68 +1624,95 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
 .ac-binary {
   gap: 12px;
   justify-content: flex-start;
-  color: var(--ink-3);
+  color: var(--text-3);
 }
 .ac-binary-lines {
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
-.ac-binary-lines strong { color: var(--ink); font-size: var(--fs-md); }
+.ac-binary-lines strong { color: var(--text); font-size: var(--fs-14); }
 .ac-binary-lines span {
-  font-family: var(--font-mono);
-  font-size: calc(11px * var(--fs-scale));
-  color: var(--ink-4);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-12);
+  color: var(--text-4);
 }
 .ac-hint {
   margin-right: auto;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: calc(11px * var(--fs-scale));
-  color: var(--ink-4);
+  font-size: var(--fs-12);
+  color: var(--text-4);
 }
 @media (max-width: 700px) {
   .ac-hint { display: none; }
 }
 
+/* Time summary: segmented 6px bar (done / planned / left), then the
+ * "done · planned · left" line with the estimate right-aligned. */
 .est-bar {
   height: 6px;
-  background: var(--paper-3);
-  border-radius: var(--r-2xs);
-  margin: 10px 0 6px;
+  background: var(--track);
+  border-radius: 3px;
+  margin: 4px 0 10px;
   display: flex;
+  gap: 2px;
   overflow: hidden;
 }
-.est-bar .seg-spent { background: var(--proj-color, var(--ink)); height: 100%; }
+.est-bar .seg-spent { background: var(--proj-color, var(--text)); height: 100%; border-radius: 3px; }
 .est-bar .seg-planned {
-  background: color-mix(in oklab, var(--proj-color, var(--ink)) 30%, var(--paper-3));
+  background: color-mix(in oklab, var(--proj-color, var(--text)) 45%, transparent);
   height: 100%;
-}
-:root[data-theme="dark"] .est-bar .seg-spent {
-  background: color-mix(in oklab, var(--proj-color, var(--ink)) 62%, var(--paper-3));
-}
-:root[data-theme="dark"] .est-bar .seg-planned {
-  background: color-mix(in oklab, var(--proj-color, var(--ink)) 45%, var(--paper-3));
+  border-radius: 3px;
 }
 .est-meta {
-  display: flex; gap: 12px;
-  font-family: var(--font-mono);
-  font-size: calc(11px * var(--fs-scale));
-  color: var(--ink-3);
+  display: flex; align-items: baseline; gap: 6px;
   font-variant-numeric: tabular-nums;
-  margin-bottom: 14px;
+  font-size: var(--fs-12);
+  color: var(--text-3);
+  margin-bottom: 8px;
 }
-.est-meta strong { color: var(--ink); font-weight: 500; }
+.est-meta strong { color: var(--text); font-weight: 600; font-size: var(--fs-14); }
+.est-meta-dot { color: var(--text-4); }
+.est-over, .est-over strong { color: var(--warning); }
+
+/* Modal header: project chip › sprint breadcrumb. */
+.modal-proj-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: var(--h-sm);
+  padding: 0 8px;
+  border-radius: var(--r-sm);
+  background: var(--surface-3);
+  font-size: var(--fs-12);
+  font-weight: 500;
+  color: var(--text);
+}
+.modal-crumb-sep { color: var(--text-3); flex-shrink: 0; }
+.modal-crumb {
+  font-size: var(--fs-12);
+  color: var(--text-3);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  min-width: 0;
+}
+.modal-side .field-value { color: var(--text); min-width: 0; }
+.modal-side-meta {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  display: flex; flex-direction: column; gap: 2px;
+  font-size: var(--fs-12);
+  color: var(--text-3);
+}
 
 .task-title-input {
   font: inherit;
   font-family: var(--font-sans);
-  font-size: calc(22px * var(--fs-scale));
+  font-size: var(--fs-24);
   font-weight: 500;
   letter-spacing: -0.015em;
   line-height: 1.2;
-  color: var(--ink);
+  color: var(--text);
   border: 0;
   outline: 0;
   background: transparent;
@@ -1866,51 +1724,67 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
   min-height: calc(1.2em);
   display: block;
 }
-.task-title-input::placeholder { color: var(--ink-4); }
+.task-title-input::placeholder { color: var(--text-4); }
 
 .modal-side .side-select,
 .modal-side .side-input {
   font: inherit;
-  font-size: var(--fs-sm);
+  font-size: var(--fs-13);
   padding: 6px 10px;
-  border: 1px solid var(--rule-2);
-  border-radius: var(--r-sm);
-  background: var(--paper);
-  color: var(--ink);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-ctl);
+  background: var(--bg);
+  color: var(--text);
   width: 100%;
   outline: 0;
 }
-.modal-side .side-input::placeholder { color: var(--ink-4); }
+.modal-side .side-input::placeholder { color: var(--text-4); }
 
 .status-editor { position: relative; display: inline-block; }
-.status-trigger {
-  font-family: var(--font-label);
-  font-size: calc(11px * var(--fs-scale) * var(--label-size));
-  letter-spacing: calc(0.06em * var(--label-track));
-  text-transform: var(--label-case);
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--ink-2);
-  cursor: pointer;
+/* Status / section values: a tone dot plus --text label. Inline-editable:
+ * plain at rest, --surface-3 on hover. */
+.status-trigger,
+.status-option {
+  --tone: var(--text-3);
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: var(--fs-13);
+  color: var(--text);
 }
-.status-trigger:hover { text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 3px; }
-.status-trigger[data-tone="now"] { color: var(--accent); }
-.status-trigger[data-tone="done"] { color: var(--done); }
-.status-trigger[data-tone="todo"] { color: var(--ink-2); }
-.status-trigger[data-tone="backlog"] { color: var(--ink-3); }
-.status-trigger[data-tone="recurring"] { color: var(--recurring); }
+.status-trigger {
+  padding: 4px 6px;
+  margin: -4px -6px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  cursor: pointer;
+  transition: background-color var(--t-hover) ease-out;
+}
+.status-trigger:hover { background: var(--surface-3); }
+.status-trigger::before,
+.status-option::before {
+  content: '';
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--tone);
+  flex-shrink: 0;
+}
+[data-tone="now"]:is(.status-trigger, .status-option) { --tone: var(--accent); }
+[data-tone="done"]:is(.status-trigger, .status-option) { --tone: var(--success); }
+[data-tone="todo"]:is(.status-trigger, .status-option) { --tone: var(--text-3); }
+[data-tone="someday"]:is(.status-trigger, .status-option) { --tone: var(--line-3); }
+[data-tone="recurring"]:is(.status-trigger, .status-option) { --tone: var(--recurring); }
 
 .status-popover {
   position: absolute;
   top: calc(100% + 4px);
   left: 0;
-  background: var(--paper);
-  border: 1px solid var(--rule-3);
-  border-radius: var(--r-md);
-  box-shadow: var(--e-float);
-  /* Options run edge to edge and paint their own hover background. */
+  background: var(--surface);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-card);
+  box-shadow: var(--shadow-float);
+  padding: 4px;
   overflow: hidden;
+  animation: pop-in var(--t-pop) ease-out;
   /* Portaled to document.body when inside the task modal — z-index has
    * to clear the modal-backdrop (z:50) and any modals layered on top.
    * Matches `.tag-editor-popover`. */
@@ -1920,36 +1794,39 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
   min-width: 120px;
 }
 .status-option {
-  font-family: var(--font-label);
-  font-size: calc(11px * var(--fs-scale) * var(--label-size));
-  letter-spacing: calc(0.06em * var(--label-track));
-  text-transform: var(--label-case);
+  font-size: var(--fs-13);
   text-align: left;
-  padding: 6px 10px;
+  padding: 6px 8px;
   border: 0;
-  background: var(--paper);
+  border-radius: var(--r-sm);
+  background: transparent;
   cursor: pointer;
 }
-.status-option:hover { background: var(--paper-3); }
-.status-option[data-selected="true"] { background: var(--paper-3); }
-.status-option[data-tone="now"] { color: var(--accent); }
-.status-option[data-tone="done"] { color: var(--done); }
-.status-option[data-tone="todo"] { color: var(--ink-2); }
-.status-option[data-tone="backlog"] { color: var(--ink-3); }
-.status-option[data-tone="recurring"] { color: var(--recurring); }
-.modal-side .side-input:focus { border-color: var(--focus-line); }
+.status-option:hover { background: var(--surface-3); }
+.status-option[data-selected="true"] { background: var(--surface-3); }
+.modal-side .side-input:focus { border-color: var(--accent); }
 .modal-side .side-input[data-bad="true"] { border-color: var(--danger); }
 
 .subtask-edit {
   display: flex; align-items: flex-start; gap: 8px;
-  padding: 2px 0;
+  /* Same behaviour as a list task row: the whole row drags, and it
+   * gets a hover fill (bleeding 8px so the checkbox isn't flush). */
+  margin: 0 -8px;
+  padding: 5px 8px;
+  border-radius: var(--r-sm);
   position: relative;
+  cursor: pointer;
+  transition: background-color var(--t-hover) ease-out;
 }
+@media (hover: hover) {
+  .subtask-edit:hover { background: var(--surface-3); }
+}
+.subtask-edit .subtask-del { width: 20px; height: 20px; margin-block: -1px; }
 .subtask-edit .subtask-edit-input {
   flex: 1;
   min-width: 0;
   font: inherit;
-  font-size: var(--fs-sm);
+  font-size: var(--fs-13);
   /* Same UA reset as .list-title-input above — keep the edit text on the
    * same metrics as the .sname it replaces. */
   letter-spacing: inherit;
@@ -1957,7 +1834,7 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
   border: 0;
   outline: 0;
   background: transparent;
-  color: var(--ink);
+  color: var(--text);
   padding: 0;
   line-height: 1.45;
   resize: none;
@@ -1975,26 +1852,6 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
 .subtask-edit:hover .subtask-del,
 .subtask-edit .subtask-del:focus-visible { opacity: 1; }
 
-.subtask .subtask-grip {
-  width: 14px; height: 14px;
-  display: inline-flex; align-items: center; justify-content: center;
-  font-family: var(--font-mono);
-  font-size: calc(12px * var(--fs-scale));
-  letter-spacing: -2px;
-  color: var(--ink-4);
-  cursor: grab;
-  user-select: none;
-  flex-shrink: 0;
-  padding: 0;
-  opacity: 0.5;
-  transition: opacity 80ms ease;
-  /* See .task-grip — pointer-events touch reorder needs touch-action
-   * none so the browser doesn't intercept as a scroll. */
-  touch-action: none;
-  -webkit-touch-callout: none;
-}
-.subtask:hover .subtask-grip { opacity: 1; }
-.subtask .subtask-grip:active { cursor: grabbing; }
 /* Drop indicator: a 2px accent line above or below the row depending on
  * which half of the target the pointer is over. Same convention task-rows
  * use, so reordering subtasks feels like reordering tasks. */
@@ -2016,28 +1873,29 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
 .subtask-edit[data-done="true"] .subtask-edit-input,
 .subtask-edit[data-done="true"] .sname {
   text-decoration: line-through;
-  color: var(--ink-4);
+  color: var(--text-4);
 }
 
 .assignee-picker { position: relative; }
 .assignee-trigger {
-  display: flex; align-items: center; gap: 6px;
+  display: flex; align-items: center; gap: 8px;
   width: 100%;
-  padding: 4px 6px;
-  border: 1px solid var(--rule-2);
-  background: var(--paper);
-  color: var(--ink);
-  font-size: var(--fs-sm);
+  height: var(--h-ctl);
+  box-sizing: border-box;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: var(--r-ctl);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: var(--fs-13);
   cursor: pointer;
   text-align: left;
+  transition: border-color var(--t-hover) ease-out;
 }
-.assignee-trigger:hover { border-color: var(--rule-3); }
+.assignee-trigger:hover { border-color: var(--line-2); }
 .assignee-trigger .ap-name { flex: 1; }
-.assignee-trigger .ap-empty { flex: 1; color: var(--ink-4); }
-.assignee-trigger .ap-caret {
-  color: var(--ink-4);
-  font-size: calc(10px * var(--fs-scale));
-}
+.assignee-trigger .ap-empty { flex: 1; color: var(--text-3); }
+.assignee-trigger .ap-caret { color: var(--text-3); display: inline-flex; }
 .assignee-popover {
   position: absolute;
   top: calc(100% + 4px);
@@ -2073,9 +1931,9 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
   display: flex;
   gap: 8px;
   justify-content: flex-end;
-  padding: calc(12px * var(--density)) calc(22px * var(--density));
-  border-top: 1px solid var(--rule-chrome);
-  background: var(--paper);
+  padding: 16px 32px;
+  border-top: 1px solid var(--line);
+  background: var(--bg);
   flex: none;
 }
 .modal-footer .btn[disabled] { opacity: 0.5; cursor: not-allowed; }
@@ -2092,7 +1950,7 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
 .modal-head-danger:hover { color: var(--danger); }
 
 .confirm-backdrop {
-  background: rgba(24, 24, 27, 0.55);
+  background: var(--scrim);
   z-index: 60;
 }
 .confirm-modal {
@@ -2101,32 +1959,29 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
   height: auto;
 }
 .confirm-body {
-  padding: calc(18px * var(--density)) calc(22px * var(--density)) calc(8px * var(--density));
+  padding: 24px 32px 12px;
 }
 .confirm-title {
   margin: 0 0 8px;
-  font-size: calc(15px * var(--fs-scale));
+  font-size: var(--fs-16);
   font-weight: 600;
-  color: var(--ink);
+  color: var(--text);
 }
 .confirm-text {
   margin: 0;
-  font-size: var(--fs-sm);
-  color: var(--ink-2);
+  font-size: var(--fs-13);
+  color: var(--text-2);
   line-height: 1.5;
 }
 .confirm-text p { margin: 0; }
 .confirm-guard-label {
   display: block;
   margin: 12px 0 4px;
-  font-family: var(--font-label);
-  font-size: calc(11px * var(--fs-scale) * var(--label-size));
-  color: var(--ink-3);
-  letter-spacing: calc(0.02em * var(--label-track));
-  text-transform: var(--label-case);
+  font-size: var(--fs-13);
+  color: var(--text-3);
 }
 .confirm-guard-label strong {
-  color: var(--ink);
+  color: var(--text);
   font-weight: 600;
   text-transform: none;
   font-family: inherit;
@@ -2136,10 +1991,10 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
   height: 28px;
   padding: 0 8px;
   font: inherit;
-  font-size: var(--fs-sm);
-  border: 1px solid var(--rule-2);
-  background: var(--paper);
-  color: var(--ink);
+  font-size: var(--fs-13);
+  border: 1px solid var(--line-2);
+  background: var(--bg);
+  color: var(--text);
   outline: 0;
 }
 .confirm-guard-input:focus { border-color: var(--danger); }
@@ -2147,12 +2002,12 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
   opacity: 0.45;
   cursor: not-allowed;
   background: var(--danger);
-  color: var(--paper);
+  color: var(--bg);
   border-color: var(--danger);
 }
 .confirm-danger {
   background: var(--danger);
-  color: var(--paper);
+  color: var(--bg);
   border-color: var(--danger);
 }
 .confirm-danger:hover {
@@ -2167,15 +2022,12 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
   width: min(480px, 92vw);
 }
 .move-section {
-  margin-top: calc(14px * var(--density));
+  margin-top: 20px;
 }
 .move-section-title {
   margin: 0 0 6px;
-  font-family: var(--font-label);
-  font-size: calc(11px * var(--fs-scale) * var(--label-size));
-  color: var(--ink-3);
-  letter-spacing: calc(0.02em * var(--label-track));
-  text-transform: var(--label-case);
+  font-size: var(--fs-13);
+  color: var(--text-3);
   font-weight: 600;
 }
 .move-section-danger { color: var(--danger); }
@@ -2183,34 +2035,34 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
   margin: 0;
   padding: 0 0 0 16px;
   list-style: disc;
-  font-size: var(--fs-sm);
-  color: var(--ink-2);
+  font-size: var(--fs-13);
+  color: var(--text-2);
   line-height: 1.5;
 }
 .move-list-row { margin: 0 0 3px; }
-.move-list-row strong { color: var(--ink); font-weight: 600; }
+.move-list-row strong { color: var(--text); font-weight: 600; }
 .move-tag {
-  color: var(--ink);
+  color: var(--text);
   font-weight: 600;
-  border-bottom: 2px solid var(--tag-color, var(--rule-2));
+  border-bottom: 2px solid var(--tag-color, var(--line-2));
 }
 /* Softer than the list itself — these lines qualify the bullets above
    rather than adding new facts. */
 .move-note {
   margin: 6px 0 0;
-  font-size: calc(12px * var(--fs-scale));
-  color: var(--ink-3);
+  font-size: var(--fs-13);
+  color: var(--text-3);
   line-height: 1.45;
 }
 .move-survives {
-  margin: calc(14px * var(--density)) 0 0;
-  font-size: calc(12px * var(--fs-scale));
-  color: var(--ink-3);
+  margin: 20px 0 0;
+  font-size: var(--fs-13);
+  color: var(--text-3);
   font-style: italic;
 }
 .move-confirm {
   background: var(--accent);
-  color: var(--paper);
+  color: var(--bg);
   border-color: var(--accent);
 }
 .move-confirm:hover {
@@ -2219,22 +2071,19 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
 }
 .move-error {
   margin-top: 5px;
-  font-size: calc(12px * var(--fs-scale));
+  font-size: var(--fs-13);
   color: var(--danger);
   line-height: 1.4;
 }
 /* Target picker inside the move dialog. Sits above the impact lists,
    which update as the selection changes. */
 .move-picker {
-  margin: calc(12px * var(--density)) 0 calc(4px * var(--density));
+  margin: 16px 0 6px;
 }
 .move-picker h5 {
   margin: 0 0 4px;
-  font-family: var(--font-label);
-  font-size: calc(11px * var(--fs-scale) * var(--label-size));
-  color: var(--ink-3);
-  letter-spacing: calc(0.02em * var(--label-track));
-  text-transform: var(--label-case);
+  font-size: var(--fs-13);
+  color: var(--text-3);
   font-weight: 600;
 }
 
@@ -2247,3 +2096,371 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
   text-decoration: line-through;
   text-decoration-style: dotted;
 }
+
+/* ── Sprint modal ──────────────────────────────────────────────────── */
+.modal.np-modal.sprint-modal { width: min(680px, calc(100vw - 32px)); }
+.sprint-modal .modal-head { padding: 16px 24px; }
+.sprint-modal-track { display: inline-flex; align-items: center; gap: 6px; }
+.sprint-modal-body { padding: 4px 32px 8px; gap: 0; overflow-x: hidden; }
+/* Title: plain text at rest, input shell on hover / edit. */
+.sprint-modal-title {
+  /* Bleeds 8px each side so the text lines up with the body while the
+   * hover box gets a little air; border-box keeps it from overflowing. */
+  width: calc(100% + 16px);
+  margin: 0 -8px 8px;
+  padding: 4px 8px;
+  box-sizing: border-box;
+  font: inherit;
+  font-size: var(--fs-26);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  outline: none;
+  transition: background-color var(--t-hover) ease-out;
+}
+.sprint-modal-title:hover { background: var(--surface-3); }
+.sprint-modal-title:focus { background: var(--surface-2); border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); }
+.sprint-modal-stats {
+  display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap;
+  font-size: var(--fs-12);
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.sprint-modal-stats strong { color: var(--text); font-size: var(--fs-14); font-weight: 600; }
+.sprint-modal-load { margin-left: auto; }
+.sprint-modal-load[data-over] strong { color: var(--warning); }
+.sprint-modal-bar { margin: 8px 0 4px; }
+.sprint-modal-note { font-size: var(--fs-12); color: var(--text-3); margin-top: 4px; }
+.sprint-modal-warn { margin-top: 10px; }
+/* A single quiet line; the list opens on click. */
+.sprint-modal-warn-head {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: var(--fs-12); font-weight: 400;
+  color: var(--text-2);
+  cursor: pointer; list-style: none;
+  padding: 2px 6px; margin-left: -6px;
+  border-radius: var(--r-sm);
+}
+.sprint-modal-warn-head::-webkit-details-marker { display: none; }
+.sprint-modal-warn-head:hover { background: var(--surface-3); }
+.sprint-modal-warn-meta { color: var(--text-3); }
+.sprint-modal-warn-caret { color: var(--text-3) !important; transition: transform var(--t-hover) ease-out; }
+.sprint-modal-warn[open] .sprint-modal-warn-caret { transform: rotate(90deg); }
+.sprint-modal-warn-head svg { color: var(--warning); flex-shrink: 0; }
+.sprint-modal-warn-list {
+  list-style: none; margin: 6px 0 0; padding: 0 0 0 19px;
+  display: flex; flex-direction: column; gap: 4px;
+  max-height: 160px; overflow-y: auto;
+}
+.sprint-modal-warn-list li {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 12px;
+  font-size: var(--fs-12); color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.sprint-modal-warn-task { color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sprint-modal-action {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin-top: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  font-size: var(--fs-13);
+  color: var(--text-2);
+}
+.sprint-modal-desc { margin-top: 0 !important; min-height: 5.5em; }
+.sprint-modal-fields { display: flex; flex-direction: column; }
+.sprint-modal-field {
+  display: grid; grid-template-columns: 88px minmax(0, 1fr); align-items: center;
+  column-gap: 12px; min-height: 36px;
+}
+.sprint-modal-label { font-size: var(--fs-13); color: var(--text-3); }
+.sprint-modal-foot {
+  display: flex; justify-content: flex-end; gap: 8px;
+  padding: 16px 24px;
+  border-top: 1px solid var(--line);
+}
+
+/* ── Details panel values ─────────────────────────────────────────────
+ * Every value is one full-width row: plain at rest, --surface-3 on
+ * hover, click to edit. The 8px bleed keeps the text itself on the
+ * value column's edge, so interactive and static values line up. */
+.modal-side .field-btn,
+.modal-side .status-trigger,
+.modal-side .select-inline .select-trigger {
+  display: flex; align-items: center; gap: 8px;
+  width: calc(100% + 16px);
+  min-height: 32px;
+  margin: 0 -8px;
+  padding: 0 8px;
+  box-sizing: border-box;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-13);
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color var(--t-hover) ease-out;
+}
+.modal-side .field-btn:hover:not(:disabled),
+.modal-side .status-trigger:hover,
+.modal-side .select-inline .select-trigger:hover,
+.modal-side .select-inline.select-open .select-trigger {
+  background: var(--surface-3);
+  text-decoration: none;
+}
+.modal-side .field-btn:disabled { cursor: default; }
+.modal-side .status-editor,
+.modal-side .select-inline { display: block; }
+.field-btn-text { min-width: 0; flex: 1 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.field-btn-empty { color: var(--text-3); }
+.modal-side .field-btn .avatar { width: 20px; height: 20px; }
+.modal-side .field-value { min-height: 32px; display: flex; align-items: center; }
+
+/* "No tasks" beside an empty person's name — the group stays one line. */
+.assignee-head .ah-empty { font-weight: 400; color: var(--text-3); font-size: var(--fs-13); }
+
+@media (max-width: 700px) {
+  /* Summary figures wrap as separate items; a "·" left at the start of
+   * a wrapped line looked broken, so phones drop the dots. */
+  /* Header: "Archive completed" is just "Archive" on a phone. */
+  .archive-btn-more { display: none; }
+}
+
+@media (max-width: 700px) {
+  /* Task details on a phone: the side panel replaces the main pane
+   * (full width) instead of squeezing in beside it. The head's action
+   * band drops its fixed side-column width. */
+  .modal { --head-pad-x: 14px; } /* match .modal-main's phone padding */
+  .modal-body[data-side="open"] { grid-template-columns: 1fr; }
+  .modal-body[data-side="open"] .modal-main { display: none; }
+  .modal-head-actions { width: auto; border-left: 0; background: transparent; }
+  .modal-side { border-left: 0; }
+
+  /* Time blocks: two lines per block so nothing is cut off and every
+   * row lines up — date + duration on top, time range + state below. */
+  .tm-block-row {
+    grid-template-columns: 20px minmax(0, 1fr) auto auto auto;
+    grid-template-areas:
+      "ava date dur  jira del"
+      ".   time state jira del";
+    column-gap: 10px;
+    padding-block: 6px;
+  }
+  .tm-block-ava, .tm-block-del, .tm-block-jira { align-self: center; }
+  .tm-block-time { font-size: var(--fs-12); }
+  .tm-block-state { height: 20px; padding: 0 0 0 8px; margin-right: 0; }
+}
+
+/* Time-block rows: a quiet log, not a headline. Same 13px as the rest
+ * of the modal, but shorter rows, secondary ink for date and range, and
+ * normal-weight durations so ten rows don't outweigh the description. */
+.tm-block-row { min-height: 32px; padding-block: 2px; }
+.tm-block-date { color: var(--text-2); }
+.tm-block-time, .tm-block-time-end { color: var(--text-3); }
+.tm-block-dur { font-weight: 400; color: var(--text-2); }
+
+/* ── List header: icon tile, menu, toolbar, time summary ───────────── */
+.proj-icon {
+  flex: none;
+  display: inline-grid; place-items: center;
+  width: 28px; height: 40px;
+  font-size: 24px; line-height: 1; /* emoji icons */
+}
+.proj-menu { position: relative; }
+.list-head .proj-edit-btn[data-open] { background: var(--surface-3); color: var(--text); }
+.proj-menu-pop {
+  position: absolute; right: 0; top: calc(100% + 4px);
+  z-index: 20;
+  min-width: 220px;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-ctl);
+  box-shadow: var(--shadow-float);
+  display: flex; flex-direction: column;
+}
+.proj-menu-item {
+  display: flex; align-items: center; gap: 8px;
+  height: 32px; padding: 0 8px;
+  border: 0; border-radius: var(--r-sm);
+  background: transparent;
+  font: inherit; font-size: var(--fs-13);
+  color: var(--text); text-align: left; cursor: pointer;
+}
+.proj-menu-item svg { color: var(--text-3); flex: none; }
+.proj-menu-item:hover:not(:disabled) { background: var(--surface-3); }
+.proj-menu-item:disabled { color: var(--text-3); cursor: default; }
+.proj-menu-count { margin-left: auto; color: var(--text-3); font-variant-numeric: tabular-nums; }
+
+/* Tags dropdown in the toolbar — same height and fill as the sprint picker. */
+.tag-menu { position: relative; flex: none; }
+.tag-menu-trigger {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: var(--h-ctl); padding: 0 10px;
+  border: 1px solid transparent; border-radius: var(--r-ctl);
+  background: var(--surface-2);
+  font: inherit; font-size: var(--fs-13); color: var(--text-2);
+  cursor: pointer;
+  transition: background-color var(--t-hover) ease-out;
+}
+.tag-menu-trigger:hover, .tag-menu-trigger[data-open] { background: var(--surface-3); }
+.tag-menu-trigger[data-set] { color: var(--text); }
+.tag-menu-count {
+  min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box;
+  display: inline-grid; place-items: center;
+  border-radius: var(--r-xs);
+  background: var(--accent); color: var(--accent-fg);
+  font-size: var(--fs-11); font-weight: 600;
+}
+.tag-menu-chevron { color: var(--text-3); }
+.tag-menu-popover {
+  position: absolute; top: calc(100% + 4px); right: 0;
+  z-index: 20; min-width: 200px;
+}
+/* Picked tags under the toolbar, removable, with a quiet any/all. */
+.tag-filter-chips {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+}
+.tag-filter-chips .tag-filter-chip { height: 24px; padding-inline: 8px 2px; gap: 2px; }
+.tag-filter-chips .tag-chip-x { width: 18px; height: 18px; border-radius: var(--r-xs); }
+.tag-filter-chips .tag-chip-x:hover { background: color-mix(in oklab, var(--c) 20%, transparent); }
+.seg.tag-filter-mode { margin-left: 4px; height: var(--h-sm); }
+.seg.tag-filter-mode > button { height: calc(var(--h-sm) - 4px); font-size: var(--fs-12); padding: 0 8px; }
+
+/* Time summary: one bar (done · planned · rest of estimate | overrun),
+ * then the figures. Only the overrun is coloured text. */
+.list-time { margin: 0 0 24px; display: flex; flex-direction: column; gap: 8px; }
+.list-time .list-totals { margin: 0; }
+.list-time-bar {
+  display: flex; height: 6px;
+  border-radius: 3px; overflow: hidden;
+  background: var(--track);
+}
+.ltb-done { background: var(--proj-color); }
+.ltb-planned { background: color-mix(in oklab, var(--proj-color) 40%, transparent); }
+.ltb-rest { background: transparent; }
+.ltb-tick { flex: 0 0 2px; background: var(--bg); }
+.ltb-over { background: var(--warning); }
+
+@media (max-width: 700px) {
+  /* Toolbar on a phone: search gets its own line; sprint, tags, All/Me
+   * and Clear share the next. */
+  .list-filter-row { flex-wrap: wrap; }
+  .list-filter-row .list-search { flex: 1 0 100%; }
+  .list-sprint-select { max-width: none; }
+  .tag-menu-popover { right: auto; left: 0; }
+}
+
+/* ── List header (one sticky bar) ─────────────────────────────────── */
+.list-head {
+  position: sticky; top: 0; z-index: 4;
+  background: var(--bg);
+  margin: 0 0 20px;
+  padding: 16px 0 12px;
+  border-bottom: 1px solid transparent;
+  transition: border-color var(--t-hover) ease-out;
+}
+.list[data-scrolled] .list-head { border-bottom-color: var(--line); }
+.list-head-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.list-head-row h1 {
+  margin: 0; min-width: 0;
+  font-size: var(--fs-24); font-weight: 600; letter-spacing: -0.02em;
+  line-height: var(--h-ctl);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.list-head .proj-icon { width: 26px; height: var(--h-ctl); }
+.list-head-controls {
+  flex: 1 1 auto;
+  justify-content: flex-end;
+  margin-left: 16px;
+  display: flex; align-items: center; gap: 6px;
+  min-width: 0;
+}
+/* Search: compact at rest, wider while focused or holding a query. */
+.list-head .list-search { flex: 0 1 220px; min-width: 140px; } /* capped; the rest of the row stays open */
+.list-head .list-search:has(input[data-has-value]) .input { border-color: var(--accent); }
+/* Same filled square as the dropdowns beside it. */
+.list-head .proj-edit-btn {
+  width: var(--h-ctl); height: var(--h-ctl);
+  padding: 0; border: 0; border-radius: var(--r-ctl);
+  background: var(--surface-2); color: var(--text-2);
+}
+.list-head .proj-edit-btn:hover { color: var(--text); background: var(--surface-3); }
+.proj-menu-check { margin-left: auto; color: var(--accent) !important; }
+/* Picked tags under the title. */
+/* Even spacing: title → chips and chips → first section are both 20px. */
+.list-head-chips {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  margin-top: 20px;
+}
+.list-head:has(.list-head-chips) { padding-bottom: 0; }
+.list-clear-all {
+  /* A real small button, same height as the chips beside it. */
+  display: inline-flex; align-items: center; gap: 4px;
+  height: var(--h-sm); padding: 0 8px;
+  border: 1px solid var(--line-2); border-radius: var(--r-sm);
+  background: transparent;
+  font: inherit; font-size: var(--fs-12); color: var(--text-2);
+  cursor: pointer;
+  transition: border-color var(--t-hover) ease-out, color var(--t-hover) ease-out;
+}
+.list-clear-all:hover { color: var(--text); border-color: var(--line-3); }
+.count-of { color: var(--text-3); }
+.list-head + .list-time, .list-head + .list-filter-empty { margin-top: 0; }
+
+@media (max-width: 860px) {
+  /* Narrow: controls drop under the title and the search takes the slack. */
+  .list-head-row { flex-wrap: wrap; row-gap: 10px; }
+  .list-head-controls { margin-left: 0; flex: 1 1 100%; flex-wrap: wrap; }
+  .list-head .list-search, .list-head .list-search:focus-within,
+  .list-head .list-search:has(input[data-has-value]) { flex: 1 1 100%; min-width: 0; }
+  .list-head .proj-menu { order: -1; position: absolute; top: 16px; right: 0; }
+  .list-head { position: relative; } /* anchors the ⋯ menu beside the title */
+}
+
+.sprint-label-dot {
+  width: 7px; height: 7px; flex: none;
+  border-radius: 2px;
+  background: var(--text-4);
+}
+.sprint-label-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* The section rule runs through the middle of the heading line, from
+ * the count to the caption — on every width. */
+.section-head { border-bottom: 0; padding-bottom: 0; margin-bottom: 10px; align-items: center; gap: 8px; }
+.section-head .rule { height: 1px; background: var(--line); margin: 0 4px; }
+
+/* ── List rows & headings, desktop (the "clean" layout) ──────────────
+ * Right-hand details (id · sprint · tags) size to their content.
+ * Headings drop their rules; collapse carets hang in the left margin so
+ * names stay on the content edge. */
+@media (min-width: 701px) {
+  /* Dynamic trail: id · sprint · tags, each only when present, packed
+   * against the row's right edge. No fixed columns — any of the three can
+   * be missing, so there's no stable anchor to align to. */
+  .task-trail { gap: 16px; }
+  .task-trail .task-tags { min-width: 0; }
+  .task-trail .left-est { margin-left: 0; }
+  /* 22px chips against a 20px title line: lift the columns so their
+   * text shares the title's baseline. */
+  .task-trail { margin-top: -2px; }
+
+  .section-head .caret { order: 0; margin-left: -22px; margin-right: 0; } /* 14 + 8 gap, same as person carets */
+  /* Person headers: no caret (the whole line still folds), flush with
+   * the rows, small avatar + count. */
+  /* Same height and bottom gap as the section heading above it. */
+  .assignee-head { height: 20px; margin: 20px 0 10px; gap: 8px; font-weight: 500; color: var(--text-2); }
+  .section-head + .assignee-group .assignee-head { margin-top: 16px; }
+  /* Caret hangs in the left margin, in line with the section carets. */
+  .assignee-head .avatar { width: 16px; height: 16px; font-size: 8px; }
+  .assignee-head .ah-caret { margin-left: -22px; }
+}
+/* The subtask toggle is just its "2/4" count: text, so it sits on the
+ * title line itself (no chevron nudge). */
+.task-toggle:has(.task-toggle-count) { padding: 0 4px; top: 0; height: 20px; font-size: var(--fs-13); }

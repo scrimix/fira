@@ -166,20 +166,20 @@ const PRIORITIES: [&str; 4] = ["p0", "p1", "p2", "p3"];
 /// Realistic per-project tag vocabulary: (title, color). Every project gets
 /// this full set, and each task is linked to a random 0-3 of them.
 const TAG_VOCAB: [(&str, &str); 10] = [
-    ("UI", "#3b82f6"),
-    ("CORE", "#8b5cf6"),
-    ("BUG", "#ef4444"),
-    ("API", "#0891b2"),
-    ("perf", "#f59e0b"),
-    ("infra", "#64748b"),
-    ("docs", "#10b981"),
-    ("tech-debt", "#a16207"),
+    ("UI", "#3E6AE1"),
+    ("CORE", "#8E4EC6"),
+    ("BUG", "#E5484D"),
+    ("API", "#00A2C7"),
+    ("perf", "#F76B15"),
+    ("infra", "#6E7A8F"),
+    ("docs", "#29A383"),
+    ("tech-debt", "#E2A336"),
     ("v1", "#6366f1"),
     ("v2", "#14b8a6"),
 ];
 
 const PROJECT_COLORS: [&str; 6] = [
-    "#2563eb", "#dc2626", "#16a34a", "#9333ea", "#ea580c", "#0891b2",
+    "#3E6AE1", "#E5484D", "#30A46C", "#8E4EC6", "#ea580c", "#00A2C7",
 ];
 
 /// Fixed ids for the "Maya" dev user — the stress-env equivalent of the
@@ -425,7 +425,7 @@ async fn main() -> anyhow::Result<()> {
             let status = match section {
                 "done" => "done",
                 "now" => ["todo", "in_progress"][rng.gen_range(0..2)],
-                _ => ["backlog", "todo"][rng.gen_range(0..2)],
+                _ => "todo",
             };
             let finished_at = if status == "done" {
                 (now - Duration::hours(rng.gen_range(1..4000))).to_rfc3339()

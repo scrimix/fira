@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import ReactMarkdown, { defaultUrlTransform, type Components } from 'react-markdown';
 import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
-import { AlertTriangle, ArrowLeft, Check, ClockPlus, Copy, Download, FilePlus2, Link, Loader2, PanelRightClose, PanelRightOpen, Paperclip, Pencil, Plus, RefreshCw, Ticket, Trash2, X } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Check, ChevronRight, Copy, Download, FilePlus2, Link, Loader2, PanelRightClose, PanelRightOpen, Paperclip, Pencil, Plus, RefreshCw, Ticket, Trash2, X } from 'lucide-react';
 import { useFira } from '../store';
 import { useAutosizeTextarea, useIsMobile } from '../hooks';
 import { ConfirmDelete } from './ConfirmDelete';
@@ -18,7 +18,7 @@ import {
   taskCompletedMin, taskPlannedMin, taskTimeLeft,
   blockToGrid, parseDateKey,
 } from '../time';
-import type { Section, Status, Tag, Attachment, Project, Task, User, UUID } from '../types';
+import type { Section, Status, Tag, Attachment, Project, Task, TimeBlock, User, UUID } from '../types';
 import { api, HttpError } from '@/api';
 import { buildTaskLink } from '../deeplink';
 import { computeMoveImpact } from '../moveImpact';
@@ -196,13 +196,17 @@ export function TaskModal({ taskId }: Props) {
     () => projects.filter((p) => p.id !== task?.project_id),
     [projects, task?.project_id],
   );
+  const taskSprintLabel = useMemo(() => {
+    const sp = task?.sprint_id ? sprints.find((x) => x.id === task.sprint_id) : null;
+    return sp ? sp.title : null;
+  }, [task?.sprint_id, sprints]);
   const sprintOptions = useMemo(() => {
     const projectTracks = tracks.filter(t => t.project_id === task?.project_id)
       .sort((a, b) => a.sort_key.localeCompare(b.sort_key));
-    const ordered = projectTracks.map(t => ({ id: t.id as UUID | null, title: t.title }));
-    ordered.push({ id: null, title: 'No track' });
-    const date = (ms: number) => new Date(ms).toLocaleDateString(undefined, {
-      day: 'numeric', month: 'short', year: 'numeric',
+    const ordered = projectTracks.map(t => ({ id: t.id as UUID | null, title: t.title, color: t.color as string | undefined }));
+    ordered.push({ id: null, title: 'No track', color: undefined });
+    const date = (ms: number) => new Date(ms).toLocaleDateString('en-US', {
+      day: 'numeric', month: 'short',
     });
     return [
       { value: '', label: 'No sprint' },
@@ -213,8 +217,9 @@ export function TaskModal({ taskId }: Props) {
           // Sprint end dates are exclusive; show the last included date.
           const last = s.ends_on ? new Date(parseDateKey(s.ends_on)) : null;
           if (last) last.setDate(last.getDate() - 1);
-          return { value: s.id, label: s.title, group: track.title,
-            hint: s.starts_on && last ? `${date(parseDateKey(s.starts_on))} – ${date(last.getTime())}` : 'Dates not set' };
+          return { value: s.id, label: s.title, group: track.title, groupColor: track.color,
+            dot: track.color ?? '',
+            hint: s.starts_on && last ? `${date(parseDateKey(s.starts_on))} – ${date(last.getTime())}` : 'No dates' };
         })),
     ];
   }, [tracks, sprints, task?.project_id]);
@@ -284,8 +289,16 @@ export function TaskModal({ taskId }: Props) {
       <div className="modal" data-side={sideOpen ? 'open' : 'closed'} onClick={(e) => e.stopPropagation()}
           style={{ display: attachmentPreview == null ? 'flex' : 'none', ['--proj-color' as string]: project.color }}>
         <div className="modal-head">
-          <span className="proj-dot" style={{ background: project.color }} />
-          <span className="ext">{project.title}</span>
+          <span className="modal-proj-chip">
+            <span className="proj-dot" style={{ background: project.color }} />
+            {project.title}
+          </span>
+          {taskSprintLabel && (
+            <>
+              <ChevronRight size={12} strokeWidth={1.5} className="modal-crumb-sep" aria-hidden />
+              <span className="modal-crumb">{taskSprintLabel}</span>
+            </>
+          )}
           <span className="grow" />
           {/* Grouped so the head's trailing controls can carry the side
               pane's tint and sit directly above it as one column —
@@ -296,6 +309,7 @@ export function TaskModal({ taskId }: Props) {
               className="icon-btn modal-head-danger"
               onClick={() => setConfirmingDelete(true)}
               title="Delete task"
+              aria-label="Delete task"
             >
               <Trash2 size={15} strokeWidth={1.75} />
             </button>
@@ -326,26 +340,19 @@ export function TaskModal({ taskId }: Props) {
                 </div>
                 <div className="est-meta">
                   <span><strong>{fmtMin(completed)}</strong> {task.has_private_time ? 'visible done' : 'done'}</span>
+                  <span className="est-meta-dot" aria-hidden>·</span>
                   <span><strong>{fmtMin(planned)}</strong> {task.has_private_time ? 'visible planned' : 'planned'}</span>
+                  <span className="est-meta-dot" aria-hidden>·</span>
+                  <span><strong>{fmtMin(task.estimate_min)}</strong> estimate</span>
+                  <span className="est-meta-dot" aria-hidden>·</span>
                   {task.has_private_time ? <span title="Time left cannot be calculated from visible blocks">Private time excluded</span>
-                    : <span><strong>{fmtMin(Math.max(0, left ?? 0))}</strong> left</span>}
-                  <span style={{ marginLeft: 'auto' }}>of {fmtMin(task.estimate_min)} estimate</span>
+                    : left != null && left < 0
+                      ? <span className="est-over"><strong>+{fmtMin(-left)}</strong> over</span>
+                      : <span><strong>{fmtMin(Math.max(0, left ?? 0))}</strong> left</span>}
                 </div>
               </>
             )}
 
-            {isMobile && (
-              <>
-                <SectionHeading title="Tags" />
-                <TagEditor
-                  key={task.id}
-                  projectId={project.id}
-                  selected={task.tag_ids}
-                  allTags={allTags}
-                  onChange={(ids) => setTaskTags(task.id, ids)}
-                />
-              </>
-            )}
 
             <SectionHeading
               title="Description"
@@ -434,7 +441,7 @@ export function TaskModal({ taskId }: Props) {
               trailing={
                 meId ? (
                   <button
-                    className="tm-section-btn"
+                    className="btn btn-ghost btn-sm tm-section-add"
                     type="button"
                     onClick={() => {
                       // New block defaults: assignee = me, ends at the
@@ -463,14 +470,15 @@ export function TaskModal({ taskId }: Props) {
                     title="Add a 1h block ending now"
                     aria-label="Add time block"
                   >
-                    <ClockPlus size={14} strokeWidth={1.75} />
+                    <Plus size={12} strokeWidth={2} aria-hidden />
+                    Add block
                   </button>
                 ) : undefined
               }
             />
             {taskBlocks.length === 0 ? (
               <div className="tm-section-empty"></div>
-            ) : taskBlocks.map(({ b, start_min, dur_min }) => (
+            ) : <div className="tm-block-list">{taskBlocks.map(({ b, start_min, dur_min }) => (
                 <BlockRow
                   key={b.id}
                   startAt={b.start_at}
@@ -481,6 +489,7 @@ export function TaskModal({ taskId }: Props) {
                   taskDone={task.status === 'done'}
                   users={users}
                   meId={meId}
+                  color={project.color}
                   onSave={(patch) => updateBlock(b.id, patch)}
                   onDelete={() => deleteBlock(b.id)}
                   jiraLinked={!!(project.jira_project_key && task.external_id)}
@@ -488,7 +497,7 @@ export function TaskModal({ taskId }: Props) {
                   jiraSyncError={b.jira_sync_error}
                   onPushJira={() => pushBlockToJira(b.id)}
                 />
-              ))}
+              ))}</div>}
           </div>
           <div className="modal-side">
             <div className="field">
@@ -501,7 +510,6 @@ export function TaskModal({ taskId }: Props) {
               />
               {moveError && !moveOpen && <div className="move-error">{moveError}</div>}
             </div>
-            <Field label="Created by" value={<CreatorDisplay userId={task.created_by} users={users} meId={meId} createdAt={task.created_at} />} />
             <div className="field">
               <h5>Assignee</h5>
               <AssigneeEditor
@@ -528,14 +536,12 @@ export function TaskModal({ taskId }: Props) {
                 onSave={(v) => setTaskEstimate(task.id, v)}
               />
             </div>
-            <Field label="Time left" mono value={task.has_private_time ? 'Private time excluded' : left != null ? fmtMin(left) : '—'} />
-            {/* On mobile the side pane is closed by default, so the Tags
-            * editor renders in the main pane instead — see below. */}
-            {!isMobile && (
+            {(
               <div className="field">
                 <h5>Tags</h5>
                 <TagEditor
                   key={task.id}
+                  compact
                   projectId={project.id}
                   selected={task.tag_ids}
                   allTags={allTags}
@@ -569,10 +575,13 @@ export function TaskModal({ taskId }: Props) {
             <div className="field">
               <h5>Sprint</h5>
               <Select key={task.id} value={task.sprint_id ?? ''} options={sprintOptions}
-                title="Sprint" menuMinWidth={260} variant="inline"
+                title="Sprint" menuMinWidth={340} variant="inline"
                 onChange={value => {
                   if (value !== (task.sprint_id ?? '')) setTaskSprint(task.id, value || null);
                 }} />
+            </div>
+            <div className="modal-side-meta">
+              <CreatorDisplay userId={task.created_by} users={users} meId={meId} createdAt={task.created_at} />
             </div>
           </div>
         </div>
@@ -766,7 +775,7 @@ function SectionHeading({ title, hint, trailing }: {
 // re-lays the block out without a refresh.
 function BlockRow({
   startAt, state, userId, startMin, durMin, taskDone,
-  users, meId, onSave, onDelete,
+  users, meId, color, onSave, onDelete,
   jiraLinked, jiraWorklogId, jiraSyncError, onPushJira,
 }: {
   startAt: string;
@@ -777,7 +786,10 @@ function BlockRow({
   taskDone: boolean;
   users: User[];
   meId: UUID | null;
-  onSave: (patch: { start_at?: string; end_at?: string }) => void;
+  /// Project colour: the state toggle's dot is filled when completed,
+  /// a ring when planned — the same reading as a calendar block.
+  color: string;
+  onSave: (patch: { start_at?: string; end_at?: string; state?: TimeBlock['state'] }) => void;
   onDelete: () => void;
   // Jira worklog sync — only rendered when the task is linked to a Jira
   // issue (project has a key + task has an external_id) *and* the block is
@@ -804,7 +816,7 @@ function BlockRow({
   };
   const stale = taskDone && state === 'planned';
   const startDate = new Date(startAt);
-  const dateLabel = `${MONTH_ABBR[startDate.getMonth()]} ${startDate.getDate()}`;
+  const dateLabel = `${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][startDate.getDay()]}, ${MONTH_ABBR[startDate.getMonth()]} ${startDate.getDate()}`;
   const u = users.find((x) => x.id === userId);
 
   // Each edit patches *only* the endpoint it owns so duration falls out
@@ -895,12 +907,16 @@ function BlockRow({
         />
       </span>
       <span className="tm-block-dur" title="Computed from start + end">{fmtMin(durMin)}</span>
-      <span className="tm-block-state">
+      <button type="button" className="tm-block-state" data-state={state}
+              style={{ ['--block-color' as string]: color }}
+              title={state === 'completed' ? 'Mark as planned' : 'Mark as completed'}
+              onClick={() => onSave({ state: state === 'completed' ? 'planned' : 'completed' })}>
         {stale && (
-          <span className="tm-block-warn" title="Task is marked done, but this block is still planned.">⚠</span>
+          <AlertTriangle size={12} strokeWidth={2} className="tm-block-warn" aria-label="Task is marked done, but this block is still planned." />
         )}
-        {state}
-      </span>
+        <span className="tm-block-state-dot" aria-hidden />
+        {state === 'completed' ? 'Completed' : 'Planned'}
+      </button>
       {jiraLinked && (isMine || jiraWorklogId || jiraSyncError) && (
         <button
           className="tm-section-btn tm-block-jira"
@@ -1534,7 +1550,9 @@ function SubtaskRow({
 }) {
   const [editing, setEditing] = useState(autoEdit);
   const [draft, setDraft] = useState(title);
-  const [dragOnHandle, setDragOnHandle] = useState(false);
+  // Where the last mouse press landed — a drag that starts on the
+  // checkbox, the remove button or the edit field is cancelled.
+  const downTarget = useRef<HTMLElement | null>(null);
   const ref = useAutosizeTextarea(draft, editing);
 
   useEffect(() => { setDraft(title); }, [title]);
@@ -1611,7 +1629,7 @@ function SubtaskRow({
   const onRowPointerDown = (e: React.PointerEvent) => {
     if (e.pointerType !== 'touch') return;
     const targetEl = e.target as HTMLElement;
-    if (targetEl.closest('.sc, .subtask-grip, .subtask-del, input, textarea')) return;
+    if (targetEl.closest('.sc, .subtask-del, input, textarea')) return;
     if (editing) return;
     rowTouchRef.current = {
       startX: e.clientX, startY: e.clientY,
@@ -1645,13 +1663,17 @@ function SubtaskRow({
       data-done={done}
       data-drop-mark={dropMark ?? undefined}
       data-subtask-id={id}
-      draggable={dragOnHandle}
+      // Like a task row: drag the row itself with a mouse (no grip);
+      // touch keeps the long-press below.
+      draggable={!editing}
+      onMouseDownCapture={(e) => { downTarget.current = e.target as HTMLElement; }}
       onDragStart={(e) => {
+        if (downTarget.current?.closest('.sc, .subtask-del, textarea, input')) { e.preventDefault(); return; }
         e.dataTransfer.effectAllowed = 'move';
         e.dataTransfer.setData('text/plain', id);
         onDragStart(id);
       }}
-      onDragEnd={() => { setDragOnHandle(false); onDragEnd(); }}
+      onDragEnd={onDragEnd}
       onDragOver={(e) => {
         if (!e.dataTransfer.types.includes('text/plain')) return;
         e.preventDefault();
@@ -1677,31 +1699,6 @@ function SubtaskRow({
         }
       }}
     >
-      <span
-        className="subtask-grip"
-        title="Drag to reorder"
-        onMouseDown={() => setDragOnHandle(true)}
-        onMouseUp={() => setDragOnHandle(false)}
-        onPointerDown={(e) => {
-          if (e.pointerType !== 'touch') return;
-          e.preventDefault();
-          e.stopPropagation();
-          e.currentTarget.setPointerCapture(e.pointerId);
-          onGripTouchStart(id);
-        }}
-        onPointerMove={(e) => {
-          if (e.pointerType !== 'touch') return;
-          onGripTouchMove(e.clientX, e.clientY);
-        }}
-        onPointerUp={(e) => {
-          if (e.pointerType !== 'touch') return;
-          onGripTouchEnd();
-        }}
-        onPointerCancel={(e) => {
-          if (e.pointerType !== 'touch') return;
-          onGripTouchEnd();
-        }}
-      >::</span>
       <span className="sc" onClick={onToggle} aria-label={done ? 'Mark not done' : 'Mark done'}>
         {done && <Check size={11} strokeWidth={3} />}
       </span>
@@ -1737,7 +1734,7 @@ function SubtaskRow({
           }}
         />
       ) : (
-        <span className="sname" onClick={() => setEditing(true)} style={{ cursor: 'text', flex: 1 }}>
+        <span className="sname" onClick={() => setEditing(true)} style={{ cursor: 'text' }}>
           {title}
         </span>
       )}
@@ -1764,7 +1761,6 @@ function AddSubtaskRow({ onAdd, bare }: { onAdd: (title: string) => void; bare: 
          onClick={() => inputRef.current?.focus()}>
       {!bare && (
         <>
-          <span className="grip-spacer" aria-hidden="true" />
           <span className="sc-spacer" aria-hidden="true">
             <Plus size={11} strokeWidth={2} />
           </span>
@@ -1820,16 +1816,11 @@ function EstimateEditor({ value, onSave }: {
 
   if (!editing) {
     return (
-      <div onClick={() => setEditing(true)}
-           style={{
-             cursor: 'text',
-             fontFamily: 'var(--font-sans)',
-             fontSize: 'var(--fs-md)',
-             fontVariantNumeric: 'tabular-nums',
-             color: value != null ? 'var(--ink)' : 'var(--ink-4)',
-           }}>
-        {value != null ? fmtMin(value) : 'Click to set'}
-      </div>
+      <button type="button" className="field-btn" onClick={() => setEditing(true)} title="Edit estimate">
+        <span className={`field-btn-text${value == null ? ' field-btn-empty' : ''}`}>
+          {value != null ? fmtMin(value) : 'Set estimate'}
+        </span>
+      </button>
     );
   }
 
@@ -1847,7 +1838,7 @@ function EstimateEditor({ value, onSave }: {
           setEditing(false);
         }
       }}
-      placeholder="e.g. 1h30 or 90m"
+      placeholder="e.g. 1h 30m or 90m"
     />
   );
 }
@@ -1856,20 +1847,19 @@ function EstimateEditor({ value, onSave }: {
 // on the same accents users already learned from the Status picker:
 // `now` → in-progress accent, `later` → todo, `recurring` → its own
 // accent (ongoing commitments are visually distinct from one-shot work),
-// `someday` → backlog, `done` → done.
+// `someday` → grey, `done` → done.
 const SECTION_OPTIONS: Array<{ value: Section; label: string; tone: string }> = [
-  { value: 'now', label: 'now', tone: 'now' },
-  { value: 'later', label: 'later', tone: 'todo' },
-  { value: 'recurring', label: 'recurring', tone: 'recurring' },
-  { value: 'someday', label: 'someday', tone: 'backlog' },
-  { value: 'done', label: 'done', tone: 'done' },
+  { value: 'now', label: 'Now', tone: 'now' },
+  { value: 'later', label: 'Later', tone: 'todo' },
+  { value: 'recurring', label: 'Recurring', tone: 'recurring' },
+  { value: 'someday', label: 'Someday', tone: 'someday' },
+  { value: 'done', label: 'Done', tone: 'done' },
 ];
 
 const STATUS_OPTIONS: Array<{ id: Status; label: string; tone: string }> = [
-  { id: 'backlog', label: 'backlog', tone: 'backlog' },
-  { id: 'todo', label: 'todo', tone: 'todo' },
-  { id: 'in_progress', label: 'in progress', tone: 'now' },
-  { id: 'done', label: 'done', tone: 'done' },
+  { id: 'todo', label: 'Todo', tone: 'todo' },
+  { id: 'in_progress', label: 'In progress', tone: 'now' },
+  { id: 'done', label: 'Done', tone: 'done' },
 ];
 
 // Generic toned-pill picker. Renders a button with a tone-colored label
@@ -2037,8 +2027,8 @@ function ExternalLinkEditor({ label, url, resolvedUrl, hasTemplate, onSaveLabel,
           }}
         />
         <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-          <button className="btn" style={{ padding: '2px 8px', fontSize: 'calc(11px * var(--fs-scale))' }} onClick={cancel}>Cancel</button>
-          <button className="btn" style={{ padding: '2px 8px', fontSize: 'calc(11px * var(--fs-scale))' }} onClick={commit}>Save</button>
+          <button className="btn" style={{ padding: '2px 8px', fontSize: 'var(--fs-12)' }} onClick={cancel}>Cancel</button>
+          <button className="btn" style={{ padding: '2px 8px', fontSize: 'var(--fs-12)' }} onClick={commit}>Save</button>
         </div>
       </div>
     );
@@ -2046,33 +2036,31 @@ function ExternalLinkEditor({ label, url, resolvedUrl, hasTemplate, onSaveLabel,
 
   if (!label && !url) {
     return (
-      <div onClick={() => setEditing(true)}
-           style={{ cursor: 'text', color: 'var(--ink-4)', fontFamily: 'var(--font-mono)', fontSize: 'calc(12px * var(--fs-scale))' }}>
-        Click to add a link
-      </div>
+      <button type="button" className="field-btn" onClick={() => setEditing(true)}>
+        <span className="field-btn-text field-btn-empty">Add link</span>
+      </button>
     );
   }
 
   // Display: prefer label if set, otherwise the URL itself.
   const display = label ? `[${label}]` : url!;
+  // The whole row edits; the link itself still opens in a new tab.
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+    <div className="field-btn" role="button" tabIndex={0} title="Edit link"
+         onClick={() => setEditing(true)}
+         onKeyDown={(e) => { if (e.key === 'Enter') setEditing(true); }}>
       {resolvedUrl ? (
         <a href={resolvedUrl} target="_blank" rel="noopener noreferrer"
            onClick={(e) => e.stopPropagation()}
-           className="ext-link"
+           className="ext-link field-btn-text"
            title={resolvedUrl}>
           {display}
         </a>
       ) : (
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'calc(12px * var(--fs-scale))', color: 'var(--ink-2)' }}
-              title="No URL — add one here or set a template on the project.">
+        <span className="field-btn-text" title="No URL — add one here or set a template on the project.">
           {display}
         </span>
       )}
-      <button className="icon-btn" onClick={() => setEditing(true)} title="Edit">
-        <Pencil size={12} strokeWidth={1.75} />
-      </button>
     </div>
   );
 }
@@ -2219,23 +2207,14 @@ function ProjectEditor({ project, canMove, onEdit }: {
   canMove: boolean;
   onEdit: () => void;
 }) {
+  // Nowhere to move to in a one-project workspace, so it's static then.
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-      <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <span className="proj-dot" style={{ background: project.color }} />
-        {project.title}
-      </span>
-      {/* Nowhere to move to in a one-project workspace. */}
-      {canMove && (
-        <button
-          className="icon-btn"
-          onClick={onEdit}
-          title="Move to another project"
-        >
-          <Pencil size={12} strokeWidth={1.75} />
-        </button>
-      )}
-    </div>
+    <button type="button" className="field-btn" disabled={!canMove}
+            onClick={canMove ? onEdit : undefined}
+            title={canMove ? 'Move to another project' : undefined}>
+      <span className="proj-dot" style={{ background: project.color }} />
+      <span className="field-btn-text">{project.title}</span>
+    </button>
   );
 }
 
@@ -2347,19 +2326,14 @@ function AssigneeEditor({ value, users, meId, onChange }: {
   }
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-      <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        {selected
-          ? <>
-              <div className="avatar" data-me={selected.id === meId}>{selected.initials}</div>
-              <span>{selected.name}{selected.id === meId ? ' (you)' : ''}</span>
-            </>
-          : <span style={{ color: 'var(--ink-4)' }}>Unassigned</span>}
-      </span>
-      <button className="icon-btn" onClick={() => setEditing(true)} title="Change assignee">
-        <Pencil size={12} strokeWidth={1.75} />
-      </button>
-    </div>
+    <button type="button" className="field-btn" onClick={() => setEditing(true)} title="Change assignee">
+      {selected
+        ? <>
+            <span className="avatar" data-me={selected.id === meId}>{selected.initials}</span>
+            <span className="field-btn-text">{selected.name}{selected.id === meId ? ' (you)' : ''}</span>
+          </>
+        : <span className="field-btn-text field-btn-empty">Unassigned</span>}
+    </button>
   );
 }
 
@@ -2370,19 +2344,21 @@ function AssigneeEditor({ value, users, meId, onChange }: {
 // tags are project structure, managed (created, renamed, recoloured,
 // deleted) by project leads in project settings; the server enforces it.
 export function TagEditor({
-  projectId, selected, allTags, onChange,
+  projectId, selected, allTags, onChange, compact = false,
 }: {
   projectId: UUID;
   selected: UUID[];
   allTags: Tag[];
   onChange: (ids: UUID[]) => void;
+  /// Details-panel form: the whole value is one click target that opens
+  /// the picker (where tags are toggled off), so chips drop their ×
+  /// and there's no separate + — two tags fit on one line.
+  compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState('');
   const wrapRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
   // Viewport-coordinate anchor so the popover escapes the modal's
   // overflow: auto sidebar instead of getting clipped inside it. Same
   // pattern as <Select>.
@@ -2399,14 +2375,9 @@ export function TagEditor({
     .map((id) => projectTags.find((t) => t.id === id))
     .filter((t): t is Tag => !!t);
 
-  const trimmed = query.trim();
-  const lower = trimmed.toLowerCase();
-  const filtered = useMemo(
-    () => trimmed
-      ? projectTags.filter((t) => t.title.toLowerCase().includes(lower))
-      : projectTags,
-    [projectTags, trimmed, lower],
-  );
+  // No search box: a project has a handful of tags, so the picker just
+  // lists them all.
+  const filtered = projectTags;
 
   useLayoutEffect(() => {
     if (!open || !wrapRef.current) {
@@ -2465,13 +2436,6 @@ export function TagEditor({
     };
   }, [open]);
 
-  useEffect(() => {
-    if (open) {
-      setQuery('');
-      requestAnimationFrame(() => inputRef.current?.focus());
-    }
-  }, [open]);
-
   const toggle = (id: UUID) => {
     if (selectedSet.has(id)) {
       onChange(selected.filter((x) => x !== id));
@@ -2483,6 +2447,24 @@ export function TagEditor({
 
   return (
     <div className="tag-editor" ref={wrapRef}>
+      {compact ? (
+        <button
+          ref={triggerRef}
+          type="button"
+          className="field-btn tag-editor-trigger"
+          onClick={() => setOpen((v) => !v)}
+          data-open={open || undefined}
+          title="Edit tags"
+        >
+          {selectedTags.length === 0
+            ? <span className="field-btn-empty">Add tags</span>
+            : selectedTags.map((t) => (
+              <span key={t.id} className="tag-chip" style={{ ['--tag-color' as string]: t.color }}>
+                <span className="tag-chip-title">{t.title}</span>
+              </span>
+            ))}
+        </button>
+      ) : (
       <div className="tag-editor-row">
         {selectedTags.map((t) => (
           <span
@@ -2514,6 +2496,7 @@ export function TagEditor({
           <Plus size={12} strokeWidth={1.75} />
         </button>
       </div>
+      )}
       {open && createPortal(
         <div
           ref={popoverRef}
@@ -2522,22 +2505,10 @@ export function TagEditor({
             ? { position: 'fixed', top: pos.top, left: pos.left, width: pos.width }
             : { visibility: 'hidden', position: 'fixed', top: 0, left: 0 }}
         >
-          <input
-            ref={inputRef}
-            className="tag-editor-search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search tags…"
-            maxLength={40}
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') { e.preventDefault(); setOpen(false); }
-              if (e.key === 'Enter' && filtered.length === 1) { e.preventDefault(); toggle(filtered[0].id); setQuery(''); }
-            }}
-          />
           <div className="tag-editor-list">
             {filtered.length === 0 && (
               <div className="tag-editor-empty">
-                {projectTags.length === 0 ? 'No tags yet.' : 'No matching tag.'} Project leads add
+                No tags yet. Project leads add
                 tags in project settings.
               </div>
             )}
@@ -2575,35 +2546,25 @@ function CreatorDisplay({ userId, users, meId, createdAt }: {
   const name = !userId ? "Unknown" : user ? `${user.name}${user.id === meId ? " (you)" : ""}` : "Removed user";
 
   return (
-    <span style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-      <span style={{ display: "flex", alignItems: "center", gap: 6, padding: "2px 0" }}>
-        {user && <div className="avatar" data-me={user.id === meId}>{user.initials}</div>}
-        <span>{name}</span>
-      </span>
-      <span style={{ color: "var(--ink-4)", fontFamily: "var(--font-mono)", fontSize: "calc(10px * var(--fs-scale))", padding: "2px 0" }}>
-        {formatTaskCreatedAt(createdAt)}
-      </span>
-    </span>
+    <>
+      <span>Created by {name}</span>
+      <span>{formatTaskCreatedAt(createdAt)}</span>
+    </>
   );
 }
 
 function formatTaskCreatedAt(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "Created date unavailable";
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium", timeStyle: "short",
-  }).format(date);
+  // "Oct 23, 2026 at 21:54"
+  const day = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(date);
+  return `${day} at ${date.getHours()}:${String(date.getMinutes()).padStart(2, '0')}`;
 }
-function Field({ label, value, mono }: { label: string; value: React.ReactNode; mono?: boolean }) {
+function Field({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="field">
       <h5>{label}</h5>
-      <div style={{
-        fontSize: 'var(--fs-md)',
-        color: 'var(--ink)',
-        fontFamily: mono ? 'var(--font-mono)' : 'inherit',
-        fontVariantNumeric: mono ? 'tabular-nums' : 'normal',
-      }}>{value}</div>
+      <div className="field-value">{value}</div>
     </div>
   );
 }

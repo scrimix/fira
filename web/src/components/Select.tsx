@@ -1,6 +1,6 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown } from 'lucide-react';
+import { Check, ChevronDown } from 'lucide-react';
 
 // Generic dropdown that replaces the native <select>. Native selects render
 // the option list with platform chrome (white background, OS font) which
@@ -15,6 +15,10 @@ export interface SelectOption<T extends string> {
   label: string;
   hint?: string;
   group?: string;
+  /// Colour for the group header's dot (e.g. a sprint's track colour).
+  groupColor?: string;
+  /// Colour dot shown before the label (e.g. a sprint's track colour).
+  dot?: string;
   disabled?: boolean;
 }
 
@@ -64,7 +68,10 @@ export function Select<T extends string>({
       const spaceBelow = window.innerHeight - t.bottom;
       const flipUp = mh > 0 && spaceBelow < mh + 8 && t.top > mh + 8;
       const top = flipUp ? Math.max(8, t.top - mh - 4) : t.bottom + 2;
-      const left = Math.min(Math.max(8, t.left), window.innerWidth - w - 8);
+      // Clamp with the menu's real width — options can be wider than
+      // menuMinWidth (badge + label + date), and the clamp must see that.
+      const mw = Math.max(w, m ? m.getBoundingClientRect().width : 0);
+      const left = Math.min(Math.max(8, t.left), window.innerWidth - mw - 8);
       setMenuPos({ top, left, width: w });
     };
     place();
@@ -126,8 +133,9 @@ export function Select<T extends string>({
         aria-controls={id}
         title={title}
       >
+        {current?.dot && <span className="select-dot" style={{ background: current.dot }} />}
         <span className="select-value">{current?.label ?? '—'}</span>
-        {variant !== 'inline' && <ChevronDown size={size === 'sm' ? 11 : 13} strokeWidth={1.75} />}
+        {variant !== 'inline' && <ChevronDown size={10} strokeWidth={1.75} className="select-chevron" />}
       </button>
       {open && createPortal(
         <div
@@ -146,7 +154,10 @@ export function Select<T extends string>({
         >
           {options.map((o, index) => <div key={o.value}>
             {o.group && o.group !== options[index - 1]?.group &&
-              <div className="select-group-label">{o.group}</div>}
+              <div className="select-group-label">
+                {o.groupColor && <span className="select-group-dot" style={{ background: o.groupColor }} />}
+                {o.group}
+              </div>}
             <button
               key={o.value}
               type="button"
@@ -162,8 +173,22 @@ export function Select<T extends string>({
                 }
               }}
             >
-              <span className="select-option-label">{o.label}</span>
-              {o.hint && <span className="select-option-hint">{o.hint}</span>}
+              {o.dot !== undefined ? (
+                <span className="select-option-row">
+                  <span className="select-dot" style={{ background: o.dot || 'var(--line-3)' }} />
+                  <span className="select-option-label">{o.label}</span>
+                  {o.hint && <span className="select-option-hint select-option-hint-inline">{o.hint}</span>}
+                  <span className="select-option-check">{o.value === value && <Check size={13} strokeWidth={2} />}</span>
+                </span>
+              ) : (
+                <>
+                  <span className="select-option-row">
+                    <span className="select-option-label">{o.label}</span>
+                    <span className="select-option-check">{o.value === value && <Check size={13} strokeWidth={2} />}</span>
+                  </span>
+                  {o.hint && <span className="select-option-hint">{o.hint}</span>}
+                </>
+              )}
             </button>
           </div>)}
         </div>,

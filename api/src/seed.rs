@@ -10,7 +10,7 @@
 // planned" snapshot regardless of which day of the week the seeder runs on.
 
 use anyhow::Context;
-use chrono::{DateTime, Datelike, Duration, NaiveDate, TimeZone, Utc};
+use chrono::{DateTime, Datelike, Duration, TimeZone, Utc};
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 
@@ -45,14 +45,6 @@ fn week_anchor() -> DateTime<Utc> {
 
 fn ts(day: i64, start_min: i64) -> DateTime<Utc> {
     week_anchor() + Duration::days(day) + Duration::minutes(start_min)
-}
-
-const MONTHS: [&str; 12] = [
-    "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-];
-
-fn fmt_md(d: NaiveDate) -> String {
-    format!("{} {}", MONTHS[d.month0() as usize], d.day())
 }
 
 /// Wipe the per-tenant fixture tables. Leaves auth-only tables (`sessions`,
@@ -394,7 +386,7 @@ static TASKS: &[TaskSpec] = &[
         description: "Rotate refresh tokens on every use. Invalidate the old token within a 30-second grace window.\n\nFollow RFC 6749 §10.4 + §6 recommendations.",
         section: "now", status: "in_progress", priority: Some("p1"),
         source: "jira", external_id: Some("ATL-412"),
-        estimate_min: Some(360), spent_min: 120, tags: &["auth", "security"],
+        estimate_min: Some(1320), spent_min: 120, tags: &["auth", "security"],
         subtasks: &[
             ("Audit current refresh logic", true),
             ("Add rotation endpoint", true),
@@ -408,7 +400,7 @@ static TASKS: &[TaskSpec] = &[
         description: "Webhook delivery is at-least-once. Dedup by event id, store last 30 days.",
         section: "now", status: "in_progress", priority: Some("p1"),
         source: "jira", external_id: Some("ATL-433"),
-        estimate_min: Some(240), spent_min: 60, tags: &["billing"],
+        estimate_min: Some(1440), spent_min: 60, tags: &["billing"],
         subtasks: &[
             ("Create dedup table", true),
             ("Wrap webhook handlers", false),
@@ -421,7 +413,7 @@ static TASKS: &[TaskSpec] = &[
         description: "Bob's PR. Token bucket per IP + per user. Check the redis fallback.",
         section: "now", status: "todo", priority: Some("p2"),
         source: "jira", external_id: Some("ATL-440"),
-        estimate_min: Some(60), spent_min: 0, tags: &["review"],
+        estimate_min: Some(480), spent_min: 0, tags: &["review"],
         subtasks: &[],
     },
     TaskSpec {
@@ -430,7 +422,7 @@ static TASKS: &[TaskSpec] = &[
         description: "",
         section: "now", status: "todo", priority: Some("p1"),
         source: "jira", external_id: Some("ATL-451"),
-        estimate_min: Some(480), spent_min: 0, tags: &["auth", "enterprise"],
+        estimate_min: Some(720), spent_min: 0, tags: &["auth", "enterprise"],
         subtasks: &[],
     },
     TaskSpec {
@@ -439,7 +431,7 @@ static TASKS: &[TaskSpec] = &[
         description: "",
         section: "now", status: "todo", priority: Some("p2"),
         source: "jira", external_id: Some("ATL-446"),
-        estimate_min: Some(180), spent_min: 0, tags: &["compliance"],
+        estimate_min: Some(420), spent_min: 0, tags: &["compliance"],
         subtasks: &[],
     },
     TaskSpec {
@@ -448,7 +440,7 @@ static TASKS: &[TaskSpec] = &[
         description: "p99 went from 80ms → 320ms after the auth refactor merge. Bisect commits.",
         section: "now", status: "in_progress", priority: Some("p0"),
         source: "jira", external_id: Some("ATL-449"),
-        estimate_min: Some(240), spent_min: 60, tags: &["perf"],
+        estimate_min: Some(480), spent_min: 60, tags: &["perf"],
         subtasks: &[],
     },
     // ---- RELAY Now ----
@@ -458,7 +450,7 @@ static TASKS: &[TaskSpec] = &[
         description: "Receive Jira webhook, debounce 500ms, upsert task by external_id.",
         section: "now", status: "in_progress", priority: Some("p1"),
         source: "notion", external_id: Some("sync-engine/47"),
-        estimate_min: Some(300), spent_min: 90, tags: &["sync"],
+        estimate_min: Some(900), spent_min: 90, tags: &["sync"],
         subtasks: &[
             ("Webhook signature verification", true),
             ("Debounce queue", false),
@@ -471,7 +463,7 @@ static TASKS: &[TaskSpec] = &[
         description: "When a task is diverged, show side-by-side diff so user picks a side.",
         section: "now", status: "todo", priority: Some("p2"),
         source: "notion", external_id: Some("sync-engine/52"),
-        estimate_min: Some(240), spent_min: 0, tags: &["ui"],
+        estimate_min: Some(600), spent_min: 0, tags: &["ui"],
         subtasks: &[],
     },
     TaskSpec {
@@ -480,7 +472,7 @@ static TASKS: &[TaskSpec] = &[
         description: "",
         section: "now", status: "todo", priority: Some("p1"),
         source: "notion", external_id: Some("sync-engine/55"),
-        estimate_min: Some(360), spent_min: 0, tags: &["onboarding"],
+        estimate_min: Some(600), spent_min: 0, tags: &["onboarding"],
         subtasks: &[],
     },
     // ---- HELIX Now ----
@@ -490,7 +482,7 @@ static TASKS: &[TaskSpec] = &[
         description: "Try bge-small + qdrant, measure recall@10 on held-out set.",
         section: "now", status: "in_progress", priority: Some("p2"),
         source: "local", external_id: None,
-        estimate_min: Some(240), spent_min: 30, tags: &["research"],
+        estimate_min: Some(1500), spent_min: 30, tags: &["research"],
         subtasks: &[
             ("Spin up qdrant locally", true),
             ("Index 1k sample tasks", false),
@@ -503,7 +495,7 @@ static TASKS: &[TaskSpec] = &[
         description: "",
         section: "now", status: "todo", priority: Some("p3"),
         source: "local", external_id: None,
-        estimate_min: Some(60), spent_min: 0, tags: &["design"],
+        estimate_min: Some(480), spent_min: 0, tags: &["design"],
         subtasks: &[],
     },
     // ---- RECURRING ----
@@ -534,7 +526,7 @@ static TASKS: &[TaskSpec] = &[
         slug: "t_atlas_later1", created_w: -4, project: "p_atlas", track: Some("e_auth_v2"), sprint: None,
         assignee: "u_maya", title: "Magic-link auth fallback",
         description: "",
-        section: "later", status: "backlog", priority: Some("p2"),
+        section: "later", status: "todo", priority: Some("p2"),
         source: "jira", external_id: Some("ATL-501"),
         estimate_min: None, spent_min: 0, tags: &[],
         subtasks: &[],
@@ -543,7 +535,7 @@ static TASKS: &[TaskSpec] = &[
         slug: "t_atlas_later2", created_w: -5, project: "p_atlas", track: Some("e_auth_v2"), sprint: None,
         assignee: "u_maya", title: "Admin UI: revoke session",
         description: "",
-        section: "later", status: "backlog", priority: Some("p3"),
+        section: "later", status: "todo", priority: Some("p3"),
         source: "jira", external_id: Some("ATL-510"),
         estimate_min: Some(180), spent_min: 0, tags: &[],
         subtasks: &[],
@@ -552,7 +544,7 @@ static TASKS: &[TaskSpec] = &[
         slug: "t_atlas_later3", created_w: -4, project: "p_atlas", track: Some("e_auth_v2"), sprint: None,
         assignee: "u_maya", title: "Investigate FIDO2 / passkeys",
         description: "",
-        section: "later", status: "backlog", priority: Some("p3"),
+        section: "later", status: "todo", priority: Some("p3"),
         source: "jira", external_id: Some("ATL-515"),
         estimate_min: None, spent_min: 0, tags: &[],
         subtasks: &[],
@@ -561,7 +553,7 @@ static TASKS: &[TaskSpec] = &[
         slug: "t_relay_later1", created_w: -4, project: "p_relay", track: Some("e_onboarding"), sprint: None,
         assignee: "u_maya", title: "GitHub Issues source adapter",
         description: "",
-        section: "later", status: "backlog", priority: Some("p3"),
+        section: "later", status: "todo", priority: Some("p3"),
         source: "notion", external_id: Some("sync-engine/61"),
         estimate_min: None, spent_min: 0, tags: &[],
         subtasks: &[],
@@ -570,7 +562,7 @@ static TASKS: &[TaskSpec] = &[
         slug: "t_relay_later2", created_w: -2, project: "p_relay", track: Some("e_sync_engine"), sprint: None,
         assignee: "u_maya", title: "Bug: Notion poll skips archived pages",
         description: "Spotted in standup 2026-04-28. Repro: archive a page, watch poll cycle.",
-        section: "later", status: "backlog", priority: Some("p2"),
+        section: "later", status: "todo", priority: Some("p2"),
         source: "local", external_id: None,
         estimate_min: Some(60), spent_min: 0, tags: &[],
         subtasks: &[],
@@ -579,7 +571,7 @@ static TASKS: &[TaskSpec] = &[
         slug: "t_helix_later1", created_w: -3, project: "p_helix", track: Some("e_explore"), sprint: None,
         assignee: "u_maya", title: "Read: \"Notion Calendar postmortem\" blog",
         description: "",
-        section: "later", status: "backlog", priority: Some("p3"),
+        section: "later", status: "todo", priority: Some("p3"),
         source: "local", external_id: None,
         estimate_min: Some(30), spent_min: 0, tags: &[],
         subtasks: &[],
@@ -588,7 +580,7 @@ static TASKS: &[TaskSpec] = &[
         slug: "t_helix_later2", created_w: -1, project: "p_helix", track: Some("e_explore"), sprint: None,
         assignee: "u_maya", title: "Try DuckDB for snapshot replay queries",
         description: "",
-        section: "later", status: "backlog", priority: Some("p3"),
+        section: "later", status: "todo", priority: Some("p3"),
         source: "local", external_id: None,
         estimate_min: None, spent_min: 0, tags: &[],
         subtasks: &[],
@@ -598,7 +590,7 @@ static TASKS: &[TaskSpec] = &[
         slug: "t_atlas_someday1", created_w: -8, project: "p_atlas", track: Some("e_auth_v2"), sprint: None,
         assignee: "u_maya", title: "Hardware token (YubiKey) onboarding flow",
         description: "",
-        section: "someday", status: "backlog", priority: Some("p3"),
+        section: "someday", status: "todo", priority: Some("p3"),
         source: "jira", external_id: Some("ATL-602"),
         estimate_min: None, spent_min: 0, tags: &[],
         subtasks: &[],
@@ -607,7 +599,7 @@ static TASKS: &[TaskSpec] = &[
         slug: "t_relay_someday1", created_w: -5, project: "p_relay", track: Some("e_onboarding"), sprint: None,
         assignee: "u_maya", title: "Linear source adapter",
         description: "",
-        section: "someday", status: "backlog", priority: Some("p3"),
+        section: "someday", status: "todo", priority: Some("p3"),
         source: "local", external_id: None,
         estimate_min: None, spent_min: 0, tags: &[],
         subtasks: &[],
@@ -616,7 +608,7 @@ static TASKS: &[TaskSpec] = &[
         slug: "t_helix_someday1", created_w: -4, project: "p_helix", track: Some("e_explore"), sprint: None,
         assignee: "u_maya", title: "Voice-input for quick-capture (research)",
         description: "",
-        section: "someday", status: "backlog", priority: Some("p3"),
+        section: "someday", status: "todo", priority: Some("p3"),
         source: "local", external_id: None,
         estimate_min: None, spent_min: 0, tags: &[],
         subtasks: &[],
@@ -760,11 +752,9 @@ const TRACKS: [(&str, &str, &str, &str); 7] = [
 /// ones bracketing `w(0)` are what makes "this sprint" meaningful in the
 /// list; `fixture_plan_history` adds the past.
 fn fixture_sprints(f: &mut Fixture) {
-    let anchor = week_anchor().date_naive();
-    let title_dated = |weeks: i64| format!("Atlas · {}", fmt_md(anchor + Duration::weeks(weeks)));
     let sprints: [(&str, &str, &str, String, i64, i64); 5] = [
-        ("s_apr27", "p_atlas", "e_auth_v2", title_dated(0), 0, 2),
-        ("s_may11", "p_atlas", "e_perf", title_dated(2), 2, 4),
+        ("s_apr27", "p_atlas", "e_auth_v2", "Atlas · SSO rollout".into(), 0, 2),
+        ("s_may11", "p_atlas", "e_perf", "Atlas · Latency budget".into(), 2, 4),
         (
             "s_relay9",
             "p_relay",
@@ -781,7 +771,7 @@ fn fixture_sprints(f: &mut Fixture) {
             1,
             3,
         ),
-        ("s_helix_q2", "p_helix", "e_search", "Helix · Q2".into(), 0, 8),
+        ("s_helix_q2", "p_helix", "e_search", "Helix · Search MVP".into(), 0, 8),
     ];
     for (i, (slug, project, track, title, from, to)) in sprints.iter().enumerate() {
         f.at(

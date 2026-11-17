@@ -1,114 +1,128 @@
+import { useEffect, useRef, useState } from 'react';
+import { Check, ChevronDown, X } from 'lucide-react';
 import type { Tag, UUID } from '../types';
 
-/// The project tag filter: a row of selectable tag chips plus the
-/// any/all mode toggle, and optionally the me/all assignee scope.
+/// The list's tag filter, in two parts:
 ///
-/// Lifted out of ListView unchanged so the plan board's rail can use
-/// the same control rather than growing a second, worse one. The list
-/// passes `showAssigneeScope`; the board doesn't, because it has no
-/// assignee subsections to scope.
-export function ListTagFilter({
-  projectId, allTags, tagIds, mode, scope, showAssigneeScope,
-  onChange, onModeChange, onScopeChange,
-}: {
+/// - `TagMenu`: one toolbar button ("Tags", or "Tags · 2") that opens a
+///   checklist of the project's tags. A dropdown rather than a row of
+///   chips, so the filter costs one control however many tags there are.
+/// - `TagFilterChips`: the picked tags as removable chips under the
+///   toolbar, with the any/all switch — shown only once two or more are
+///   picked, the only time it changes anything.
+export function TagMenu({ projectId, allTags, tagIds, onChange }: {
   projectId: UUID;
   allTags: Tag[];
   tagIds: UUID[];
-  mode: 'and' | 'or';
-  scope: 'me' | 'all';
-  showAssigneeScope: boolean;
   onChange: (ids: UUID[]) => void;
-  onModeChange: (mode: 'and' | 'or') => void;
-  onScopeChange: (scope: 'me' | 'all') => void;
 }) {
-  // Sort by title length descending so longer chips lead each row.
-  // flex-wrap places left-to-right in source order, and seeding rows
-  // with long chips lets shorter ones slot into the trailing space —
-  // fewer ragged half-empty rows than alphabetical order, especially
-  // on narrow widths. Alphabetical secondary sort keeps the order
-  // stable for chips of equal length.
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
   const projectTags = allTags
     .filter((t) => t.project_id === projectId)
-    .sort((a, b) => b.title.length - a.title.length || a.title.localeCompare(b.title));
-
+    .sort((a, b) => a.title.localeCompare(b.title));
   const selected = new Set(tagIds);
   const toggle = (id: UUID) => {
     if (selected.has(id)) onChange(tagIds.filter((x) => x !== id));
     else onChange([...tagIds, id]);
   };
-  const hasTags = projectTags.length > 0;
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: PointerEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('pointerdown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  if (projectTags.length === 0) return null;
+  const count = tagIds.filter((id) => projectTags.some((t) => t.id === id)).length;
 
   return (
-    <div className="list-tag-filter">
-      {hasTags && (
-        <div className="list-tag-filter-chips">
-          {projectTags.map((t) => {
-            const on = selected.has(t.id);
-            return (
-              <button
-                key={t.id}
-                type="button"
-                className="chip tag-chip list-tag-filter-chip"
-                data-on={on || undefined}
-                style={{ ['--tag-color' as string]: t.color }}
-                onClick={() => toggle(t.id)}
-                title={t.title}
-              >
-                {t.title}
-              </button>
-            );
-          })}
+    <div className="tag-menu" ref={wrapRef}>
+      <button
+        type="button"
+        className="tag-menu-trigger"
+        data-set={count > 0 || undefined}
+        data-open={open || undefined}
+        aria-haspopup="true"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        Tags{count > 0 && <span className="tag-menu-count">{count}</span>}
+        <ChevronDown size={12} strokeWidth={1.75} className="tag-menu-chevron" />
+      </button>
+      {open && (
+        <div className="tag-editor-popover tag-menu-popover" role="menu">
+          <div className="tag-editor-list">
+            {projectTags.map((t) => {
+              const on = selected.has(t.id);
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  role="menuitemcheckbox"
+                  aria-checked={on}
+                  className="tag-editor-row-btn"
+                  data-on={on || undefined}
+                  style={{ ['--tag-color' as string]: t.color }}
+                  onClick={() => toggle(t.id)}
+                >
+                  <span className="tag-editor-row-title">{t.title}</span>
+                  {on && <Check size={12} strokeWidth={2} />}
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
-      {/* Controls are always rendered, even with 0 / 1 tag selected, so
-       * the layout doesn't shift as the user toggles chips. With one
-       * tag, OR/AND yields the same set — the toggle still works, just
-       * has no visible effect until a second tag is added. Clear is a
-       * safe no-op when nothing is selected. */}
-      <div className="list-tag-filter-controls">
-        {showAssigneeScope && <div className="list-tag-filter-mode" role="group" aria-label="Assignee scope">
+    </div>
+  );
+}
+
+export function TagFilterChips({ allTags, tagIds, mode, onChange, onModeChange }: {
+  allTags: Tag[];
+  tagIds: UUID[];
+  mode: 'and' | 'or';
+  onChange: (ids: UUID[]) => void;
+  onModeChange: (mode: 'and' | 'or') => void;
+}) {
+  const picked = tagIds
+    .map((id) => allTags.find((t) => t.id === id))
+    .filter((t): t is Tag => !!t);
+  if (picked.length === 0) return null;
+  return (
+    <div className="tag-filter-chips">
+      {picked.map((t) => (
+        <span key={t.id} className="tag-chip tag-filter-chip" style={{ ['--tag-color' as string]: t.color }}>
+          <span className="tag-chip-title">{t.title}</span>
           <button
             type="button"
-            className="list-tag-filter-mode-seg"
-            data-active={scope === 'all' || undefined}
-            onClick={() => onScopeChange('all')}
-            title="Show every task in this project"
+            className="tag-chip-x"
+            onClick={() => onChange(tagIds.filter((x) => x !== t.id))}
+            title={`Remove ${t.title}`}
+            aria-label={`Remove ${t.title} filter`}
           >
-            all
+            <X size={10} strokeWidth={2} />
           </button>
-          <button
-            type="button"
-            className="list-tag-filter-mode-seg"
-            data-active={scope === 'me' || undefined}
-            onClick={() => onScopeChange('me')}
-            title="Show only tasks assigned to me"
-          >
-            me
-          </button>
-        </div>}
-        {hasTags && (
-            <div className="list-tag-filter-mode" role="group" aria-label="Tag match mode">
-              <button
-                type="button"
-                className="list-tag-filter-mode-seg"
-                data-active={mode === 'or' || undefined}
-                onClick={() => onModeChange('or')}
-                title="Match tasks with any selected tag"
-              >
-                or
-              </button>
-              <button
-                type="button"
-                className="list-tag-filter-mode-seg"
-                data-active={mode === 'and' || undefined}
-                onClick={() => onModeChange('and')}
-                title="Match tasks with every selected tag"
-              >
-                and
-              </button>
-            </div>
-        )}
-      </div>
+        </span>
+      ))}
+      {picked.length >= 2 && (
+        <div className="seg tag-filter-mode" role="group" aria-label="Tag match">
+          <button type="button" data-on={mode === 'or' || undefined} aria-pressed={mode === 'or'}
+                  onClick={() => onModeChange('or')}
+                  title="Tasks with any of these tags">Any</button>
+          <button type="button" data-on={mode === 'and' || undefined} aria-pressed={mode === 'and'}
+                  onClick={() => onModeChange('and')}
+                  title="Tasks with all of these tags">All</button>
+        </div>
+      )}
     </div>
   );
 }
