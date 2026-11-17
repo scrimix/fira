@@ -27,7 +27,7 @@ import { blockMinutes, localMidnight, monthRangeFor, weekStartOf } from './time'
 /// Fill color for blocks whose task carries no tags. A real token rather
 /// than a hex so it tracks the theme — these bars sit alongside
 /// tag-colored ones and shouldn't fight them for attention.
-export const UNTAGGED_COLOR = 'var(--ink-4)';
+export const UNTAGGED_COLOR = 'var(--text-4)';
 
 export interface Bucket {
   /// Stable identity for React keys and click targets. A project id, a

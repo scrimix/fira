@@ -88,7 +88,7 @@ fn history(
         });
         Ok(())
     };
-    let colors = ["#2563eb", "#9333ea", "#16a34a"];
+    let colors = ["#3E6AE1", "#8E4EC6", "#30A46C"];
     for (i, color) in colors.iter().enumerate() {
         emit(json!({"kind":"track.create", "track":{
             "id":entity(project,"track",i), "project_id":project, "title":(["Product","Platform","Delivery"][i]),
@@ -208,7 +208,7 @@ pub async fn seed_profiles(pool: &PgPool, workspace: Uuid, config: &Config) -> a
             .unwrap();
     for &count in &config.revisions {
         let project = project_id(workspace, count);
-        sqlx::query("INSERT INTO projects(id,title,color,source,owner_id,workspace_id,created_at,description) VALUES($1,$2,'#2563eb','local',$3,$4,$5,$6)")
+        sqlx::query("INSERT INTO projects(id,title,color,source,owner_id,workspace_id,created_at,description) VALUES($1,$2,'#3E6AE1','local',$3,$4,$5,$6)")
             .bind(project).bind(format!("History · {count} revisions")).bind(owner).bind(workspace)
             .bind(end-Duration::days(config.days)).bind(FIXTURE_MARKER).execute(&mut *tx).await?;
         for (i, actor) in actors.iter().enumerate() {

@@ -467,8 +467,8 @@ function MembersEditor({
         {headerSelf && (
           <div className="np-member np-member-owner" title="You can't remove yourself">
             <span className="avatar" data-me="true">{headerSelf.initials}</span>
-            <span className="np-member-name">{headerSelf.name}</span>
-            <span className="np-member-tag">{myMembership?.role ?? 'member'} (you)</span>
+            <span className="np-member-name">{headerSelf.name} (you)</span>
+            <span className="np-member-tag">{myMembership?.role ?? 'member'}</span>
           </div>
         )}
         {memberRows.map(({ user: u, role }) => {
@@ -485,11 +485,11 @@ function MembersEditor({
                   menuMinWidth={180}
                   onChange={(v) => onRoleChange(u.id, v)}
                   options={[
-                    { value: 'owner', label: 'owner', hint: 'hidden from list unless tasks assigned' },
-                    { value: 'lead', label: 'lead', hint: 'edits project + members' },
-                    { value: 'member', label: 'member', hint: 'works tasks' },
-                    { value: 'dev', label: 'dev', hint: 'works tasks; sees only own time blocks' },
-                    { value: 'inactive', label: 'inactive', hint: 'hidden from list unless tasks assigned' },
+                    { value: 'owner', label: 'Owner', hint: 'hidden from list unless tasks assigned' },
+                    { value: 'lead', label: 'Lead', hint: 'edits project + members' },
+                    { value: 'member', label: 'Member', hint: 'works tasks' },
+                    { value: 'dev', label: 'Dev', hint: 'works tasks; sees only own time blocks' },
+                    { value: 'inactive', label: 'Inactive', hint: 'hidden from list unless tasks assigned' },
                   ]}
                 />
               ) : (
@@ -512,7 +512,7 @@ function MembersEditor({
                   title="Remove from project"
                   aria-label={`Remove ${u.name}`}
                 >
-                  <X size={12} strokeWidth={1.75} />
+                  <X size={14} strokeWidth={1.75} />
                 </button>
               ))}
             </div>
@@ -693,7 +693,7 @@ function TagsEditor({ projectId }: { projectId: UUID }) {
                   title="Edit tag"
                   aria-label={`Edit ${t.title}`}
                 >
-                  <Pencil size={12} strokeWidth={1.75} />
+                  <Pencil size={14} strokeWidth={1.75} />
                 </button>
                 <button
                   type="button"
@@ -702,7 +702,7 @@ function TagsEditor({ projectId }: { projectId: UUID }) {
                   title="Delete tag"
                   aria-label={`Delete ${t.title}`}
                 >
-                  <Trash2 size={12} strokeWidth={1.75} />
+                  <Trash2 size={14} strokeWidth={1.75} />
                 </button>
               </div>
             ),

@@ -18,7 +18,7 @@
 .dash-col {
   max-width: 980px;
   margin: 0 auto;
-  padding: calc(24px * var(--density)) calc(36px * var(--density)) 80px;
+  padding: 32px 48px 80px;
 }
 /* The way out of a project scope. It carries a word, not just a
  * chevron, and sits on the far side of the month stepper — an icon-only
@@ -30,24 +30,24 @@
   gap: 3px;
   height: 22px;
   padding: 0 9px 0 6px;
-  border: 1px solid var(--rule-2);
-  border-radius: var(--r-sm);
-  background: var(--paper);
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-  color: var(--ink-2);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-ctl);
+  background: var(--bg);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-12);
+  color: var(--text-2);
   cursor: pointer;
 }
-.dash-back:hover { color: var(--ink); background: var(--paper-3); border-color: var(--ink-4); }
+.dash-back:hover { color: var(--text); background: var(--surface-3); border-color: var(--text-4); }
 /* The copy inside a panel header. Aligns to the heading's baseline row
  * and carries the same bottom margin so the bars start level. */
-.dash-back-inline { margin-left: auto; margin-bottom: calc(12px * var(--density)); }
+.dash-back-inline { margin-left: auto; margin-bottom: 16px; }
 .dash-scope {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: var(--ink-2);
-  font-size: var(--fs-xs);
+  color: var(--text-2);
+  font-size: var(--fs-12);
 }
 
 /* --- Hero + KPI row ---
@@ -56,52 +56,79 @@
  * than one tile among six equals — six same-sized numbers in a row is
  * how the first pass ended up flat. */
 
-.dash-hero { padding-bottom: calc(18px * var(--density)); }
-.dash-hero-fig {
-  font-family: var(--font-mono);
-  font-size: calc(52px * var(--fs-scale));
+.dash-hero { position: relative; padding-bottom: 24px; }
+/* Month stepper sits top-right of the hero instead of in its own bar. */
+.dash-month-nav {
+  position: absolute;
+  top: 0; right: 0;
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-ctl);
+  overflow: hidden;
+}
+.dash-month-nav .week-nav-btn {
+  height: calc(var(--h-ctl) - 2px);
+  min-width: calc(var(--h-ctl) - 2px);
+  padding: 0 10px;
+  display: inline-grid; place-items: center;
+  font-size: var(--fs-13);
   font-weight: 500;
+  color: var(--text);
+  background: transparent;
+  border: 0;
+  border-right: 1px solid var(--line-2);
+  cursor: pointer;
+  transition: background-color var(--t-hover) ease-out;
+}
+.dash-month-nav .week-nav-btn:last-child { border-right: 0; }
+.dash-month-nav .week-nav-btn svg { color: var(--text-2); }
+.dash-month-nav .week-nav-btn:hover { background: var(--surface-3); }
+.dash-hero-fig {
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-36); /* was 56px: a headline figure, not a poster */
+  font-weight: 600;
   line-height: 1;
   letter-spacing: -0.02em;
-  color: var(--ink);
+  color: var(--text);
   font-variant-numeric: tabular-nums;
 }
 .dash-hero-sub {
   margin-top: 8px;
-  font-size: var(--fs-sm);
-  color: var(--ink-3);
+  font-size: var(--fs-13);
+  color: var(--text-3);
 }
-.dash-hero-sub strong { color: var(--ink-2); font-weight: 500; }
+.dash-hero-sub strong { color: var(--text-2); font-weight: 500; }
 .dash-delta {
   margin-left: 10px;
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-12);
   padding: 2px 7px;
-  border-radius: 999px;
-  background: var(--paper-3);
-  color: var(--ink-2);
+  border-radius: var(--r-sm);
+  background: var(--surface-3);
+  color: var(--text-2);
 }
-.dash-delta[data-dir="up"] { color: var(--done); }
+.dash-delta[data-dir="up"] { color: var(--success); }
 
 .dash-kpis {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   gap: 1px;
-  background: var(--rule);
-  border: 1px solid var(--rule);
-  border-radius: var(--r-md, 6px);
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: var(--r-card, 6px);
   overflow: hidden;
 }
-.dash-kpi { background: var(--paper); padding: calc(12px * var(--density)) 14px; }
+.dash-kpi { background: var(--bg); padding: 16px 14px; }
 .dash-kpi-v {
-  font-family: var(--font-mono);
-  font-size: calc(19px * var(--fs-scale));
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-20);
   font-weight: 500;
-  color: var(--ink);
+  color: var(--text);
   font-variant-numeric: tabular-nums;
 }
-.dash-kpi-v span { font-size: var(--fs-xs); color: var(--ink-4); font-weight: 400; }
-.dash-kpi-l { font-size: var(--fs-xs); color: var(--ink-3); margin-top: 3px; }
+.dash-kpi-v span { font-size: var(--fs-12); color: var(--text-4); font-weight: 400; }
+.dash-kpi-l { font-size: var(--fs-12); color: var(--text-3); margin-top: 3px; }
 
 /* --- Panels ---
  *
@@ -112,51 +139,51 @@
 .dash-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: calc(18px * var(--density));
-  margin-top: calc(20px * var(--density));
+  gap: 24px;
+  margin-top: 32px;
   /* Stretch, not start: with a short distribution panel next to a tall
    * heatmap, `start` leaves a ragged edge halfway down the page. */
   align-items: stretch;
 }
 .dash-panel {
-  border: 1px solid var(--rule);
-  border-radius: var(--r-md, 6px);
-  padding: calc(16px * var(--density));
-  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--r-card, 6px);
+  padding: 24px;
+  background: var(--bg);
   min-width: 0;
 }
-.dash-section { padding-top: calc(26px * var(--density)); }
+.dash-section { padding-top: 40px; }
 .dash-h {
-  font-size: var(--fs-sm);
+  font-size: var(--fs-13);
   font-weight: 500;
-  color: var(--ink-2);
-  margin: 0 0 calc(12px * var(--density));
+  color: var(--text-2);
+  margin: 0 0 16px;
 }
-.dash-h-sub { margin-top: calc(20px * var(--density)); }
+.dash-h-sub { margin-top: 32px; }
 .dash-h-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.dash-h-row .dash-h { margin-bottom: calc(12px * var(--density)); }
+.dash-h-row .dash-h { margin-bottom: 16px; }
 .dash-chip {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-12);
+  color: var(--text-3);
   background: transparent;
-  border: 1px solid var(--rule-2);
-  border-radius: var(--r-sm);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-ctl);
   padding: 3px 9px;
   cursor: pointer;
 }
-.dash-chip:hover { color: var(--ink); background: var(--paper-3); }
-.dash-chip-add { margin-left: auto; margin-bottom: calc(12px * var(--density)); }
-.dash-empty { color: var(--ink-3); font-size: var(--fs-sm); max-width: 60ch; margin: 0; }
+.dash-chip:hover { color: var(--text); background: var(--surface-3); }
+.dash-chip-add { margin-left: auto; margin-bottom: 16px; }
+.dash-empty { color: var(--text-3); font-size: var(--fs-13); max-width: 60ch; margin: 0; }
 /* Says in words what the encoding means. A heatmap without one is the
  * chart people politely nod at and never read. */
 .dash-note {
   margin: 12px 0 0;
-  font-size: var(--fs-xs);
-  color: var(--ink-4);
+  font-size: var(--fs-12);
+  color: var(--text-4);
   line-height: 1.5;
   max-width: 46ch;
 }
@@ -170,10 +197,9 @@
 }
 .month-grid[data-compact="true"] { gap: 2px; }
 .month-grid-dow {
-  font-family: var(--font-mono);
-  font-size: calc(9px * var(--fs-scale));
-  letter-spacing: 0.08em;
-  color: var(--ink-4);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-11);
+  color: var(--text-4);
   text-align: center;
   padding-bottom: 3px;
 }
@@ -182,24 +208,21 @@
   aspect-ratio: 1;
   border: 0;
   border-radius: 3px;
-  background: color-mix(in srgb, var(--accent) calc(var(--fill, 0) * 100%), var(--paper-3));
+  background: color-mix(in srgb, var(--accent) calc(var(--fill, 0) * 100%), var(--surface-3));
   padding: 0;
   cursor: pointer;
   overflow: hidden;
 }
-.month-cell:hover { box-shadow: inset 0 0 0 1.5px var(--ink-3); }
+.month-cell:hover { box-shadow: inset 0 0 0 1.5px var(--text-3); }
 .month-cell[data-out] { opacity: 0.3; }
 .month-cell[data-today="true"] { box-shadow: inset 0 0 0 2px var(--accent); }
-/* Planned / upcoming: hatched, never solid. Intent shouldn't be
+/* Planned / upcoming: a lighter fill with a dashed outline, never solid
+ * (hatching is reserved for Google Calendar events). Intent shouldn't be
  * mistakable for achievement at a glance. */
 .month-cell[data-pending="true"] {
-  background: repeating-linear-gradient(
-    45deg,
-    color-mix(in srgb, var(--accent) calc(var(--fill, 0) * 55%), var(--paper-3)),
-    color-mix(in srgb, var(--accent) calc(var(--fill, 0) * 55%), var(--paper-3)) 3px,
-    var(--paper-2) 3px,
-    var(--paper-2) 6px
-  );
+  background: color-mix(in srgb, var(--accent) calc(var(--fill, 0) * 45%), var(--surface-2));
+  outline: 1px dashed var(--line-3);
+  outline-offset: -1px;
 }
 /* A cap's cells mean the opposite of a floor's, and can't share the
  * floor's color or they read backwards: on a cap card an *empty* cell is
@@ -211,16 +234,16 @@
  * Empty reads neutral, filling reads "burning through it", and the over
  * state escalates to red. The success signal for a cap lives in the
  * card's "28 / 29 days" count and streak, which say it plainly. */
-.goal-card[data-cap="true"] { --cap-ink: #B45309; }
+.goal-card[data-cap="true"] { --cap-ink: var(--warning); }
 .goal-card[data-cap="true"] .month-cell,
 .goal-card[data-cap="true"] .week-cell {
-  background: color-mix(in srgb, var(--cap-ink) calc(var(--fill, 0) * 100%), var(--paper-3));
+  background: color-mix(in srgb, var(--cap-ink) calc(var(--fill, 0) * 100%), var(--surface-3));
 }
 .month-cell[data-over="true"],
 .week-cell[data-over="true"],
 .goal-card[data-cap="true"] .month-cell[data-over="true"],
 .goal-card[data-cap="true"] .week-cell[data-over="true"] {
-  background: #DC2626;
+  background: var(--danger);
 }
 /* The date is not the value. It sits small in a corner so a reader
  * doesn't mistake "24" for twenty-four hours; the magnitude is the fill,
@@ -229,9 +252,9 @@
   position: absolute;
   top: 2px;
   left: 4px;
-  font-family: var(--font-mono);
-  font-size: calc(9px * var(--fs-scale));
-  color: var(--ink-4);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-11);
+  color: var(--text-4);
 }
 .month-cell[data-dark="true"] .month-cell-day,
 .month-cell[data-over="true"] .month-cell-day { color: rgba(255, 255, 255, 0.85); }
@@ -243,7 +266,7 @@
   flex: 1;
   height: 30px;
   border-radius: 3px;
-  background: color-mix(in srgb, var(--accent) calc(var(--fill, 0) * 100%), var(--paper-3));
+  background: color-mix(in srgb, var(--accent) calc(var(--fill, 0) * 100%), var(--surface-3));
 }
 .week-cell[data-today="true"] { box-shadow: inset 0 0 0 2px var(--accent); }
 .week-cell[data-pending="true"] { opacity: 0.35; }
@@ -254,9 +277,9 @@
   align-items: center;
   gap: 10px;
   margin-top: 12px;
-  font-family: var(--font-mono);
-  font-size: calc(9px * var(--fs-scale));
-  color: var(--ink-4);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-11);
+  color: var(--text-4);
   flex-wrap: wrap;
 }
 /* Each swatch carries its own label. Two separate runs — swatches, then
@@ -267,7 +290,7 @@
   width: 12px;
   height: 12px;
   border-radius: 2px;
-  background: color-mix(in srgb, var(--accent) calc(var(--fill, 0) * 100%), var(--paper-3));
+  background: color-mix(in srgb, var(--accent) calc(var(--fill, 0) * 100%), var(--surface-3));
 }
 
 
@@ -299,16 +322,16 @@
   align-items: center;
   gap: 10px;
   /* Matches .task-row's rhythm in list.css — same gesture, same feel. */
-  padding: calc(7px * var(--density)) 8px;
-  border-radius: var(--r-md);
+  padding: 10px 8px;
+  border-radius: var(--r-card);
   min-width: 0;
 }
 .dash-bar-row[data-clickable="true"] { cursor: pointer; }
-.dash-bar-row[data-clickable="true"]:hover { background: var(--paper-3); }
+.dash-bar-row[data-clickable="true"]:hover { background: var(--surface-3); }
 .dash-bar-label {
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-12);
+  color: var(--text-2);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -335,45 +358,45 @@
   min-width: 2px;
 }
 .dash-bar-val {
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-12);
+  color: var(--text-2);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   text-align: right;
 }
-.dash-bar-val span { color: var(--ink-4); }
+.dash-bar-val span { color: var(--text-4); }
 
-.dash-tasks { list-style: none; margin: 0; padding: 0; font-size: var(--fs-sm); }
+.dash-tasks { list-style: none; margin: 0; padding: 0; font-size: var(--fs-13); }
 .dash-tasks li {
   display: flex;
   gap: 12px;
   padding: 6px 0;
-  border-bottom: 1px solid var(--rule);
+  border-bottom: 1px solid var(--line);
 }
 .dash-tasks li:last-child { border-bottom: 0; }
-.dash-task-title { flex: 1; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dash-task-min { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--ink-3); }
+.dash-task-title { flex: 1; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dash-task-min { font-variant-numeric: tabular-nums; font-size: var(--fs-12); color: var(--text-3); }
 
 /* --- Goal cards --- */
 
 .goal-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(272px, 1fr));
-  gap: calc(14px * var(--density));
+  gap: 20px;
 }
 .goal-card {
-  border: 1px solid var(--rule);
-  border-radius: var(--r-md, 6px);
-  padding: calc(14px * var(--density));
-  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--r-card, 6px);
+  padding: 20px;
+  background: var(--bg);
   min-width: 0;
 }
 .goal-head { display: flex; align-items: baseline; gap: 10px; }
 .goal-name {
-  font-size: var(--fs-sm);
+  font-size: var(--fs-13);
   font-weight: 500;
-  color: var(--ink);
+  color: var(--text);
   background: transparent;
   border: 0;
   padding: 0;
@@ -386,20 +409,20 @@
 .goal-name:hover { text-decoration: underline; }
 .goal-count {
   margin-left: auto;
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-  color: var(--ink-4);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-12);
+  color: var(--text-4);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
-.goal-count strong { color: var(--ink); font-weight: 500; }
+.goal-count strong { color: var(--text); font-weight: 500; }
 .goal-sub {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  font-family: var(--font-mono);
-  font-size: calc(10px * var(--fs-scale));
-  color: var(--ink-4);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-11);
+  color: var(--text-4);
   margin: 4px 0 12px;
 }
 .goal-streak { margin-left: auto; color: var(--accent); white-space: nowrap; }
@@ -415,14 +438,14 @@
   transform: translate(-50%, calc(-100% - 8px));
   z-index: 60;
   pointer-events: none;
-  background: var(--ink);
-  color: var(--paper);
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
+  background: var(--text);
+  color: var(--bg);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-12);
   padding: 5px 9px;
-  border-radius: var(--r-sm);
+  border-radius: var(--r-ctl);
   white-space: nowrap;
-  box-shadow: var(--e-dialog, 0 4px 14px rgba(0,0,0,0.18));
+  box-shadow: var(--shadow-float);
 }
 
 /* --- Goal modal --- */
@@ -443,12 +466,12 @@
 .goal-target-input { width: 100%; }
 .goal-scope { display: flex; flex-direction: column; gap: 8px; }
 .goal-hint {
-  font-size: var(--fs-xs);
-  color: var(--ink-3);
+  font-size: var(--fs-12);
+  color: var(--text-3);
   margin: 6px 0 0;
   max-width: 60ch;
 }
-.goal-hint-err { color: var(--danger, #DC2626); }
+.goal-hint-err { color: var(--danger); }
 
 /* --- Phone --- */
 
@@ -457,13 +480,12 @@
   .dash-grid { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 700px) {
-  .dash-col { padding: calc(16px * var(--density)) calc(12px * var(--density)) 80px; }
-  .dash-hero-fig { font-size: calc(40px * var(--fs-scale)); }
+  .dash-col { padding: 24px 16px 80px; }
+  .dash-hero-fig { font-size: var(--fs-44); }
   .dash-kpis { grid-template-columns: repeat(2, 1fr); }
   /* The topbar hides its title on phones, so the toolbar's back button
    * is the only way out of a project scope — it must never be the thing
    * that wraps off-screen. */
-  .dash-toolbar { flex-wrap: wrap; }
   .goal-grid { grid-template-columns: minmax(0, 1fr); }
   /* A fixed-position tooltip next to a fingertip is under the finger.
    * Touch gets the click-through instead. */

@@ -4,7 +4,7 @@
 export type UUID = string;
 
 export type Section = 'now' | 'later' | 'done' | 'someday' | 'recurring';
-export type Status = 'backlog' | 'todo' | 'in_progress' | 'done';
+export type Status = 'todo' | 'in_progress' | 'done';
 export type Priority = 'p0' | 'p1' | 'p2' | 'p3';
 export type Source = 'local' | 'jira' | 'notion';
 export type BlockState = 'planned' | 'completed';
@@ -324,11 +324,8 @@ export type GoalDirection = 'at_least' | 'at_most';
 /// AccountSettingsModal.tsx.
 export type Theme = 'classic' | 'dark';
 
-/// UI shape/density style. Orthogonal to `Theme` — the theme picks the
-/// palette, the style picks corner radius, elevation and density, so
-/// every (theme, style) pair is a valid combination. Extending works the
-/// same way as Theme, against `:root[data-style="..."]`, VALID_UI_STYLES
-/// and StylePicker.
+/// Legacy shape/density style. The client has a single style now; the
+/// server still stores and returns the column, which is ignored.
 export type UiStyle = 'classic' | 'modern';
 
 /// Per-user, account-scoped settings. Independent of workspace.
@@ -340,9 +337,8 @@ export interface UserSettings {
   account_badge: 'personal' | 'work' | null;
   /// UI color theme. Always populated (server defaults to 'classic').
   theme: Theme;
-  /// UI shape/density style. Always populated (server defaults to
-  /// 'classic'). Independent of `theme`.
-  ui_style: UiStyle;
+  /// Legacy, ignored by the client (single style).
+  ui_style?: UiStyle;
   /// True iff the user has an active Google Calendar connection.
   /// Drives the AccountSettings modal's connected/disconnected UI.
   gcal_connected: boolean;

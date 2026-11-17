@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, ChevronDown, ChevronRight, Copy, ExternalLink, MoreVertical, PanelBottomClose, PanelBottomOpen, Repeat, Trash2, X } from 'lucide-react';
+import { AlertTriangle, CalendarDays, Check, Plus, ChevronDown, ChevronRight, Copy, ExternalLink, MoreVertical, PanelBottomClose, PanelBottomOpen, Repeat, Trash2, X } from 'lucide-react';
 import { useFira } from '../store';
+import { SearchField } from './SearchField';
 import {
   HOURS, DAY_LABELS, todayDayIndex, nowTimeMin, weekStartMs,
   blockToGrid, gridToBlock, fmtClockShort, fmtMin, taskCompletedMin, taskPlannedMin, taskTimeLeft,
@@ -147,7 +148,6 @@ export function CalendarView() {
   });
   const jiraConnected = useFira((s) => s.jiraConnected);
   const projectScopeId = useFira((s) => s.projectScopeId);
-  const selectedPersonIds = useFira((s) => s.selectedPersonIds);
   const activePersonId = useFira((s) => s.activePersonId);
   const openTask = useFira((s) => s.openTask);
   const updateBlock = useFira((s) => s.updateBlock);
@@ -157,8 +157,6 @@ export function CalendarView() {
   const openCreate = useFira((s) => s.openCreate);
   const users = useFira((s) => s.users);
   const meId = useFira((s) => s.meId);
-  const addPerson = useFira((s) => s.addPerson);
-  const removePerson = useFira((s) => s.removePerson);
   const setActivePerson = useFira((s) => s.setActivePerson);
   const weekOffset = useFira((s) => s.weekOffset);
   const setWeekOffset = useFira((s) => s.setWeekOffset);
@@ -659,6 +657,15 @@ export function CalendarView() {
   const totalMin = totalsBlocks.reduce((s, b) => s + dur(b), 0);
   const completedMin = totalsBlocks.filter((b) => b.state === 'completed').reduce((s, b) => s + dur(b), 0);
   const plannedMin = totalsBlocks.filter((b) => b.state === 'planned').reduce((s, b) => s + dur(b), 0);
+  // Per-day total for the day header (all visible blocks on that column).
+  const dayTotals = useMemo(() => {
+    const out = new Array<number>(dayCount).fill(0);
+    for (const b of totalsBlocks) {
+      const { day } = blockToGrid(b.start_at, b.end_at, gridAnchor);
+      if (day >= 0 && day < dayCount) out[day] += dur(b);
+    }
+    return out;
+  }, [totalsBlocks, gridAnchor, dayCount]);
 
   const myGcal = gcal.filter((g) => g.user_id === activePersonId);
 
@@ -837,20 +844,16 @@ export function CalendarView() {
           <UserPicker
             users={users}
             meId={meId}
-            selectedPersonIds={selectedPersonIds}
             activePersonId={activePersonId}
-            onAdd={addPerson}
-            onRemove={removePerson}
-            onSetActive={setActivePerson}
+            onSelect={setActivePerson}
           />
           {/* Segmented, not a flipping verb: both destinations stay on
             * screen and the lit segment says which one you're in. Keeps
             * the active workspace's name visible either way, and the
             * label stops changing width as you toggle. */}
           {activePersonId === meId && sourceFlags.length > 0 && (
-            <div className="cal-seg" role="group" aria-label="Calendar sources">
+            <div className="seg cal-seg" role="group" aria-label="Calendar sources">
               <button
-                className="link-toggle"
                 data-active={!allSourcesOn || undefined}
                 onClick={() => setAllSources(false)}
                 title={`Show only ${activeWorkspaceTitle ?? 'this workspace'}`}
@@ -858,7 +861,6 @@ export function CalendarView() {
                 <span className="cal-seg-name">{activeWorkspaceTitle ?? 'This one'}</span>
               </button>
               <button
-                className="link-toggle"
                 data-active={allSourcesOn || undefined}
                 onClick={() => setAllSources(true)}
                 title={`Show ${otherSourceNames} alongside ${activeWorkspaceTitle ?? 'this workspace'} (read-only)`}
@@ -887,17 +889,17 @@ export function CalendarView() {
            * hides this copy on phone widths in favor of the strip
            * below. */}
           <div className="totals cal-totals-inline">
-            <span className="totals-done"><strong>{fmtMin(completedMin)}</strong> done</span>
-            <span className="totals-planned"><strong>{fmtMin(plannedMin)}</strong> planned</span>
-            <span className="totals-total"><strong>{fmtMin(totalMin)}</strong> total</span>
+            <span className="totals-done"><span className="totals-label">Done</span><strong>{fmtMin(completedMin)}</strong></span>
+            <span className="totals-planned"><span className="totals-label">Planned</span><strong>{fmtMin(plannedMin)}</strong></span>
+            <span className="totals-total"><span className="totals-label">Total</span><strong>{fmtMin(totalMin)}</strong></span>
           </div>
         </div>
         {/* Phone-only fallback row — toolbar runs out of horizontal
          * room, so the totals get their own band below it. */}
         <div className="totals cal-totals-strip">
-          <span className="totals-done"><strong>{fmtMin(completedMin)}</strong> done</span>
-          <span className="totals-planned"><strong>{fmtMin(plannedMin)}</strong> planned</span>
-          <span className="totals-total"><strong>{fmtMin(totalMin)}</strong> total</span>
+          <span className="totals-done"><span className="totals-label">Done</span><strong>{fmtMin(completedMin)}</strong></span>
+          <span className="totals-planned"><span className="totals-label">Planned</span><strong>{fmtMin(plannedMin)}</strong></span>
+          <span className="totals-total"><span className="totals-label">Total</span><strong>{fmtMin(totalMin)}</strong></span>
         </div>
         <div className="cal-grid-wrap" ref={gridRef} style={{ ['--hour-h' as string]: `${HOUR_H}px` }}
              data-dragging={drag?.moved ? 'true' : undefined}>
@@ -907,9 +909,10 @@ export function CalendarView() {
               <div key={i} className="cal-dayhead"
                    data-today={i === todayCol}
                    data-day-idx={i}
-                   data-weekend={lbl === 'SAT' || lbl === 'SUN'}>
+                   data-weekend={lbl === 'Sat' || lbl === 'Sun'}>
                 <span className="dow">{lbl}</span>
                 <span className="dnum">{dayOfMonthFor(gridAnchor, i)}</span>
+                {dayTotals[i] > 0 && <span className="dtotal">{fmtMin(dayTotals[i])}</span>}
               </div>
             ))}
 
@@ -958,23 +961,23 @@ export function CalendarView() {
               const dayOverlays: Array<{ start: number; end: number; color: string }> = [
                 ...dayLinkedBlocks.map(({ block: b, start_min, dur_min }) => {
                   const lt = linkedTaskById.get(b.task_id);
-                  return { start: start_min, end: start_min + dur_min, color: lt?.project_color ?? 'var(--ink-3)' };
+                  return { start: start_min, end: start_min + dur_min, color: lt?.project_color ?? 'var(--text-3)' };
                 }),
                 ...dayPersonalBlocks.map(({ block: b, start_min, dur_min }) => {
                   const pt = personalTaskById.get(b.task_id);
-                  return { start: start_min, end: start_min + dur_min, color: pt?.project_color ?? 'var(--ink-3)' };
+                  return { start: start_min, end: start_min + dur_min, color: pt?.project_color ?? 'var(--text-3)' };
                 }),
                 ...dayWorkBlocks.map(({ block: b, start_min, dur_min }) => {
                   const wt = workTaskById.get(b.task_id);
-                  return { start: start_min, end: start_min + dur_min, color: wt?.project_color ?? 'var(--ink-3)' };
+                  return { start: start_min, end: start_min + dur_min, color: wt?.project_color ?? 'var(--text-3)' };
                 }),
                 ...dayGcal.map((g) => {
                   const grid = blockToGrid(g.start_at, g.end_at, gridAnchor);
-                  return { start: grid.start_min, end: grid.start_min + grid.dur_min, color: 'var(--ink-3)' };
+                  return { start: grid.start_min, end: grid.start_min + grid.dur_min, color: 'var(--text-3)' };
                 }),
               ];
               const isToday = dayIdx === todayCol;
-              const isWeekend = dayLbl === 'SAT' || dayLbl === 'SUN';
+              const isWeekend = dayLbl === 'Sat' || dayLbl === 'Sun';
               const showPreview = dropPreview?.day === dayIdx;
               return (
                 <div key={dayIdx} className="cal-daycol"
@@ -1024,8 +1027,10 @@ export function CalendarView() {
                           }}
                           onPointerDown={(e) => e.stopPropagation()}
                         >
-                          {g.title} · {fmtClockShort(start_min)}
+                          <CalendarDays size={10} strokeWidth={1.75} className="gcal-glyph" aria-hidden />
+                          {g.title}
                         </span>
+                        {dur_min > 30 && <span className="gcal-evt-time">{fmtClockShort(start_min)} – {fmtClockShort(start_min + dur_min)}</span>}
                       </div>
                     );
                   })}
@@ -1036,7 +1041,10 @@ export function CalendarView() {
                         top: (start_min / 60) * HOUR_H,
                         height: (dur_min / 60) * HOUR_H,
                       }}>
-                        {g.title} · {fmtClockShort(start_min)}
+                        <span className="gcal-evt-label-static">
+                          <CalendarDays size={10} strokeWidth={1.75} className="gcal-glyph" aria-hidden />
+                          {g.title}
+                        </span>
                       </div>
                     );
                   })}
@@ -1046,18 +1054,17 @@ export function CalendarView() {
                       <div key={`l-b-${b.id}`} className="tblock tblock-linked"
                            data-state={b.state}
                            data-task-done={lt?.status === 'done' ? 'true' : undefined}
-                           data-short={dur_min < 60 ? 'true' : undefined}
+                           data-short={dur_min <= 30 ? 'true' : undefined}
                            style={{
                              top: (start_min / 60) * HOUR_H,
                              height: (dur_min / 60) * HOUR_H - 2,
-                             ['--proj-color' as string]: lt?.project_color ?? 'var(--ink-3)',
+                             ['--proj-color' as string]: lt?.project_color ?? 'var(--text-3)',
                            }}
                            title={`${lt?.title ?? 'Linked task'} · ${fmtMin(dur_min)} (linked, read-only)`}>
-                        <div className="tb-title">{lt?.title ?? 'Linked task'}</div>
+                        <div className="tb-title"><span className="tb-title-text">{lt?.title ?? 'Linked task'}</span></div>
                         <div className="tb-meta">
-                          <span>{fmtClockShort(start_min)}</span>
-                          <span className="dot" />
-                          <span>{fmtMin(dur_min)}</span>
+                          <span className="tb-acct" title="Linked account">L</span>
+                          <span>{dur_min <= 30 ? fmtClockShort(start_min) : `${fmtClockShort(start_min)} – ${fmtClockShort(start_min + dur_min)}`}</span>
                         </div>
                       </div>
                     );
@@ -1068,18 +1075,17 @@ export function CalendarView() {
                       <div key={`p-b-${b.id}`} className="tblock tblock-personal"
                            data-state={b.state}
                            data-task-done={pt?.status === 'done' ? 'true' : undefined}
-                           data-short={dur_min < 60 ? 'true' : undefined}
+                           data-short={dur_min <= 30 ? 'true' : undefined}
                            style={{
                              top: (start_min / 60) * HOUR_H,
                              height: (dur_min / 60) * HOUR_H - 2,
-                             ['--proj-color' as string]: pt?.project_color ?? 'var(--ink-3)',
+                             ['--proj-color' as string]: pt?.project_color ?? 'var(--text-3)',
                            }}
                            title={`${pt?.title ?? 'Personal task'} · ${fmtMin(dur_min)} (personal, read-only)`}>
-                        <div className="tb-title">{pt?.title ?? 'Personal task'}</div>
+                        <div className="tb-title"><span className="tb-title-text">{pt?.title ?? 'Personal task'}</span></div>
                         <div className="tb-meta">
-                          <span>{fmtClockShort(start_min)}</span>
-                          <span className="dot" />
-                          <span>{fmtMin(dur_min)}</span>
+                          <span className="tb-acct" title="Personal">P</span>
+                          <span>{dur_min <= 30 ? fmtClockShort(start_min) : `${fmtClockShort(start_min)} – ${fmtClockShort(start_min + dur_min)}`}</span>
                         </div>
                       </div>
                     );
@@ -1090,18 +1096,17 @@ export function CalendarView() {
                       <div key={`w-b-${b.id}`} className="tblock tblock-work"
                            data-state={b.state}
                            data-task-done={wt?.status === 'done' ? 'true' : undefined}
-                           data-short={dur_min < 60 ? 'true' : undefined}
+                           data-short={dur_min <= 30 ? 'true' : undefined}
                            style={{
                              top: (start_min / 60) * HOUR_H,
                              height: (dur_min / 60) * HOUR_H - 2,
-                             ['--proj-color' as string]: wt?.project_color ?? 'var(--ink-3)',
+                             ['--proj-color' as string]: wt?.project_color ?? 'var(--text-3)',
                            }}
                            title={`${wt?.title ?? 'Work task'} · ${fmtMin(dur_min)} (work, read-only)`}>
-                        <div className="tb-title">{wt?.title ?? 'Work task'}</div>
+                        <div className="tb-title"><span className="tb-title-text">{wt?.title ?? 'Work task'}</span></div>
                         <div className="tb-meta">
-                          <span>{fmtClockShort(start_min)}</span>
-                          <span className="dot" />
-                          <span>{fmtMin(dur_min)}</span>
+                          <span className="tb-acct" title="Work">W</span>
+                          <span>{dur_min <= 30 ? fmtClockShort(start_min) : `${fmtClockShort(start_min)} – ${fmtClockShort(start_min + dur_min)}`}</span>
                         </div>
                       </div>
                     );
@@ -1122,8 +1127,10 @@ export function CalendarView() {
                     // isn't horizontal room for three buttons).
                     const isCompact = dMin <= 30 || lanes >= 2;
                     const menuOpen = menuBlockId === b.id;
-                    const blockTopPx = (sMin / 60) * HOUR_H;
-                    const blockHeightPx = (dMin / 60) * HOUR_H - 2;
+                    // 1px in at the top, 3px short at the bottom: back-to-back
+                    // blocks get a 2px gap instead of one wall of borders.
+                    const blockTopPx = (sMin / 60) * HOUR_H + 1;
+                    const blockHeightPx = (dMin / 60) * HOUR_H - 3;
                     // Overlap stripes: for each underlay segment that
                     // intersects this active block in time, render a
                     // thin colored strip on the right edge spanning
@@ -1186,10 +1193,12 @@ export function CalendarView() {
                     return (
                       <div key={b.id} className="tblock"
                            data-state={b.state}
+                           data-covers={overlaps.length > 0 ? 'true' : undefined}
                            data-task-done={t.status === 'done' ? 'true' : undefined}
                            data-task-recurring={t.section === 'recurring' ? 'true' : undefined}
                            data-dragging={isDragging && drag.moved ? 'true' : undefined}
-                           data-short={dMin < 60 ? 'true' : undefined}
+                           data-short={dMin <= 30 ? 'true' : undefined}
+                           data-tall={dMin >= 60 ? 'true' : undefined}
                            data-compact={isCompact ? 'true' : undefined}
                            data-active={lastBlockId === b.id ? 'true' : undefined}
                            data-pressing={pressingBlockId === b.id ? 'true' : undefined}
@@ -1197,8 +1206,8 @@ export function CalendarView() {
                              top: blockTopPx,
                              height: blockHeightPx,
                              ['--proj-color' as string]: p.color,
-                             left: fullWidth ? '1px' : `calc(${(lane / lanes) * 100}% + 1px)`,
-                             width: fullWidth ? 'calc(100% - 2px)' : `calc(${100 / lanes}% - 2px)`,
+                             left: fullWidth ? '3px' : `calc(${(lane / lanes) * 100}% + ${lane === 0 ? 3 : 1}px)`,
+                             width: fullWidth ? 'calc(100% - 6px)' : `calc(${100 / lanes}% - 4px)`,
                            }}
                            onPointerDown={(e) => {
                              // Mouse / pen: activate immediately — there's
@@ -1230,20 +1239,28 @@ export function CalendarView() {
                           }} />
                         ))}
                         <div className="tb-title">
+                          {b.state === 'completed' && (
+                            <Check size={10} strokeWidth={2.5} className="tb-done-icon"
+                                   aria-label="Block done" />
+                          )}
                           {t.section === 'recurring' && (
                             <Repeat size={10} strokeWidth={2} className="tb-recurring-icon"
                                     aria-label="Recurring" />
                           )}
-                          {t.title}
+                          <span className="tb-title-text">{t.title}</span>
+                          {t.status === 'done' && b.state === 'planned' && (
+                            <AlertTriangle size={11} strokeWidth={2} className="tb-warn-icon"
+                                           aria-label="Task done, block still planned" />
+                          )}
                         </div>
                         <div className="tb-meta">
-                          <span>{fmtClockShort(sMin)}</span>
-                          <span className="dot" />
-                          <span>{fmtMin(dMin)}</span>
+                          {dMin <= 30
+                            ? <span>{fmtClockShort(sMin)}</span>
+                            : <>
+                                <span className="tb-time">{fmtClockShort(sMin)} – {fmtClockShort(sMin + dMin)}</span>
+                                {t.external_id && dMin >= 60 && <span className="tb-meta-id">· {t.external_id}</span>}
+                              </>}
                         </div>
-                        {t.external_id && (
-                          <div className="tb-extid">{t.external_id}</div>
-                        )}
                         {isCompact ? (
                           <div className="tb-actions tb-actions-compact">
                             <button className="tb-action tb-kebab"
@@ -1284,8 +1301,10 @@ export function CalendarView() {
                     const dMin = isDragging ? drag.curDurMin : hit.dur_min;
                     const isCompact = dMin <= 30 || hit.lanes >= 2;
                     if (!isCompact) return null;
-                    const blockTopPx = (sMin / 60) * HOUR_H;
-                    const blockHeightPx = (dMin / 60) * HOUR_H - 2;
+                    // 1px in at the top, 3px short at the bottom: back-to-back
+                    // blocks get a 2px gap instead of one wall of borders.
+                    const blockTopPx = (sMin / 60) * HOUR_H + 1;
+                    const blockHeightPx = (dMin / 60) * HOUR_H - 3;
                     const popupGap = 4;
                     const popupHeightPx = 32;
                     const popupAbove = blockTopPx >= popupHeightPx + popupGap;
@@ -1471,48 +1490,35 @@ function dur(b: TimeBlock): number {
   return Math.round((Date.parse(b.end_at) - Date.parse(b.start_at)) / 60000);
 }
 
-function UserPicker({ users, meId, selectedPersonIds, activePersonId, onAdd, onRemove, onSetActive }: {
+// Person selector: one dropdown that shows whose calendar you're viewing.
+// Same searchable list as before, but picking just switches the person —
+// no row of stacked tabs to manage.
+function UserPicker({ users, meId, activePersonId, onSelect }: {
   users: { id: UUID; name: string; initials: string; email: string }[];
   meId: UUID | null;
-  selectedPersonIds: UUID[];
   activePersonId: UUID | null;
-  onAdd: (id: UUID) => void;
-  onRemove: (id: UUID) => void;
-  onSetActive: (id: UUID) => void;
+  onSelect: (id: UUID) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [activeIdx, setActiveIdx] = useState(0);
-  // Anchor the popover against whichever viewport edge gives it more room.
-  // Without this, a small picker (only "Me" pinned) sits near the left edge
-  // and the right-anchored popover would extend past x = 0.
-  const [popAlign, setPopAlign] = useState<'left' | 'right'>('right');
   const wrapRef = useRef<HTMLDivElement>(null);
-  const popRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const selectedSet = new Set(selectedPersonIds);
-  const orderedSelected = selectedPersonIds
-    .map((id) => users.find((u) => u.id === id))
-    .filter((u): u is typeof users[number] => !!u);
-
+  const active = users.find((u) => u.id === activePersonId) ?? null;
   const q = query.trim().toLowerCase();
-  // Skip people already in the stack — adding them again is a no-op, and
-  // hiding them keeps the list short for orgs with many people.
-  const filtered = users.filter((u) => {
-    if (selectedSet.has(u.id)) return false;
-    if (q && !(u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q))) return false;
-    return true;
-  });
+  // Me first, then everyone else by name.
+  const ordered = [...users].sort((x, y) =>
+    x.id === meId ? -1 : y.id === meId ? 1 : x.name.localeCompare(y.name));
+  const filtered = ordered.filter((u) =>
+    !q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q));
 
   useEffect(() => {
     if (!open) return;
     const onDoc = (e: MouseEvent) => {
       if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
     };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { setOpen(false); }
-    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
     document.addEventListener('mousedown', onDoc);
     document.addEventListener('keydown', onKey);
     return () => {
@@ -1524,72 +1530,35 @@ function UserPicker({ users, meId, selectedPersonIds, activePersonId, onAdd, onR
   useEffect(() => {
     if (open) {
       setQuery('');
-      setActiveIdx(0);
+      setActiveIdx(Math.max(0, ordered.findIndex((u) => u.id === activePersonId)));
       requestAnimationFrame(() => inputRef.current?.focus());
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+  useEffect(() => { if (query) setActiveIdx(0); }, [query]);
 
-  // Pick the side with more breathing room *after* the popover paints, so we
-  // can read its real width and avoid clipping. Falls back to right-anchor
-  // when both sides fit.
-  useLayoutEffect(() => {
-    if (!open) return;
-    const wrap = wrapRef.current;
-    const pop = popRef.current;
-    if (!wrap || !pop) return;
-    const wrapRect = wrap.getBoundingClientRect();
-    const popWidth = pop.getBoundingClientRect().width;
-    const margin = 8;
-    const fitsRightAnchor = wrapRect.right - popWidth >= margin;
-    const fitsLeftAnchor = wrapRect.left + popWidth <= window.innerWidth - margin;
-    setPopAlign(fitsRightAnchor ? 'right' : fitsLeftAnchor ? 'left' : 'right');
-  }, [open, selectedPersonIds.length]);
-
-  useEffect(() => { setActiveIdx(0); }, [query]);
-
-  const pickFromSearch = (id: UUID) => {
-    onAdd(id); // adds to stack and sets active
-    setOpen(false);
-  };
+  const pick = (id: UUID) => { onSelect(id); setOpen(false); };
 
   return (
     <div className="user-picker" ref={wrapRef}>
-      {orderedSelected.map((u) => {
-        const isActive = u.id === activePersonId;
-        const isMe = u.id === meId;
-        const isOnlyAndMe = orderedSelected.length === 1 && isMe;
-        return (
-          <span key={u.id} className="user-pill tab-pill"
-                data-active={isActive}
-                data-me={isMe}
-                onClick={() => onSetActive(u.id)}
-                title={isActive ? u.name : `Switch to ${u.name}`}>
-            <span className="avatar" data-me={isMe}>{u.initials}</span>
-            <span className="user-name">{isMe ? 'Me' : u.name.split(' ')[0]}</span>
-            {!isOnlyAndMe && (
-              <button className="user-pill-x"
-                      onClick={(e) => { e.stopPropagation(); onRemove(u.id); }}
-                      title={`Remove ${u.name}`}
-                      aria-label={`Remove ${u.name}`}>
-                <X size={11} strokeWidth={1.75} />
-              </button>
-            )}
-          </span>
-        );
-      })}
-      <button className="user-pill add-pill"
-              onClick={() => setOpen((v) => !v)}
-              title="Add person to switchable tabs">
-        <span className="user-name">+ Add</span>
+      <button type="button" className="person-select" data-open={open || undefined}
+              aria-haspopup="listbox" aria-expanded={open}
+              aria-label="Viewing calendar of"
+              onClick={() => setOpen((v) => !v)}>
+        <span className="person-select-name">
+          {!active ? 'Choose person' : active.id === meId ? 'Me' : active.name}
+        </span>
+        <ChevronDown size={12} strokeWidth={1.75} className="person-select-chevron" />
       </button>
       {open && (
-        <div className="user-popover" ref={popRef} data-align={popAlign}>
+        <div className="user-popover" data-align="left">
           <input
             ref={inputRef}
             className="user-search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search people…"
+            placeholder="Search people"
+            aria-label="Search people"
             onKeyDown={(e) => {
               if (e.key === 'ArrowDown') {
                 e.preventDefault();
@@ -1600,23 +1569,27 @@ function UserPicker({ users, meId, selectedPersonIds, activePersonId, onAdd, onR
               } else if (e.key === 'Enter') {
                 e.preventDefault();
                 const u = filtered[activeIdx];
-                if (u) pickFromSearch(u.id);
+                if (u) pick(u.id);
               }
             }}
           />
-          <div className="user-list">
+          <div className="user-list" role="listbox">
             {filtered.length === 0 ? (
-              <div className="user-empty">No matches.</div>
+              <div className="user-empty">No matches</div>
             ) : filtered.map((u, i) => (
-              <button key={u.id} className="user-row"
+              <button key={u.id} className="user-row" role="option"
+                      aria-selected={u.id === activePersonId}
                       data-active={i === activeIdx}
+                      data-selected={u.id === activePersonId}
                       onMouseEnter={() => setActiveIdx(i)}
-                      onClick={() => pickFromSearch(u.id)}>
+                      onClick={() => pick(u.id)}>
                 <span className="avatar" data-me={u.id === meId}>{u.initials}</span>
                 <span className="user-row-name">
                   {u.name}{u.id === meId && <span className="user-row-you"> (you)</span>}
                 </span>
-                <span className="user-row-email">{u.email}</span>
+                {u.id === activePersonId
+                  ? <Check size={13} strokeWidth={2} className="user-row-check" />
+                  : <span />}
               </button>
             ))}
           </div>
@@ -1834,25 +1807,29 @@ function CalRail({ onDragTask, onTouchSchedule, collapsed, onToggleCollapsed }: 
     <div className="cal-rail">
       <div className="rail-head">
         <button className="rail-new-btn" onClick={() => openCreate()} title="New task">
-          <span className="rail-new-plus">+</span>
-          <span>New task</span>
+          <Plus size={12} strokeWidth={2} aria-hidden />
+          <span>New</span>
         </button>
-        <input
+        <SearchField
           className="rail-search"
+          label="Filter tasks"
           value={titleQuery}
-          onChange={(e) => setTitleQuery(e.target.value)}
-          placeholder="Filter…"
-          spellCheck={false}
+          onValueChange={setTitleQuery}
+          placeholder="Filter"
           onKeyDown={(e) => { if (e.key === 'Escape') setTitleQuery(''); }}
         />
-        <button className="rail-scope-btn"
-                onClick={() => setShowAll((v) => !v)}
-                data-active={showAll}
-                title={showAll
-                  ? 'Showing every task in the project, including Later and Recurring — click to filter back to your own Now tasks'
-                  : 'Show every task in the project — other people’s tasks plus your own Later and Recurring'}>
-          {showAll ? 'My' : 'All'}
-        </button>
+        <div className="seg rail-scope" role="group" aria-label="Rail scope">
+          <button type="button" aria-pressed={!showAll} data-on={!showAll}
+                  onClick={() => setShowAll(false)}
+                  title="Your tasks in Now">
+            Now
+          </button>
+          <button type="button" aria-pressed={showAll} data-on={showAll}
+                  onClick={() => setShowAll(true)}
+                  title="Every task in the project — other people’s, plus Later and Recurring">
+            All
+          </button>
+        </div>
         {onToggleCollapsed && (
           <button type="button" className="rail-scope-btn rail-collapse-btn"
                   onClick={onToggleCollapsed}
@@ -1873,40 +1850,52 @@ function CalRail({ onDragTask, onTouchSchedule, collapsed, onToggleCollapsed }: 
                     onClick={() => toggleRailGroup(g.project.id)}
                     aria-expanded={!collapsed}
                     title={collapsed
-                      ? `Show  tasks`
-                      : `Hide  tasks`}>
-              {collapsed
-                ? <ChevronRight size={11} strokeWidth={1.75} />
-                : <ChevronDown size={11} strokeWidth={1.75} />}
+                      ? `Show ${g.project.title} tasks`
+                      : `Hide ${g.project.title} tasks`}>
               <div className="swatch" style={{ background: g.project.color }} />
               <span className="pname">{g.project.title}</span>
-              <span className="pcount">{g.tasks.length}</span>
+              {collapsed
+                ? <ChevronRight size={14} strokeWidth={1.5} className="rail-group-caret" />
+                : <ChevronDown size={14} strokeWidth={1.5} className="rail-group-caret" />}
             </button>
             {!collapsed && g.tasks.map((t) => {
               const left = taskTimeLeft(t, blocks);
               const completed = taskCompletedMin(t, blocks);
               const planned = taskPlannedMin(t, blocks);
-              const blocker = isBlocker(t, blocks);
               const est = t.estimate_min;
-              const total = est != null ? Math.max(est, completed + planned) : 0;
-              const compPct = total ? (completed / total) * 100 : 0;
-              const planPct = total ? (planned / total) * 100 : 0;
-              const estPct = est != null && total ? (est / total) * 100 : 100;
-              const overPct = Math.max(0, compPct + planPct - estPct);
+              // Bar is fully proportional: it spans the larger of the
+              // estimate and done + planned. Within the estimate: done
+              // (solid), planned (pale), empty track. Anything past it is the
+              // overrun tail after a tick, uncapped — a long tail is the signal.
+              const sum = completed + planned;
+              const overMin = est != null ? Math.max(0, sum - est) : 0;
+              const total = est != null ? Math.max(est, sum) : 0;
+              const per = total ? 100 / total : 0;
+              const span = (est ?? 0) * per; // % the estimate occupies
+              const doneIn = est != null ? Math.min(completed, est) : 0;
+              const planIn = est != null ? Math.min(planned, est - doneIn) : 0;
+              const compPct = doneIn * per;
+              const planPct = planIn * per;
+              const overPct = overMin > 0 && est ? overMin * per : 0;
+              // Over because work already logged passed the estimate (a real
+              // overrun, amber) vs. only because of what's still planned (a
+              // planning note, grey).
               const overSpent = est != null && completed > est;
+              const overKind = overMin > 0 ? (overSpent ? 'spent' : 'planned') : undefined;
               // Blue only for tasks that finished under budget — see ListView.
               const plentyLeft =
                 t.status === 'done' &&
                 left != null && est != null && left >= 120 && left >= est * 0.3;
-              const leftLabel = t.has_private_time ? 'Private time excluded' : left == null ? 'no est'
-                : left < 0 ? `${fmtMin(-left)} over`
+              // No estimate: say nothing (no bar either) — a lone "No
+              // estimate" on its own line made the row look broken.
+              const leftLabel = t.has_private_time ? 'Private time excluded' : left == null ? null
+                : left < 0 ? (overSpent ? `+${fmtMin(-left)} over` : `${fmtMin(-left)} over plan`)
                 : left === 0 && overSpent ? `+${fmtMin(completed - (est ?? 0))} spent`
                 : `${fmtMin(left)} left`;
               const others = t.assignee_id !== activePersonId;
               return (
                 <div key={t.id} className="rail-task"
                      data-status={t.status}
-                     data-blocker={blocker}
                      data-others={others || undefined}
                      data-pressing={pressingRailTaskId === t.id ? 'true' : undefined}
                      draggable
@@ -1934,7 +1923,7 @@ function CalRail({ onDragTask, onTouchSchedule, collapsed, onToggleCollapsed }: 
                        if (suppressClickRef.current) return;
                        openTask(t.id);
                      }}
-                     title={blocker ? 'Silent blocker — no upcoming planned blocks' : 'Drag onto the calendar to schedule'}>
+                     title="Drag onto the calendar to schedule">
                   <div className="rail-task-body">
                     <div className="rail-task-title">
                       {t.section === 'recurring' && (
@@ -1943,29 +1932,33 @@ function CalRail({ onDragTask, onTouchSchedule, collapsed, onToggleCollapsed }: 
                       )}
                       {t.title}
                     </div>
-                    <div className="rail-task-meta">
+                    {(t.external_id || leftLabel) && <div className="rail-task-meta">
                       {t.external_id && <span className="rail-task-ext">{t.external_id}</span>}
                       <span className="left"
-                            data-over={left != null && left < 0 ? 'true' : undefined}
+                            data-over={left != null && left < 0 && overSpent ? 'true' : undefined}
                             data-plenty={plentyLeft || undefined}>
                         {leftLabel}
                       </span>
-                    </div>
+                    </div>}
                     {est != null && !t.has_private_time && (
                       <div className="rail-fill" style={{ marginTop: 4 }}>
                         <div className="rail-fill-spent"
-                             style={{ width: `${compPct}%`, background: g.project.color }} />
+                             style={{
+                               width: `${compPct}%`,
+                               // Brighter than the calendar blocks (a 4px bar
+                               // needs more colour to read), but not solid.
+                               background: `color-mix(in oklab, ${g.project.color} var(--rail-done), transparent)`,
+                             }} />
                         <div className="rail-fill-planned"
                              style={{
                                width: `${planPct}%`,
-                               background: `color-mix(in oklab, ${g.project.color} 35%, var(--paper-3))`,
+                               background: `color-mix(in oklab, ${g.project.color} var(--rail-planned), transparent)`,
                              }} />
-                        {overPct > 0 && (
-                          <div className="rail-fill-over" style={{ width: `${overPct}%` }} />
-                        )}
-                        {est != null && total > est && (
-                          <div className="rail-fill-est-line" style={{ left: `${estPct}%` }} />
-                        )}
+                        {overPct > 0 && <>
+                          <div className="rail-fill-rest" style={{ width: `${span - compPct - planPct}%` }} />
+                          <div className="rail-fill-tick" aria-hidden />
+                          <div className="rail-fill-over" data-kind={overKind} style={{ width: `${overPct}%` }} />
+                        </>}
                       </div>
                     )}
                   </div>
@@ -1980,14 +1973,3 @@ function CalRail({ onDragTask, onTouchSchedule, collapsed, onToggleCollapsed }: 
   );
 }
 
-function isBlocker(task: Task, blocks: TimeBlock[]): boolean {
-  if (task.has_private_time) return false;
-  if (task.section !== 'now' || task.status !== 'in_progress') return false;
-  const ws = new Date(weekStartMs());
-  const todayMs = new Date(
-    ws.getFullYear(), ws.getMonth(), ws.getDate() + todayDayIndex(),
-  ).getTime();
-  return !blocks.some((b) =>
-    b.task_id === task.id && b.state === 'planned' && Date.parse(b.start_at) >= todayMs
-  );
-}

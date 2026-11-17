@@ -101,16 +101,14 @@ export function TaskModalDraft({ draft }: Props) {
   return (
     <div className="modal-backdrop" onClick={closeCreate}>
       <div className="modal" onClick={(e) => e.stopPropagation()}
-           style={{ ['--proj-color' as string]: project?.color ?? 'var(--ink)' }}>
+           style={{ ['--proj-color' as string]: project?.color ?? 'var(--text-3)' }}>
         <div className="modal-head">
-          <span style={{
-            width: 10, height: 10,
-            background: project?.color ?? 'var(--ink)',
-            display: 'inline-block',
-          }} />
-          <span className="ext">{project?.title ?? 'No project'}</span>
+          <span className="modal-proj-chip">
+            <span className="proj-dot" style={{ background: project?.color ?? 'var(--text-3)' }} />
+            {project?.title ?? 'No project'}
+          </span>
           <span className="grow" />
-          <span className="chip" data-tone="now">draft</span>
+          <span className="chip">Draft</span>
           <button className="icon-btn" onClick={closeCreate} title="Close (Esc)" aria-label="Close">
             <X size={15} strokeWidth={1.75} />
           </button>
@@ -220,13 +218,10 @@ export function TaskModalDraft({ draft }: Props) {
 }
 
 const modalH5: React.CSSProperties = {
-  margin: '18px 0 4px',
-  fontFamily: 'var(--font-mono)',
-  fontSize: 'calc(10px * var(--fs-scale))',
-  letterSpacing: '0.1em',
-  textTransform: 'uppercase',
-  color: 'var(--ink-3)',
-  fontWeight: 500,
+  margin: '16px 0 4px',
+  fontSize: 'var(--fs-13)',
+  color: 'var(--text-2)',
+  fontWeight: 600,
 };
 
 function autosize(ta: HTMLTextAreaElement) {
@@ -255,24 +250,23 @@ function DraftEstimateEditor({ text, onChange, invalid }: {
 
   const parsed = parseEstimate(text);
   // Show the canonical formatted form in read mode so what the user sees
-  // matches what gets saved (e.g. "90m" → "1h30").
+  // matches what gets saved (e.g. "90m" → "1h 30m").
   const display = parsed != null ? fmtMin(parsed) : '';
 
   if (!editing) {
-    // Set value renders as a tabular mono time (e.g. "1h30"); empty state
+    // Set value renders as a tabular mono time (e.g. "1h 30m"); empty state
     // uses the same sans + ink-4 tone as subtask placeholders so the
     // "Click to set" hint reads as a peer of "Add subtask…".
     return (
       <div onClick={() => setEditing(true)}
            style={display ? {
              cursor: 'text',
-             fontFamily: 'var(--font-mono)',
              fontVariantNumeric: 'tabular-nums',
-             color: 'var(--ink)',
+             color: 'var(--text)',
            } : {
              cursor: 'text',
-             fontSize: 'var(--fs-sm)',
-             color: 'var(--ink-4)',
+             fontSize: 'var(--fs-13)',
+             color: 'var(--text-4)',
            }}>
         {display || 'Click to set'}
       </div>
@@ -290,7 +284,7 @@ function DraftEstimateEditor({ text, onChange, invalid }: {
         if (e.key === 'Enter') { e.preventDefault(); setEditing(false); }
         else if (e.key === 'Escape') { onChange(''); setEditing(false); }
       }}
-      placeholder="e.g. 1h30 or 90m"
+      placeholder="e.g. 1h 30m or 90m"
       data-bad={invalid || undefined}
     />
   );

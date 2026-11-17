@@ -1,8 +1,9 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Check, ChevronDown, ChevronRight, Clock, ClockFading, Pencil } from 'lucide-react';
+import { Archive, Check, ChevronDown, ChevronRight, Clock, MoreHorizontal, Pencil } from 'lucide-react';
 import { useFira } from '../store';
+import { SearchField } from './SearchField';
 import { useCanEditProject } from '../permissions';
-import { ListTagFilter } from './TagFilter';
+import { TagFilterChips, TagMenu } from './TagFilter';
 import { useLongPress } from '../useLongPress';
 import { useAutosizeTextarea, useIsMobile } from '../hooks';
 import { fmtMin, fmtWeekOf, taskCompletedMin, taskPlannedMin, taskTimeLeft } from '../time';
@@ -74,6 +75,21 @@ export function ListView() {
   const [collapsedAssignee, setCollapsedAssignee] = useState<Record<UUID, boolean>>({});
   const [collapsedArchiveGroups, setCollapsedArchiveGroups] = useState<Record<string, boolean>>({});
   const [confirmArchive, setConfirmArchive] = useState(false);
+  const [projMenuOpen, setProjMenuOpen] = useState(false);
+  const projMenuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!projMenuOpen) return;
+    const onDown = (e: PointerEvent) => {
+      if (projMenuRef.current && !projMenuRef.current.contains(e.target as Node)) setProjMenuOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setProjMenuOpen(false); };
+    document.addEventListener('pointerdown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [projMenuOpen]);
   const [dropTarget, setDropTarget] = useState<Section | null>(null);
   const [assigneeDropTarget, setAssigneeDropTarget] = useState<UUID | null>(null);
   const [rowDropAt, setRowDropAt] = useState<{ id: UUID; pos: 'before' | 'after' | 'merge' } | null>(null);
@@ -112,6 +128,9 @@ export function ListView() {
   // just need to be declared in stable order.
   const desktopDragIdRef = useRef<UUID | null>(null);
   const listScrollRef = useRef<HTMLDivElement>(null);
+  // The sticky filter bar only draws its bottom rule once the list has
+  // scrolled under it; at rest the section headings carry the only lines.
+  const [listScrolled, setListScrolled] = useState(false);
   const dragScrollStopRef = useRef<(() => void) | null>(null);
   const dragCursorRef = useRef<{ x: number; y: number } | null>(null);
   const touchDraggedRef = useRef<UUID | null>(null);
@@ -180,9 +199,8 @@ export function ListView() {
   // moved projects) — fall back to no sprint filter rather than an
   // inexplicably empty list.
   const rawSprintFilter = listFilter.sprint_filter ?? 'all';
-  const sprintFilter = rawSprintFilter === 'all' || rawSprintFilter === 'active'
-    || rawSprintFilter === 'none' || sprintById.has(rawSprintFilter)
-    ? rawSprintFilter : 'all';
+  // Older saved values ('active', 'none') read as "all" now.
+  const sprintFilter: SprintFilterValue = sprintById.has(rawSprintFilter) ? rawSprintFilter : 'all';
   const q = query.trim().toLowerCase();
   const filtersActive = q !== '' || sprintFilter !== 'all' || tagFilter.length > 0;
   const clearFilters = () => {
@@ -192,13 +210,7 @@ export function ListView() {
   const projectTasks = allProjectTasks.filter((t) => {
     if (assigneeScope === 'me' && t.assignee_id !== meId) return false;
     const sprint = t.sprint_id ? sprintById.get(t.sprint_id) : undefined;
-    if (sprintFilter === 'none') {
-      if (sprint) return false;
-    } else if (sprintFilter === 'active') {
-      if (!sprint?.active) return false;
-    } else if (sprintFilter !== 'all' && t.sprint_id !== sprintFilter) {
-      return false;
-    }
+    if (sprintFilter !== 'all' && t.sprint_id !== sprintFilter) return false;
     if (q && !(
       t.title.toLowerCase().includes(q)
       || (t.external_id?.toLowerCase().includes(q) ?? false)
@@ -214,10 +226,16 @@ export function ListView() {
   });
   // Row-level sprint label: redundant when the selector already pins
   // one sprint, so it's dropped there.
-  const sprintLabelFor = (t: Task) =>
-    sprintFilter !== 'all' && sprintFilter !== 'active' && sprintFilter !== 'none'
-      ? null
-      : (t.sprint_id ? sprintById.get(t.sprint_id)?.title ?? null : null);
+  // Title plus its track's colour, drawn as the same small square the
+  // sprint picker uses, so the label reads as a sprint and not a date.
+  const sprintLabelFor = (t: Task): SprintLabel | null => {
+    if (sprintFilter !== 'all' || !t.sprint_id) return null;
+    const sp = sprintById.get(t.sprint_id);
+    const title = stripProjectPrefix(sp?.title ?? null, project.title);
+    if (!sp || !title) return null;
+    const color = sp.track_id ? tracks.find((tr) => tr.id === sp.track_id)?.color ?? null : null;
+    return { title, color };
+  };
   const hasProjectTags = allTags.some((t) => t.project_id === project.id);
   const showAssigneeScope = project.members.filter((m) => m.role !== 'inactive').length > 1;
   // Time totals across the filtered task set. Done / Planned aggregate
@@ -230,12 +248,27 @@ export function ListView() {
   let totalDone = 0;
   let totalPlanned = 0;
   let totalEst = 0;
+  // For the bar and the overrun, only tasks that have an estimate count:
+  // logged time on unestimated work isn't "over" anything. The overrun
+  // is the sum of each task's own logged time past its estimate — not
+  // total done minus total estimate, which counted unestimated work.
+  let estDone = 0;
+  let estPlanned = 0;
+  let totalOver = 0;
   for (const t of projectTasks) {
-    totalDone += taskCompletedMin(t, blocks);
-    totalPlanned += taskPlannedMin(t, blocks);
-    if (t.estimate_min != null) totalEst += t.estimate_min;
+    const done = taskCompletedMin(t, blocks);
+    const planned = taskPlannedMin(t, blocks);
+    totalDone += done;
+    totalPlanned += planned;
+    if (t.estimate_min != null && !t.has_private_time) {
+      const est = t.estimate_min;
+      totalEst += est;
+      const doneIn = Math.min(done, est);
+      estDone += doneIn;
+      estPlanned += Math.min(planned, est - doneIn);
+      totalOver += Math.max(0, done - est);
+    }
   }
-  const totalAll = totalDone + totalPlanned;
   const privateTimeExcluded = projectTasks.some((task) => task.has_private_time);
 
   const nowTasks = projectTasks.filter((t) => t.section === 'now').sort(byKey);
@@ -247,6 +280,13 @@ export function ListView() {
   // indefinitely) is visible without expanding the list.
   const sumEst = (xs: Task[]) => xs.reduce((s, t) => s + (t.estimate_min ?? 0), 0);
   const nowEst = sumEst(nowTasks);
+  // Now reads as work remaining: each estimated task's time left, floored
+  // at zero so one overrun doesn't eat into the rest.
+  const nowLeft = nowTasks.reduce((s, t) => {
+    if (t.estimate_min == null) return s;
+    const l = taskTimeLeft(t, blocks);
+    return s + Math.max(0, l ?? t.estimate_min);
+  }, 0);
   const laterEst = sumEst(laterTasks);
   const recurringEst = sumEst(recurringTasks);
   const somedayEst = sumEst(somedayTasks);
@@ -732,109 +772,109 @@ export function ListView() {
   };
 
   return (
-    <div className="list" ref={listScrollRef} data-suspend-hover={hoverSuspended || undefined}>
+    <div className="list" ref={listScrollRef} data-suspend-hover={hoverSuspended || undefined}
+         data-scrolled={listScrolled || undefined}
+         onScroll={(e) => {
+           const next = e.currentTarget.scrollTop > 72;
+           if (next !== listScrolled) setListScrolled(next);
+         }}>
       <div className="list-doc" style={{ ['--proj-color' as string]: project.color }}>
-        <div className="list-proj-head">
-          <span className="icon" style={{ color: project.color }}>
-            <ProjectIcon name={project.icon} color={project.color} size={20} strokeWidth={1.6} />
-          </span>
-          <h1>{project.title}</h1>
-          <div className="proj-actions">
-            <span className="meta">
-              {projectTasks.length} tasks · {project.members.length} {project.members.length === 1 ? 'member' : 'members'}
+        {/* One sticky header: the project on the left; search, sprint,
+            tags, scope and the ⋯ menu on the right. The search is compact
+            until focused or filled. Picked tags sit underneath as chips. */}
+        <div className="list-head" data-filtering={filtersActive || undefined}>
+          <div className="list-head-row">
+            <span className="proj-icon" aria-hidden>
+              <ProjectIcon name={project.icon} color={project.color} size={24} strokeWidth={1.75} />
             </span>
-            <button
-              className="icon-btn proj-edit-btn time-toggle-btn"
-              onClick={() => setShowListTimes(!showListTimes)}
-              data-off={!showListTimes || undefined}
-              title={showListTimes ? 'Hide time labels' : 'Show time labels'}
-              aria-label={showListTimes ? 'Hide time labels' : 'Show time labels'}
-            >
-              {showListTimes
-                ? <Clock size={14} strokeWidth={1.75} />
-                : <ClockFading size={14} strokeWidth={1.75} />}
-            </button>
-            {canEditThisProject && (
-              <button className="icon-btn proj-edit-btn"
-                      onClick={() => openEditProject(project.id)}
-                      title="Edit project">
-                <Pencil size={14} strokeWidth={1.75} />
-              </button>
-            )}
-            <button className="btn archive-btn"
-                    onClick={() => setConfirmArchive(true)}
-                    disabled={archivable.length === 0}
-                    title="Move every ticked task into the Done section">
-              Archive ticked
-              {archivable.length > 0 && <span className="archive-count">{archivable.length}</span>}
-            </button>
-          </div>
-        </div>
-
-        {/* Sticky filter bar. Row 1 narrows the list (search, sprint,
-          * assignee scope, clear); row 2 is the tag filter, whose any/all
-          * toggle stays beside the chips it qualifies. */}
-        <div className="list-filter-bar">
-          <div className="list-filter-row">
-            <input
-              type="search"
-              className="list-search"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Escape') { setQuery(''); e.currentTarget.blur(); } }}
-              placeholder="Filter tasks…"
-              aria-label="Filter tasks by title, issue key or sprint"
-              spellCheck={false}
-            />
-            {(projectSprints.length > 0 || sprintFilter !== 'all') && (
-              <SprintSelect
-                value={sprintFilter}
-                sprints={projectSprints}
-                tracks={tracks.filter((tr) => tr.project_id === project.id)}
-                onChange={(sprint_filter) => setListFilter({ sprint_filter })}
+            <h1>{project.title}</h1>
+            <div className="list-head-controls">
+              <SearchField
+                className="list-search"
+                label="Filter tasks by title, issue key or sprint"
+                value={query}
+                onValueChange={setQuery}
+                onKeyDown={(e) => { if (e.key === 'Escape') { setQuery(''); e.currentTarget.blur(); } }}
+                placeholder="Filter tasks"
+                data-has-value={query ? 'true' : undefined}
               />
-            )}
-            {showAssigneeScope && (
-              <div className="list-tag-filter-mode" role="group" aria-label="Assignee scope">
-                <button
-                  type="button"
-                  className="list-tag-filter-mode-seg"
-                  data-active={assigneeScope === 'all' || undefined}
-                  onClick={() => setListFilter({ assignee_scope: 'all' })}
-                  title="Show every task in this project"
-                >
-                  all
+              {(projectSprints.length > 0 || sprintFilter !== 'all') && (
+                <SprintSelect
+                  value={sprintFilter}
+                  sprints={projectSprints}
+                  tracks={tracks.filter((tr) => tr.project_id === project.id)}
+                  onChange={(sprint_filter) => setListFilter({ sprint_filter })}
+                />
+              )}
+              {hasProjectTags && (
+                <TagMenu
+                  projectId={project.id}
+                  allTags={allTags}
+                  tagIds={listFilter.tag_ids}
+                  onChange={(tag_ids) => setListFilter({ tag_ids })}
+                />
+              )}
+              {showAssigneeScope && (
+                <div className="seg list-scope" role="group" aria-label="Assignee scope">
+                  <button type="button" data-on={assigneeScope === 'all' || undefined}
+                          aria-pressed={assigneeScope === 'all'}
+                          onClick={() => setListFilter({ assignee_scope: 'all' })}
+                          title="Show every task in this project">All</button>
+                  <button type="button" data-on={assigneeScope === 'me' || undefined}
+                          aria-pressed={assigneeScope === 'me'}
+                          onClick={() => setListFilter({ assignee_scope: 'me' })}
+                          title="Show only tasks assigned to me">Me</button>
+                </div>
+              )}
+              <div className="proj-menu" ref={projMenuRef}>
+                <button className="icon-btn proj-edit-btn"
+                        aria-label="Project actions" aria-haspopup="true" aria-expanded={projMenuOpen}
+                        data-open={projMenuOpen || undefined}
+                        onClick={() => setProjMenuOpen((v) => !v)}
+                        title="Project actions">
+                  <MoreHorizontal size={16} strokeWidth={1.75} />
                 </button>
-                <button
-                  type="button"
-                  className="list-tag-filter-mode-seg"
-                  data-active={assigneeScope === 'me' || undefined}
-                  onClick={() => setListFilter({ assignee_scope: 'me' })}
-                  title="Show only tasks assigned to me"
-                >
-                  me
-                </button>
+                {projMenuOpen && (
+                  <div className="proj-menu-pop" role="menu">
+                    <button type="button" role="menuitemcheckbox" aria-checked={showListTimes}
+                            className="proj-menu-item"
+                            onClick={() => { setProjMenuOpen(false); setShowListTimes(!showListTimes); }}>
+                      <Clock size={14} strokeWidth={1.75} /> Show time
+                      {showListTimes && <Check size={14} strokeWidth={2} className="proj-menu-check" />}
+                    </button>
+                    {canEditThisProject && (
+                      <button type="button" role="menuitem" className="proj-menu-item"
+                              onClick={() => { setProjMenuOpen(false); openEditProject(project.id); }}>
+                        <Pencil size={14} strokeWidth={1.75} /> Edit project
+                      </button>
+                    )}
+                    <button type="button" role="menuitem" className="proj-menu-item"
+                            disabled={archivable.length === 0}
+                            onClick={() => { setProjMenuOpen(false); setConfirmArchive(true); }}
+                            title="Move every ticked task into the Done section">
+                      <Archive size={14} strokeWidth={1.75} />
+                      Archive completed
+                      {archivable.length > 0 && <span className="proj-menu-count">{archivable.length}</span>}
+                    </button>
+                  </div>
+                )}
               </div>
-            )}
-            {filtersActive && (
-              <button type="button" className="list-filter-clear" onClick={clearFilters}
-                      title="Clear search, sprint and tag filters">
-                clear
-              </button>
-            )}
+            </div>
           </div>
-          {hasProjectTags && (
-            <ListTagFilter
-              projectId={project.id}
-              allTags={allTags}
-              tagIds={listFilter.tag_ids}
-              mode={listFilter.tag_mode}
-              scope={assigneeScope}
-              showAssigneeScope={false}
-              onChange={(tag_ids) => setListFilter({ tag_ids })}
-              onModeChange={(tag_mode) => setListFilter({ tag_mode })}
-              onScopeChange={(assignee_scope) => setListFilter({ assignee_scope })}
-            />
+          {listFilter.tag_ids.length > 0 && (
+            <div className="list-head-chips">
+              <TagFilterChips
+                allTags={allTags}
+                tagIds={listFilter.tag_ids}
+                mode={listFilter.tag_mode}
+                onChange={(tag_ids) => setListFilter({ tag_ids })}
+                onModeChange={(tag_mode) => setListFilter({ tag_mode })}
+              />
+              <button type="button" className="list-clear-all" onClick={clearFilters}
+                      title="Clear search, sprint and tag filters">
+                Clear all
+              </button>
+            </div>
           )}
         </div>
 
@@ -846,28 +886,56 @@ export function ListView() {
         )}
 
         {showListTimes && (
-          <div className="totals list-totals" aria-label="Filtered totals">
-            <span className="totals-done"><strong>{fmtMin(totalDone)}</strong> {privateTimeExcluded ? 'visible done' : 'done'}</span>
-            <span className="totals-planned"><strong>{fmtMin(totalPlanned)}</strong> {privateTimeExcluded ? 'visible planned' : 'planned'}</span>
-            <span className="totals-total"><strong>{fmtMin(totalAll)}</strong> {privateTimeExcluded ? 'visible total' : 'total'}</span>
-            {privateTimeExcluded && <span>Private time excluded</span>}
-            <span className="totals-est"><strong>{fmtMin(totalEst)}</strong> est</span>
+          <div className="list-time" aria-label="Filtered totals">
+            {totalEst > 0 && (() => {
+              // Estimate = the bar up to the notch; logged overrun runs
+              // past it in amber. Scaled so estimate + overrun fill it.
+              // The overrun gets at most 35% of the bar (same cap as the
+              // rail) so the estimate part stays readable.
+              const overShown = Math.min(totalOver, totalEst * 35 / 65);
+              const span = totalEst + overShown;
+              const pct = (m: number) => `${(m / span) * 100}%`;
+              return (
+                <div className="list-time-bar" title="Tasks with an estimate: done, planned, and logged time past the estimate">
+                  <div className="ltb-done" style={{ width: pct(estDone) }} />
+                  <div className="ltb-planned" style={{ width: pct(estPlanned) }} />
+                  <div className="ltb-rest" style={{ width: pct(totalEst - estDone - estPlanned) }} />
+                  {totalOver > 0 && <>
+                    <div className="ltb-tick" aria-hidden />
+                    <div className="ltb-over" style={{ width: pct(overShown) }} />
+                  </>}
+                </div>
+              );
+            })()}
+            <div className="list-totals">
+              <span><strong>{fmtMin(totalDone)}</strong> {privateTimeExcluded ? 'visible done' : 'done'}</span>
+              <span><strong>{fmtMin(totalPlanned)}</strong> {privateTimeExcluded ? 'visible planned' : 'planned'}</span>
+              <span><strong>{fmtMin(totalEst)}</strong> estimated</span>
+              {privateTimeExcluded && <span>Private time excluded</span>}
+              {totalOver > 0 && (
+                <span className="list-totals-over" title="Sum of each task's logged time past its own estimate">
+                  +{fmtMin(totalOver)} over estimate
+                </span>
+              )}
+            </div>
           </div>
         )}
 
         {/* NOW */}
         <div className="section" data-section="now"
-             style={dropTarget === 'now' ? { background: 'var(--accent-soft)' } : undefined}
+             style={dropTarget === 'now' ? { background: 'var(--accent-tint)' } : undefined}
              onDragOver={(e) => { e.preventDefault(); setDropTarget('now'); }}
              onDragLeave={() => setDropTarget(null)}
              onDrop={(e) => onSectionDrop(e, 'now')}>
           <div className="section-head" onClick={() => setCollapsed({ ...collapsed, now: !collapsed.now })}>
             <span className="caret">{collapsed.now ? <ChevronRight size={14} strokeWidth={1.75} /> : <ChevronDown size={14} strokeWidth={1.75} />}</span>
             <h2>Now</h2>
-            <SectionCount value={nowTasks.length} />
+            <SectionCount value={nowTasks.length} total={filtersActive ? allProjectTasks.filter((t) => t.section === 'now').length : undefined} />
             <span className="rule" />
-            {showListTimes && <span className="est" title="estimated time">{fmtMin(nowEst)}</span>}
-            <span className="count section-caption">week of {fmtWeekOf()}</span>
+            <span className="est">
+              {showListTimes && nowEst > 0 && <span title={`${fmtMin(nowEst)} estimated in total`}>{fmtMin(nowLeft)} left · </span>}
+              Week of {fmtWeekOf()}
+            </span>
           </div>
           {!collapsed.now && (
             <>
@@ -875,7 +943,10 @@ export function ListView() {
                 const u = userById(aid);
                 const subTasks = nowTasks.filter((t) => t.assignee_id === aid);
                 const firstName = u?.name?.split(' ')[0] ?? 'them';
-                const folded = !!collapsedAssignee[aid];
+                // People with nothing in Now fold to one line by default;
+                // expanding still gives them the add-task row.
+                const empty = subTasks.length === 0;
+                const folded = collapsedAssignee[aid] ?? empty;
                 const isAssigneeDrop = assigneeDropTarget === aid;
                 return (
                   <div key={aid}
@@ -942,17 +1013,17 @@ export function ListView() {
                        }}>
                     <div className="assignee-head"
                          onClick={() => setCollapsedAssignee({ ...collapsedAssignee, [aid]: !folded })}>
-                      <span className="ah-caret">{folded ? <ChevronRight size={13} strokeWidth={1.75} /> : <ChevronDown size={13} strokeWidth={1.75} />}</span>
+                      <span className="ah-caret">{folded ? <ChevronRight size={14} strokeWidth={1.75} /> : <ChevronDown size={14} strokeWidth={1.75} />}</span>
                       <div className="avatar" data-me={u?.id === meId}>{u?.initials ?? '?'}</div>
                       <span>{u?.name}{u?.id === meId ? ' (you)' : ''}</span>
+                      {empty ? <span className="ah-empty">No tasks</span> : <span className="ah-count">{subTasks.length}</span>}
                       <span className="ah-rule" />
-                      <span className="ah-count">{subTasks.length}</span>
                     </div>
                     {!folded && (
                       <>
                         {subTasks.map((t, i) => renderRow(t, subTasks, i))}
                         <AddTaskRow
-                          placeholder={`Add task for ${firstName}…`}
+                          placeholder={`Add task for ${firstName}`}
                           onAdd={(title) => addTask(project.id, 'now', title, aid, tagFilter)}
                           onNavigate={navigateFrom}
                         />
@@ -986,11 +1057,11 @@ export function ListView() {
                   <div className="assignee-group">
                     <div className="assignee-head"
                          onClick={() => setCollapsedAssignee({ ...collapsedAssignee, ['__unassigned']: !folded })}>
-                      <span className="ah-caret">{folded ? <ChevronRight size={13} strokeWidth={1.75} /> : <ChevronDown size={13} strokeWidth={1.75} />}</span>
+                      <span className="ah-caret">{folded ? <ChevronRight size={14} strokeWidth={1.75} /> : <ChevronDown size={14} strokeWidth={1.75} />}</span>
                       <div className="avatar">?</div>
                       <span>Unassigned</span>
-                      <span className="ah-rule" />
                       <span className="ah-count">{unassigned.length}</span>
+                      <span className="ah-rule" />
                     </div>
                     {!folded && unassigned.map((t, i) => renderRow(t, unassigned, i))}
                   </div>
@@ -1002,17 +1073,19 @@ export function ListView() {
 
         {/* LATER */}
         <div className="section" data-section="later"
-             style={dropTarget === 'later' ? { background: 'var(--accent-soft)' } : undefined}
+             style={dropTarget === 'later' ? { background: 'var(--accent-tint)' } : undefined}
              onDragOver={(e) => { e.preventDefault(); setDropTarget('later'); }}
              onDragLeave={() => setDropTarget(null)}
              onDrop={(e) => onSectionDrop(e, 'later')}>
           <div className="section-head" onClick={() => setCollapsed({ ...collapsed, later: !collapsed.later })}>
             <span className="caret">{collapsed.later ? <ChevronRight size={14} strokeWidth={1.75} /> : <ChevronDown size={14} strokeWidth={1.75} />}</span>
             <h2>Later</h2>
-            <SectionCount value={laterTasks.length} />
+            <SectionCount value={laterTasks.length} total={filtersActive ? allProjectTasks.filter((t) => t.section === 'later').length : undefined} />
             <span className="rule" />
-            {showListTimes && <span className="est" title="estimated time">{fmtMin(laterEst)}</span>}
-            <span className="count section-caption">parking lot</span>
+            <span className="est">
+              {showListTimes && laterEst > 0 && <span title="Sum of estimates in this section">{fmtMin(laterEst)} estimated · </span>}
+              Parking lot
+            </span>
           </div>
           {!collapsed.later && (
             <>
@@ -1024,17 +1097,19 @@ export function ListView() {
 
         {/* RECURRING */}
         <div className="section" data-section="recurring"
-             style={dropTarget === 'recurring' ? { background: 'var(--accent-soft)' } : undefined}
+             style={dropTarget === 'recurring' ? { background: 'var(--accent-tint)' } : undefined}
              onDragOver={(e) => { e.preventDefault(); setDropTarget('recurring'); }}
              onDragLeave={() => setDropTarget(null)}
              onDrop={(e) => onSectionDrop(e, 'recurring')}>
           <div className="section-head" onClick={() => setCollapsed({ ...collapsed, recurring: !collapsed.recurring })}>
             <span className="caret">{collapsed.recurring ? <ChevronRight size={14} strokeWidth={1.75} /> : <ChevronDown size={14} strokeWidth={1.75} />}</span>
             <h2>Recurring</h2>
-            <SectionCount value={recurringTasks.length} />
+            <SectionCount value={recurringTasks.length} total={filtersActive ? allProjectTasks.filter((t) => t.section === 'recurring').length : undefined} />
             <span className="rule" />
-            {showListTimes && <span className="est" title="estimated time">{fmtMin(recurringEst)}</span>}
-            <span className="count section-caption">ongoing</span>
+            <span className="est">
+              {showListTimes && recurringEst > 0 && <span title="Sum of estimates in this section">{fmtMin(recurringEst)} estimated · </span>}
+              Ongoing
+            </span>
           </div>
           {!collapsed.recurring && (
             <>
@@ -1046,17 +1121,19 @@ export function ListView() {
 
         {/* SOMEDAY */}
         <div className="section" data-section="someday"
-             style={dropTarget === 'someday' ? { background: 'var(--accent-soft)' } : undefined}
+             style={dropTarget === 'someday' ? { background: 'var(--accent-tint)' } : undefined}
              onDragOver={(e) => { e.preventDefault(); setDropTarget('someday'); }}
              onDragLeave={() => setDropTarget(null)}
              onDrop={(e) => onSectionDrop(e, 'someday')}>
           <div className="section-head" onClick={() => setCollapsed({ ...collapsed, someday: !collapsed.someday })}>
             <span className="caret">{collapsed.someday ? <ChevronRight size={14} strokeWidth={1.75} /> : <ChevronDown size={14} strokeWidth={1.75} />}</span>
             <h2>Someday</h2>
-            <SectionCount value={somedayTasks.length} />
+            <SectionCount value={somedayTasks.length} total={filtersActive ? allProjectTasks.filter((t) => t.section === 'someday').length : undefined} />
             <span className="rule" />
-            {showListTimes && <span className="est" title="estimated time">{fmtMin(somedayEst)}</span>}
-            <span className="count section-caption">maybe</span>
+            <span className="est">
+              {showListTimes && somedayEst > 0 && <span title="Sum of estimates in this section">{fmtMin(somedayEst)} estimated · </span>}
+              Maybe
+            </span>
           </div>
           {!collapsed.someday && (
             <>
@@ -1073,10 +1150,12 @@ export function ListView() {
           <div className="section-head" onClick={() => setCollapsed({ ...collapsed, done: !collapsed.done })}>
             <span className="caret">{collapsed.done ? <ChevronRight size={14} strokeWidth={1.75} /> : <ChevronDown size={14} strokeWidth={1.75} />}</span>
             <h2>Done</h2>
-            <SectionCount value={doneTasks.length} />
+            <SectionCount value={doneTasks.length} total={filtersActive ? allProjectTasks.filter((t) => t.section === 'done').length : undefined} />
             <span className="rule" />
-            {showListTimes && <span className="est" title={privateTimeExcluded ? "visible completed time" : "completed time"}>{fmtMin(doneDone)}{privateTimeExcluded ? ' visible' : ''}</span>}
-            <span className="count section-caption">archive</span>
+            <span className="est">
+              {showListTimes && <span title={privateTimeExcluded ? "visible completed time" : "completed time"}>{fmtMin(doneDone)}{privateTimeExcluded ? ' visible' : ''} done · </span>}
+              Archive
+            </span>
           </div>
           {!collapsed.done && (
             <>
@@ -1157,12 +1236,25 @@ export function ListView() {
 // flash all four counts at once. Re-keys the span on each change so the
 // CSS animation restarts cleanly even when the value bounces during
 // the previous animation.
+type SprintLabel = { title: string; color: string | null };
+
+/// Sprint titles often start with the project's name ("Atlas · Nov 16");
+/// on that project's own page the prefix is noise.
+function stripProjectPrefix(title: string | null, projectTitle: string): string | null {
+  if (!title) return title;
+  for (const sep of [' · ', ' - ', ' – ', ': ']) {
+    const prefix = projectTitle + sep;
+    if (title.startsWith(prefix) && title.length > prefix.length) return title.slice(prefix.length);
+  }
+  return title;
+}
+
 /// Sprint selector for the list toolbar, built on the shared `Select`
 /// popover so it matches the rest of the app instead of OS chrome.
-/// Fixed scopes come first; active sprints follow grouped by track (in
+/// "All sprints" first; active sprints follow grouped by track (in
 /// track order, "No track" last), and inactive sprints collect in a
 /// trailing group. Each sprint shows its date span as a hint line.
-type SprintFilterValue = UUID | 'active' | 'all' | 'none';
+type SprintFilterValue = UUID | 'all';
 function SprintSelect({ value, sprints, tracks, onChange }: {
   value: SprintFilterValue;
   sprints: Sprint[];
@@ -1171,15 +1263,19 @@ function SprintSelect({ value, sprints, tracks, onChange }: {
 }) {
   const options = useMemo(() => {
     const bySort = (a: { sort_key: string }, b: { sort_key: string }) => a.sort_key.localeCompare(b.sort_key);
-    const toOpt = (sp: Sprint, group: string): SelectOption<SprintFilterValue> => ({
-      value: sp.id, label: sp.title, group, hint: sprintSpan(sp) ?? undefined,
-    });
+    const colorOf = new Map(tracks.map((tr) => [tr.id, tr.color]));
+    const toOpt = (sp: Sprint, group: string): SelectOption<SprintFilterValue> => {
+      const color = sp.track_id ? colorOf.get(sp.track_id) : undefined;
+      return {
+        value: sp.id, label: sp.title, group, groupColor: group === 'Inactive' ? undefined : color,
+        hint: sprintSpan(sp) ?? undefined,
+        dot: color ?? '',
+      };
+    };
     const active = sprints.filter((sp) => sp.active).sort(bySort);
     const known = new Set(tracks.map((tr) => tr.id));
     const opts: SelectOption<SprintFilterValue>[] = [
       { value: 'all', label: 'All sprints' },
-      { value: 'active', label: 'Active sprints' },
-      { value: 'none', label: 'No sprint' },
     ];
     for (const tr of [...tracks].sort(bySort)) {
       for (const sp of active) if (sp.track_id === tr.id) opts.push(toOpt(sp, tr.title));
@@ -1195,7 +1291,7 @@ function SprintSelect({ value, sprints, tracks, onChange }: {
       value={value}
       options={options}
       onChange={onChange}
-      menuMinWidth={220}
+      menuMinWidth={320}
       ariaLabel="Filter by sprint"
       title="Filter by sprint"
     />
@@ -1218,7 +1314,8 @@ function sprintSpan(sp: Sprint): string | null {
   return `${fmt(start)} – ${fmt(last)}`;
 }
 
-function SectionCount({ value }: { value: number }) {
+/// While filtering, "1 of 7": what's shown out of what's in the section.
+function SectionCount({ value, total }: { value: number; total?: number }) {
   const [bump, setBump] = useState(0);
   const prev = useRef(value);
   useEffect(() => {
@@ -1229,12 +1326,12 @@ function SectionCount({ value }: { value: number }) {
   }, [value]);
   return (
     <span key={bump} className="count" data-pulse={bump > 0 || undefined}>
-      {value}
+      {value}{total != null && total !== value && <span className="count-of"> of {total}</span>}
     </span>
   );
 }
 
-function AddTaskRow({ onAdd, placeholder = 'Add task…', onNavigate }: {
+function AddTaskRow({ onAdd, placeholder = 'Add task', onNavigate }: {
   onAdd: (title: string) => void;
   placeholder?: string;
   onNavigate?: (currentEl: HTMLElement | null, dir: 'up' | 'down') => boolean;
@@ -1435,7 +1532,7 @@ function ListSubtaskRow({
 interface RowProps {
   task: Task;
   /// Sprint title shown in the trail (desktop only); null hides it.
-  sprintLabel: string | null;
+  sprintLabel: SprintLabel | null;
   blocks: TimeBlock[];
   onTick: (id: string) => void;
   onSubTick: (taskId: string, subId: string) => void;
@@ -1481,8 +1578,11 @@ function TaskRow({
   onSubAdd, onSubPromote, onNavigate,
   onShiftMoveTask, onShiftMoveSubtask,
 }: RowProps) {
-  const [dragOnHandle, setDragOnHandle] = useState(false);
   const isMobile = useIsMobile();
+  // Where the last press landed: a native drag that begins in a text
+  // field, a subtask or a control is cancelled, so selecting text or
+  // ticking never picks up the whole row.
+  const downTarget = useRef<HTMLElement | null>(null);
   const tags = useFira((s) => s.tags);
   const filterIds = useFira((s) => s.listFilter.tag_ids);
   const showListTimes = useFira((s) => s.showListTimes);
@@ -1500,7 +1600,7 @@ function TaskRow({
     }
     return [...matched, ...rest];
   }, [task.tag_ids, filterSet]);
-  const visibleTagIds = sortedTagIds.slice(0, 3);
+  const visibleTagIds = sortedTagIds.slice(0, 2);
   const moreCount = task.tag_ids.length - visibleTagIds.length;
   const left = taskTimeLeft(task, blocks);
   // Blue is a reward for landing a task under budget, so it only applies
@@ -1629,9 +1729,19 @@ function TaskRow({
          data-drop-mark={dropMark ?? undefined}
          data-task-id={task.id}
          data-pressing={longPress.isPressing ? 'true' : undefined}
-         draggable={dragOnHandle}
-         onDragStart={(e) => onDragStart(e, task.id)}
-         onDragEnd={() => { setDragOnHandle(false); onRowDragEnd(); }}
+         // A mouse drags the row straight away (native drag only starts
+         // once the pointer moves, so a click still opens the task).
+         // Touch keeps the long-press below.
+         draggable={!isMobile && !editingTitle}
+         onMouseDownCapture={(e) => { downTarget.current = e.target as HTMLElement; }}
+         onDragStart={(e) => {
+           if (downTarget.current?.closest('input, textarea, button, a, [contenteditable="true"], .subtask, .task-check')) {
+             e.preventDefault();
+             return;
+           }
+           onDragStart(e, task.id);
+         }}
+         onDragEnd={onRowDragEnd}
          onDragOver={(e) => onRowDragOver(e, task)}
          onDragLeave={onRowDragLeave}
          onDrop={(e) => onRowDrop(e, task)}
@@ -1640,8 +1750,8 @@ function TaskRow({
            const target = e.target as HTMLElement;
            if (e.button !== 0 || !e.isPrimary) return;
            if (target.closest('button, a, input, textarea, [contenteditable="true"], .task-check, .sc, .task-toggle, .subtask')) return;
-           // The grip still starts an immediate native drag with a mouse.
-           if (e.pointerType === 'mouse' && target.closest('.task-grip')) return;
+           // Mouse on desktop uses the native drag above, not a hold.
+           if (e.pointerType === 'mouse' && !isMobile) return;
            longPress.bind.onPointerDown(e);
          }}
          onClick={(e) => {
@@ -1653,19 +1763,10 @@ function TaskRow({
            // on the text spans / inputs themselves and stopPropagation
            // there — clicking surrounding row body still pops the
            // modal, matching pre-inline-edit behavior.
-           if (el.closest('.task-check, .sc, .task-grip, .task-toggle')) return;
+           if (el.closest('.task-check, .sc, .task-toggle')) return;
            if (el.closest('.title-autosize, .subtask-edit-input')) return;
            onOpen(task.id);
          }}>
-      {/* Mouse grip: immediate native drag. Hold anywhere else to drag
-          with touch, mouse, or pen at any viewport width. */}
-      <div className="task-grip"
-           title="Drag to reorder"
-           onMouseDown={() => setDragOnHandle(true)}
-           onMouseUp={() => setDragOnHandle(false)}
-           onClick={(e) => e.stopPropagation()}>
-        <span>::</span>
-      </div>
       <div className="task-check"
            data-checked={task.status === 'done'}
            onClick={(e) => { e.stopPropagation(); onTick(task.id); }}>
@@ -1788,9 +1889,10 @@ function TaskRow({
               aria-label={expanded ? 'Hide subtasks' : 'Show subtasks'}
               title={expanded ? 'Hide subtasks' : `Show ${task.subtasks.length} subtask${task.subtasks.length === 1 ? '' : 's'}`}
             >
-              {expanded
-                ? <ChevronDown size={14} strokeWidth={1.75} />
-                : <ChevronRight size={14} strokeWidth={1.75} />}
+              {/* Just the "2/4" count; clicking it shows the subtasks. */}
+              <span className="task-toggle-count">
+                {task.subtasks.filter((st) => st.done).length}/{task.subtasks.length}
+              </span>
               </button>
           )}
           </span>
@@ -1837,15 +1939,19 @@ function TaskRow({
         // nor an ext-id to render — same data-driven hide we had
         // before, just extended to consider the new ext-id slot.
         if (isMobile && trailTagIds.length === 0) return null;
-        if (!isMobile && trailTagIds.length === 0 && !showExtId && !showSprint && !showListTimes) return null;
+        // Desktop: id · sprint · tags · time, each only when present; the
+        // trail sizes to its content so the title keeps the most room.
         return (
-          <div className="task-trail" data-has-filter={filterSet.size > 0 || undefined}>
-            {showExtId && (
-              <span className="ext-id">{task.external_id}</span>
-            )}
-            {showSprint && (
-              <span className="sprint-label" title={`Sprint: ${sprintLabel}`}>{sprintLabel}</span>
-            )}
+          <div className="task-trail" data-has-filter={filterSet.size > 0 || undefined}
+               data-times={showListTimes || undefined}>
+            {showExtId && <span className="ext-id">{task.external_id}</span>}
+            {showSprint ? (
+              <span className="sprint-label" title={`Sprint: ${sprintLabel!.title}`}>
+                <span className="sprint-label-dot" style={sprintLabel!.color ? { background: sprintLabel!.color } : undefined} aria-hidden />
+                <span className="sprint-label-text">{sprintLabel!.title}</span>
+              </span>
+            ) : null}
+            {(trailTagIds.length > 0 || trailMore > 0) && <span className="task-tags">
             {trailTagIds.map((tid) => {
               const tag = tags.find((t) => t.id === tid);
               if (!tag) return null;
@@ -1869,15 +1975,16 @@ function TaskRow({
                 +{trailMore}
               </span>
             )}
+            </span>}
             {!isMobile && showListTimes && (
               task.has_private_time ? <span className="left-est" title="Time left cannot be calculated from visible blocks">Private time excluded</span> : task.estimate_min != null && left != null ? (
                 left < 0 ? (
-                  <span className="left-est" data-over="true">{fmtMin(-left)} over</span>
+                  <span className="left-est" data-over="true">+{fmtMin(-left)} over</span>
                 ) : (
                   <span className="left-est" data-plenty={plentyLeft || undefined}>{fmtMin(left)} left</span>
                 )
               ) : (
-                <span className="left-est" data-none="true">no est</span>
+                <span className="left-est" data-none="true">No estimate</span>
               )
             )}
           </div>

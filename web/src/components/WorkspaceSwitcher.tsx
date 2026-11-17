@@ -36,7 +36,7 @@ export function WorkspaceSwitcher() {
         title={active.title}
       >
         <span className="ws-title">{active.title}</span>
-        <ChevronDown size={11} strokeWidth={1.75} />
+        <ChevronDown size={12} strokeWidth={1.75} />
       </button>
       {open && (
         <div className="ws-menu">
@@ -53,8 +53,8 @@ export function WorkspaceSwitcher() {
               }}
             >
               <span className="ws-menu-title">{w.title}</span>
-              {w.is_personal && <span className="ws-menu-tag">personal</span>}
-              {w.id === activeId && <Check size={12} strokeWidth={2} />}
+              {w.is_personal && <span className="ws-menu-tag">Personal</span>}
+              {w.id === activeId && <Check size={14} strokeWidth={2} />}
             </button>
           ))}
           <button
@@ -62,7 +62,7 @@ export function WorkspaceSwitcher() {
             className="ws-menu-add"
             onClick={() => { setOpen(false); openCreate(); }}
           >
-            <Plus size={12} strokeWidth={1.75} />
+            <Plus size={14} strokeWidth={1.75} />
             <span>New workspace</span>
           </button>
         </div>

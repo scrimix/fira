@@ -1,7 +1,7 @@
-import { CalendarDays, Layers, GanttChartSquare, LayoutDashboard, List, Settings } from 'lucide-react';
+import { ProjectIcon } from './ProjectIcon';
+import { CalendarDays, Layers, GanttChartSquare, LayoutDashboard, List, Plus, Settings } from 'lucide-react';
 import { useFira } from '../store';
 import { useIsMobile } from '../hooks';
-import { ProjectIcon } from './ProjectIcon';
 import { BrandMark } from './BrandMark';
 
 export function Sidebar() {
@@ -23,6 +23,7 @@ export function Sidebar() {
   const listProjectId = useFira((s) => s.listFilter.project_id);
   const projectScopeId = useFira((s) => s.projectScopeId);
   const activeProjectId = view === 'list' ? listProjectId : projectScopeId;
+  // Calendar and Plan open on all projects; a project icon then filters.
   const pickProject = (id: string) => {
     setProjectScope(id);
     close();
@@ -47,12 +48,12 @@ export function Sidebar() {
       <div className="sidebar" data-open={isMobile ? (sidebarOpen ? 'true' : 'false') : undefined}>
         <BrandMark className="brand" size={22} title="Fira" />
         <button className="nav-btn" data-active={view === 'calendar'}
-                onClick={() => { setView('calendar'); close(); }} title="Calendar (G)">
-          <CalendarDays size={16} strokeWidth={1.75} />
+                onClick={() => { setView('calendar'); setProjectScope(null); close(); }} title="Calendar (G)">
+          <CalendarDays size={18} strokeWidth={1.5} />
         </button>
         <button className="nav-btn" data-active={view === 'list'}
                 onClick={() => { setView('list'); close(); }} title="List (I)">
-          <List size={16} strokeWidth={1.75} />
+          <List size={18} strokeWidth={1.5} />
         </button>
         {/* Plan sits between List and Dashboard: the three are a
             widening sequence over the same tasks — one project's
@@ -62,13 +63,13 @@ export function Sidebar() {
             Plan is available on desktop in production too. */}
         {!isMobile && (
           <button className="nav-btn" data-active={view === 'plan'}
-                  onClick={() => { setView('plan'); close(); }} title="Plan (P)">
-            <GanttChartSquare size={16} strokeWidth={1.75} />
+                  onClick={() => { setView('plan'); setProjectScope(null); close(); }} title="Plan (P)">
+            <GanttChartSquare size={18} strokeWidth={1.5} />
           </button>
         )}
         <button className="nav-btn" data-active={view === 'dashboard'}
                 onClick={() => { setView('dashboard'); close(); }} title="Dashboard (D)">
-          <LayoutDashboard size={16} strokeWidth={1.75} />
+          <LayoutDashboard size={18} strokeWidth={1.5} />
         </button>
         <div style={{ height: 16 }} />
         <button
@@ -79,7 +80,7 @@ export function Sidebar() {
           title="All projects"
           onClick={() => { setProjectScope(null); close(); }}
         >
-          <Layers size={16} strokeWidth={1.75} />
+          <Layers size={18} strokeWidth={1.5} />
         </button>
         {orderedProjects.map((p) => {
           const active = p.id === activeProjectId;
@@ -95,13 +96,14 @@ export function Sidebar() {
               title={inactive ? `${p.title} (inactive)` : p.title}
               onClick={() => pickProject(p.id)}
             >
-              <ProjectIcon name={p.icon} color={inactive ? 'var(--ink-4)' : p.color} size={16} />
+              <ProjectIcon name={p.icon} color={inactive ? 'var(--text-3)' : p.color} size={18} />
             </button>
           );
         })}
         {canCreateProject && (
-          <button className="nav-btn nav-add" onClick={() => { openCreateProject(); close(); }} title="New project">
-            +
+          <button className="nav-btn nav-add" onClick={() => { openCreateProject(); close(); }}
+                  title="New project" aria-label="New project">
+            <Plus size={16} strokeWidth={1.5} />
           </button>
         )}
         <div className="spacer" />
@@ -111,7 +113,7 @@ export function Sidebar() {
             onClick={() => { openEditWorkspace(activeWorkspaceId); close(); }}
             title="Workspace settings"
           >
-            <Settings size={14} strokeWidth={1.75} />
+            <Settings size={18} strokeWidth={1.5} />
           </button>
         )}
       </div>

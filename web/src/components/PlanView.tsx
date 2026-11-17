@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Archive, Check, ChevronDown, ChevronLeft, ChevronRight, History, ListChecks, ListTodo, Minus,
+  Archive, Check, ChevronDown, ChevronLeft, ChevronRight, History, ListChecks, Minus,
   ChevronUp, PanelLeft, Plus, Trash2,
 } from 'lucide-react';
 import { useFira } from '../store';
+import { SearchField } from './SearchField';
 import { useCanEditProject } from '../permissions';
 import { api } from '../api';
 import { EDITORIAL_COLORS } from '../colors';
@@ -18,11 +19,10 @@ import {
   fmtDateKey, isSprintRunning, isoWeekLabel, monthSpansFor, parseDateKey,
   weekStartFor, weekStartOf,
 } from '../time';
-import type { Section, Tag, UUID } from '../types';
+import type { Tag, UUID } from '../types';
 import { PlanSprintCard, PLAN_TASK_MIME } from './PlanSprintCard';
 import { SprintModal } from './SprintModal';
 import { ConfirmDelete } from './ConfirmDelete';
-import { ListTagFilter } from './TagFilter';
 
 const WEEK_W = { s: 72, m: 104, l: 150 } as const;
 const CLICK_THRESHOLD_PX = 4;
@@ -560,12 +560,6 @@ function PlanBoard({ projectId }: { projectId: UUID | null }) {
     for (const t of b.tasks) setTaskSprint(t.id, id);
   };
 
-  const railTags = useMemo(
-    () => allTags.filter((t) => !projectId || t.project_id === projectId)
-      .sort((a, b) => a.title.localeCompare(b.title)),
-    [allTags, projectId],
-  );
-
   const rows = snapshot.tracks;
   const confirmTrackRow = confirmTrack
     ? snapshot.tracks.find((r) => r.id === confirmTrack) ?? null
@@ -587,6 +581,9 @@ function PlanBoard({ projectId }: { projectId: UUID | null }) {
             chevrons that grew it rather than moving it, and a lone "−"
             that meant "drop the last week". Nobody reads a chevron that
             way. */}
+        {/* Lead group spans the rail + track column, so the divider after
+            it lands on the track column's edge below. */}
+        <div className="plan-toolbar-lead">
         <div className="week-nav">
           <button className="week-nav-btn" title="Back one week"
                   onClick={() => setPlanWindow(weekOffset - 1, weekCount)}>
@@ -594,7 +591,7 @@ function PlanBoard({ projectId }: { projectId: UUID | null }) {
           </button>
           <button className="week-nav-btn week-nav-today" title="Jump back to this week"
                   onClick={backToNow}>
-            now
+            Now
           </button>
           <button className="week-nav-btn" title="Forward one week"
                   onClick={() => setPlanWindow(weekOffset + 1, weekCount)}>
@@ -608,7 +605,7 @@ function PlanBoard({ projectId }: { projectId: UUID | null }) {
                   onClick={() => setPlanWindow(weekOffset, weekCount - 2)}>
             <Minus size={14} strokeWidth={1.75} />
           </button>
-          <span className="week-nav-count">{weekCount}w</span>
+          <span className="week-nav-count">{weekCount} weeks</span>
           <button className="week-nav-btn" title="Show more weeks"
                   disabled={weekCount >= 52}
                   onClick={() => setPlanWindow(weekOffset, weekCount + 2)}>
@@ -616,15 +613,16 @@ function PlanBoard({ projectId }: { projectId: UUID | null }) {
           </button>
         </div>
 
-        <div className="week-nav plan-width" role="group" aria-label="Week width">
+        <div className="seg plan-width" role="group" aria-label="Week width">
           {(['s', 'm', 'l'] as const).map((w) => (
-            <button key={w} className="week-nav-btn" data-on={weekWidth === w}
+            <button key={w} data-on={weekWidth === w}
                     aria-pressed={weekWidth === w}
                     title={`${{ s: 'Narrow', m: 'Medium', l: 'Wide' }[w]} week columns`}
                     onClick={() => setPlanWeekWidth(w)}>
               {w.toUpperCase()}
             </button>
           ))}
+        </div>
         </div>
 
         <span className="plan-toolbar-sep" />
@@ -634,20 +632,20 @@ function PlanBoard({ projectId }: { projectId: UUID | null }) {
             set, they are not exclusive, and `aria-pressed` says which.
             Each is also reachable from the thing it hides — the rail has
             its own close button. */}
-        <div className="week-nav plan-toggles" role="group" aria-label="Show">
-          <button className="week-nav-btn" data-on={showInbox}
+        <div className="seg plan-toggles" role="group" aria-label="Show">
+          <button data-on={showInbox}
                   aria-pressed={showInbox}
                   title={showInbox ? 'Hide the unplanned rail' : 'Show the unplanned rail'}
                   onClick={togglePlanInbox}>
             <PanelLeft size={12} strokeWidth={1.75} /> Inbox
           </button>
-          <button className="week-nav-btn" data-on={showTasks}
+          <button data-on={showTasks}
                   aria-pressed={showTasks}
                   title={showTasks ? 'Hide each card\'s checklist' : 'Show each card\'s checklist'}
                   onClick={togglePlanTasks}>
             <ListChecks size={12} strokeWidth={1.75} /> Tasks
           </button>
-          <button className="week-nav-btn" data-on={showRetro}
+          <button data-on={showRetro}
                   aria-pressed={showRetro}
                   title={showRetro
                     ? 'Hide the finished-work band'
@@ -655,22 +653,30 @@ function PlanBoard({ projectId }: { projectId: UUID | null }) {
                   onClick={togglePlanRetro}>
             <Archive size={12} strokeWidth={1.75} /> Unplanned
           </button>
-          {projectId && !playground && <button className="week-nav-btn" data-on={showHistory}
-                  aria-pressed={showHistory}
-                  title={showHistory ? 'Hide history and return to the live plan' : 'Show the plan history scrubber'}
-                  onClick={toggleHistory}>
-            <History size={12} strokeWidth={1.75} /> Past
-          </button>}
         </div>
 
         <span className="plan-toolbar-sep" />
 
-        {projectId && !playground && showHistory && <div className="week-nav">
-          <button className="week-nav-btn" aria-label="Return to live plan"
-            data-on={!readOnly} onClick={() => setVersionAt(null)}>Live</button>
-        </div>}
-        <div className="week-nav plan-adds" role="group" aria-label="Add">
-          <button className="week-nav-btn"
+        {/* Which plan is on the board: the live one, or a past version
+            picked on the history scrubber. One control for both states,
+            rather than a "Past" toggle plus a separate "Live" exit. */}
+        {projectId && !playground && <>
+          <div className="seg plan-when" role="group" aria-label="Plan version">
+            <button data-on={!showHistory} aria-pressed={!showHistory}
+                    title="The current plan"
+                    onClick={() => { if (showHistory) toggleHistory(); }}>
+              Live
+            </button>
+            <button data-on={showHistory} aria-pressed={showHistory}
+                    title="Browse earlier versions of this plan"
+                    onClick={() => { if (!showHistory) toggleHistory(); }}>
+              <History size={12} strokeWidth={1.75} /> Past
+            </button>
+          </div>
+          <span className="plan-toolbar-sep" />
+        </>}
+        <div className="plan-adds" role="group" aria-label="Add">
+          <button className="btn"
                   disabled={readOnly || !projectId || !canEditProject(projectId)}
                   title={!projectId
                     ? "Select a project to add a track"
@@ -680,7 +686,7 @@ function PlanBoard({ projectId }: { projectId: UUID | null }) {
                   onClick={() => projectId && addTrack(projectId, 'New track')}>
             <Plus size={12} strokeWidth={1.75} /> Track
           </button>
-          <button className="week-nav-btn" data-on={placing}
+          <button className="btn btn-primary" data-on={placing}
                   aria-pressed={placing}
                   disabled={readOnly}
                   title="Click, then drag across the weeks the sprint should cover"
@@ -699,7 +705,6 @@ function PlanBoard({ projectId }: { projectId: UUID | null }) {
             tasks={snapshot.inbox}
             key={readOnly ? 'history' : 'live'}
             readOnly={readOnly}
-            tags={readOnly ? [] : railTags}
             onOpen={openTask}
             onDropOut={(taskId) => setTaskSprint(taskId, null)}
             projectId={projectId}
@@ -894,6 +899,11 @@ function PlanBoard({ projectId }: { projectId: UUID | null }) {
 
       {!readOnly && editingSprint && sprints.find(sp => sp.id === editingSprint) &&
         <SprintModal key={editingSprint} sprint={sprints.find(sp => sp.id === editingSprint)!}
+          plan={snapshot.tracks.flatMap(r => r.sprints).find(sp => sp.id === editingSprint) ?? null}
+          trackTitle={snapshot.tracks.find(r => r.sprints.some(sp => sp.id === editingSprint))?.title ?? null}
+          parkedCount={parkedInSprint(editingSprint).length}
+          onMoveToNow={() => moveSprintTasksToNow(editingSprint)}
+          onDelete={() => { const id = editingSprint; setEditingSprint(null); setConfirmSprint(id); }}
           onClose={() => setEditingSprint(null)} />}
       {confirmTrackRow && (
         <ConfirmDelete
@@ -1099,16 +1109,6 @@ function TrackRow(props: {
   );
 }
 
-/// Sections in the order the list shows them. `done` is absent by
-/// construction: the inbox predicate excludes finished work, which lives
-/// in the retro band instead.
-const RAIL_SECTIONS: { key: Section; label: string }[] = [
-  { key: 'now', label: 'Now' },
-  { key: 'later', label: 'Later' },
-  { key: 'recurring', label: 'Recurring' },
-  { key: 'someday', label: 'Someday' },
-];
-
 /// Unplanned project tasks — the board's left rail.
 ///
 /// Deliberately the calendar rail's markup and classes, not a lookalike:
@@ -1117,12 +1117,12 @@ const RAIL_SECTIONS: { key: Section; label: string }[] = [
 /// second thing to learn. Filter box, collapsible groups with counts,
 /// `.rail-task` rows, drag onto the board.
 ///
-/// Across projects, group by project like the calendar rail. A selected
-/// project's inbox uses list sections and its project-specific tag filter.
-function PlanRail({ tasks, tags, projectId, onOpen, onDropOut, readOnly = false }: {
+/// The calendar rail's model: tasks grouped by project, the sidebar's
+/// project pick narrows it to one project, the box filters by text.
+/// No tag filter.
+function PlanRail({ tasks, projectId, onOpen, onDropOut, readOnly = false }: {
   readOnly?: boolean;
   tasks: PlanTask[];
-  tags: Tag[];
   projectId: UUID | null;
   onOpen: (id: UUID) => void;
   onDropOut: (taskId: UUID) => void;
@@ -1133,33 +1133,27 @@ function PlanRail({ tasks, tags, projectId, onOpen, onDropOut, readOnly = false 
   const taskProjects = useMemo(() => new Map(allTasks.map((task) => [task.id, task.project_id])), [allTasks]);
   const [over, setOver] = useState(false);
   const [query, setQuery] = useState('');
-  const [picked, setPicked] = useState<UUID[]>([]);
-  const [tagMode, setTagMode] = useState<'and' | 'or'>('or');
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
 
   const q = query.trim().toLowerCase();
   const shown = tasks.filter((t) => {
     if (q && !t.title.toLowerCase().includes(q)
       && !(t.externalId?.toLowerCase().includes(q) ?? false)) return false;
-    // Same and/or semantics as the list, because it is the list's
-    // control doing the selecting.
-    if (picked.length > 0) {
-      const match = tagMode === 'and'
-        ? picked.every((id) => t.tagIds.includes(id))
-        : picked.some((id) => t.tagIds.includes(id));
-      if (!match) return false;
-    }
     return true;
   });
   // Every section, always, even at zero. A section that disappears when
   // it empties makes the rail's shape jump as you plan work, and "is
   // there anything in Now?" is a question the rail should answer rather
   // than leave to be inferred from an absence.
-  const groups = projectId
-    ? RAIL_SECTIONS.map((sec) => ({ ...sec, tasks: shown.filter((t) => t.section === sec.key) }))
-    : projects.filter((project) => !project.members.some((member) => member.user_id === meId && member.role === 'inactive'))
-      .map((project) => ({ key: project.id, label: project.title,
-        tasks: shown.filter((t) => taskProjects.get(t.id) === project.id) }));
+  // Grouped by project, always — the same rail whether the board shows
+  // one project or all of them. A selected project just narrows it to
+  // that project's group.
+  const groups = projects
+    .filter((project) => projectId
+      ? project.id === projectId
+      : !project.members.some((member) => member.user_id === meId && member.role === 'inactive'))
+    .map((project) => ({ key: project.id, label: project.title, color: project.color,
+      tasks: shown.filter((t) => taskProjects.get(t.id) === project.id) }));
 
   const toggleSection = (key: string) =>
     setCollapsed((cur) => {
@@ -1185,31 +1179,16 @@ function PlanRail({ tasks, tags, projectId, onOpen, onDropOut, readOnly = false 
              if (id) onDropOut(id);
            }}>
       <div className="rail-head">
-        <input
+        <SearchField
           className="rail-search"
+          label="Filter tasks"
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Filter…"
-          spellCheck={false}
+          onValueChange={setQuery}
+          placeholder="Filter tasks"
           onKeyDown={(e) => { if (e.key === 'Escape') setQuery(''); }}
         />
       </div>
       <div className="rail-body">
-        {projectId && tags.length > 0 && (
-          <div className="plan-rail-tags">
-            <ListTagFilter
-              projectId={projectId}
-              allTags={tags}
-              tagIds={picked}
-              mode={tagMode}
-              scope="all"
-              showAssigneeScope={false}
-              onChange={setPicked}
-              onModeChange={setTagMode}
-              onScopeChange={() => {}}
-            />
-          </div>
-        )}
 
         {/* Reuse list headings for both project and section groups. */}
         {groups.map((g) => {
@@ -1238,8 +1217,8 @@ function PlanRail({ tasks, tags, projectId, onOpen, onDropOut, readOnly = false 
                     line *closing* the group above it, so each section
                     looked like a title, some subtasks, and then an end
                     marker. Whitespace separates the blocks here. */}
+                {g.color && <span className="plan-rail-swatch" style={{ background: g.color }} />}
                 <h2>{g.label}</h2>
-                <span className="count">{g.tasks.length}</span>
                 <span className="plan-rail-spacer" />
                 <span className="caret">
                   {shut
@@ -1266,7 +1245,6 @@ function PlanRail({ tasks, tags, projectId, onOpen, onDropOut, readOnly = false 
                      }}
                      onClick={() => !readOnly && onOpen(t.id)}
                      title={t.title}>
-                  <ListTodo size={12} strokeWidth={1.75} aria-hidden="true" />
                   <span>{t.title}</span>
                 </div>
               ))}

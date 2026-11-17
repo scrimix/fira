@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Calendar, Link, Ticket, X } from 'lucide-react';
 import { useFira } from '../store';
 import { api, gcalConnectUrl, loginUrl } from '../api';
-import type { AccountSummary, Theme, UiStyle } from '../types';
+import type { AccountSummary, Theme } from '../types';
 import { AutomationTokens } from './AutomationTokens';
 
 // Account settings: container for personal-account stuff that isn't
@@ -172,7 +172,7 @@ export function AccountSettingsModal() {
     <div className="modal-backdrop" onClick={close}>
       <div className="modal np-modal account-modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <span className="ext">Account</span>
+          <span className="ext">Account settings</span>
           <span className="grow" />
           <button className="icon-btn" onClick={close} title="Close (Esc)" aria-label="Close">
             <X size={15} strokeWidth={1.75} />
@@ -180,32 +180,51 @@ export function AccountSettingsModal() {
         </div>
         <div className="np-body account-body">
           {me && (
-            <div className="account-identity">
+            <div className="account-profile">
               <span className="avatar account-identity-ava" data-me="true">{me.initials}</span>
               <div className="account-identity-text">
                 <div className="account-identity-name">{me.name}</div>
                 <div className="account-identity-email">{me.email}</div>
               </div>
+              <span className="grow" />
+              {switchTarget && !playgroundMode && (
+                <button
+                  type="button"
+                  className="btn account-signout-all"
+                  onClick={() => { close(); void signOutEverywhere(); }}
+                  title="Sign out of every linked account on this device"
+                >
+                  Sign out everywhere
+                </button>
+              )}
+              <button className="btn np-danger" onClick={() => { close(); logout(); }}>
+                Log out
+              </button>
             </div>
           )}
 
-          <Section title="Linked account">
-            <div className="account-row">
-              <button
-                className="link-pair account-link-btn"
-                data-state={linkState.kind}
-                onClick={() => { close(); openLink(); }}
-                title={linkBtnTitle}
-                aria-label={linkBtnTitle}
-              >
-                <Link size={14} strokeWidth={1.75} className="link-pair-icon" />
-                {partner && (
-                  <span className="account-link-partner" title={partner.name}>
-                    {partner.initials}
+          <SettingsGroup title="Preferences">
+            <SettingRow title="Appearance" desc="Light or dark palette.">
+              <ThemePicker />
+            </SettingRow>
+            <SettingRow title="Mode badge" desc="Shown next to your avatar in the top bar.">
+              <BadgePicker />
+            </SettingRow>
+          </SettingsGroup>
+
+          <SettingsGroup title="Accounts">
+            <SettingRow
+              title="Linked account"
+              desc={<>
+                {linkBody}
+                {linkState.kind === 'accepted' && !switchTarget && !playgroundMode && partner && (
+                  <span className="settings-note">
+                    Sign in as {partner.name} once on this device to switch between the two
+                    accounts without logging out.
                   </span>
                 )}
-              </button>
-              <p className="account-row-text">{linkBody}</p>
+              </>}
+            >
               {switchTarget && linkState.kind === 'accepted' && (
                 <button
                   type="button"
@@ -217,44 +236,64 @@ export function AccountSettingsModal() {
                   {switching ? 'Switching…' : `Switch to ${switchTargetLabel(switchTarget)}`}
                 </button>
               )}
-            </div>
-            {/* When the link is accepted but the partner has no live
-                session in this browser's group, the Switch button can't
-                appear (the server-side gate fails). Surface a primer
-                that points the user at "Add another account" so they
-                can enroll the partner's session without logging out. */}
-            {linkState.kind === 'accepted' && !switchTarget && !playgroundMode && (
-              <p className="account-row-text account-row-muted account-row-hint">
-                Sign in to your linked account from here (without logging out
-                first) to enable instant switching.
-              </p>
-            )}
-            {!playgroundMode && (
-              <div className="account-add-row">
+              {linkState.kind === 'accepted' && !switchTarget && !playgroundMode && partner && (
                 <a
-                  className="btn account-add-account"
-                  href={loginUrl}
-                  title="Sign in to another Google account on this device — keeps the current session alive so you can switch between them"
+                  className="btn"
+                  href={`${loginUrl}?login_hint=${encodeURIComponent(partner.email)}`}
+                  title={`Sign in to ${partner.email} on this device; you stay signed in here too`}
                 >
-                  Add Google account
+                  Sign in as {partner.name.split(' ')[0]}
                 </a>
-                {devAuth && me?.email !== 'maya@fira.dev' && (
-                  <button
-                    type="button"
-                    className="btn account-add-account"
-                    onClick={onAddMaya}
-                    disabled={addingDev}
-                    title="Sign in as the Maya fixture on this device (dev only)"
-                  >
-                    {addingDev ? 'Adding…' : 'Add Maya (dev)'}
-                  </button>
-                )}
-              </div>
-            )}
-          </Section>
+              )}
+              {devAuth && me?.email !== 'maya@fira.dev' && (
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={onAddMaya}
+                  disabled={addingDev}
+                  title="Sign in as the Maya fixture on this device (dev only)"
+                >
+                  {addingDev ? 'Adding…' : 'Add Maya (dev)'}
+                </button>
+              )}
+              <button
+                className="btn account-link-btn"
+                data-state={linkState.kind}
+                onClick={() => { close(); openLink(); }}
+                title={linkBtnTitle}
+              >
+                <Link size={13} strokeWidth={1.75} />
+                {linkState.kind === 'received' ? 'Review request'
+                  : linkState.kind === 'sent' ? 'Pending'
+                    : linkState.kind === 'accepted' ? 'Manage'
+                      : 'Link account'}
+              </button>
+            </SettingRow>
 
-          <Section title="Google Calendar">
-            <div className="account-row">
+          </SettingsGroup>
+
+          {/* Google Calendar is yours, everywhere. Jira and tokens belong to
+              the active workspace, so each says which one, right by its name. */}
+          <SettingsGroup title="Integrations">
+            <SettingRow
+              title="Google Calendar"
+              desc={reconnectNeeded ? (
+                <span className="account-row-warn">
+                  Reconnect needed — your Google session expired
+                  {gcalEmail ? <> ({gcalEmail})</> : null}.
+                </span>
+              ) : transientError ? (
+                <>Connected{gcalEmail ? <> as <strong>{gcalEmail}</strong></> : null}. Last sync
+                  didn't go through — we'll retry on the next refresh.</>
+              ) : gcalConnected ? (
+                <>Connected{gcalEmail ? <> as <strong>{gcalEmail}</strong></> : null}. Events show
+                  alongside your time blocks.</>
+              ) : (
+                <>Show your Google Calendar events alongside Fira time blocks (read-only).
+                  <span className="settings-note">While we're in Google's review queue, you may need to
+                  reconnect every 7 days.</span></>
+              )}
+            >
               {reconnectNeeded ? (
                 <a
                   className="btn account-stub-btn"
@@ -287,96 +326,29 @@ export function AccountSettingsModal() {
                   <Calendar size={13} strokeWidth={1.75} /> Connect
                 </a>
               )}
-              <div className="account-row-text-stack">
-                {reconnectNeeded ? (
-                  <p className="account-row-text account-row-warn">
-                    Reconnect needed — your Google session expired
-                    {gcalEmail ? <> ({gcalEmail})</> : null}. Click Reconnect to grant access again.
-                  </p>
-                ) : transientError ? (
-                  <p className="account-row-text account-row-muted">
-                    Connected{gcalEmail ? <> as <strong>{gcalEmail}</strong></> : null}. Last sync
-                    didn't go through — we'll retry on the next refresh.
-                  </p>
-                ) : gcalConnected ? (
-                  <p className="account-row-text account-row-muted">
-                    Connected{gcalEmail ? <> as <strong>{gcalEmail}</strong></> : null}. Events
-                    show on the calendar alongside your time blocks. Click an event for details.
-                  </p>
-                ) : (
-                  <>
-                    <p className="account-row-text account-row-muted">
-                      Show your Google Calendar events alongside Fira time blocks (read-only).
-                    </p>
-                    <p className="account-row-text account-row-muted account-row-hint">
-                      Heads up: while we're in Google's review queue, you may need to reconnect
-                      every 7 days.
-                    </p>
-                  </>
-                )}
-              </div>
-            </div>
-          </Section>
+            </SettingRow>
 
-          <Section title={`Jira${activeWorkspace ? ` — ${activeWorkspace.title}` : ''}`}>
-            <JiraSection
-              siteConfigured={!!activeWorkspace?.jira_site_url}
-              connected={jiraConnected}
-              email={jiraEmail}
-              autoSyncNewBlocks={jiraAutoSyncNewBlocks}
-              playgroundMode={playgroundMode}
-              onConnect={connectJira}
-              onDisconnect={disconnectJira}
-              onSetAutoSync={setJiraAutoSync}
-            />
-          </Section>
+            <SettingRow title={<>Jira {activeWorkspace && <WorkspaceChip name={activeWorkspace.title} />}</>} stack>
+              <JiraSection
+                siteConfigured={!!activeWorkspace?.jira_site_url}
+                connected={jiraConnected}
+                email={jiraEmail}
+                autoSyncNewBlocks={jiraAutoSyncNewBlocks}
+                playgroundMode={playgroundMode}
+                onConnect={connectJira}
+                onDisconnect={disconnectJira}
+                onSetAutoSync={setJiraAutoSync}
+              />
+            </SettingRow>
+          </SettingsGroup>
 
           {!playgroundMode && (
-            <Section title={`Automation tokens${activeWorkspace ? ` — ${activeWorkspace.title}` : ''}`}>
-              <AutomationTokens />
-            </Section>
+            <SettingsGroup title={<>Automation tokens {activeWorkspace && <WorkspaceChip name={activeWorkspace.title} />}</>}>
+              <SettingRow title="CLI access" stack>
+                <AutomationTokens />
+              </SettingRow>
+            </SettingsGroup>
           )}
-
-          <Section title="Mode badge">
-            <div className="account-row">
-              <BadgePicker />
-              <p className="account-row-text account-row-muted">
-                Shown next to your avatar in the top bar.
-              </p>
-            </div>
-          </Section>
-
-          <Section title="Appearance">
-            <div className="account-row">
-              <ThemePicker />
-              <p className="account-row-text account-row-muted">
-                Color palette.
-              </p>
-            </div>
-            <div className="account-row">
-              <StylePicker />
-              <p className="account-row-text account-row-muted">
-                Modern rounds the corners, softens the shadows and gives
-                everything more room.
-              </p>
-            </div>
-          </Section>
-
-          <div className="np-actions account-actions">
-            <button className="btn np-danger" onClick={() => { close(); logout(); }}>
-              Log out
-            </button>
-            {switchTarget && !playgroundMode && (
-              <button
-                type="button"
-                className="btn account-signout-all"
-                onClick={() => { close(); void signOutEverywhere(); }}
-                title="Sign out of every linked account on this device"
-              >
-                Sign out everywhere
-              </button>
-            )}
-          </div>
         </div>
       </div>
     </div>
@@ -443,7 +415,7 @@ function JiraSection({
           </p>
         </div>
         <div className="account-toggle-row">
-          <span className="account-section-h">Auto Sync New Blocks</span>
+          <span className="settings-row-desc">Log new time blocks to Jira automatically</span>
           <div
             className="list-tag-filter-mode"
             role="group"
@@ -459,7 +431,7 @@ function JiraSection({
               onClick={() => { void onSetAutoSync(true); }}
               disabled={playgroundMode}
             >
-              on
+              On
             </button>
             <button
               type="button"
@@ -468,7 +440,7 @@ function JiraSection({
               onClick={() => { void onSetAutoSync(false); }}
               disabled={playgroundMode}
             >
-              off
+              Off
             </button>
           </div>
         </div>
@@ -542,11 +514,44 @@ function JiraSection({
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+// Settings layout: titled groups of rows. A row is label + description
+// on the left and its control on the right; `stack` puts the control
+// under the label for wide content (forms, lists).
+// Marks a setting that belongs to the active workspace rather than the
+// account. Sits right after the setting's name.
+function WorkspaceChip({ name }: { name: string }) {
   return (
-    <div className="account-section">
-      <h5 className="account-section-h">{title}</h5>
-      {children}
+    <span className="settings-ws-chip" title={`Applies to the ${name} workspace only`}>
+      {name} workspace
+    </span>
+  );
+}
+
+function SettingsGroup({ title, children }: {
+  title: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="settings-group">
+      <h3 className="settings-group-h">{title}</h3>
+      <div className="settings-card">{children}</div>
+    </section>
+  );
+}
+
+function SettingRow({ title, desc, stack, children }: {
+  title: React.ReactNode;
+  desc?: React.ReactNode;
+  stack?: boolean;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className="settings-row" data-stack={stack || undefined}>
+      <div className="settings-row-text">
+        <div className="settings-row-title">{title}</div>
+        {desc && <div className="settings-row-desc">{desc}</div>}
+      </div>
+      {children && <div className="settings-row-control">{children}</div>}
     </div>
   );
 }
@@ -571,7 +576,7 @@ function BadgePicker() {
         onClick={() => setBadge(null)}
         title="No badge"
       >
-        none
+        None
       </button>
       <button
         type="button"
@@ -580,7 +585,7 @@ function BadgePicker() {
         onClick={() => setBadge('personal')}
         title="Personal mode"
       >
-        personal
+        Personal
       </button>
       <button
         type="button"
@@ -589,7 +594,7 @@ function BadgePicker() {
         onClick={() => setBadge('work')}
         title="Work mode"
       >
-        work
+        Work
       </button>
     </div>
   );
@@ -629,8 +634,7 @@ function SegmentedPicker<T extends string>({
   );
 }
 
-// Theme picker — the *palette* axis. Pairs with StylePicker below, which
-// owns the orthogonal shape/density axis; the two combine freely.
+// Theme picker — light or dark palette.
 function ThemePicker() {
   const value = useFira((s) => s.theme);
   const setTheme = useFira((s) => s.setTheme);
@@ -641,29 +645,10 @@ function ThemePicker() {
       value={value}
       onChange={setTheme}
       options={[
-        { value: 'classic', label: 'classic', title: 'Classic (paper white)' },
-        { value: 'dark', label: 'dark', title: 'Dark' },
+        { value: 'classic', label: 'Light', title: 'Light' },
+        { value: 'dark', label: 'Dark', title: 'Dark' },
       ]}
     />
   );
 }
 
-// Style picker — the shape/density axis: square + compact (classic) vs
-// rounded + soft-shadowed + roomier (modern). Independent of the theme,
-// so e.g. dark + modern is a valid combination.
-function StylePicker() {
-  const value = useFira((s) => s.uiStyle);
-  const setUiStyle = useFira((s) => s.setUiStyle);
-  return (
-    <SegmentedPicker<UiStyle>
-      className="account-theme-picker"
-      ariaLabel="Style"
-      value={value}
-      onChange={setUiStyle}
-      options={[
-        { value: 'classic', label: 'classic', title: 'Classic (square, compact)' },
-        { value: 'modern', label: 'modern', title: 'Modern (rounded, soft, roomy)' },
-      ]}
-    />
-  );
-}

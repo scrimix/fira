@@ -216,7 +216,7 @@ export interface PlanSnapshot {
 }
 
 /// Colour for the synthetic "No track" row and for cards on it.
-const ORPHAN_COLOR = 'var(--ink-4)';
+const ORPHAN_COLOR = 'var(--text-4)';
 
 /// A task's track: its sprint's track if it has a sprint, else its own.
 /// Applied at render time rather than mirrored into a column, so it can

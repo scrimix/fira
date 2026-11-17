@@ -63,7 +63,7 @@
         "workspace_id": "736b2d57-f2e4-5317-9453-df009aef1100",
         "title": "Atlas",
         "icon": "Compass",
-        "color": "#0F766E",
+        "color": "#12A594",
         "source": "jira",
         "description": "Core platform. Auth, billing, infra.",
         "external_url_template": null,
@@ -88,7 +88,7 @@
         "workspace_id": "736b2d57-f2e4-5317-9453-df009aef1100",
         "title": "Helix",
         "icon": "Sparkles",
-        "color": "#6D28D9",
+        "color": "#8E4EC6",
         "source": "local",
         "description": "Personal R&D — embedding experiments.",
         "external_url_template": null,
@@ -105,7 +105,7 @@
         "workspace_id": "736b2d57-f2e4-5317-9453-df009aef1100",
         "title": "Relay",
         "icon": "Zap",
-        "color": "#B45309",
+        "color": "#F76B15",
         "source": "notion",
         "description": "Internal tooling — sync engine.",
         "external_url_template": null,
@@ -127,7 +127,7 @@
         "id": "89a4fbf0-a385-5f68-9dae-09d00b92134c",
         "project_id": "394c700e-b98f-5f49-911b-aeded755c4dc",
         "title": "Auth v2 (refresh + SSO)",
-        "color": "#0F766E",
+        "color": "#12A594",
         "sort_key": "M000",
         "created_at": "2026-10-08T14:48:33.242314Z"
       },
@@ -135,7 +135,7 @@
         "id": "adb95d75-2317-577e-aba2-001c853f9484",
         "project_id": "394c700e-b98f-5f49-911b-aeded755c4dc",
         "title": "Billing reliability",
-        "color": "#B45309",
+        "color": "#F76B15",
         "sort_key": "M001",
         "created_at": "2026-10-08T14:48:33.242314Z"
       },
@@ -143,7 +143,7 @@
         "id": "50818215-768d-5f16-8011-ede85e537af7",
         "project_id": "394c700e-b98f-5f49-911b-aeded755c4dc",
         "title": "Perf + observability",
-        "color": "#6D28D9",
+        "color": "#8E4EC6",
         "sort_key": "M002",
         "created_at": "2026-10-08T14:48:33.242314Z"
       },
@@ -151,7 +151,7 @@
         "id": "adaf067f-1fc0-50fe-a3ce-cdf466e1bd49",
         "project_id": "68480002-0192-5810-a90a-d9e2f7d069c2",
         "title": "Sync engine v1",
-        "color": "#1D4ED8",
+        "color": "#3E6AE1",
         "sort_key": "M003",
         "created_at": "2026-10-08T14:48:33.242314Z"
       },
@@ -159,7 +159,7 @@
         "id": "7cd9ca47-8d45-557f-bba7-e2263a87ba46",
         "project_id": "68480002-0192-5810-a90a-d9e2f7d069c2",
         "title": "Source onboarding",
-        "color": "#BE123C",
+        "color": "#D6409F",
         "sort_key": "M004",
         "created_at": "2026-10-08T14:48:33.242314Z"
       },
@@ -167,7 +167,7 @@
         "id": "e0dd95f3-b2a3-5717-a551-f7e8c50e2c71",
         "project_id": "7b459832-624e-51e4-80c1-eca4c89e000d",
         "title": "Semantic task search",
-        "color": "#4D7C0F",
+        "color": "#7CB342",
         "sort_key": "M005",
         "created_at": "2026-10-08T14:48:33.242314Z"
       },
@@ -175,7 +175,7 @@
         "id": "9cb9ca34-f049-58ce-87fb-404be15f2feb",
         "project_id": "7b459832-624e-51e4-80c1-eca4c89e000d",
         "title": "Misc exploration",
-        "color": "#9333EA",
+        "color": "#8E4EC6",
         "sort_key": "M006",
         "created_at": "2026-10-08T14:48:33.242314Z"
       }
@@ -245,7 +245,7 @@
         "id": "e727d996-477b-5783-b015-19f0239c6ef7",
         "project_id": "394c700e-b98f-5f49-911b-aeded755c4dc",
         "track_id": "89a4fbf0-a385-5f68-9dae-09d00b92134c",
-        "title": "Atlas · Oct 5",
+        "title": "Atlas · SSO rollout",
         "starts_on": "2026-10-05",
         "ends_on": "2026-10-19",
         "dates": null,
@@ -257,7 +257,7 @@
         "id": "ae9863d3-f216-58f8-9778-90576783109e",
         "project_id": "7b459832-624e-51e4-80c1-eca4c89e000d",
         "track_id": "e0dd95f3-b2a3-5717-a551-f7e8c50e2c71",
-        "title": "Helix · Q2",
+        "title": "Helix · Search MVP",
         "starts_on": "2026-10-05",
         "ends_on": "2026-11-30",
         "dates": null,
@@ -281,7 +281,7 @@
         "id": "f511ca38-bd12-5aeb-a7da-c977d4a5c8f0",
         "project_id": "394c700e-b98f-5f49-911b-aeded755c4dc",
         "track_id": "50818215-768d-5f16-8011-ede85e537af7",
-        "title": "Atlas · Oct 19",
+        "title": "Atlas · Latency budget",
         "starts_on": "2026-10-19",
         "ends_on": "2026-11-02",
         "dates": null,
@@ -453,7 +453,7 @@
         "source": "local",
         "external_id": null,
         "external_url": null,
-        "estimate_min": 240,
+        "estimate_min": 1500,
         "spent_min": 30,
         "sort_key": "M",
         "created_at": "2026-08-03T00:00:00Z",
@@ -501,7 +501,7 @@
         "source": "jira",
         "external_id": "ATL-412",
         "external_url": null,
-        "estimate_min": 360,
+        "estimate_min": 1320,
         "spent_min": 120,
         "sort_key": "M",
         "created_at": "2026-08-03T00:00:00Z",
@@ -557,7 +557,7 @@
         "source": "jira",
         "external_id": "ATL-433",
         "external_url": null,
-        "estimate_min": 240,
+        "estimate_min": 1440,
         "spent_min": 60,
         "sort_key": "M",
         "created_at": "2026-08-03T00:00:00Z",
@@ -605,7 +605,7 @@
         "source": "notion",
         "external_id": "sync-engine/47",
         "external_url": null,
-        "estimate_min": 300,
+        "estimate_min": 900,
         "spent_min": 90,
         "sort_key": "M",
         "created_at": "2026-08-03T00:00:00Z",
@@ -677,7 +677,7 @@
         "source": "jira",
         "external_id": "ATL-440",
         "external_url": null,
-        "estimate_min": 60,
+        "estimate_min": 480,
         "spent_min": 0,
         "sort_key": "M",
         "created_at": "2026-08-10T00:00:00Z",
@@ -703,7 +703,7 @@
         "source": "jira",
         "external_id": "ATL-451",
         "external_url": null,
-        "estimate_min": 480,
+        "estimate_min": 720,
         "spent_min": 0,
         "sort_key": "M",
         "created_at": "2026-08-10T00:00:00Z",
@@ -730,7 +730,7 @@
         "source": "jira",
         "external_id": "ATL-449",
         "external_url": null,
-        "estimate_min": 240,
+        "estimate_min": 480,
         "spent_min": 60,
         "sort_key": "M",
         "created_at": "2026-08-10T00:00:00Z",
@@ -777,7 +777,7 @@
         "title": "Hardware token (YubiKey) onboarding flow",
         "description_md": "",
         "section": "someday",
-        "status": "backlog",
+        "status": "todo",
         "priority": "p3",
         "source": "jira",
         "external_id": "ATL-602",
@@ -880,7 +880,7 @@
         "source": "local",
         "external_id": null,
         "external_url": null,
-        "estimate_min": 60,
+        "estimate_min": 480,
         "spent_min": 0,
         "sort_key": "M",
         "created_at": "2026-08-17T00:00:00Z",
@@ -906,7 +906,7 @@
         "source": "notion",
         "external_id": "sync-engine/55",
         "external_url": null,
-        "estimate_min": 360,
+        "estimate_min": 600,
         "spent_min": 0,
         "sort_key": "M",
         "created_at": "2026-08-17T00:00:00Z",
@@ -932,7 +932,7 @@
         "source": "notion",
         "external_id": "sync-engine/52",
         "external_url": null,
-        "estimate_min": 240,
+        "estimate_min": 600,
         "spent_min": 0,
         "sort_key": "M",
         "created_at": "2026-08-17T00:00:00Z",
@@ -958,7 +958,7 @@
         "source": "jira",
         "external_id": "ATL-446",
         "external_url": null,
-        "estimate_min": 180,
+        "estimate_min": 420,
         "spent_min": 0,
         "sort_key": "M",
         "created_at": "2026-08-17T00:00:00Z",
@@ -1029,7 +1029,7 @@
         "title": "Admin UI: revoke session",
         "description_md": "",
         "section": "later",
-        "status": "backlog",
+        "status": "todo",
         "priority": "p3",
         "source": "jira",
         "external_id": "ATL-510",
@@ -1053,7 +1053,7 @@
         "title": "Linear source adapter",
         "description_md": "",
         "section": "someday",
-        "status": "backlog",
+        "status": "todo",
         "priority": "p3",
         "source": "local",
         "external_id": null,
@@ -1103,7 +1103,7 @@
         "title": "Magic-link auth fallback",
         "description_md": "",
         "section": "later",
-        "status": "backlog",
+        "status": "todo",
         "priority": "p2",
         "source": "jira",
         "external_id": "ATL-501",
@@ -1127,7 +1127,7 @@
         "title": "GitHub Issues source adapter",
         "description_md": "",
         "section": "later",
-        "status": "backlog",
+        "status": "todo",
         "priority": "p3",
         "source": "notion",
         "external_id": "sync-engine/61",
@@ -1151,7 +1151,7 @@
         "title": "Investigate FIDO2 / passkeys",
         "description_md": "",
         "section": "later",
-        "status": "backlog",
+        "status": "todo",
         "priority": "p3",
         "source": "jira",
         "external_id": "ATL-515",
@@ -1201,7 +1201,7 @@
         "title": "Voice-input for quick-capture (research)",
         "description_md": "",
         "section": "someday",
-        "status": "backlog",
+        "status": "todo",
         "priority": "p3",
         "source": "local",
         "external_id": null,
@@ -1251,7 +1251,7 @@
         "title": "Read: \"Notion Calendar postmortem\" blog",
         "description_md": "",
         "section": "later",
-        "status": "backlog",
+        "status": "todo",
         "priority": "p3",
         "source": "local",
         "external_id": null,
@@ -1299,7 +1299,7 @@
         "title": "Bug: Notion poll skips archived pages",
         "description_md": "Spotted in standup 2026-04-28. Repro: archive a page, watch poll cycle.",
         "section": "later",
-        "status": "backlog",
+        "status": "todo",
         "priority": "p2",
         "source": "local",
         "external_id": null,
@@ -1323,7 +1323,7 @@
         "title": "Try DuckDB for snapshot replay queries",
         "description_md": "",
         "section": "later",
-        "status": "backlog",
+        "status": "todo",
         "priority": "p3",
         "source": "local",
         "external_id": null,
@@ -1344,73 +1344,73 @@
         "id": "6d65034e-34f9-5814-b501-5ccdc2737017",
         "project_id": "394c700e-b98f-5f49-911b-aeded755c4dc",
         "title": "auth",
-        "color": "#0F766E"
+        "color": "#12A594"
       },
       {
         "id": "42ce74c9-acd4-5786-8d3c-00dd0f3aca40",
         "project_id": "394c700e-b98f-5f49-911b-aeded755c4dc",
         "title": "billing",
-        "color": "#6D28D9"
+        "color": "#8E4EC6"
       },
       {
         "id": "5ba1e942-35b5-55a6-91e1-c2ea060e81cf",
         "project_id": "394c700e-b98f-5f49-911b-aeded755c4dc",
         "title": "compliance",
-        "color": "#4D7C0F"
+        "color": "#7CB342"
       },
       {
         "id": "b2588f3e-0fc5-5086-8133-b9be67427aa2",
         "project_id": "7b459832-624e-51e4-80c1-eca4c89e000d",
         "title": "design",
-        "color": "#BE123C"
+        "color": "#D6409F"
       },
       {
         "id": "4b8451d3-c4a9-58fa-9abf-94aa19bf7d68",
         "project_id": "394c700e-b98f-5f49-911b-aeded755c4dc",
         "title": "enterprise",
-        "color": "#BE123C"
+        "color": "#D6409F"
       },
       {
         "id": "84cf6cf9-f7cb-5224-b26d-852232e63e19",
         "project_id": "68480002-0192-5810-a90a-d9e2f7d069c2",
         "title": "onboarding",
-        "color": "#6D28D9"
+        "color": "#8E4EC6"
       },
       {
         "id": "acf8f03e-84eb-5417-a689-67077c4f94d0",
         "project_id": "394c700e-b98f-5f49-911b-aeded755c4dc",
         "title": "perf",
-        "color": "#9333EA"
+        "color": "#8E4EC6"
       },
       {
         "id": "a427c049-9e00-5efd-bc30-621b91728c74",
         "project_id": "7b459832-624e-51e4-80c1-eca4c89e000d",
         "title": "research",
-        "color": "#1D4ED8"
+        "color": "#3E6AE1"
       },
       {
         "id": "ad7a8c0b-e240-5295-a346-6a680328b54d",
         "project_id": "394c700e-b98f-5f49-911b-aeded755c4dc",
         "title": "review",
-        "color": "#1D4ED8"
+        "color": "#3E6AE1"
       },
       {
         "id": "375cabf1-bc74-5d2a-96c6-ec5d8c570938",
         "project_id": "394c700e-b98f-5f49-911b-aeded755c4dc",
         "title": "security",
-        "color": "#B45309"
+        "color": "#F76B15"
       },
       {
         "id": "8d03ac8c-ee1f-5c3d-aef7-ffdee50b1c63",
         "project_id": "68480002-0192-5810-a90a-d9e2f7d069c2",
         "title": "sync",
-        "color": "#0F766E"
+        "color": "#12A594"
       },
       {
         "id": "3c4ac1b8-c9a9-5c79-8958-c4f51946ab7e",
         "project_id": "68480002-0192-5810-a90a-d9e2f7d069c2",
         "title": "ui",
-        "color": "#B45309"
+        "color": "#F76B15"
       }
     ],
     "blocks": [

@@ -7,7 +7,7 @@
 // don't shift the grid by an hour.
 
 export const HOURS = Array.from({ length: 24 }, (_, i) => i);
-export const DAY_LABELS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
+export const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 // "Now" provider. Lives behind a function so the playground (and any future
 // snapshot/replay mode) can freeze it to the snapshot's timestamp without
@@ -296,7 +296,7 @@ export function fmtDateRange(
 // (and snapshot mode) instead of freezing at first render.
 export function fmtWeekOf(weekStart: number = weekStartMs()): string {
   const d = new Date(weekStart);
-  return `${MONTHS[d.getMonth()].toLowerCase()} ${d.getDate()}`;
+  return `${MONTHS[d.getMonth()]} ${d.getDate()}`;
 }
 
 export function dayOfMonthFor(weekStart: number, dayIdx: number): number {
@@ -313,7 +313,7 @@ export function dayAnchorFor(dayOffset: number): number {
 }
 
 // Day-of-week label for a specific date (used by the mobile day headers).
-const DOW_LABELS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+const DOW_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 export function dayOfWeekLabelFor(anchorMs: number, dayIdx: number): string {
   const d = addDaysLocal(anchorMs, dayIdx);
   return DOW_LABELS[d.getDay()];
@@ -375,7 +375,7 @@ export function parseEstimate(input: string): number | null {
 
 export const fmtMin = (m: number | null | undefined): string => {
   if (m == null) return '—';
-  // Sign-aware: split off the sign and format the magnitude. JS `%` and
+  // "4h 30m", "1h", "45m". Sign-aware: split off the sign and format the magnitude. JS `%` and
   // `Math.floor` on negatives produced "-4h-15" (both halves carrying the
   // sign) instead of "-4h15".
   const sign = m < 0 ? '-' : '';
@@ -384,7 +384,7 @@ export const fmtMin = (m: number | null | undefined): string => {
   const r = abs % 60;
   if (h === 0) return `${sign}${r}m`;
   if (r === 0) return `${sign}${h}h`;
-  return `${sign}${h}h${String(r).padStart(2, '0')}`;
+  return `${sign}${h}h ${r}m`;
 };
 
 export const fmtClockShort = (m: number): string => {

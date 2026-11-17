@@ -24,7 +24,7 @@
 // tags are only shown inside a project. See the Bars call below.
 
 import { useMemo, useState } from 'react';
-import { ChevronLeft, Plus } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 import { useFira } from '../store';
 import { useIsMobile } from '../hooks';
 import {
@@ -73,7 +73,7 @@ function hoursFill(min: number): number {
 const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const fmtDay = (ms: number) => {
   const d = new Date(ms);
-  return `${DAY_LABELS[(d.getDay() + 6) % 7][0]}${DAY_LABELS[(d.getDay() + 6) % 7].slice(1).toLowerCase()} ${d.getDate()} ${MONTH_SHORT[d.getMonth()]}`;
+  return `${DAY_LABELS[(d.getDay() + 6) % 7]} ${d.getDate()} ${MONTH_SHORT[d.getMonth()]}`;
 };
 
 export function DashboardView() {
@@ -161,26 +161,28 @@ export function DashboardView() {
 
   return (
     <div className="dash" onMouseLeave={() => setTip(null)}>
-      <div className="cal-toolbar dash-toolbar">
-        <span className="week-nav">
-          <button className="week-nav-btn" onClick={() => setMonthOffset(monthOffset - 1)} title="Previous month">‹</button>
-          <button
-            className="week-nav-btn week-nav-today"
-            data-active={monthOffset === 0}
-            onClick={() => setMonthOffset(0)}
-          >
-            Today
-          </button>
-          <button className="week-nav-btn" onClick={() => setMonthOffset(monthOffset + 1)} title="Next month">›</button>
-        </span>
-
-      </div>
-
       <div className="dash-scroll">
         <div className="dash-col">
           {/* The month's headline is one number, so it gets the hero
             * treatment rather than being one tile among six equals. */}
           <header className="dash-hero">
+            <span className="week-nav dash-month-nav">
+              <button className="week-nav-btn" onClick={() => setMonthOffset(monthOffset - 1)}
+                      title="Previous month" aria-label="Previous month">
+                <ChevronLeft size={14} strokeWidth={1.5} />
+              </button>
+              <button
+                className="week-nav-btn week-nav-today"
+                data-active={monthOffset === 0}
+                onClick={() => setMonthOffset(0)}
+              >
+                Today
+              </button>
+              <button className="week-nav-btn" onClick={() => setMonthOffset(monthOffset + 1)}
+                      title="Next month" aria-label="Next month">
+                <ChevronRight size={14} strokeWidth={1.5} />
+              </button>
+            </span>
             <div className="dash-hero-fig">{fmtMin(stats.done_min)}</div>
             <div className="dash-hero-sub">
               completed in {fmtMonth(monthOffset)}
@@ -221,7 +223,7 @@ export function DashboardView() {
               <ScaleLegend steps={HOUR_STEPS} />
               <p className="dash-note">
                 Each square is a day of {fmtMonth(monthOffset).split(' ')[0]}; the small
-                number is the date. Darker means more hours completed. Hatched is
+                number is the date. Darker means more hours completed. Dashed is
                 planned but not done yet. Click a day to open it in the calendar.
               </p>
             </section>

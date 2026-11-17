@@ -330,7 +330,7 @@ fn build_op(op: &str, s: &Session, st: &mut UserState, rng: &mut StdRng) -> Opti
         }
         "task.set_status" => {
             let t = pick(&st.seed_tasks, rng)?;
-            let status = ["backlog", "todo", "in_progress", "done"][rng.gen_range(0..4)];
+            let status = ["todo", "in_progress", "done"][rng.gen_range(0..3)];
             Some(json!({"kind":"task.set_status","task_id":t,"status":status}))
         }
         "task.set_section" => {

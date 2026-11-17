@@ -318,8 +318,8 @@ function WorkspaceMembersEditor({
         {owner && (
           <div className="np-member np-member-owner" title="Workspace creator — owner role">
             <span className="avatar" data-me="true">{owner.initials}</span>
-            <span className="np-member-name">{owner.name}</span>
-            <span className="np-member-tag">owner (you)</span>
+            <span className="np-member-name">{owner.name} (you)</span>
+            <span className="np-member-tag">owner</span>
           </div>
         )}
         {memberRows.map(({ user: u, role }) => {
@@ -334,8 +334,8 @@ function WorkspaceMembersEditor({
                 menuMinWidth={140}
                 onChange={(v) => onRoleChange(u.id, v)}
                 options={[
-                  { value: 'owner', label: 'owner', hint: 'manages workspace + roles' },
-                  { value: 'member', label: 'member', hint: 'works in projects they belong to' },
+                  { value: 'owner', label: 'Owner', hint: 'manages workspace + roles' },
+                  { value: 'member', label: 'Member', hint: 'works in projects they belong to' },
                 ]}
               />
               {armed ? (
@@ -354,7 +354,7 @@ function WorkspaceMembersEditor({
                   title="Remove from workspace"
                   aria-label={`Remove ${u.name}`}
                 >
-                  <X size={12} strokeWidth={1.75} />
+                  <X size={14} strokeWidth={1.75} />
                 </button>
               )}
             </div>
@@ -453,7 +453,7 @@ function WorkspaceInviteSection({ workspaceId }: { workspaceId: UUID }) {
                 title="Cancel invite"
                 aria-label={`Cancel invite to ${inv.email}`}
               >
-                <X size={12} strokeWidth={1.75} />
+                <X size={14} strokeWidth={1.75} />
               </button>
             </div>
           ))}

@@ -57,7 +57,7 @@ export function AutomationTokens() {
 
   return (
     <div className="tokens">
-      <p className="account-row-text account-row-muted">
+      <p className="settings-row-desc" style={{ marginTop: -8 }}>
         Paste a token into <code>task-cli login fira</code>. It acts as you in this workspace,
         only through the CLI API.
       </p>
@@ -83,8 +83,8 @@ export function AutomationTokens() {
             <li key={t.id} className="tokens-item">
               <span className="tokens-name">{t.name}</span>
               <span className="tokens-meta">
-                {t.token_prefix}… · {t.can_write ? 'read & write' : 'read-only'} ·{' '}
-                {t.last_used_at ? `used ${new Date(t.last_used_at).toLocaleDateString()}` : 'never used'}
+                {t.token_prefix}… · {t.can_write ? 'Read & write' : 'Read-only'} ·{' '}
+                {t.last_used_at ? `Used ${new Date(t.last_used_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}` : 'Never used'}
               </span>
               <button type="button" className="tokens-revoke" onClick={() => { void revoke(t); }}>
                 Revoke
@@ -112,7 +112,7 @@ export function AutomationTokens() {
             onClick={() => setCanWrite(false)}
             disabled={busy}
           >
-            read-only
+            Read-only
           </button>
           <button
             type="button"
@@ -121,7 +121,7 @@ export function AutomationTokens() {
             onClick={() => setCanWrite(true)}
             disabled={busy}
           >
-            read &amp; write
+            Read &amp; write
           </button>
         </div>
         <button type="submit" className="btn" disabled={busy || !name.trim()}>

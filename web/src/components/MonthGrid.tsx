@@ -151,7 +151,7 @@ export function ScaleLegend({ steps }: { steps: { fill: number; label: string }[
   return (
     <div className="scale-legend">
       <span className="scale-swatch" style={{ ['--fill' as string]: '0' }} />
-      <span className="scale-legend-label">none</span>
+      <span className="scale-legend-label">None</span>
       {steps.map((s) => (
         <span key={s.label} className="scale-step">
           <span className="scale-swatch" style={{ ['--fill' as string]: String(s.fill) }} />
