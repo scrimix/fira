@@ -875,12 +875,14 @@ export function CalendarView() {
           {jiraConnected && (
             <button
               className="link-toggle"
+              aria-pressed={showLoggedOnly}
               data-active={showLoggedOnly || undefined}
               onClick={() => setShowLoggedOnly(!showLoggedOnly)}
               title={showLoggedOnly
                 ? 'Showing only blocks logged to Jira — click to show every block'
                 : 'Show only blocks already logged to Jira'}
             >
+              {showLoggedOnly && <Check size={14} strokeWidth={2} aria-hidden />}
               Logged only
             </button>
           )}

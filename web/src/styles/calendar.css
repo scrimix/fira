@@ -783,27 +783,23 @@
 
 /* Toolbar toggle for showing the linked partner's calendar. Same
  * baseline as the rail "Mine/All" button. */
+/* "Logged only": a 32px filled toggle like the dropdowns beside it;
+ * on = the segmented control's selected fill plus a check. */
 .link-toggle {
-  display: inline-flex; align-items: center;
-  height: 22px;
-  padding: 0 10px;
-  font-variant-numeric: tabular-nums;
-  font-size: var(--fs-11);
-  color: var(--text-3);
-  border: 1px solid var(--line-2);
+  display: inline-flex; align-items: center; gap: 6px;
+  height: var(--h-ctl);
+  box-sizing: border-box;
+  padding: 0 12px;
+  font: inherit; font-size: var(--fs-13);
+  color: var(--text-2);
+  border: 1px solid transparent;
   border-radius: var(--r-ctl);
-  background: var(--bg);
+  background: var(--surface-2);
   cursor: pointer;
+  transition: background-color var(--t-hover) ease-out, color var(--t-hover) ease-out;
 }
-.link-toggle:hover {
-  color: var(--text);
-  border-color: var(--line-3);
-}
-.link-toggle[data-active="true"] {
-  color: var(--accent);
-  background: var(--accent-tint);
-  border-color: var(--accent-2);
-}
+.link-toggle:hover { color: var(--text); background: var(--surface-3); }
+.link-toggle[data-active="true"] { color: var(--text); background: var(--surface-4); }
 
 /* Calendar sources toggle uses the shared .seg control. */
 .cal-seg { margin-left: var(--bar-gap); }
