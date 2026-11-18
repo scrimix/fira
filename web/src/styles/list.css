@@ -2480,7 +2480,8 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
   /* Person headers: no caret (the whole line still folds), flush with
    * the rows, small avatar + count. */
   /* Same height and bottom gap as the section heading above it. */
-  .assignee-head { height: 20px; margin: 20px 0 10px; gap: 8px; font-weight: 500; color: var(--text-2); }
+  /* Bold, a step above the 14px task titles and below the 16px section name. */
+  .assignee-head { height: 20px; margin: 20px 0 10px; gap: 8px; font-size: 15px; font-weight: 600; color: var(--text); }
   .section-head + .assignee-group .assignee-head { margin-top: 16px; }
   /* Caret hangs in the left margin, in line with the section carets. */
   .assignee-head .avatar { width: 16px; height: 16px; font-size: 8px; }
