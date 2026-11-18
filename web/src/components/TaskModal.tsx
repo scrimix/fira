@@ -917,7 +917,10 @@ function BlockRow({
         <span className="tm-block-state-dot" aria-hidden />
         {state === 'completed' ? 'Completed' : 'Planned'}
       </button>
-      {jiraLinked && (isMine || jiraWorklogId || jiraSyncError) && (
+      {/* Only your own blocks get the Jira control; others keep an empty
+          slot so the columns still line up row to row. */}
+      {jiraLinked && !isMine && <span className="tm-block-jira" aria-hidden />}
+      {jiraLinked && isMine && (
         <button
           className="tm-section-btn tm-block-jira"
           data-tone={jiraSyncError ? 'error' : jiraWorklogId ? 'ok' : undefined}
@@ -2077,13 +2080,13 @@ function JiraPushControl({ taskId, jiraProjectKey }: { taskId: UUID; jiraProject
   return (
     <>
       <button
-        className="btn"
+        type="button"
+        className="jira-create-btn"
         onClick={() => setOpen(true)}
         title={jiraConnected ? 'Create a Jira issue for this task' : 'Connect Jira in Account Settings first'}
         disabled={!jiraConnected}
-        style={{ marginTop: 6 }}
       >
-        <Ticket size={12} strokeWidth={1.75} /> Create in Jira
+        <Ticket size={14} strokeWidth={1.75} /> Create in Jira
       </button>
       {open && (
         <JiraCreateIssueModal

@@ -1060,12 +1060,8 @@ export function CalendarView() {
                              height: (dur_min / 60) * HOUR_H - 2,
                              ['--proj-color' as string]: lt?.project_color ?? 'var(--text-3)',
                            }}
-                           title={`${lt?.title ?? 'Linked task'} · ${fmtMin(dur_min)} (linked, read-only)`}>
+                           title={`${lt?.title ?? 'Linked task'} · ${fmtClockShort(start_min)} – ${fmtClockShort(start_min + dur_min)} (linked, read-only)`}>
                         <div className="tb-title"><span className="tb-title-text">{lt?.title ?? 'Linked task'}</span></div>
-                        <div className="tb-meta">
-                          <span className="tb-acct" title="Linked account">L</span>
-                          <span>{dur_min <= 30 ? fmtClockShort(start_min) : `${fmtClockShort(start_min)} – ${fmtClockShort(start_min + dur_min)}`}</span>
-                        </div>
                       </div>
                     );
                   })}
@@ -1081,12 +1077,8 @@ export function CalendarView() {
                              height: (dur_min / 60) * HOUR_H - 2,
                              ['--proj-color' as string]: pt?.project_color ?? 'var(--text-3)',
                            }}
-                           title={`${pt?.title ?? 'Personal task'} · ${fmtMin(dur_min)} (personal, read-only)`}>
+                           title={`${pt?.title ?? 'Personal task'} · ${fmtClockShort(start_min)} – ${fmtClockShort(start_min + dur_min)} (personal, read-only)`}>
                         <div className="tb-title"><span className="tb-title-text">{pt?.title ?? 'Personal task'}</span></div>
-                        <div className="tb-meta">
-                          <span className="tb-acct" title="Personal">P</span>
-                          <span>{dur_min <= 30 ? fmtClockShort(start_min) : `${fmtClockShort(start_min)} – ${fmtClockShort(start_min + dur_min)}`}</span>
-                        </div>
                       </div>
                     );
                   })}
@@ -1102,12 +1094,8 @@ export function CalendarView() {
                              height: (dur_min / 60) * HOUR_H - 2,
                              ['--proj-color' as string]: wt?.project_color ?? 'var(--text-3)',
                            }}
-                           title={`${wt?.title ?? 'Work task'} · ${fmtMin(dur_min)} (work, read-only)`}>
+                           title={`${wt?.title ?? 'Work task'} · ${fmtClockShort(start_min)} – ${fmtClockShort(start_min + dur_min)} (work, read-only)`}>
                         <div className="tb-title"><span className="tb-title-text">{wt?.title ?? 'Work task'}</span></div>
-                        <div className="tb-meta">
-                          <span className="tb-acct" title="Work">W</span>
-                          <span>{dur_min <= 30 ? fmtClockShort(start_min) : `${fmtClockShort(start_min)} – ${fmtClockShort(start_min + dur_min)}`}</span>
-                        </div>
                       </div>
                     );
                   })}
