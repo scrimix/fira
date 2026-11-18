@@ -318,9 +318,14 @@ export function ListView() {
     },
   );
   const memberIds = visibleMembers.map((m) => m.user_id);
-  const assigneeIds = meId && memberIds.includes(meId)
+  // Me first, then everyone else; people with nothing in Now sink to the
+  // bottom of the section (stable, so the order within each half holds).
+  const assigneeIds = (meId && memberIds.includes(meId)
     ? [meId, ...memberIds.filter((u) => u !== meId)]
-    : memberIds;
+    : memberIds
+  ).map((id, i) => ({ id, i, empty: !nowTasks.some((t) => t.assignee_id === id) }))
+   .sort((a, b) => Number(a.empty) - Number(b.empty) || a.i - b.i)
+   .map((x) => x.id);
 
   const userById = (id: string | null) => users.find((u) => u.id === id);
 
@@ -1267,12 +1272,18 @@ function SprintSelect({ value, sprints, tracks, onChange }: {
     const toOpt = (sp: Sprint, group: string): SelectOption<SprintFilterValue> => {
       const color = sp.track_id ? colorOf.get(sp.track_id) : undefined;
       return {
-        value: sp.id, label: sp.title, group, groupColor: group === 'Inactive' ? undefined : color,
+        value: sp.id, label: sp.title, group, groupColor: group === 'Past' ? undefined : color,
         hint: sprintSpan(sp) ?? undefined,
         dot: color ?? '',
       };
     };
-    const active = sprints.filter((sp) => sp.active).sort(bySort);
+    // "Past" comes from the dates (ends_on is exclusive): a sprint whose
+    // end has passed. The stored `active` flag is legacy — nothing in the
+    // app sets it, so real sprints all read false.
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const isPast = (sp: Sprint) => !!sp.ends_on && sp.ends_on <= today;
+    const active = sprints.filter((sp) => !isPast(sp)).sort(bySort);
     const known = new Set(tracks.map((tr) => tr.id));
     const opts: SelectOption<SprintFilterValue>[] = [
       { value: 'all', label: 'All sprints' },
@@ -1281,7 +1292,7 @@ function SprintSelect({ value, sprints, tracks, onChange }: {
       for (const sp of active) if (sp.track_id === tr.id) opts.push(toOpt(sp, tr.title));
     }
     for (const sp of active) if (!sp.track_id || !known.has(sp.track_id)) opts.push(toOpt(sp, 'No track'));
-    for (const sp of sprints.filter((x) => !x.active).sort(bySort)) opts.push(toOpt(sp, 'Inactive'));
+    for (const sp of sprints.filter(isPast).sort(bySort)) opts.push(toOpt(sp, 'Past'));
     return opts;
   }, [sprints, tracks]);
   return (

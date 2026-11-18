@@ -28,7 +28,6 @@
    * beside it. With no tags the column stays empty and there's no
    * visible padding cost. The add-row has nothing in the trail and
    * can run to the viewport edge. */
-  .task-row { padding-right: 6px; }
   .task-add { padding-right: 0; }
 }
 .list-empty {
@@ -398,8 +397,10 @@
   gap: 8px;
   min-height: var(--h-row);
   box-sizing: border-box;
-  margin-left: -8px;
-  padding: 8px 4px 8px 8px;
+  /* Bleeds 8px both sides so the hover box frames the content while
+   * checkbox and trail sit exactly on the column edges. */
+  margin-inline: -8px;
+  padding: 8px;
   border-radius: var(--r-sm);
   transition: background-color var(--t-hover) ease-out;
   cursor: pointer;
@@ -1243,7 +1244,7 @@
  * failed) swaps to a warning icon in --danger red — shape *and* color
  * differ between states so it doesn't rely on a green-vs-muted color
  * distinction alone (too subtle at 12px, esp. at a glance). */
-.tm-block-jira { grid-area: jira; }
+.tm-block-jira { grid-area: jira; width: 24px; }
 .tm-block-jira[data-tone="ok"] { color: var(--success); }
 .tm-block-jira[data-tone="ok"]:hover { color: var(--success); background: var(--surface-3); }
 .tm-block-jira[data-tone="error"] { color: var(--danger); }
@@ -1297,6 +1298,24 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
 }
 /* Details panel: 40px field rows on a 92px label column. Labels are
  * 12px --text-3 and never larger than the 13px --text values. */
+/* "Create in Jira" sits under the issue link, in the value column: a
+ * quiet ghost button, one line, same left edge as the values. */
+.jira-create-btn {
+  grid-column: 2;
+  justify-self: start;
+  display: inline-flex; align-items: center; gap: 6px;
+  height: var(--h-sm);
+  margin: 0 -6px 4px;
+  padding: 0 6px;
+  border: 0; border-radius: var(--r-sm);
+  background: transparent;
+  font: inherit; font-size: var(--fs-13); color: var(--text-3);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color var(--t-hover) ease-out, color var(--t-hover) ease-out;
+}
+.jira-create-btn:hover:not(:disabled) { background: var(--surface-3); color: var(--text); }
+.jira-create-btn:disabled { cursor: default; opacity: 0.6; }
 .modal-side .field {
   display: grid;
   grid-template-columns: 80px minmax(0, 1fr);
@@ -2374,7 +2393,9 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
   line-height: var(--h-ctl);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.list-head .proj-icon { width: 26px; height: var(--h-ctl); }
+.list-head .proj-icon { width: 26px; height: var(--h-ctl); place-items: center start; }
+/* Lucide draws its glyph 2px inside the 24px box; pull it onto the edge. */
+.list-head .proj-icon svg { margin-left: -2px; }
 .list-head-controls {
   flex: 1 1 auto;
   justify-content: flex-end;
@@ -2441,6 +2462,10 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
  * Headings drop their rules; collapse carets hang in the left margin so
  * names stay on the content edge. */
 @media (min-width: 701px) {
+  /* Carets hang 22px left of the names; indent the sections by that
+   * much so the carets line up with the header's icon instead of
+   * poking out past it. */
+  .list-doc .section { padding-left: 22px; }
   /* Dynamic trail: id · sprint · tags, each only when present, packed
    * against the row's right edge. No fixed columns — any of the three can
    * be missing, so there's no stable anchor to align to. */

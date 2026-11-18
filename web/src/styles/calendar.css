@@ -398,12 +398,18 @@
   border-color: color-mix(in oklab, var(--c) var(--tint-line-done), transparent);
   background: color-mix(in oklab, var(--c) var(--tint-fill-done), transparent);
 }
-.tblock[data-covers="true"] {
+/* Read-only overlays (other accounts) stack on each other and on gcal
+ * events at full width, so they get the opaque base too: text from the
+ * block underneath never bleeds through. */
+.tblock[data-covers="true"],
+.tblock-linked, .tblock-personal, .tblock-work {
   background-image: linear-gradient(color-mix(in oklab, var(--c) var(--tint-fill), transparent), color-mix(in oklab, var(--c) var(--tint-fill), transparent));
   background-color: var(--bg);
 }
-.tblock[data-covers="true"][data-state="completed"] {
+.tblock[data-covers="true"][data-state="completed"],
+:is(.tblock-linked, .tblock-personal, .tblock-work)[data-state="completed"] {
   background-image: linear-gradient(color-mix(in oklab, var(--c) var(--tint-fill-done), transparent), color-mix(in oklab, var(--c) var(--tint-fill-done), transparent));
+  background-color: var(--bg);
 }
 .tblock[data-state="completed"] .tb-title { color: var(--text-3); }
 .tblock[data-state="completed"] .tb-meta { color: var(--text-3); }
@@ -761,9 +767,8 @@
  * (no lane logic), behind personal blocks (lower z-index), with a
  * desaturated palette so it's visually distinct from your own work. */
 /* Read-only overlays from another account (linked partner, personal or
- * work workspace). Same block formula; the account is shown by a small
- * initial marker in the meta line (.tb-acct), not by a different style.
- * They sit full-width behind your own blocks. */
+ * work workspace). Same block formula, title only (time is in the
+ * tooltip). They sit full-width behind your own blocks. */
 .tblock-linked,
 .tblock-personal,
 .tblock-work {
@@ -775,17 +780,6 @@
 .tblock-linked:hover,
 .tblock-personal:hover,
 .tblock-work:hover { z-index: 1; }
-.tb-acct {
-  display: inline-grid;
-  place-items: center;
-  width: 16px; height: 16px;
-  border-radius: var(--r-xs);
-  background: var(--surface-4);
-  color: var(--text);
-  font-size: var(--fs-11);
-  font-weight: 600;
-  flex-shrink: 0;
-}
 
 /* Toolbar toggle for showing the linked partner's calendar. Same
  * baseline as the rail "Mine/All" button. */
