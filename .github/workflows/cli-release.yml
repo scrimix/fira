@@ -25,7 +25,7 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - name: Tag matches Cargo.toml
         run: |
           want="cli-v$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
@@ -49,7 +49,7 @@ jobs:
           - { target: x86_64-pc-windows-msvc, os: windows-latest }
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -72,7 +72,7 @@ jobs:
           cd dist
           if command -v sha256sum >/dev/null; then sha256sum "$file" > "$file.sha256"
           else shasum -a 256 "$file" > "$file.sha256"; fi
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.target }}
           path: cli/dist/*
@@ -81,8 +81,8 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v7
         with:
           path: dist
           merge-multiple: true
