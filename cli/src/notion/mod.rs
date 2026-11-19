@@ -445,6 +445,17 @@ fn text_of(b: &Value) -> String {
     json::plain_text(&b[kind]["rich_text"])
 }
 
+/// `task-cli v<N> · <hex hash> · edits above sync with the repository`,
+/// as `footer_block` writes it.
+fn is_footer_text(t: &str) -> bool {
+    let parts: Vec<&str> = t.trim().split(" · ").collect();
+    let [version, hash, rest] = parts.as_slice() else { return false };
+    version.strip_prefix("task-cli v").is_some_and(|v| !v.is_empty() && v.chars().all(|c| c.is_ascii_digit()))
+        && !hash.is_empty()
+        && hash.chars().all(|c| c.is_ascii_hexdigit())
+        && *rest == "edits above sync with the repository"
+}
+
 fn locate(top: &[Value], anchor: &str, me: &str) -> Result<Located> {
     let anchors: Vec<usize> = (0..top.len()).filter(|&i| heading_level(&top[i]).is_some() && text_of(&top[i]).trim() == anchor).collect();
     let a = match anchors.as_slice() {
@@ -453,7 +464,15 @@ fn locate(top: &[Value], anchor: &str, me: &str) -> Result<Located> {
         many => bail!("the Notion page has {} \"{anchor}\" headings; keep one, so the CLI knows where its part of the page starts", many.len()),
     };
     let level = heading_level(&top[a]).unwrap_or(1);
-    let is_footer = |b: &Value| b["type"] == "paragraph" && b["created_by"]["id"] == me && text_of(b).starts_with(FOOTER);
+    // Our own footer, or a line in its exact shape: the page may have been
+    // published with another integration's token, or duplicated, which
+    // gives the block a different creator.
+    let is_footer = |b: &Value| {
+        b["type"] == "paragraph" && {
+            let t = text_of(b);
+            t.starts_with(FOOTER) && (b["created_by"]["id"] == me || is_footer_text(&t))
+        }
+    };
     let footer = (a + 1..top.len()).find(|&i| is_footer(&top[i]));
     let (end, warn) = match footer {
         Some(f) => (f, None),
@@ -1279,5 +1298,27 @@ mod tests {
         // one task becomes image-2.png.
         assert_eq!(names, [("A", "flow.png"), ("A", "image.png"), ("A", "image-2.png"), ("B", "flow.png")]);
         assert_eq!(blocks[3], embed("image-2.png"));
+    }
+
+    fn para(text: &str, creator: &str) -> Value {
+        json!({"id": text, "type": "paragraph", "created_by": {"id": creator},
+               "paragraph": {"rich_text": [{"type": "text", "plain_text": text, "text": {"content": text}}]}})
+    }
+
+    #[test]
+    fn footer_from_another_integration_still_ends_the_region() {
+        let top = vec![
+            json!({"id": "h", "type": "heading_1", "heading_1": {"rich_text": [{"type": "text", "plain_text": "Sprint", "text": {"content": "Sprint"}}]}}),
+            para("body", "pm"),
+            para("task-cli v3 · b06f9360b4d4de17 · edits above sync with the repository", "other-bot"),
+            para("PM notes below", "pm"),
+        ];
+        let loc = locate(&top, "Sprint", "me").unwrap();
+        assert_eq!(loc.region.len(), 1, "the footer and what follows are not part of the region");
+        assert!(loc.warn.is_none());
+        assert_eq!(loc.footer.unwrap().1, "b06f9360b4d4de17");
+        // A line someone typed that only starts with "task-cli" does not count.
+        let top = vec![top[0].clone(), para("task-cli is great", "pm")];
+        assert!(locate(&top, "Sprint", "me").unwrap().footer.is_none());
     }
 }
