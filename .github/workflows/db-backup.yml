@@ -49,7 +49,8 @@ jobs:
             exit 1
           fi
 
-          since_ms="$(( $(date +%s) * 1000 ))"
+          # Log lines start with this format, so they compare as strings.
+          since="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           flyctl machine start "$id" -a "$APP"
 
           # The job exits on its own; restart policy is `no`, so it ends stopped.
@@ -64,17 +65,25 @@ jobs:
             exit 1
           fi
 
-          # Exit code of the run we just started, from the machine's exit event.
-          code="$(machines | jq -r --argjson since "$since_ms" '
-            [.[0].events[]? | select(.type == "exit" and .timestamp >= $since)]
-            | max_by(.timestamp) | .request.exit_event.exit_code // "unknown"')"
-          echo "exit code: $code"
+          # `machine list --json` has no exit events, so judge the run by the
+          # job's own log lines from this run. Logs can lag a little; retry.
+          logs=""
+          for _ in $(seq 1 12); do
+            logs="$(flyctl logs -a "$APP" --no-tail 2>/dev/null | awk -v s="$since" '$1 >= s' || true)"
+            if printf '%s\n' "$logs" | grep -qE 'fira-backup: (done|FAILED)'; then break; fi
+            sleep 10
+          done
 
-          echo "--- recent logs ---"
-          flyctl logs -a "$APP" --no-tail 2>/dev/null | tail -30 || true
+          echo "--- logs from this run ---"
+          printf '%s\n' "$logs" | grep -E 'fira-backup:|exited|restart policy' || true
 
-          if [ "$code" != 0 ]; then
-            echo "::error::fira-backup exited with $code; see the logs above (look for 'fira-backup: FAILED')"
+          if printf '%s\n' "$logs" | grep -q 'fira-backup: FAILED'; then
+            echo "::error::$(printf '%s\n' "$logs" | grep 'fira-backup: FAILED' | tail -1)"
             exit 1
           fi
-          echo "backup done"
+          if ! printf '%s\n' "$logs" | grep -q 'fira-backup: done: '; then
+            echo "::error::no 'fira-backup: done' line in the logs for this run"
+            printf '%s\n' "$logs" | tail -40
+            exit 1
+          fi
+          echo "::notice::$(printf '%s\n' "$logs" | grep -o 'fira-backup: done: .*' | tail -1)"

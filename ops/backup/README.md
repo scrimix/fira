@@ -31,14 +31,14 @@ with `postgresql-client-17`, no server and no Python.
    upload, so a broken job leaves the old dumps in place.
 
 Any failure exits 1 with `fira-backup: FAILED: …` in the logs. The workflow
-reads the machine's exit code and fails the run (GitHub emails you) when it
-is not 0; its log includes the job's last log lines.
+fails the run (GitHub emails you) unless the job logged `fira-backup: done`;
+its log shows the job's log lines from that run.
 
 ## Trigger
 
 `.github/workflows/db-backup.yml` runs at 03:17 UTC daily (and on demand via
 Actions → db-backup → Run workflow). It starts the machine, waits for it to
-stop and checks the exit code. It needs the repository secret
+stop and checks the job's logs for `done` or `FAILED`. It needs the repository secret
 `FLY_BACKUP_TOKEN`, from `fly tokens create deploy -a fira-backup`.
 
 Fly's own `--schedule daily` (set by `deploy.sh`) is kept but never fired in
