@@ -17,9 +17,9 @@ import App from './App';
 // just the subsets it needs. Importing `latin-400` and `latin-ext-400`
 // together would instead leave the browser using whichever came last — and a
 // latin-ext face has no basic ASCII in it.
-import '@fontsource/inter-tight/400.css';
-import '@fontsource/inter-tight/500.css';
-import '@fontsource/inter-tight/600.css';
+import '@fontsource/inter/400.css';
+import '@fontsource/inter/500.css';
+import '@fontsource/inter/600.css';
 import '@fontsource/jetbrains-mono/400.css';
 import '@fontsource/jetbrains-mono/500.css';
 import '@fontsource/jetbrains-mono/600.css';

@@ -56,7 +56,7 @@
   --tag-fill: 15%;      /* tag chips: lighter than calendar blocks */
 
   /* ── Type ─────────────────────────────────────────────────────── */
-  --font-sans: 'Inter Tight', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace; /* code only */
   --fs-11: 11px;
   --fs-12: 12px;
@@ -82,7 +82,7 @@
   --h-ctl: 32px;    /* default control */
   --h-seg: 28px;    /* segment inside a segmented control */
   --h-sm: 24px;     /* tags, small icon buttons */
-  --h-row: 36px;    /* list rows */
+  --h-row: 40px;    /* list rows */
   --control-h: var(--h-ctl);
 
   /* ── Elevation: flat; only floating layers get a shadow ────────── */
@@ -180,6 +180,7 @@ body {
   font-family: var(--font-sans);
   font-size: var(--fs-14);
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   text-rendering: geometricPrecision;
   letter-spacing: -0.005em;
   overflow: hidden;

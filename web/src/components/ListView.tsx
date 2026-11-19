@@ -1972,6 +1972,7 @@ function TaskRow({
                   key={tid}
                   className="chip tag-chip"
                   data-match={matched || undefined}
+                  title={tag.title}
                   style={{ ['--tag-color' as string]: tag.color }}
                 >
                   {tag.title}

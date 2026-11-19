@@ -400,7 +400,7 @@
   /* Bleeds 8px both sides so the hover box frames the content while
    * checkbox and trail sit exactly on the column edges. */
   margin-inline: -8px;
-  padding: 8px;
+  padding: 10px 8px; /* 10 + ~20px title line + 10 = the 40px --h-row */
   border-radius: var(--r-sm);
   transition: background-color var(--t-hover) ease-out;
   cursor: pointer;
@@ -681,6 +681,8 @@
  * one step down from the filter strip's chips, but on the same tokens
  * so it tracks the label scale instead of drifting away from them. */
 .task-trail .tag-chip { height: 22px; font-size: var(--fs-12); padding-inline: 7px; }
+/* Long tag names get capped like the sprint label; full name on hover. */
+.task-trail .tag-chip { max-width: 16ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; line-height: 22px; }
 /* Row tags support the title, not compete with it: a weaker tint. */
 .task-trail { --tag-fill: 10%; }
 :root[data-theme="dark"] .task-trail { --tag-fill: 14%; }
