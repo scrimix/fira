@@ -440,9 +440,9 @@ fn parse_task(
                 }
                 seen.push(name);
                 if name == "Subtasks" {
-                    subtasks = parse_subtasks(text, s, sh, section_end, comment.as_ref(), errs);
+                    subtasks = parse_subtasks(text, s, sh, section_end, comment.as_ref(), &ph.title, errs);
                 } else {
-                    attachments = parse_attachments(text, s, sh, section_end, comment.as_ref(), errs);
+                    attachments = parse_attachments(text, s, sh, section_end, comment.as_ref(), &ph.title, errs);
                 }
             }
             inner[first].line_start
@@ -489,6 +489,7 @@ fn parse_attachments(
     sh: &Heading,
     end: usize,
     comment: Option<&Comment>,
+    task: &str,
     errs: &mut Errors,
 ) -> Option<AttachmentSection> {
     let list = s.lists.iter().find(|l| l.range.start >= sh.line_next && l.range.start < end);
@@ -513,8 +514,11 @@ fn parse_attachments(
         errs.at(sh.line_next, "text between the Attachments heading and its list; move it above the Attachments heading");
     }
     let list_end = list.range.end.min(end);
-    if !blank_except_comment(list_end, end) {
-        errs.at(list_end, "text after the Attachments list; the Subtasks and Attachments sections must come last in a task, so move this above them");
+    if let Some((at, line)) = first_stray_line(text, list_end, end, comment) {
+        errs.at(
+            at,
+            format!("text after the Attachments list of task \"{task}\": `{line}`; the Subtasks and Attachments sections must come last in a task, so move this above them"),
+        );
     }
     let mut items = vec![];
     let mut bullet = String::from("- ");
@@ -589,12 +593,33 @@ pub fn rewrite_link_dests(md: &str, f: impl Fn(&Link) -> Option<String>) -> Stri
     crate::safety::apply_edits(md, &edits).unwrap_or_else(|_| md.to_string())
 }
 
+/// The first non-blank line in `text[from..to]`, skipping the task's
+/// comment: its offset and its text (trimmed, cut to 80 characters), so an
+/// error can show the reader exactly what is in the way.
+fn first_stray_line(text: &str, from: usize, to: usize, comment: Option<&Comment>) -> Option<(usize, String)> {
+    let mut pos = from;
+    for line in text[from..to].split_inclusive('\n') {
+        let start = pos;
+        pos += line.len();
+        let in_comment = comment.is_some_and(|c| start >= c.range.start && start < c.range.end);
+        let t = line.trim();
+        if t.is_empty() || in_comment {
+            continue;
+        }
+        let shown: String = t.chars().take(80).collect();
+        let shown = if shown.len() < t.len() { format!("{shown}…") } else { shown };
+        return Some((start + (line.len() - line.trim_start().len()), shown));
+    }
+    None
+}
+
 fn parse_subtasks(
     text: &str,
     s: &Structure,
     sh: &Heading,
     end: usize,
     comment: Option<&Comment>,
+    task: &str,
     errs: &mut Errors,
 ) -> Option<SubtaskSection> {
     let list = s.lists.iter().find(|l| l.range.start >= sh.line_next && l.range.start < end);
@@ -625,8 +650,11 @@ fn parse_subtasks(
         errs.at(sh.line_next, "text between the Subtasks heading and its checklist; move it above the Subtasks heading");
     }
     let list_end = list.range.end.min(end);
-    if !blank_except_comment(list_end, end) {
-        errs.at(list_end, "text after the Subtasks checklist; the Subtasks section must come last in a task, so move this above it");
+    if let Some((at, line)) = first_stray_line(text, list_end, end, comment) {
+        errs.at(
+            at,
+            format!("text after the Subtasks checklist of task \"{task}\": `{line}`; the Subtasks section must come last in a task, so move this above it"),
+        );
     }
     let mut items = vec![];
     let mut bullet = String::from("- ");
@@ -1241,6 +1269,9 @@ mod tests {
     fn text_after_subtasks_is_an_error() {
         let e = sprint("# S\n\n## [ ] T\n\n### Subtasks\n\n- [ ] a\n\nTrailing notes\n").unwrap_err();
         assert!(e[0].contains("after the Subtasks checklist"), "{e:?}");
+        // The error names the task, quotes the stray text and points at its line.
+        assert!(e[0].contains("task \"T\": `Trailing notes`"), "{e:?}");
+        assert!(e[0].starts_with("x.md:9:"), "{e:?}");
     }
 
     #[test]
