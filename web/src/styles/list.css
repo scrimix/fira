@@ -2438,11 +2438,12 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
 .list-head + .list-time, .list-head + .list-filter-empty { margin-top: 0; }
 
 @media (max-width: 860px) {
-  /* Narrow: controls drop under the title and the search takes the slack. */
+  /* Narrow: controls drop under the title and the search takes the slack
+   * on the same line as the filters; they only wrap if they truly don't fit. */
   .list-head-row { flex-wrap: wrap; row-gap: 10px; }
-  .list-head-controls { margin-left: 0; flex: 1 1 100%; flex-wrap: wrap; }
+  .list-head-controls { margin-left: 0; flex: 1 1 100%; flex-wrap: wrap; row-gap: 8px; }
   .list-head .list-search, .list-head .list-search:focus-within,
-  .list-head .list-search:has(input[data-has-value]) { flex: 1 1 100%; min-width: 0; }
+  .list-head .list-search:has(input[data-has-value]) { flex: 1 1 96px; min-width: 96px; }
   .list-head .proj-menu { order: -1; position: absolute; top: 16px; right: 0; }
   .list-head { position: relative; } /* anchors the ⋯ menu beside the title */
 }
