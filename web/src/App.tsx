@@ -128,8 +128,13 @@ export default function App() {
     );
   }, []);
 
+  // The persisted snapshot loads from IndexedDB asynchronously. Wait for it
+  // before bootstrapping: hydrate()'s offline fallback reads the cached
+  // state, and a persist load landing after a fresh bootstrap would merge
+  // the stale snapshot over it.
   useEffect(() => {
-    hydrate();
+    if (useFira.persist.hasHydrated()) { hydrate(); return; }
+    return useFira.persist.onFinishHydration(() => { hydrate(); });
   }, [hydrate]);
 
   // ─── Task deep links ──────────────────────────────────────────────────

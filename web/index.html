@@ -5,7 +5,10 @@
     <script>
       // Prevents a flash of the wrong appearance: read the persisted
       // theme straight out of localStorage (bypassing React/Zustand,
-      // which hydrate async) and set data-theme before first paint.
+      // which hydrate async from IndexedDB) and set data-theme before
+      // first paint. `fira:theme` is mirrored by store/index.ts; the
+      // `fira:store-v1` blob is the pre-IndexedDB fallback for a first
+      // load before the migration has run.
       // Runtime changes are kept in sync afterward by the
       // useFira.subscribe() call in store/index.ts.
       (function () {
@@ -15,11 +18,14 @@
           document.documentElement.setAttribute('data-ios-standalone', '');
         }
         try {
-          var raw = localStorage.getItem('fira:store-v1');
-          var parsed = raw && JSON.parse(raw);
-          var state = (parsed && parsed.state) || {};
-          if (state.theme && state.theme !== 'classic') {
-            document.documentElement.setAttribute('data-theme', state.theme);
+          var theme = localStorage.getItem('fira:theme');
+          if (!theme) {
+            var raw = localStorage.getItem('fira:store-v1');
+            var parsed = raw && JSON.parse(raw);
+            theme = ((parsed && parsed.state) || {}).theme;
+          }
+          if (theme && theme !== 'classic') {
+            document.documentElement.setAttribute('data-theme', theme);
           }
         } catch (e) { /* private mode / corrupt JSON — fall back to classic */ }
       })();

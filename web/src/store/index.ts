@@ -5,7 +5,8 @@
 // Components never await network calls.
 
 import { create } from 'zustand';
-import { persist, createJSONStorage } from 'zustand/middleware';
+import { persist } from 'zustand/middleware';
+import { createIdbStorage, clearPersistedStore } from './persistStorage';
 import type {
   Bootstrap, Project, User, Track, Sprint, Task, TimeBlock, GcalEvent, UUID, Section, Subtask, Status,
   Workspace, WorkspaceRole, UserLink, LinkedTask, WorkTask, WorkspaceInvite, Tag, Goal, Theme,
@@ -1053,19 +1054,6 @@ function applyOpToState(s: FiraState, op: AnyOpKind): Partial<FiraState> {
   }
 }
 
-// JSON can't round-trip a Map (we use one for appliedOpIds), so the
-// persisted form tags it and the reviver rebuilds it on load.
-const replacer = (_k: string, v: unknown) =>
-  v instanceof Map
-    ? { __type: 'Map', entries: Array.from(v.entries()) }
-    : v;
-const reviver = (_k: string, v: unknown) => {
-  if (v && typeof v === 'object' && (v as { __type?: string }).__type === 'Map') {
-    return new Map((v as { entries: [string, number][] }).entries);
-  }
-  return v;
-};
-
 /// Apply a fresh bootstrap response (real or playground) into the store.
 /// Called from both hydrate paths so the bootstrap → state derivation
 /// (project scope, listFilter defaults, view selection by project
@@ -1635,7 +1623,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     }
     // Drop the persisted snapshot so the next user's reload doesn't see
     // the previous session's projects/tasks. Hard reload after.
-    try { localStorage.removeItem('fira:store-v1'); } catch { /* private mode */ }
+    await clearPersistedStore();
     window.location.assign('/');
   },
 
@@ -1645,7 +1633,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     // caller should fall back to the OAuth flow rather than silently
     // reload onto the same account.
     await api.switchAccount(user_id);
-    try { localStorage.removeItem('fira:store-v1'); } catch { /* private mode */ }
+    await clearPersistedStore();
     // Also drop the per-user "last active workspace" — the next user
     // has a different set of workspaces, so reusing the previous id
     // can briefly route through `fallback` and flicker.
@@ -1659,7 +1647,7 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
     } else {
       try { await api.signOutEverywhere(); } catch { /* best-effort */ }
     }
-    try { localStorage.removeItem('fira:store-v1'); } catch { /* private mode */ }
+    await clearPersistedStore();
     try { localStorage.removeItem('fira:activeWorkspace'); } catch { /* private mode */ }
     window.location.assign('/');
   },
@@ -3081,7 +3069,9 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
 
 }), {
   name: 'fira:store-v1',
-  storage: createJSONStorage(() => localStorage, { replacer, reviver }),
+  // IndexedDB, not localStorage: the snapshot outgrew localStorage's ~5MB
+  // quota (sprint 27 §4). See persistStorage.ts for migration + fallback.
+  storage: createIdbStorage<FiraState>(),
   // Persist only data we want to recover offline. Skip transient UI state
   // (modals, drag draft) and ephemeral flags (authChecked, loaded, error,
   // syncStatus). View is persisted as a UX preference so a refresh keeps
@@ -3211,11 +3201,21 @@ export const useFira = create<FiraState>()(persist((set, get) => ({
 // very first paint before this module runs; this takes over for every
 // change after that. 'classic' (light) drops the attribute so the bare
 // `:root` block is the default.
-useFira.subscribe((s) => {
-  const root = document.documentElement;
-  if (s.theme === 'classic') root.removeAttribute('data-theme');
-  else root.setAttribute('data-theme', s.theme);
-});
+//
+// Also mirrors the theme into its own small localStorage key: the
+// persisted snapshot lives in IndexedDB now, which the pre-paint script
+// can't read synchronously.
+{
+  let lastTheme: Theme | null = null;
+  useFira.subscribe((s) => {
+    if (s.theme === lastTheme) return;
+    lastTheme = s.theme;
+    const root = document.documentElement;
+    if (s.theme === 'classic') root.removeAttribute('data-theme');
+    else root.setAttribute('data-theme', s.theme);
+    try { localStorage.setItem('fira:theme', s.theme); } catch { /* private mode */ }
+  });
+}
 
 // Selectors that components subscribe to. Putting these here keeps the
 // component code uncluttered with `useFira((s) => ...)` boilerplate.

@@ -27,6 +27,7 @@ use sqlx::PgPool;
 use std::time::Instant;
 use uuid::Uuid;
 
+/// Defaults; override with STRESS_WORKSPACES / STRESS_TASKS_PER_PROJECT.
 const WORKSPACES: usize = 50;
 const PROJECTS_PER_WS: usize = 3;
 const USERS_PER_WS: usize = 40;
@@ -198,6 +199,14 @@ async fn main() -> anyhow::Result<()> {
     if !url.contains("fira_stress") {
         anyhow::bail!("DATABASE_URL must point at the `fira_stress` database, got: {url}");
     }
+    let env_usize = |k: &str, d: usize| -> anyhow::Result<usize> {
+        match std::env::var(k) {
+            Ok(v) => Ok(v.parse()?),
+            Err(_) => Ok(d),
+        }
+    };
+    let workspaces = env_usize("STRESS_WORKSPACES", WORKSPACES)?;
+    let tasks_per_project = env_usize("STRESS_TASKS_PER_PROJECT", TASKS_PER_PROJECT)?;
     let started = Instant::now();
     let pool = PgPoolOptions::new()
         .max_connections(8)
@@ -228,13 +237,13 @@ async fn main() -> anyhow::Result<()> {
     let mut rng = StdRng::seed_from_u64(0xF1A0_5EED_2026);
 
     // ---- generate ids in memory (FK order: users -> workspaces -> ...) ----
-    let ws_ids: Vec<Uuid> = (0..WORKSPACES).map(|_| Uuid::new_v4()).collect();
+    let ws_ids: Vec<Uuid> = (0..workspaces).map(|_| Uuid::new_v4()).collect();
     // ws_users[w] = the 40 user ids belonging to workspace w.
-    let ws_users: Vec<Vec<Uuid>> = (0..WORKSPACES)
+    let ws_users: Vec<Vec<Uuid>> = (0..workspaces)
         .map(|_| (0..USERS_PER_WS).map(|_| Uuid::new_v4()).collect())
         .collect();
     // projects[p] = (project_id, workspace_index)
-    let projects: Vec<(Uuid, usize)> = (0..WORKSPACES)
+    let projects: Vec<(Uuid, usize)> = (0..workspaces)
         .flat_map(|w| (0..PROJECTS_PER_WS).map(move |_| w))
         .map(|w| (Uuid::new_v4(), w))
         .collect();
@@ -308,7 +317,7 @@ async fn main() -> anyhow::Result<()> {
         buf,
     )
     .await?;
-    println!("stress_seed: {WORKSPACES} workspaces");
+    println!("stress_seed: {workspaces} workspaces");
 
     // ---- workspace_members (first user of each ws is owner) ----
     let mut buf = String::new();
@@ -384,7 +393,7 @@ async fn main() -> anyhow::Result<()> {
     // ---- tasks (300k rows, streamed via COPY) + task<->tag links ----
     println!(
         "stress_seed: seeding {} tasks...",
-        projects.len() * TASKS_PER_PROJECT
+        projects.len() * tasks_per_project
     );
     let task_started = Instant::now();
     let mut conn = pool.acquire().await?;
@@ -402,7 +411,7 @@ async fn main() -> anyhow::Result<()> {
     let mut total_links = 0usize;
     for (p, &(pid, _w)) in projects.iter().enumerate() {
         let members = &proj_members[p];
-        for n in 0..TASKS_PER_PROJECT {
+        for n in 0..tasks_per_project {
             let tid = Uuid::new_v4();
             let (prefix, desc, est_lo, est_hi) = TEMPLATES[rng.gen_range(0..TEMPLATES.len())];
             let assignee = members[rng.gen_range(0..members.len())];

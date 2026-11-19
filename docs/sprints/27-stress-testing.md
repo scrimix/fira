@@ -211,8 +211,12 @@ is what kept `bootstrap` fast and inside the `localStorage` ceiling.
   frame), and above a rate threshold trip to a deferred *"N changes —
   click to refresh"* banner. Note the scenario is largely synthetic — a
   real workspace sees ops per *minute*, not per millisecond.
-- **Client persistence** — IndexedDB storage (much larger quota) or
-  `partialize` the task arrays out of `localStorage` entirely.
+- ~~**Client persistence** — IndexedDB storage (much larger quota) or
+  `partialize` the task arrays out of `localStorage` entirely.~~ Done:
+  the snapshot now persists to IndexedDB via `idb-keyval`
+  (`web/src/store/persistStorage.ts`), with a one-time migration of the
+  old `localStorage` blob. Theme is mirrored to `fira:theme` for the
+  pre-paint script.
 - **Response compression** (`tower-http` `CompressionLayer`) — ~8–10× on
   the bootstrap payload for free on real (non-loopback) networks.
 - **Rate limiting on `/ops`** — there is none; a load test is also a
