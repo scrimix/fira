@@ -1,0 +1,80 @@
+# Daily database backup trigger.
+#
+# The fira-backup Fly machine has `--schedule daily`, but Fly never started it
+# (no flyd `start` events between 2026-11-12 and 2026-11-19). So this workflow
+# starts the machine itself, waits for the job to finish and fails (red ✗,
+# email from GitHub) when the backup did not complete.
+#
+# Needs the repo secret FLY_BACKUP_TOKEN:
+#   fly tokens create deploy -a fira-backup
+# Run by hand: Actions → db-backup → Run workflow.
+name: db-backup
+
+on:
+  schedule:
+    - cron: "17 3 * * *" # 03:17 UTC daily
+  workflow_dispatch:
+
+concurrency:
+  group: db-backup
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_BACKUP_TOKEN }}
+      APP: fira-backup
+    steps:
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Run backup machine
+        run: |
+          set -euo pipefail
+          machines() { flyctl machine list -a "$APP" --json; }
+
+          count="$(machines | jq length)"
+          if [ "$count" -ne 1 ]; then
+            echo "::error::expected exactly 1 machine in $APP, found $count"
+            exit 1
+          fi
+          id="$(machines | jq -r '.[0].id')"
+          state="$(machines | jq -r '.[0].state')"
+          if [ "$state" != stopped ]; then
+            echo "::error::machine $id is $state, not stopped; is a backup already running?"
+            exit 1
+          fi
+
+          since_ms="$(( $(date +%s) * 1000 ))"
+          flyctl machine start "$id" -a "$APP"
+
+          # The job exits on its own; restart policy is `no`, so it ends stopped.
+          sleep 15
+          for _ in $(seq 1 100); do
+            state="$(machines | jq -r '.[0].state')"
+            [ "$state" = stopped ] && break
+            sleep 15
+          done
+          if [ "$state" != stopped ]; then
+            echo "::error::machine $id still $state after ~25 minutes"
+            exit 1
+          fi
+
+          # Exit code of the run we just started, from the machine's exit event.
+          code="$(machines | jq -r --argjson since "$since_ms" '
+            [.[0].events[]? | select(.type == "exit" and .timestamp >= $since)]
+            | max_by(.timestamp) | .request.exit_event.exit_code // "unknown"')"
+          echo "exit code: $code"
+
+          echo "--- recent logs ---"
+          flyctl logs -a "$APP" --no-tail 2>/dev/null | tail -30 || true
+
+          if [ "$code" != 0 ]; then
+            echo "::error::fira-backup exited with $code; see the logs above (look for 'fira-backup: FAILED')"
+            exit 1
+          fi
+          echo "backup done"

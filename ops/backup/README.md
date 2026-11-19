@@ -1,6 +1,7 @@
 # Database backups
 
-A scheduled Fly machine (`fira-backup` app) dumps production once a day with
+A Fly machine (`fira-backup` app), started daily by the GitHub Actions
+workflow [`db-backup`](../../.github/workflows/db-backup.yml), dumps production with
 `pg_dump -Fc` and uploads it to a private Tigris bucket, separate from the
 attachments bucket, as `fira-YYYY-MM-DD.dump`. After each successful upload,
 dumps older than 30 days are deleted. Attachment files are **not** backed up;
@@ -29,9 +30,22 @@ with `postgresql-client-17`, no server and no Python.
    deletes the dump it just wrote, and it only prunes after a successful
    upload, so a broken job leaves the old dumps in place.
 
-Any failure exits 1 with `fira-backup: FAILED: …` in the logs. There is no
-alert; check `fira-backup list` now and then, and a missing day means a
-failed run.
+Any failure exits 1 with `fira-backup: FAILED: …` in the logs. The workflow
+reads the machine's exit code and fails the run (GitHub emails you) when it
+is not 0; its log includes the job's last log lines.
+
+## Trigger
+
+`.github/workflows/db-backup.yml` runs at 03:17 UTC daily (and on demand via
+Actions → db-backup → Run workflow). It starts the machine, waits for it to
+stop and checks the exit code. It needs the repository secret
+`FLY_BACKUP_TOKEN`, from `fly tokens create deploy -a fira-backup`.
+
+Fly's own `--schedule daily` (set by `deploy.sh`) is kept but never fired in
+production: from 2026-11-12 to 2026-11-19 the machine had the schedule and
+no `flyd` start events. If it ever does fire, the second run the same day
+just overwrites that day's dump. GitHub disables scheduled workflows after
+60 days without repository activity; re-enable it in the Actions tab.
 
 ## Configuration (Fly secrets on `fira-backup`)
 
@@ -74,8 +88,8 @@ It always builds with the repo root as context, from any directory. The image
 compiles `api/`, so a plain `fly deploy` inside `ops/backup/` fails at
 `COPY api/` with "not found".
 
-A scheduled run shows in `fly machine status <id> -a fira-backup` as a
-`start` event with source `flyd`; a manual start shows source `user`.
+In `fly machine status <id> -a fira-backup`, a start from the workflow or
+by hand shows source `user`; a Fly-scheduled start would show `flyd`.
 
 ## Manual backup
 
