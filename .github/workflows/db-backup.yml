@@ -49,8 +49,11 @@ jobs:
             exit 1
           fi
 
-          # Log lines start with this format, so they compare as strings.
-          since="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          # Print what we're about to start, so a wrong machine is obvious.
+          machines | jq -r '.[0] | "machine \(.id) name=\(.name) region=\(.region) image=\(.config.image // .image_ref.repository)"'
+
+          # 30s of slack for clock skew between the runner and Fly.
+          start_ms="$(( ($(date +%s) - 30) * 1000 ))"
           flyctl machine start "$id" -a "$APP"
 
           # The job exits on its own; restart policy is `no`, so it ends stopped.
@@ -65,25 +68,27 @@ jobs:
             exit 1
           fi
 
-          # `machine list --json` has no exit events, so judge the run by the
-          # job's own log lines from this run. Logs can lag a little; retry.
-          logs=""
-          for _ in $(seq 1 12); do
-            logs="$(flyctl logs -a "$APP" --no-tail 2>/dev/null | awk -v s="$since" '$1 >= s' || true)"
-            if printf '%s\n' "$logs" | grep -qE 'fira-backup: (done|FAILED)'; then break; fi
-            sleep 10
-          done
+          # Judge the run by the machine's own exit event (Machines API), not by
+          # `flyctl logs`, which lags by minutes and came back empty.
+          case "$FLY_API_TOKEN" in FlyV1\ *) auth="$FLY_API_TOKEN" ;; *) auth="Bearer $FLY_API_TOKEN" ;; esac
+          machine_json="$(curl -fsS -H "Authorization: $auth" \
+            "https://api.machines.dev/v1/apps/$APP/machines/$id")"
+          exit_event="$(printf '%s' "$machine_json" | jq -c --argjson s "$start_ms" \
+            '[.events[] | select(.type == "exit" and .timestamp >= $s)] | sort_by(.timestamp) | last')"
+          echo "exit event: $exit_event"
 
-          echo "--- logs from this run ---"
-          printf '%s\n' "$logs" | grep -E 'fira-backup:|exited|restart policy' || true
+          # Logs are for humans only; never fail on them.
+          echo "--- recent logs ---"
+          flyctl logs -a "$APP" -i "$id" --no-tail 2>&1 | tail -40 || true
 
-          if printf '%s\n' "$logs" | grep -q 'fira-backup: FAILED'; then
-            echo "::error::$(printf '%s\n' "$logs" | grep 'fira-backup: FAILED' | tail -1)"
+          if [ "$exit_event" = null ] || [ -z "$exit_event" ]; then
+            echo "::error::no exit event for machine $id after start; did it actually run?"
+            printf '%s' "$machine_json" | jq '.events[:5]'
             exit 1
           fi
-          if ! printf '%s\n' "$logs" | grep -q 'fira-backup: done: '; then
-            echo "::error::no 'fira-backup: done' line in the logs for this run"
-            printf '%s\n' "$logs" | tail -40
+          code="$(printf '%s' "$exit_event" | jq -r '.request.exit_event.exit_code')"
+          if [ "$code" != 0 ]; then
+            echo "::error::fira-backup exited with code $code (see logs above / fly logs -a $APP)"
             exit 1
           fi
-          echo "::notice::$(printf '%s\n' "$logs" | grep -o 'fira-backup: done: .*' | tail -1)"
+          echo "::notice::fira-backup on machine $id exited 0"

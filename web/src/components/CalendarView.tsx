@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertTriangle, CalendarDays, Check, Plus, ChevronDown, ChevronRight, Copy, ExternalLink, MoreVertical, PanelBottomClose, PanelBottomOpen, Repeat, Trash2, X } from 'lucide-react';
+import { AlertTriangle, Briefcase, CalendarDays, Check, Link2, User, Plus, ChevronDown, ChevronRight, Copy, ExternalLink, MoreVertical, PanelBottomClose, PanelBottomOpen, Repeat, Trash2, X } from 'lucide-react';
 import { useFira } from '../store';
 import { SearchField } from './SearchField';
 import {
@@ -1073,13 +1073,18 @@ export function CalendarView() {
                            data-state={b.state}
                            data-task-done={lt?.status === 'done' ? 'true' : undefined}
                            data-short={dur_min <= 30 ? 'true' : undefined}
+                           data-tall={dur_min >= 60 ? 'true' : undefined}
                            style={{
                              top: (start_min / 60) * HOUR_H,
                              height: (dur_min / 60) * HOUR_H - 2,
+                             ['--title-lines' as string]: overlayTitleLines(dur_min),
                              ['--proj-color' as string]: lt?.project_color ?? 'var(--text-3)',
                            }}
                            title={`${lt?.title ?? 'Linked task'} · ${fmtClockShort(start_min)} – ${fmtClockShort(start_min + dur_min)} (linked, read-only)`}>
-                        <div className="tb-title"><span className="tb-title-text">{lt?.title ?? 'Linked task'}</span></div>
+                        <div className="tb-title">
+                          <Link2 size={10} strokeWidth={2} className="tb-src-icon" aria-label="Linked partner" />
+                          <span className="tb-title-text">{lt?.title ?? 'Linked task'}</span>
+                        </div>
                       </div>
                     );
                   })}
@@ -1090,13 +1095,18 @@ export function CalendarView() {
                            data-state={b.state}
                            data-task-done={pt?.status === 'done' ? 'true' : undefined}
                            data-short={dur_min <= 30 ? 'true' : undefined}
+                           data-tall={dur_min >= 60 ? 'true' : undefined}
                            style={{
                              top: (start_min / 60) * HOUR_H,
                              height: (dur_min / 60) * HOUR_H - 2,
+                             ['--title-lines' as string]: overlayTitleLines(dur_min),
                              ['--proj-color' as string]: pt?.project_color ?? 'var(--text-3)',
                            }}
                            title={`${pt?.title ?? 'Personal task'} · ${fmtClockShort(start_min)} – ${fmtClockShort(start_min + dur_min)} (personal, read-only)`}>
-                        <div className="tb-title"><span className="tb-title-text">{pt?.title ?? 'Personal task'}</span></div>
+                        <div className="tb-title">
+                          <User size={10} strokeWidth={2} className="tb-src-icon" aria-label="Personal workspace" />
+                          <span className="tb-title-text">{pt?.title ?? 'Personal task'}</span>
+                        </div>
                       </div>
                     );
                   })}
@@ -1107,13 +1117,18 @@ export function CalendarView() {
                            data-state={b.state}
                            data-task-done={wt?.status === 'done' ? 'true' : undefined}
                            data-short={dur_min <= 30 ? 'true' : undefined}
+                           data-tall={dur_min >= 60 ? 'true' : undefined}
                            style={{
                              top: (start_min / 60) * HOUR_H,
                              height: (dur_min / 60) * HOUR_H - 2,
+                             ['--title-lines' as string]: overlayTitleLines(dur_min),
                              ['--proj-color' as string]: wt?.project_color ?? 'var(--text-3)',
                            }}
                            title={`${wt?.title ?? 'Work task'} · ${fmtClockShort(start_min)} – ${fmtClockShort(start_min + dur_min)} (work, read-only)`}>
-                        <div className="tb-title"><span className="tb-title-text">{wt?.title ?? 'Work task'}</span></div>
+                        <div className="tb-title">
+                          <Briefcase size={10} strokeWidth={2} className="tb-src-icon" aria-label="Work workspace" />
+                          <span className="tb-title-text">{wt?.title ?? 'Work task'}</span>
+                        </div>
                       </div>
                     );
                   })}
@@ -1537,6 +1552,14 @@ function metaTextWidth(time: string, extId: string): number {
   const w = metaCanvasCtx.measureText(time).width + 4 + metaCanvasCtx.measureText(extId).width;
   metaWidthCache.set(key, w);
   return w;
+}
+
+// Read-only overlay blocks are title-only (no time row), so the title can
+// use the whole block: height minus 2px border + 8px padding, 15px per
+// line (12px × 1.25). Never fewer than 2.
+function overlayTitleLines(durMin: number): number {
+  const heightPx = (durMin / 60) * HOUR_H - 2;
+  return Math.max(2, Math.floor((heightPx - 10) / 15));
 }
 
 function CalRail({ onDragTask, onTouchSchedule, collapsed, onToggleCollapsed }: {

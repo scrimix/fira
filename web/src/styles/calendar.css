@@ -125,6 +125,11 @@
   max-height: 280px;
   overflow: auto;
   padding: 4px 0;
+  /* Rows paint a filled background when selected or hovered; without a
+   * gap two lit neighbours merge into one blob. */
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 .user-empty {
   padding: 12px;
@@ -792,6 +797,21 @@
 .tblock-linked:hover,
 .tblock-personal:hover,
 .tblock-work:hover { z-index: 1; }
+/* Foreign-workspace look: dashed outline (read-only, not yours) with a
+ * solid project-colour bar on the left so the project still reads, a
+ * fainter fill than your own blocks, and a source glyph before the
+ * title. Hatching stays reserved for gcal events. */
+:is(.tblock-linked, .tblock-personal, .tblock-work) {
+  border-style: dashed;
+  border-left: 3px solid color-mix(in oklab, var(--c) var(--tint-line), transparent);
+  padding-left: 6px;
+  background-image: linear-gradient(color-mix(in oklab, var(--c) var(--tint-fill-done), transparent), color-mix(in oklab, var(--c) var(--tint-fill-done), transparent));
+}
+:is(.tblock-linked, .tblock-personal, .tblock-work) .tb-title { color: var(--text-2); }
+:is(.tblock-linked, .tblock-personal, .tblock-work)[data-state="completed"] {
+  border-left-color: color-mix(in oklab, var(--c) var(--tint-line-done), transparent);
+}
+.tb-src-icon { flex-shrink: 0; color: var(--c); }
 
 /* Toolbar toggle for showing the linked partner's calendar. Same
  * baseline as the rail "Mine/All" button. */
