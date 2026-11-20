@@ -171,6 +171,14 @@ export function TaskModal({ taskId }: Props) {
       if (content) URL.revokeObjectURL(content);
     };
   }, [previewAttachment, getAttachment]);
+  // Markdown previews resolve relative image/link paths to this task's other
+  // attachments; linked attachments open in this same preview.
+  const taskAttachments = task?.attachments;
+  const previewMdComponents = useMemo(
+    () => attachmentComponents(taskAttachments ?? [], (a) =>
+      setAttachmentPreview({ a, content: null, text: null, error: null })),
+    [taskAttachments],
+  );
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   // Direct attachments: a typed note or a paste (image / file / text) becomes
   // a draft that the composer names and uploads — no file picker involved.
@@ -710,7 +718,11 @@ export function TaskModal({ taskId }: Props) {
               return (
                 <div className="desc-md attachment-preview-markdown">
                   {attachmentPreview.text != null ? (
-                    <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm, remarkBreaks]}
+                      urlTransform={attachmentUrlTransform}
+                      components={previewMdComponents}
+                    >
                       {attachmentPreview.text}
                     </ReactMarkdown>
                   ) : 'Loading…'}
@@ -1078,11 +1090,38 @@ function attachmentUrlTransform(url: string): string {
   return url.startsWith(ATTACHMENT_SCHEME) ? url : defaultUrlTransform(url);
 }
 
+// Returns the attachment a URL names, `null` for an `attachment:` URL that
+// names nothing (shown as missing), or `undefined` when the URL isn't ours.
+// Besides `attachment:<filename>`, plain relative paths (`data-flow.png`,
+// `./img/data-flow.png`) resolve to a sibling attachment on the same task, so
+// Markdown files written next to their images preview as intended.
 function findAttachment(attachments: Attachment[], url: string | undefined): Attachment | null | undefined {
-  if (!url?.startsWith(ATTACHMENT_SCHEME)) return undefined; // not ours
-  let name = url.slice(ATTACHMENT_SCHEME.length);
-  try { name = decodeURIComponent(name); } catch { /* keep as written */ }
-  return attachments.find((a) => a.filename === name) ?? null;
+  if (!url) return undefined;
+  if (url.startsWith(ATTACHMENT_SCHEME)) {
+    let name = url.slice(ATTACHMENT_SCHEME.length);
+    try { name = decodeURIComponent(name); } catch { /* keep as written */ }
+    return attachments.find((a) => a.filename === name) ?? null;
+  }
+  return findRelativeAttachment(attachments, url) ?? undefined;
+}
+
+function findRelativeAttachment(attachments: Attachment[], url: string): Attachment | null {
+  // Anything with a scheme (https:, data:, mailto:), absolute or
+  // protocol-relative paths and in-page anchors are left alone.
+  if (/^[a-z][a-z0-9+.-]*:/i.test(url) || /^[/#?]/.test(url)) return null;
+  let path = url.replace(/[?#].*$/, '').replace(/^(\.\/)+/, '');
+  try { path = decodeURIComponent(path); } catch { /* keep as written */ }
+  if (!path) return null;
+  const exact = attachments.find((a) => a.filename === path);
+  if (exact) return exact;
+  const unique = (pred: (a: Attachment) => boolean) => {
+    const hits = attachments.filter(pred);
+    return hits.length === 1 ? hits[0] : null;
+  };
+  const lower = path.toLowerCase();
+  const base = lower.split('/').pop()!;
+  return unique((a) => a.filename.toLowerCase() === lower)
+    ?? unique((a) => a.filename.toLowerCase() === base);
 }
 
 function isInlineImage(a: Attachment): boolean {
@@ -1099,7 +1138,9 @@ function MissingAttachment({ url, children }: { url: string; children?: React.Re
   );
 }
 
-function attachmentComponents(attachments: Attachment[]): Components {
+// `onOpen`, when given, opens linked attachments in the in-app preview
+// instead of a new tab.
+function attachmentComponents(attachments: Attachment[], onOpen?: (a: Attachment) => void): Components {
   return {
     img: ({ src, alt }) => {
       const url = typeof src === 'string' ? src : undefined;
@@ -1114,7 +1155,17 @@ function attachmentComponents(attachments: Attachment[]): Components {
       const a = findAttachment(attachments, href);
       if (a === undefined) return <a href={href}>{children}</a>;
       if (a === null) return <MissingAttachment url={href!}>{children}</MissingAttachment>;
-      return <a href={api.getAttachmentUrl(a.id)} target="_blank" rel="noopener noreferrer">{children}</a>;
+      const url = api.getAttachmentUrl(a.id);
+      if (onOpen) {
+        return (
+          <a href={url} onClick={(e) => {
+            if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+            e.preventDefault();
+            onOpen(a);
+          }}>{children}</a>
+        );
+      }
+      return <a href={url} target="_blank" rel="noopener noreferrer">{children}</a>;
     },
   };
 }
