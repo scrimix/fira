@@ -992,8 +992,11 @@
 .rail-task[data-status="done"] .rail-task-meta { color: var(--text-3); }
 .rail-task-body { flex: 1; min-width: 0; }
 .rail-task-title {
-  font-size: var(--fs-13);
-  line-height: 1.35;
+  /* Same type as the list view's task titles (.task-title): 14px,
+   * regular weight, 1.45 line height. */
+  font-size: var(--fs-14);
+  font-weight: 400;
+  line-height: 1.45;
   color: var(--text);
   display: -webkit-box;
   -webkit-line-clamp: 2;

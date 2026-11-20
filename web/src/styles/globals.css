@@ -82,7 +82,7 @@
   --h-ctl: 32px;    /* default control */
   --h-seg: 28px;    /* segment inside a segmented control */
   --h-sm: 24px;     /* tags, small icon buttons */
-  --h-row: 40px;    /* list rows */
+  --h-row: 36px;    /* list rows */
   --control-h: var(--h-ctl);
 
   /* ── Elevation: flat; only floating layers get a shadow ────────── */
@@ -316,28 +316,34 @@ input, textarea, select { font-family: inherit; }
  * single paired chip. Inside this wrapper the gap is zero. */
 .topbar-account {
   display: inline-flex; align-items: center;
-  gap: 6px;
+  gap: 0;
 }
 .topbar-account .topbar-me { margin-left: 0; }
-/* Mode badge: same rounded square as the avatar. Personal vs work differ in
- * lightness (filled vs outlined), not hue. */
+/* Badge + avatar are one flush chip, so only the pair's *outer* corners
+ * round — otherwise the seam turns into a pinched hourglass. */
+.topbar-account .topbar-badge { border-radius: var(--r-ctl) 0 0 var(--r-ctl); }
+.topbar-account .topbar-badge + .topbar-me { border-radius: 0 var(--r-ctl) var(--r-ctl) 0; }
+/* Mode badge: a saturated tag on the avatar's left so the mode reads at a
+ * glance. Personal = accent, work = amber. */
 .topbar-badge {
-  width: var(--h-ctl); height: var(--h-ctl);
+  height: var(--h-ctl);
+  min-width: 22px;
+  padding: 0 7px;
   box-sizing: border-box;
   display: inline-grid; place-items: center;
   font-size: var(--fs-11);
-  font-weight: 600;
-  border-radius: var(--r-ctl);
+  font-weight: 700;
+  letter-spacing: 0.02em;
 }
 .topbar-badge[data-mode="personal"] {
-  color: var(--text);
-  background: var(--surface-4);
-  border: 1px solid var(--surface-4);
+  color: var(--accent-fg);
+  background: var(--accent);
 }
 .topbar-badge[data-mode="work"] {
-  color: var(--text-2);
-  background: transparent;
-  border: 1px solid var(--line-3);
+  /* --bg flips with the theme: light text on the dark light-mode amber,
+   * dark text on the bright dark-mode amber. */
+  color: var(--bg);
+  background: var(--warning);
 }
 .account-badge-picker { flex: none; }
 .account-theme-picker { flex: none; }

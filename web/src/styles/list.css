@@ -400,7 +400,7 @@
   /* Bleeds 8px both sides so the hover box frames the content while
    * checkbox and trail sit exactly on the column edges. */
   margin-inline: -8px;
-  padding: 10px 8px; /* 10 + ~20px title line + 10 = the 40px --h-row */
+  padding: 8px; /* 8 + ~20px title line + 8 = the 36px --h-row */
   border-radius: var(--r-sm);
   transition: background-color var(--t-hover) ease-out;
   cursor: pointer;
@@ -647,7 +647,10 @@
 .task-row .ext-id {
   /* Trail items sit flush right at their natural width — fixed
    * columns left gaps whenever one was empty (e.g. a sprint picked). */
-  font-variant-numeric: tabular-nums;
+  /* Proportional figures: tabular-nums gives Inter's hyphen a figure-
+   * width slot, so "ATL-412" rendered spaced out like a monospace font.
+   * IDs never stack in a column, so there's nothing to align. */
+  font-variant-numeric: normal;
   font-size: var(--fs-12);
   color: var(--text-3);
 }
@@ -664,7 +667,11 @@
 
 .task-trail {
   display: flex; align-items: center; gap: 10px;
-  min-height: 22px;
+  /* Exactly one title line (14px × 1.45), so the trail centres on the
+   * title's first line and never sets the row height — a taller trail
+   * left more space under the title than above it. The 22px chips are
+   * taller than this box and overflow it evenly (1px each side). */
+  height: calc(var(--fs-14) * 1.45);
   font-variant-numeric: tabular-nums;
   font-size: var(--fs-12);
   color: var(--text-3);
@@ -680,9 +687,13 @@
 /* Compact variant of .chip.tag-chip for the row's trailing column —
  * one step down from the filter strip's chips, but on the same tokens
  * so it tracks the label scale instead of drifting away from them. */
-.task-trail .tag-chip { height: 22px; font-size: var(--fs-12); padding-inline: 7px; }
+.task-trail .tag-chip { height: 22px; flex: none; font-size: var(--fs-12); padding-inline: 7px; }
 /* Long tag names get capped like the sprint label; full name on hover. */
 .task-trail .tag-chip { max-width: 16ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; line-height: 22px; }
+/* ^ Plain line box equal to the chip height: measured in Chromium, it
+ * centres Inter's x-height to within a quarter pixel, so lowercase tag
+ * names sit level. Don't "optically" nudge it — text-box trimming and a
+ * 1px lift both measured 1px high. */
 /* Row tags support the title, not compete with it: a weaker tint. */
 .task-trail { --tag-fill: 10%; }
 :root[data-theme="dark"] .task-trail { --tag-fill: 14%; }
@@ -808,16 +819,12 @@
 
 .subtasks {
   grid-column: 1 / -1;
-  /* Subtasks read as a denser inner list than the parent task row.
-   * The math: subtask→subtask gap = padding-bottom + padding-top
-   * (3 + 3 = 6); title→first-subtask gap = this margin-top + first
-   * subtask's padding-top (3 + 3 = 6). Same number both directions,
-   * tighter than the parent row's 6 + 6 = 12-px task-to-task cadence,
-   * which gives subtasks the "secondary list" rhythm without making
-   * them feel cramped. */
-  /* Same 36px pitch as task rows: title → first subtask and subtask →
-   * subtask are both one row apart. */
-  margin: 8px 0 0;
+  /* Subtasks read as a denser inner list than the parent task rows
+   * (36px pitch). subtask→subtask gap = padding-bottom + padding-top
+   * (4 + 4 = 8); title→first-subtask gap = this margin-top + the first
+   * subtask's padding-top (4 + 4 = 8). Same number both directions, so
+   * the pitch is a steady ~28px. */
+  margin: 4px 0 0;
   display: flex; flex-direction: column; gap: 0;
 }
 /* List subtask rows: same font as task rows (so they read as
@@ -826,7 +833,7 @@
  * outer task list. Modal subtasks still use the shared .subtask
  * defaults via .modal-subtasks, so this scoped rule doesn't leak. */
 .subtasks .subtask {
-  padding: 8px 8px 8px 0;
+  padding: 4px 8px 4px 0;
   font-size: var(--fs-14);
   align-items: flex-start;
 }
@@ -2475,9 +2482,6 @@ input.tm-block-dur.tm-block-cell-input { width: 6.5em; }
   .task-trail { gap: 16px; }
   .task-trail .task-tags { min-width: 0; }
   .task-trail .left-est { margin-left: 0; }
-  /* 22px chips against a 20px title line: lift the columns so their
-   * text shares the title's baseline. */
-  .task-trail { margin-top: -2px; }
 
   .section-head .caret { order: 0; margin-left: -22px; margin-right: 0; } /* 14 + 8 gap, same as person carets */
   /* Person headers: no caret (the whole line still folds), flush with
