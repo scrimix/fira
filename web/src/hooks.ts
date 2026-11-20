@@ -22,6 +22,12 @@ export function useIsMobile(): boolean {
   return useMediaQuery('(max-width: 700px)');
 }
 
+// Below this width the calendar's task rail stacks under the grid as a
+// collapsible panel instead of a side column (see calendar.css).
+export function useIsRailStacked(): boolean {
+  return useMediaQuery('(max-width: 1000px)');
+}
+
 // "Is anyone actually looking at this tab?"
 //
 // `visibilitychange` is the browser's own signal that the page moved to or

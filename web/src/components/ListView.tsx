@@ -10,6 +10,7 @@ import { fmtMin, fmtWeekOf, taskCompletedMin, taskPlannedMin, taskTimeLeft } fro
 import { ProjectIcon } from './ProjectIcon';
 import { ConfirmDelete } from './ConfirmDelete';
 import { Select } from './Select';
+import { UserPicker } from './UserPicker';
 import type { SelectOption } from './Select';
 import type { Sprint, Tag, Task, TimeBlock, Section, Track, UUID } from '../types';
 
@@ -192,7 +193,16 @@ export function ListView() {
   const tagFilter = listFilter.tag_ids;
   const tagMode = listFilter.tag_mode;
   // Default `all` covers persisted state from before this field existed.
-  const assigneeScope = listFilter.assignee_scope ?? 'all';
+  const rawAssigneeScope = listFilter.assignee_scope ?? 'all';
+  // Person whose tasks the list is narrowed to, or null for everyone.
+  // 'me' is the legacy All/Me toggle value. A saved person who isn't an
+  // active member of this project (switched projects, member parked)
+  // falls back to everyone rather than an inexplicably empty list.
+  const scopedId = rawAssigneeScope === 'all' ? null
+    : rawAssigneeScope === 'me' ? meId
+    : rawAssigneeScope;
+  const scopeMembers = project.members.filter((m) => m.role !== 'inactive');
+  const scopePersonId = scopedId && scopeMembers.some((m) => m.user_id === scopedId) ? scopedId : null;
   const projectSprints = sprints.filter((sp) => sp.project_id === project.id);
   const sprintById = new Map(projectSprints.map((sp) => [sp.id, sp] as const));
   // A persisted sprint id can outlive its sprint (deleted elsewhere, or
@@ -208,7 +218,7 @@ export function ListView() {
     setListFilter({ tag_ids: [], sprint_filter: 'all' });
   };
   const projectTasks = allProjectTasks.filter((t) => {
-    if (assigneeScope === 'me' && t.assignee_id !== meId) return false;
+    if (scopePersonId && t.assignee_id !== scopePersonId) return false;
     const sprint = t.sprint_id ? sprintById.get(t.sprint_id) : undefined;
     if (sprintFilter !== 'all' && t.sprint_id !== sprintFilter) return false;
     if (q && !(
@@ -237,7 +247,10 @@ export function ListView() {
     return { title, color };
   };
   const hasProjectTags = allTags.some((t) => t.project_id === project.id);
-  const showAssigneeScope = project.members.filter((m) => m.role !== 'inactive').length > 1;
+  const showAssigneeScope = scopeMembers.length > 1;
+  const scopeUsers = scopeMembers
+    .map((m) => users.find((u) => u.id === m.user_id))
+    .filter((u): u is NonNullable<typeof u> => !!u);
   // Time totals across the filtered task set. Done / Planned aggregate
   // time blocks (completed / planned) so they reflect what's actually
   // booked on the calendar; Est sums task estimates; Total is the
@@ -310,10 +323,10 @@ export function ListView() {
   const nowAssignees = new Set(nowTasks.map((t) => t.assignee_id).filter((x): x is UUID => !!x));
   const visibleMembers = project.members.filter(
     (m) => {
-      // Me-scope collapses Now to just the caller's group — every other
+      // A picked person collapses Now to just their group — every other
       // member's tasks are filtered out anyway, so leaving their empty
       // headings around is just noise.
-      if (assigneeScope === 'me') return m.user_id === meId;
+      if (scopePersonId) return m.user_id === scopePersonId;
       return (m.role !== 'owner' && m.role !== 'inactive') || nowAssignees.has(m.user_id);
     },
   );
@@ -820,16 +833,15 @@ export function ListView() {
                 />
               )}
               {showAssigneeScope && (
-                <div className="seg list-scope" role="group" aria-label="Assignee scope">
-                  <button type="button" data-on={assigneeScope === 'all' || undefined}
-                          aria-pressed={assigneeScope === 'all'}
-                          onClick={() => setListFilter({ assignee_scope: 'all' })}
-                          title="Show every task in this project">All</button>
-                  <button type="button" data-on={assigneeScope === 'me' || undefined}
-                          aria-pressed={assigneeScope === 'me'}
-                          onClick={() => setListFilter({ assignee_scope: 'me' })}
-                          title="Show only tasks assigned to me">Me</button>
-                </div>
+                <UserPicker
+                  users={scopeUsers}
+                  meId={meId}
+                  activeId={scopePersonId}
+                  onSelect={(id) => setListFilter({ assignee_scope: id ?? 'all' })}
+                  everyoneLabel="Everyone"
+                  align="right"
+                  ariaLabel="Show tasks assigned to"
+                />
               )}
               <div className="proj-menu" ref={projMenuRef}>
                 <button className="icon-btn proj-edit-btn"

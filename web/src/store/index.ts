@@ -97,10 +97,11 @@ interface ListFilter {
   sprint_filter?: UUID | 'active' | 'all' | 'none';
   status: 'open' | 'all' | 'in_progress' | 'todo' | 'done';
   assignee_id: UUID | 'all' | null;
-  /// Assignee scope toggle in the list toolbar. `'all'` (default)
-  /// renders every project task; `'me'` keeps only tasks assigned to
+  /// Person picker in the list toolbar. `'all'` (default) renders every
+  /// project task; a user id keeps only tasks assigned to that person.
+  /// `'me'` is the legacy value from the old All/Me toggle and reads as
   /// the caller. Persisted with the rest of `listFilter`.
-  assignee_scope: 'me' | 'all';
+  assignee_scope: 'me' | 'all' | UUID;
   /// Subset of project tag ids to filter by. Empty = no tag filter applied.
   /// Persisted across reloads alongside the rest of listFilter.
   tag_ids: UUID[];

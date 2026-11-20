@@ -322,12 +322,12 @@ input, textarea, select { font-family: inherit; }
 /* Mode badge: same rounded square as the avatar. Personal vs work differ in
  * lightness (filled vs outlined), not hue. */
 .topbar-badge {
-  width: 28px; height: 28px;
+  width: var(--h-ctl); height: var(--h-ctl);
   box-sizing: border-box;
   display: inline-grid; place-items: center;
   font-size: var(--fs-11);
   font-weight: 600;
-  border-radius: var(--r-sm);
+  border-radius: var(--r-ctl);
 }
 .topbar-badge[data-mode="personal"] {
   color: var(--text);

@@ -9,7 +9,8 @@ import {
   weekStartFor, dayOfMonthFor,
   dayAnchorFor, dayOfWeekLabelFor,
 } from '../time';
-import { useIsMobile } from '../hooks';
+import { useIsMobile, useIsRailStacked } from '../hooks';
+import { UserPicker } from './UserPicker';
 import type { Project, Task, TimeBlock, GcalEvent, UUID } from '../types';
 
 const HOUR_H = 56;
@@ -163,6 +164,7 @@ export function CalendarView() {
   const dayOffset = useFira((s) => s.dayOffset);
   const setDayOffset = useFira((s) => s.setDayOffset);
   const isMobile = useIsMobile();
+  const isRailStacked = useIsRailStacked();
   const [taskRailCollapsed, setTaskRailCollapsed] = useState(true);
   // Mobile shows a 3-day window centered on today+dayOffset; desktop shows
   // the standard 7-day week. Both modes feed a common `gridAnchor` (column
@@ -319,6 +321,19 @@ export function CalendarView() {
     document.addEventListener('pointerdown', onDocPointerDown);
     return () => document.removeEventListener('pointerdown', onDocPointerDown);
   }, []);
+
+  // Live day-column width, for layout decisions that depend on how much
+  // text fits in a block (see the meta row below).
+  const [colWidth, setColWidth] = useState(0);
+  useLayoutEffect(() => {
+    const g = innerGridRef.current;
+    if (!g) return;
+    const measure = () => setColWidth((g.getBoundingClientRect().width - 56) / dayCount);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(g);
+    return () => ro.disconnect();
+  }, [dayCount]);
 
   const colGeometry = () => {
     const g = innerGridRef.current;
@@ -828,7 +843,7 @@ export function CalendarView() {
   };
 
   return (
-    <div className="calendar" data-rail-collapsed={isMobile && taskRailCollapsed || undefined}>
+    <div className="calendar" data-rail-collapsed={isRailStacked && taskRailCollapsed || undefined}>
       <div className="cal-main">
         <div className="cal-toolbar">
           <div className="week-nav">
@@ -844,8 +859,9 @@ export function CalendarView() {
           <UserPicker
             users={users}
             meId={meId}
-            activePersonId={activePersonId}
-            onSelect={setActivePerson}
+            activeId={activePersonId}
+            onSelect={(id) => { if (id) setActivePerson(id); }}
+            ariaLabel="Viewing calendar of"
           />
           {/* Segmented, not a flipping verb: both destinations stay on
             * screen and the lit segment says which one you're in. Keeps
@@ -1121,6 +1137,20 @@ export function CalendarView() {
                     // blocks get a 2px gap instead of one wall of borders.
                     const blockTopPx = (sMin / 60) * HOUR_H + 1;
                     const blockHeightPx = (dMin / 60) * HOUR_H - 3;
+                    // Tall blocks wrap the title to as many lines as the
+                    // block has room for once the time row is placed:
+                    // 2px border + 8px padding + 2px gap + ~14px meta row,
+                    // 15px per title line (12px × 1.25). Never fewer than 2.
+                    // The task id sits on the time row when it fits and wraps
+                    // to its own ~16px row when it doesn't; reserve that row
+                    // only in the wrapping case.
+                    const showExtId = !!t.external_id && dMin >= 60;
+                    // Text width inside the block: minus 2px border and 16px padding.
+                    const blockInnerW = (fullWidth || lanes === 1 ? colWidth - 6 : colWidth / lanes - 4) - 2 - 16;
+                    const extIdWraps = showExtId && colWidth > 0 && metaTextWidth(
+                      `${fmtClockShort(sMin)} – ${fmtClockShort(sMin + dMin)}`, `· ${t.external_id}`,
+                    ) > blockInnerW;
+                    const titleLines = Math.max(2, Math.floor((blockHeightPx - 26 - (extIdWraps ? 16 : 0)) / 15));
                     // Overlap stripes: for each underlay segment that
                     // intersects this active block in time, render a
                     // thin colored strip on the right edge spanning
@@ -1195,6 +1225,7 @@ export function CalendarView() {
                            style={{
                              top: blockTopPx,
                              height: blockHeightPx,
+                             ['--title-lines' as string]: titleLines,
                              ['--proj-color' as string]: p.color,
                              left: fullWidth ? '3px' : `calc(${(lane / lanes) * 100}% + ${lane === 0 ? 3 : 1}px)`,
                              width: fullWidth ? 'calc(100% - 6px)' : `calc(${100 / lanes}% - 4px)`,
@@ -1217,9 +1248,13 @@ export function CalendarView() {
                              onBlockPointerDown(e, b, t.id);
                            }}
                            onContextMenu={(e) => e.preventDefault()}
+                           // No native tooltip in general: the block already shows
+                           // the title, and the browser's grey box read as a
+                           // rendering glitch. Kept only for the done-but-planned
+                           // warning, which isn't explained anywhere else.
                            title={t.status === 'done' && b.state === 'planned'
-                             ? `${t.title} · ${fmtMin(dMin)}\n\n⚠ Task is marked done, but this block is still planned. Delete the block or reopen the task.`
-                             : `${t.title} · ${fmtMin(dMin)}`}>
+                             ? 'Task is marked done, but this block is still planned. Delete the block or reopen the task.'
+                             : undefined}>
                         {overlaps.map((o, i) => (
                           <div key={`ov-${i}`} className="tb-overlap" style={{
                             top: `${((o.start - aStart) / dMin) * 100}%`,
@@ -1248,7 +1283,7 @@ export function CalendarView() {
                             ? <span>{fmtClockShort(sMin)}</span>
                             : <>
                                 <span className="tb-time">{fmtClockShort(sMin)} – {fmtClockShort(sMin + dMin)}</span>
-                                {t.external_id && dMin >= 60 && <span className="tb-meta-id">· {t.external_id}</span>}
+                                {showExtId && <span className="tb-meta-id">{extIdWraps ? '' : '· '}{t.external_id}</span>}
                               </>}
                         </div>
                         {isCompact ? (
@@ -1368,8 +1403,8 @@ export function CalendarView() {
       <CalRail
         onDragTask={setDraggedTaskId}
         onTouchSchedule={onTouchSchedule}
-        collapsed={isMobile && taskRailCollapsed}
-        onToggleCollapsed={isMobile ? () => setTaskRailCollapsed((value) => !value) : undefined}
+        collapsed={isRailStacked && taskRailCollapsed}
+        onToggleCollapsed={isRailStacked ? () => setTaskRailCollapsed((value) => !value) : undefined}
       />
       {gcalPopover && (() => {
         const evt = gcal.find((g) => g.id === gcalPopover.eventId);
@@ -1483,110 +1518,25 @@ function dur(b: TimeBlock): number {
 // Person selector: one dropdown that shows whose calendar you're viewing.
 // Same searchable list as before, but picking just switches the person —
 // no row of stacked tabs to manage.
-function UserPicker({ users, meId, activePersonId, onSelect }: {
-  users: { id: UUID; name: string; initials: string; email: string }[];
-  meId: UUID | null;
-  activePersonId: UUID | null;
-  onSelect: (id: UUID) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState('');
-  const [activeIdx, setActiveIdx] = useState(0);
-  const wrapRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  const active = users.find((u) => u.id === activePersonId) ?? null;
-  const q = query.trim().toLowerCase();
-  // Me first, then everyone else by name.
-  const ordered = [...users].sort((x, y) =>
-    x.id === meId ? -1 : y.id === meId ? 1 : x.name.localeCompare(y.name));
-  const filtered = ordered.filter((u) =>
-    !q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q));
-
-  useEffect(() => {
-    if (!open) return;
-    const onDoc = (e: MouseEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
-    document.addEventListener('mousedown', onDoc);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onDoc);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [open]);
-
-  useEffect(() => {
-    if (open) {
-      setQuery('');
-      setActiveIdx(Math.max(0, ordered.findIndex((u) => u.id === activePersonId)));
-      requestAnimationFrame(() => inputRef.current?.focus());
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
-  useEffect(() => { if (query) setActiveIdx(0); }, [query]);
-
-  const pick = (id: UUID) => { onSelect(id); setOpen(false); };
-
-  return (
-    <div className="user-picker" ref={wrapRef}>
-      <button type="button" className="person-select" data-open={open || undefined}
-              aria-haspopup="listbox" aria-expanded={open}
-              aria-label="Viewing calendar of"
-              onClick={() => setOpen((v) => !v)}>
-        <span className="person-select-name">
-          {!active ? 'Choose person' : active.id === meId ? 'Me' : active.name}
-        </span>
-        <ChevronDown size={12} strokeWidth={1.75} className="person-select-chevron" />
-      </button>
-      {open && (
-        <div className="user-popover" data-align="left">
-          <input
-            ref={inputRef}
-            className="user-search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search people"
-            aria-label="Search people"
-            onKeyDown={(e) => {
-              if (e.key === 'ArrowDown') {
-                e.preventDefault();
-                setActiveIdx((i) => Math.min(filtered.length - 1, i + 1));
-              } else if (e.key === 'ArrowUp') {
-                e.preventDefault();
-                setActiveIdx((i) => Math.max(0, i - 1));
-              } else if (e.key === 'Enter') {
-                e.preventDefault();
-                const u = filtered[activeIdx];
-                if (u) pick(u.id);
-              }
-            }}
-          />
-          <div className="user-list" role="listbox">
-            {filtered.length === 0 ? (
-              <div className="user-empty">No matches</div>
-            ) : filtered.map((u, i) => (
-              <button key={u.id} className="user-row" role="option"
-                      aria-selected={u.id === activePersonId}
-                      data-active={i === activeIdx}
-                      data-selected={u.id === activePersonId}
-                      onMouseEnter={() => setActiveIdx(i)}
-                      onClick={() => pick(u.id)}>
-                <span className="avatar" data-me={u.id === meId}>{u.initials}</span>
-                <span className="user-row-name">
-                  {u.name}{u.id === meId && <span className="user-row-you"> (you)</span>}
-                </span>
-                {u.id === activePersonId
-                  ? <Check size={13} strokeWidth={2} className="user-row-check" />
-                  : <span />}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
+// Width of a tall block's meta row ("11:00 – 12:30" + gap + task id) in
+// the block's 11px font, measured on a shared canvas. Cached per string:
+// the inputs repeat across blocks and renders.
+let metaCanvasCtx: CanvasRenderingContext2D | null = null;
+const metaWidthCache = new Map<string, number>();
+function metaTextWidth(time: string, extId: string): number {
+  const key = `${time}|${extId}`;
+  const hit = metaWidthCache.get(key);
+  if (hit !== undefined) return hit;
+  if (!metaCanvasCtx) {
+    metaCanvasCtx = document.createElement('canvas').getContext('2d');
+    if (!metaCanvasCtx) return 0;
+    const family = getComputedStyle(document.documentElement).getPropertyValue('--font-sans').trim() || 'sans-serif';
+    metaCanvasCtx.font = `11px ${family}`;
+  }
+  // 4px = .tb-meta gap between the time and the id.
+  const w = metaCanvasCtx.measureText(time).width + 4 + metaCanvasCtx.measureText(extId).width;
+  metaWidthCache.set(key, w);
+  return w;
 }
 
 function CalRail({ onDragTask, onTouchSchedule, collapsed, onToggleCollapsed }: {

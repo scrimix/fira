@@ -5,13 +5,6 @@
   min-height: 0;
   overflow: hidden;
 }
-/* Tablet portrait: collapse the rail's fixed column to give the calendar
- * the whole width. Phone widths re-introduce the rail as a stacked panel
- * below the grid (see the next breakpoint). */
-@media (max-width: 1000px) {
-  .calendar { grid-template-columns: 1fr; }
-  .cal-rail { display: none; }
-}
 /* Phone overrides for the calendar live at the end of this file —
  * several base rules (notably `.cal-grid { min-width: 700px }`) are
  * declared further down, so a top-of-file @media block loses the
@@ -69,11 +62,9 @@
 .cal-toolbar .week-nav-btn.week-nav-today { padding: 0 12px; }
 .cal-toolbar .week-nav-btn.week-nav-today[data-active="true"] { color: var(--text); }
 /* Person selector: same shell as a select — --surface-2, 32px, chevron. */
-.cal-toolbar .user-picker {
-  position: relative;
-  margin-left: var(--bar-gap);
-  display: inline-flex;
-}
+.user-picker { position: relative; display: inline-flex; }
+.cal-toolbar .user-picker { margin-left: var(--bar-gap); }
+.user-row-everyone { display: grid; place-items: center; }
 .person-select {
   display: inline-flex; align-items: center; gap: 8px;
   height: var(--h-ctl);
@@ -222,7 +213,9 @@
 }
 .cal-grid {
   display: grid;
-  grid-template-columns: 56px repeat(7, 1fr);
+  /* minmax(0, 1fr), not 1fr: a bare 1fr won't shrink below its content's
+   * min width, so columns with long nowrap titles grew wider than others. */
+  grid-template-columns: 56px repeat(7, minmax(0, 1fr));
   position: relative;
   min-width: 700px;
 }
@@ -272,6 +265,12 @@
   color: var(--text-3);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+/* Equal-width columns can get narrower than "Mon 16 6h 30m": drop the
+ * day total instead of clipping it mid-word. */
+.cal-dayhead { container-type: inline-size; min-width: 0; overflow: hidden; }
+@container (max-width: 118px) {
+  .cal-dayhead .dtotal { display: none; }
 }
 .cal-dayhead[data-today="true"] .dow { color: var(--text); }
 .cal-dayhead[data-today="true"] .dnum { min-width: 24px; padding: 0 4px; box-sizing: border-box; background: var(--danger); color: var(--accent-fg); }
@@ -455,6 +454,13 @@
 }
 .tblock[data-short="true"] .tb-title { flex: 1 1 auto; min-width: 0; }
 .tblock[data-short="true"] .tb-meta { flex-shrink: 0; }
+/* Narrow short blocks (overlap lanes, phone columns): the title wins.
+ * Drop the start time rather than squeezing the title down to "B…"
+ * or nothing at all. The time is still in the hover title. */
+.tblock[data-short="true"] { container-type: inline-size; }
+@container (max-width: 120px) {
+  .tblock[data-short="true"] .tb-meta { display: none; }
+}
 
 .tb-actions {
   position: absolute;
@@ -482,14 +488,17 @@
 /* Compact mode: a single kebab replaces the inline icon row, and a
  * popup (rendered as a sibling outside .tblock so it isn't clipped)
  * carries the actual actions. The kebab inherits the hover/active
- * reveal rule from .tb-actions above. Vertically centered against the
- * block height so it doesn't crowd the title row, and stays put even
- * on tall blocks. */
-.tb-actions-compact {
-  gap: 0;
+ * reveal rule from .tb-actions above. Top-right, on the title row, like
+ * the full action row — directly under where its popup opens. Short
+ * (single-row) blocks center it on that row instead. */
+.tb-actions-compact { gap: 0; }
+.tblock[data-short="true"] .tb-actions-compact {
   top: 50%;
   transform: translateY(-50%);
 }
+/* The kebab overlays the text rather than padding it away: reserving
+ * room on reveal reflowed the title/time and flashed ellipses on every
+ * hover. Its own solid background covers what's beneath it. */
 .tb-kebab[data-open="true"] {
   background: var(--text);
   border-color: var(--text);
@@ -604,12 +613,13 @@
   line-height: 1.25;
 }
 .tb-title-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-/* Blocks of an hour or more have room: let the title wrap to two lines. */
+/* Blocks of an hour or more have room: let the title wrap to as many
+ * lines as fit (--title-lines, computed from the block height). */
 .tblock[data-tall="true"] .tb-title { white-space: normal; align-items: flex-start; }
 .tblock[data-tall="true"] .tb-title svg { margin-top: 2px; }
 .tblock[data-tall="true"] .tb-title-text {
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: var(--title-lines, 2);
   -webkit-box-orient: vertical;
 }
 .tb-meta {
@@ -622,13 +632,15 @@
 }
 .tb-meta { white-space: nowrap; min-width: 0; }
 .tb-meta .tb-time { flex: none; }
-.tb-meta .tb-meta-id { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* Task id: on the time row when it fits, wraps to its own row when it
+ * doesn't (and ellipsizes there if even that is too narrow). */
+.tblock[data-tall="true"] .tb-meta { flex-wrap: wrap; row-gap: 2px; }
+.tb-meta .tb-meta-id { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text-3); }
 .tb-meta .dot { width: 3px; height: 3px; background: currentColor; border-radius: 50%; }
 .tb-extid {
   font-variant-numeric: tabular-nums;
   font-size: var(--fs-11);
   color: var(--text-3);
-  margin-top: auto;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1021,7 +1033,10 @@
  * reachable, and drop the grid's min-width so 3 columns + the 56px gutter
  * actually fit a 360px-wide screen. Lives at end-of-file so the cascade
  * beats the base `.cal-grid { min-width: 700px }` rule above. */
-@media (max-width: 700px) {
+/* Tablet and phone: the rail's fixed column doesn't fit, so stack it below
+ * the grid as a collapsible panel (toggle in the rail head, driven by
+ * useIsRailStacked — keep the 1000px breakpoints in sync). */
+@media (max-width: 1000px) {
   .calendar {
     grid-template-columns: 1fr;
     grid-template-rows: minmax(0, 1fr) minmax(160px, 38vh);
@@ -1036,9 +1051,11 @@
     border-left: 0;
     border-top: 1px solid var(--line);
   }
+}
+@media (max-width: 700px) {
   .cal-grid {
     min-width: 0;
-    grid-template-columns: 56px repeat(3, 1fr);
+    grid-template-columns: 56px repeat(3, minmax(0, 1fr));
   }
   /* Hide the user picker on phones — the multi-person tab strip is too
    * wide and the active person almost always equals "me" on a phone
