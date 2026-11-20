@@ -3,7 +3,7 @@ import { ChevronDown, X } from 'lucide-react';
 import { useFira } from '../store';
 import { fmtMin, parseEstimate } from '../time';
 import { Select } from './Select';
-import { SectionEditor, SubtaskList } from './TaskModal';
+import { SectionEditor, SubtaskList, TagEditor } from './TaskModal';
 import type { Section, UUID } from '../types';
 
 interface DraftSubtask { id: string; title: string; done: boolean }
@@ -27,6 +27,8 @@ export function TaskModalDraft({ draft }: Props) {
   const setTaskEstimate = useFira((s) => s.setTaskEstimate);
   const addSubtask = useFira((s) => s.addSubtask);
   const upsertBlock = useFira((s) => s.upsertBlock);
+  const setTaskTags = useFira((s) => s.setTaskTags);
+  const allTags = useFira((s) => s.tags);
 
   // No default project: defaulting to the first one made it easy to create
   // a task in the wrong project by tapping through the modal. Caller must
@@ -55,6 +57,9 @@ export function TaskModalDraft({ draft }: Props) {
   const [description, setDescription] = useState('');
   const [estimateText, setEstimateText] = useState('');
   const [subtasks, setSubtasks] = useState<DraftSubtask[]>([]);
+  // Tags are per-project, so switching project drops the picks.
+  const [tagIds, setTagIds] = useState<UUID[]>([]);
+  useEffect(() => { setTagIds([]); }, [projectId]);
 
   const estimateMin = parseEstimate(estimateText);
   const estimateInvalid = estimateText.trim() !== '' && estimateMin == null;
@@ -76,6 +81,7 @@ export function TaskModalDraft({ draft }: Props) {
     if (!id) return;
     if (description.trim()) setTaskDescription(id, description);
     if (estimateMin != null && estimateMin > 0) setTaskEstimate(id, estimateMin);
+    if (tagIds.length > 0) setTaskTags(id, tagIds);
     for (const s of subtasks) {
       const t = s.title.trim();
       if (t) addSubtask(id, t);
@@ -195,6 +201,21 @@ export function TaskModalDraft({ draft }: Props) {
               onChange={setEstimateText}
               invalid={estimateInvalid}
             />
+
+            <h5 style={modalH5}>Tags</h5>
+            {project ? (
+              <TagEditor
+                projectId={project.id}
+                selected={tagIds}
+                allTags={allTags}
+                onChange={setTagIds}
+              />
+            ) : (
+              // Tags are per-project — nothing to pick from until one is set.
+              <div style={{ fontSize: 'var(--fs-13)', color: 'var(--text-4)' }}>
+                Pick a project first
+              </div>
+            )}
 
             <h5 style={modalH5}>Section</h5>
             <SectionEditor value={section} onChange={setSection} />

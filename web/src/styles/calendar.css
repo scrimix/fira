@@ -919,9 +919,13 @@
   /* No scrollbar compensation: on macOS the scrollbar overlays the
    * content (reserves 0px), so subtracting a scrollbar width pushed the
    * rows past the header's edge. Plain --gutter-x on both sides lines
-   * header buttons, headings and task text up with the topbar avatar. */
+   * header buttons, headings and task text up with the topbar avatar.
+   * `isolation` makes this scroller a stacking context so the sticky
+   * group heads' z-index stays inside it — otherwise they paint over
+   * the overlay scrollbar and chop it into segments. */
   flex: 1;
   overflow: auto;
+  isolation: isolate;
 }
 .rail-group {
   /* No closing rule — the next group's header rule is the boundary. */
