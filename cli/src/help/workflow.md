@@ -20,8 +20,10 @@ The loop:
    a summary, and writes only after you confirm. The chosen values go to
    both sides, so afterwards the file and Fira agree.
    `publish` also creates in Fira whatever the file has that Fira doesn't.
-   To merge edits on both sides without creating anything, use
-   `task-cli sync fira` (all files, or the ones you name).
+   To merge both sides across many files, use `task-cli sync fira` (all
+   files, or the ones you name). In sprints both sides have, it also
+   creates the tasks one side is missing on the other; it never creates
+   sprints or standalone tasks (that is `publish` and `import`).
 5. **Commit** the files as usual. The CLI never runs git commands that
    change anything.
 

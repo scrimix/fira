@@ -114,9 +114,11 @@ Examples:\n  task-cli publish fira tasks/sprints/001-onboarding.md\n  task-cli p
         opts: SyncOpts,
     },
     /// Merge files that are already in Fira: diff, choose per field, write both sides
-    #[command(after_help = "Like publish, for many files at once (all of tasks/ by default), and it creates\n\
-nothing on either side: tasks and sprints not in Fira yet are listed and left for\n\
-`publish`, Fira work not in any file is listed and left for `import`.\n\
+    #[command(after_help = "Like publish, for many files at once (all of tasks/ by default). Within the sprints\n\
+both sides have, a task only in the file is created in Fira and a task only in Fira\n\
+is added to the file. Sprints and standalone tasks are never created: a sprint or\n\
+single-task file not in Fira yet is left for `publish`, Fira work outside the\n\
+sprints in your files is left for `import`.\n\
 Without a terminal the command fails unless --prefer or --dry-run is given.\n\n\
 Examples:\n  task-cli sync fira\n  task-cli sync fira tasks/sprints/001-onboarding.md --dry-run")]
     Sync {
@@ -653,8 +655,8 @@ fn sync_run(repo: Repo, mode: Mode, scope: Scope, into: Option<usize>, opts: &Sy
         }
     };
 
-    // Only publish creates tasks, and they go to their creator by default.
-    let me = if mode == Mode::Publish { Some(client.whoami()?.user.id) } else { None };
+    // Publish and sync create tasks, and they go to their creator by default.
+    let me = if matches!(mode, Mode::Publish | Mode::Sync) { Some(client.whoami()?.user.id) } else { None };
     let plan = sync::plan(&repo, &cmp, &decisions, project_id, me, chrono::Local::now().date_naive())?;
     if plan.is_empty() {
         println!("Nothing to write.");

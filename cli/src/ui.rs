@@ -253,11 +253,11 @@ fn state_note(st: &Style, mode: Mode, e: &Entity) -> String {
     match e.state {
         State::InSync => st.dim("in sync"),
         State::Differs => String::new(),
-        State::New => st.local(if mode == Mode::Publish { "new: will be created in Fira" } else { "new: not in Fira yet" }),
+        State::New => st.local(if matches!(mode, Mode::Publish | Mode::Sync) { "new: will be created in Fira" } else { "new: not in Fira yet" }),
         State::DeletedInFira => st.warn("deleted in Fira, still in the repo"),
         State::NotInFira => st.dim("not in Fira (publish to create it); not touched"),
         State::OtherProject => st.warn("belongs to another Fira project; not touched"),
-        State::NewLocal => st.remote(if mode == Mode::Import { "new: will be added locally" } else { "only in Fira" }),
+        State::NewLocal => st.remote(if matches!(mode, Mode::Import | Mode::Sync) { "new: will be added locally" } else { "only in Fira" }),
     }
 }
 

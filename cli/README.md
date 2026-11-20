@@ -76,7 +76,7 @@ task-cli fmt                                  # add ids, normalise structure lin
 task-cli diff                                 # read-only; exit 0 in sync, 1 differences
 task-cli publish fira tasks/sprints/001.md    # diff → choose per field → confirm → write
 task-cli import fira <sprint-id | task link>  # bring Fira work into the repo
-task-cli sync fira [files]                    # merge both sides; creates nothing
+task-cli sync fira [files]                    # merge both sides, incl. tasks new to a shared sprint
 ```
 
 The full docs are built into the binary, so they always match the

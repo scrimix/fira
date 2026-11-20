@@ -26,8 +26,9 @@ use crate::write::{self, Defaults, Names};
 pub enum Mode {
     Publish,
     Import,
-    /// Publish and import for what exists on both sides: the same merge,
-    /// but nothing is created in Fira or in the repository.
+    /// Publish and import within the sprints both sides have: the same
+    /// merge, plus each sprint's tasks that only one side has are created
+    /// on the other. Sprints and standalone tasks are never created.
     Sync,
     Diff,
 }
@@ -573,6 +574,20 @@ pub fn build(repo: &Repo, snap: Snapshot, mode: Mode, scope: &Scope, into: Optio
                     task_list.push((Some(t), repo.task_id(t)));
                 }
             }
+            // Sync brings in the Fira tasks of the sprints both sides have
+            // that are in no local file.
+            if mode == Mode::Sync {
+                for (_, sid) in &sprint_docs {
+                    if !remote_sprints.contains_key(sid) {
+                        continue;
+                    }
+                    for t in remote_task_order(&snap, *sid) {
+                        if repo.find_task(t).is_none() && !task_list.iter().any(|(_, x)| *x == t) {
+                            task_list.push((None, t));
+                        }
+                    }
+                }
+            }
         }
         Scope::Remote(id) => {
             if let Some(rs) = remote_sprints.get(id) {
@@ -625,24 +640,22 @@ pub fn build(repo: &Repo, snap: Snapshot, mode: Mode, scope: &Scope, into: Optio
             // import appends the tasks it adds to the file. So a task
             // created in the middle of the file shows up as an order
             // difference right away.
-            match mode {
-                Mode::Publish => {
-                    for t in &l.tasks {
-                        let creates = !remote_tasks.contains_key(t)
-                            && !matches!(missing.get(t).map(String::as_str), Some("deleted" | "other_project"));
-                        if creates {
-                            rm.tasks.push(*t);
-                        }
+            let (l_before, rm_before) = (l.tasks.clone(), rm.tasks.clone());
+            if matches!(mode, Mode::Publish | Mode::Sync) {
+                for t in &l_before {
+                    let creates = !remote_tasks.contains_key(t)
+                        && !matches!(missing.get(t).map(String::as_str), Some("deleted" | "other_project"));
+                    if creates {
+                        rm.tasks.push(*t);
                     }
                 }
-                Mode::Import if into.is_none() => {
-                    for t in &rm.tasks {
-                        if repo.find_task(*t).is_none() {
-                            l.tasks.push(*t);
-                        }
+            }
+            if mode == Mode::Sync || (mode == Mode::Import && into.is_none()) {
+                for t in &rm_before {
+                    if repo.find_task(*t).is_none() {
+                        l.tasks.push(*t);
                     }
                 }
-                _ => {}
             }
         }
         let id_new = doc.and_then(|d| repo.sprint_ids[d]).is_some_and(|s| s.new);
@@ -738,7 +751,14 @@ pub fn build(repo: &Repo, snap: Snapshot, mode: Mode, scope: &Scope, into: Optio
             (Some(l), Some(rm)) => {
                 if task_fields(l, rm).is_empty() { State::InSync } else { State::Differs }
             }
-            (Some(_), None) => local_only_state(mode, missing.get(id).map(String::as_str)),
+            (Some(_), None) => {
+                // Sync creates a task only in a sprint Fira already has.
+                let in_fira_sprint = tref.and_then(|t| repo.sprint_of_doc(t.doc)).is_some_and(|s| remote_sprints.contains_key(&s));
+                match local_only_state(mode, missing.get(id).map(String::as_str)) {
+                    State::NotInFira if mode == Mode::Sync && in_fira_sprint => State::New,
+                    s => s,
+                }
+            }
             (None, Some(_)) => State::NewLocal,
             (None, None) => continue,
         };
@@ -852,8 +872,8 @@ impl Comparison {
     pub fn actionable(&self) -> bool {
         self.entities.iter().any(|e| {
             matches!(e.state, State::Differs | State::DeletedInFira)
-                || (e.state == State::New && self.mode == Mode::Publish)
-                || (e.state == State::NewLocal && self.mode == Mode::Import)
+                || (e.state == State::New && matches!(self.mode, Mode::Publish | Mode::Sync))
+                || (e.state == State::NewLocal && matches!(self.mode, Mode::Import | Mode::Sync))
                 || (e.id_new && self.mode == Mode::Publish)
         })
     }
@@ -1402,7 +1422,7 @@ pub fn plan(repo: &Repo, cmp: &Comparison, dec: &Decisions, project_id: Uuid, me
                 task_local_target.insert(e.id, target_local);
             }
             (Some(l), None) => match (e.state, dec.deleted.get(&e.id)) {
-                (State::New, _) if cmp.mode == Mode::Publish => {
+                (State::New, _) if matches!(cmp.mode, Mode::Publish | Mode::Sync) => {
                     // What the task doesn't set comes from its sprint as it
                     // stands after this run, which may have taken Fira's
                     // defaults over a file that lacks them.
@@ -1442,7 +1462,7 @@ pub fn plan(repo: &Repo, cmp: &Comparison, dec: &Decisions, project_id: Uuid, me
                     task_local_target.insert(e.id, l.clone());
                 }
             },
-            (None, Some(rm)) if cmp.mode == Mode::Import => {
+            (None, Some(rm)) if matches!(cmp.mode, Mode::Import | Mode::Sync) => {
                 attachment_downloads(root, e.id, &[], &e.remote_attachments, &rm.attachments, &mut downloads, &mut local_lines);
                 task_local_target.insert(e.id, rm.clone());
             }
@@ -1597,7 +1617,7 @@ pub fn plan(repo: &Repo, cmp: &Comparison, dec: &Decisions, project_id: Uuid, me
                 }
                 edits.entry(tr.doc).or_default().push(Edit::replace(b.block.clone(), ""));
             }
-            (None, None) if cmp.mode == Mode::Import => {
+            (None, None) if matches!(cmp.mode, Mode::Import | Mode::Sync) => {
                 // A new local task goes to `--into`, else its sprint's
                 // file (existing or created in this run), else single/.
                 // With `--into`, its membership becomes that file's sprint;
@@ -2043,16 +2063,41 @@ mod tests {
     }
 
     #[test]
-    fn sync_creates_nothing() {
-        // 4 is not in Fira: sync lists it and leaves it to publish, and
-        // the order it writes covers the existing tasks only.
+    fn sync_creates_local_only_task_in_fira_sprint() {
+        // 4 is only in the file of a sprint Fira has: sync creates it there,
+        // and the order covers it.
         let (cmp, plan, ..) = run(&file("", &[4, 2, 1]), remote(Some(""), &[1, 2], false), Mode::Sync, Side::Local);
         assert_eq!(sprint_fields_of(&cmp), [Field::Order]);
         let t4 = cmp.entities.iter().find(|e| e.id == tid(4)).unwrap();
-        assert_eq!(t4.state, State::NotInFira);
+        assert_eq!(t4.state, State::New);
         let kinds: Vec<&str> = plan.ops.iter().map(|o| o.payload["kind"].as_str().unwrap()).collect();
-        assert_eq!(kinds, ["task.reorder"]);
-        assert_eq!(plan.ops[0].payload["ordered"], json!([tid(2), Uuid::from_u128(0x999), tid(1)]));
+        assert_eq!(kinds, ["task.create", "task.reorder"]);
+        assert_eq!(created(&plan)["sprint_id"], json!(SID));
+        assert_eq!(plan.ops[1].payload["ordered"], json!([tid(4), Uuid::from_u128(0x999), tid(2), tid(1)]));
+    }
+
+    #[test]
+    fn sync_adds_fira_only_task_to_sprint_file() {
+        // 3 is in the Fira sprint and in no file: sync appends it, with
+        // no prompt and nothing sent to Fira.
+        let (cmp, plan, ..) = run(&file("", &[1, 2]), remote(Some(""), &[1, 2, 3], false), Mode::Sync, Side::Local);
+        let t3 = cmp.entities.iter().find(|e| e.id == tid(3)).unwrap();
+        assert_eq!(t3.state, State::NewLocal);
+        assert!(sprint_fields_of(&cmp).is_empty());
+        assert!(cmp.actionable());
+        assert!(plan.ops.is_empty());
+        let text = new_text(&plan);
+        assert!(text.contains("## ⚪ T3") && text.contains(&format!("id={}", tid(3))), "{text}");
+        assert!(text.find("T2").unwrap() < text.find("T3").unwrap(), "{text}");
+    }
+
+    #[test]
+    fn sync_leaves_tasks_of_sprints_not_in_fira() {
+        // The sprint itself is not in Fira: nothing is created.
+        let (cmp, plan, ..) = run(&file("", &[1]), snap(&[]), Mode::Sync, Side::Local);
+        let t1 = cmp.entities.iter().find(|e| e.id == tid(1)).unwrap();
+        assert_eq!(t1.state, State::NotInFira);
+        assert!(plan.ops.is_empty() && plan.files.is_empty());
     }
 
     #[test]
