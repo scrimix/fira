@@ -466,11 +466,113 @@ pub fn page(text: &str, no_pager: bool) {
 pub fn ask(prompt: &str) -> Result<String> {
     eprint!("{prompt}");
     std::io::stderr().flush()?;
+    #[cfg(unix)]
+    if std::io::stdin().is_terminal() {
+        return match tty_line::read()? {
+            Some(line) => Ok(line.trim().to_string()),
+            None => bail!("input closed; nothing was written"),
+        };
+    }
     let mut line = String::new();
     if std::io::stdin().lock().read_line(&mut line)? == 0 {
         bail!("input closed; nothing was written");
     }
     Ok(line.trim().to_string())
+}
+
+/// Line input that doesn't rely on the tty's `erase` setting: with cooked
+/// mode, a terminal that sends DEL while `stty erase` is `^H` (or the other
+/// way round) echoes `^?` instead of deleting. Here both erase a character.
+#[cfg(unix)]
+mod tty_line {
+    use std::io::{Read, Write};
+
+    struct Restore(libc::termios);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            unsafe { libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, &self.0) };
+        }
+    }
+
+    /// `None` = end of input (Ctrl-D on an empty line, or stdin closed).
+    pub fn read() -> std::io::Result<Option<String>> {
+        let mut orig: libc::termios = unsafe { std::mem::zeroed() };
+        if unsafe { libc::tcgetattr(libc::STDIN_FILENO, &mut orig) } != 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        let mut t = orig;
+        // Keep ISIG so Ctrl-C still interrupts.
+        t.c_lflag &= !(libc::ICANON | libc::ECHO);
+        t.c_cc[libc::VMIN] = 1;
+        t.c_cc[libc::VTIME] = 0;
+        if unsafe { libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, &t) } != 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        let _restore = Restore(orig);
+
+        let mut err = std::io::stderr();
+        let mut stdin = std::io::stdin().lock();
+        let mut buf: Vec<u8> = Vec::new();
+        let mut byte = [0u8; 1];
+        let erase_last = |buf: &mut Vec<u8>, err: &mut std::io::Stderr| -> std::io::Result<()> {
+            // Drop one whole UTF-8 character.
+            while let Some(b) = buf.pop() {
+                if b & 0xC0 != 0x80 {
+                    break;
+                }
+            }
+            err.write_all(b"\x08 \x08")?;
+            err.flush()
+        };
+        loop {
+            if stdin.read(&mut byte)? == 0 {
+                err.write_all(b"\n")?;
+                return Ok(None);
+            }
+            match byte[0] {
+                b'\r' | b'\n' => {
+                    err.write_all(b"\n")?;
+                    return Ok(Some(String::from_utf8_lossy(&buf).into_owned()));
+                }
+                0x7f | 0x08 => {
+                    if !buf.is_empty() {
+                        erase_last(&mut buf, &mut err)?;
+                    }
+                }
+                // Ctrl-U: clear the line.
+                0x15 => {
+                    while !buf.is_empty() {
+                        erase_last(&mut buf, &mut err)?;
+                    }
+                }
+                // Ctrl-W: erase the last word.
+                0x17 => {
+                    while buf.last() == Some(&b' ') {
+                        erase_last(&mut buf, &mut err)?;
+                    }
+                    while !buf.is_empty() && buf.last() != Some(&b' ') {
+                        erase_last(&mut buf, &mut err)?;
+                    }
+                }
+                0x04 if buf.is_empty() => {
+                    err.write_all(b"\n")?;
+                    return Ok(None);
+                }
+                // Escape sequences (arrow keys etc.): swallow them.
+                0x1b => {
+                    if stdin.read(&mut byte)? == 1 && (byte[0] == b'[' || byte[0] == b'O') {
+                        while stdin.read(&mut byte)? == 1 && !(0x40..=0x7e).contains(&byte[0]) {}
+                    }
+                }
+                b if b < 0x20 => {}
+                b => {
+                    buf.push(b);
+                    err.write_all(&[b])?;
+                    err.flush()?;
+                }
+            }
+        }
+    }
 }
 
 pub struct Quit;

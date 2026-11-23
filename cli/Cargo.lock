@@ -1199,11 +1199,12 @@ dependencies = [
 
 [[package]]
 name = "task-cli"
-version = "0.2.7"
+version = "0.2.8"
 dependencies = [
  "anyhow",
  "chrono",
  "clap",
+ "libc",
  "pulldown-cmark",
  "reqwest",
  "rpassword",
